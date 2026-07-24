@@ -1,6 +1,13 @@
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { getSetting, setSetting } from "./cli/settings.js";
+import {
+  generateRandomPassword,
+  hashPassword,
+  verifyPassword
+} from "./shared/passwordHash.js";
+
+export { generateRandomPassword } from "./shared/passwordHash.js";
 
 const PASSWORD_KEY = "remote.password";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -8,41 +15,12 @@ const MAX_SESSIONS = 32;
 
 interface Session {
   token: string;
+  userId: string;
   createdAt: number;
   expiresAt: number;
 }
 
 const sessions = new Map<string, Session>();
-
-export function generateRandomPassword(length = 16): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const bytes = randomBytes(length);
-  let out = "";
-  for (let i = 0; i < length; i++) {
-    out += chars[bytes[i] % chars.length];
-  }
-  return out;
-}
-
-function hashPassword(plain: string): string {
-  const salt = randomBytes(16);
-  const hash = scryptSync(plain, salt, 64);
-  return `scrypt:${salt.toString("hex")}:${hash.toString("hex")}`;
-}
-
-function verifyPassword(plain: string, stored: string): boolean {
-  const parts = stored.split(":");
-  if (parts.length !== 3 || parts[0] !== "scrypt") return false;
-  try {
-    const salt = Buffer.from(parts[1], "hex");
-    const expected = Buffer.from(parts[2], "hex");
-    const hash = scryptSync(plain, salt, expected.length);
-    if (hash.length !== expected.length) return false;
-    return timingSafeEqual(hash, expected);
-  } catch {
-    return false;
-  }
-}
 
 export function getStoredPasswordHash(): string | null {
   const raw = getSetting(PASSWORD_KEY);
@@ -77,11 +55,11 @@ export function authenticatePassword(plain: string): boolean {
   return verifyPassword(plain, stored);
 }
 
-export function createSession(): string {
+export function createSession(userId: string): string {
   pruneExpiredSessions();
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
-  sessions.set(token, { token, createdAt: now, expiresAt: now + SESSION_TTL_MS });
+  sessions.set(token, { token, userId, createdAt: now, expiresAt: now + SESSION_TTL_MS });
   while (sessions.size > MAX_SESSIONS) {
     const oldest = [...sessions.values()].sort(
       (a, b) => a.createdAt - b.createdAt
@@ -90,6 +68,17 @@ export function createSession(): string {
     else break;
   }
   return token;
+}
+
+export function sessionUserId(token: string | null | undefined): string | null {
+  if (!token) return null;
+  const session = sessions.get(token);
+  if (!session) return null;
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(token);
+    return null;
+  }
+  return session.userId;
 }
 
 export function checkSession(token: string | null | undefined): boolean {
@@ -113,6 +102,28 @@ export function extractBearerToken(
   if (!auth || !auth.startsWith("Bearer ")) return null;
   const token = auth.slice(7).trim();
   return token || null;
+}
+
+export const SESSION_COOKIE_NAME = "fb_remote_token";
+const SESSION_TTL_SECONDS = Math.floor(SESSION_TTL_MS / 1000);
+
+export function buildSessionCookieHeader(token: string): string {
+  return `${SESSION_COOKIE_NAME}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}`;
+}
+
+export function readSessionCookie(
+  cookieHeader: string | null | undefined
+): string | null {
+  if (!cookieHeader) return null;
+  for (const part of cookieHeader.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === SESSION_COOKIE_NAME) {
+      const value = part.slice(eq + 1).trim();
+      if (value) return value;
+    }
+  }
+  return null;
 }
 
 function pruneExpiredSessions(): void {

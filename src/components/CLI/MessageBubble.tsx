@@ -21,6 +21,7 @@ import { displayAgentName } from "@/config/agentDisplay";
 import type { ChatAttachment, ConversationMessage } from "@/services/cli/types";
 import type { CliStreamItem } from "@/services/cli/parsers";
 import { appendItems } from "@/store/conversationUtils";
+import { useConversationStore } from "@/store/conversationStore";
 import { useImagePreviewStore } from "@/store/imagePreviewStore";
 import { splitAutolinkSegments } from "@/utils/autolink";
 import { formatBytes, attachmentPreviewUrl } from "@/utils/chatAttachments";
@@ -769,6 +770,7 @@ export const MessageBubble = memo(function MessageBubble({
   afterContent?: ReactNode;
 }) {
   const { t } = useTranslation();
+  const currentUser = useConversationStore((s) => s.currentUser);
   const items = useMemo<CliStreamItem[]>(() => {
     if (message.role !== "assistant") return [];
     try {
@@ -988,12 +990,17 @@ export const MessageBubble = memo(function MessageBubble({
     const hasText = displayContent.length > 0;
     const hasOthers = otherAttachments.length > 0;
     const showBubble = hasText || hasOthers;
+    const userAuthor =
+      message.authorUsername?.trim() || currentUser?.username || "";
+    const userInitial = (userAuthor[0] ?? "?").toUpperCase();
 
     return (
       <div className="msg msg-user">
         <div className="msg-content-wrapper">
           <div className="msg-header">
-            <span className="msg-author">{t("message.you")}</span>
+            <span className="msg-author">
+              {userAuthor || t("message.you")}
+            </span>
           </div>
           {showBubble && (
             <div className="msg-bubble">
@@ -1006,8 +1013,8 @@ export const MessageBubble = memo(function MessageBubble({
             <MessageImageAttachments attachments={imageAttachments} />
           )}
         </div>
-        <div className="msg-avatar user-avatar">
-          <span>👤</span>
+        <div className="msg-avatar user-avatar" aria-hidden="true">
+          <span className="msg-user-initial">{userInitial}</span>
         </div>
       </div>
     );

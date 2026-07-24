@@ -71,6 +71,7 @@ import {
 import { SessionConfigPicker } from "./SessionConfigPicker";
 import { ComposerAddMenu } from "./ComposerAddMenu";
 import { AgentPicker } from "./AgentPicker";
+import { HostDirectoryPicker } from "./HostDirectoryPicker";
 import { useSkillStore } from "@/store/skillStore";
 import { useAttachmentImport } from "@/hooks/useAttachmentImport";
 import { useWorkspaceFileMentions } from "@/hooks/useWorkspaceFileMentions";
@@ -2110,7 +2111,14 @@ function NewTaskHome({
   });
   const workspaceParts = cwd.trim().split(/[\\/]/).filter(Boolean);
   const workspaceName = workspaceParts[workspaceParts.length - 1] || cwd.trim();
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const isWebPlatform =
+    typeof window !== "undefined" && window.freebuddy?.platform === "web";
   const selectWorkspace = async () => {
+    if (isWebPlatform) {
+      setWorkspacePickerOpen(true);
+      return;
+    }
     try {
       const path = await cliClient.selectDirectory();
       if (path) onCwd(path);
@@ -2335,6 +2343,16 @@ function NewTaskHome({
         {preflightMsg && <div className="preflight-warn new-task-warn">{preflightMsg}</div>}
       </section>
       </div>
+      {workspacePickerOpen && (
+        <HostDirectoryPicker
+          initialPath={cwd || null}
+          onSelect={(path) => {
+            onCwd(path);
+            setWorkspacePickerOpen(false);
+          }}
+          onClose={() => setWorkspacePickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

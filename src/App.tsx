@@ -23,6 +23,7 @@ import {
   SettingsPage,
   type SettingsTab
 } from "./components/Settings/SettingsModal";
+import { SidebarUserMenu } from "./components/SidebarUserMenu";
 import { CliInstallPanelHost } from "./components/Settings/CliInstallPanelHost";
 import { ScheduledTasksTab } from "./components/Settings/ScheduledTasksTab";
 import { WorkflowTeamsTab } from "./components/Settings/WorkflowTeamsTab";
@@ -110,6 +111,28 @@ function App() {
     });
     return () => off?.();
   }, [refreshConversationList]);
+
+  useEffect(() => {
+    const off = window.freebuddy?.cli?.onConversationsChanged?.(() => {
+      void refreshConversationList();
+    });
+    return () => off?.();
+  }, [refreshConversationList]);
+
+  useEffect(() => {
+    const off = window.freebuddy?.cli?.onMessagesChanged?.((conversationId) => {
+      const state = useConversationStore.getState();
+      if (state.currentUser?.isOwner !== true) return;
+      if (conversationId !== state.activeId) return;
+      // Skip conversations this client is already live-streaming (e.g. the
+      // admin's own active run) — live streaming owns their real-time updates.
+      const live = state.live[conversationId];
+      const isStreaming = !!live && (live.status === "starting" || live.status === "running");
+      if (isStreaming) return;
+      void state.loadMessages(conversationId);
+    });
+    return () => off?.();
+  }, []);
 
   useEffect(() => {
     const off = window.freebuddy?.window?.onChromeVisible?.((visible) => {
@@ -409,13 +432,17 @@ function App() {
             <ConversationList onNewTaskInProject={(cwd) => startNewTask({ cwd })} />
 
             <div className="sidebar-footer">
-              <button
-                className="footer-action"
-                onClick={() => openSettings("cli")}
-              >
-                <GearIcon />
-                {t("common.settings")}
-              </button>
+              {platform === "web" ? (
+                <SidebarUserMenu onOpenSettings={() => openSettings("cli")} />
+              ) : (
+                <button
+                  className="footer-action"
+                  onClick={() => openSettings("cli")}
+                >
+                  <GearIcon />
+                  {t("common.settings")}
+                </button>
+              )}
               {appVersion && (
                 <span className="footer-version-wrap">
                   <span className="footer-version">v{appVersion}</span>

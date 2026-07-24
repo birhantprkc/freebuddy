@@ -94,6 +94,35 @@
     };
   }
 
+  var ATTACHMENT_ACCEPT = [
+    ".png", ".jpg", ".jpeg", ".webp", ".gif",
+    ".pdf",
+    ".txt", ".md", ".json", ".csv", ".log",
+    ".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".go", ".java", ".php",
+    ".html", ".css", ".scss", ".yaml", ".yml", ".toml", ".xml", ".sh",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"
+  ].join(",");
+
+  function pickAttachmentFiles() {
+    return new Promise(function (resolve) {
+      var input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.accept = ATTACHMENT_ACCEPT;
+      input.style.position = "fixed";
+      input.style.left = "-9999px";
+      input.style.top = "0";
+      input.addEventListener("change", function () {
+        var list = [];
+        if (input.files) {
+          for (var i = 0; i < input.files.length; i++) list.push(input.files[i]);
+        }
+        resolve(list);
+      });
+      input.click();
+    });
+  }
+
   window.freebuddy = {
     platform: "web",
     arch: "web",
@@ -108,6 +137,10 @@
 
       listRuntimes: function () { return invoke("cli:listRuntimes"); },
       onRuntimeUpdated: function (cb) { return subscribe("cli://runtime", cb); },
+      onConversationsChanged: function (cb) { return subscribe("conversations://changed", cb); },
+      onMessagesChanged: function (cb) {
+        return subscribe("messages://changed", function (p) { if (p && p.conversationId) cb(p.conversationId); });
+      },
       codexUsage: function () { return invoke("cli:codexUsage"); },
       usageSummary: function (period) { return invoke("cli:usageSummary", period); },
       refreshUsage: function (period) { return invoke("cli:refreshUsage", period); },
@@ -162,7 +195,12 @@
 
       selectDirectory: function () { return Promise.resolve(null); },
       searchWorkspaceFiles: function (cwd, query, limit) { return invoke("cli:searchWorkspaceFiles", { cwd: cwd, query: query, limit: limit }); },
-      selectAttachments: function () { return Promise.resolve({ candidates: [], rejections: [] }); },
+      selectAttachments: async function () {
+        var files = await pickAttachmentFiles();
+        if (!files || files.length === 0) return [];
+        var prepared = await window.freebuddy.cli.prepareAttachmentFiles(files);
+        return (prepared && prepared.candidates) || [];
+      },
       prepareAttachmentFiles: async function (files) {
         var rejections = [];
         var payload = [];
@@ -221,6 +259,13 @@
       onBridge: function (cb) { return subscribe("freebuddy://bridge", cb); },
       onDraftTool: function (cb) { return subscribe("freebuddy://draft-tool", cb); },
       resolveDraftTool: function (resolution) { return invoke("draft-tool:resolve", resolution); }
+    },
+
+    session: {
+      logout: function () {
+        clearToken();
+        showLogin();
+      }
     },
 
     settings: {
@@ -336,10 +381,15 @@
     },
 
     remote: {
-      getStatus: function () { return Promise.resolve(null); },
+      whoami: function () { return invoke("remote:whoami"); },
+      getStatus: function () { return invoke("remote:getStatus"); },
       setEnabled: function () { return Promise.resolve({ status: null, initialPassword: null }); },
-      setPassword: function () { return Promise.resolve(false); },
-      resetPassword: function () { return Promise.resolve(""); }
+      listUsers: function () { return Promise.resolve([]); },
+      createUser: function () { return Promise.resolve({ user: { id: "", username: "", isOwner: false, createdAt: 0 }, password: "" }); },
+      resetUserPassword: function () { return Promise.resolve(null); },
+      deleteUser: function () { return Promise.resolve(false); },
+      listUserRoots: function () { return Promise.resolve([]); },
+      setUserRoots: function () { return Promise.resolve([]); }
     }
   };
 
@@ -353,20 +403,22 @@
       '<div style="width:320px;padding:28px;background:#131c36;border:1px solid #243154;border-radius:14px;color:#e6ebf5;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.4);">' +
       '<div style="font-size:20px;font-weight:700;margin-bottom:4px;">FreeBuddy</div>' +
       '<div style="font-size:13px;color:#8b97b8;margin-bottom:18px;">' + (message || "Remote access login") + "</div>" +
-      '<input id="fb-login-pw" type="password" placeholder="Password" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:12px;outline:none;" />' +
+      '<input id="fb-login-user" type="text" placeholder="Username" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:10px;outline:none;" />' +
+      '<input id="fb-login-pw" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:12px;outline:none;" />' +
       '<button id="fb-login-btn" style="width:100%;padding:10px;border-radius:8px;border:none;background:#3b6ef0;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Sign in</button>' +
       '<div id="fb-login-err" style="color:#ff6b6b;font-size:12px;margin-top:10px;min-height:16px;"></div>' +
       "</div>";
     if (document.body) document.body.appendChild(root);
     else document.documentElement.appendChild(root);
     var btn = root.querySelector("#fb-login-btn");
+    var userInput = root.querySelector("#fb-login-user");
     var input = root.querySelector("#fb-login-pw");
     var err = root.querySelector("#fb-login-err");
     function doLogin() {
       err.textContent = "";
       btn.disabled = true;
       btn.textContent = "Signing in...";
-      postJson("/api/login", { password: input.value }).then(function (json) {
+      postJson("/api/login", { username: userInput.value, password: input.value }).then(function (json) {
         if (json.ok) {
           setToken(json.token);
           location.reload();
@@ -383,7 +435,7 @@
     }
     btn.addEventListener("click", doLogin);
     input.addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
-    setTimeout(function () { input.focus(); }, 0);
+    setTimeout(function () { userInput.focus(); }, 0);
   }
 
   async function bootstrap() {

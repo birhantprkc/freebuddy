@@ -44,6 +44,7 @@ import {
   listMessage,
   listMessages,
   renameConversation,
+  requireOwnedConversation,
   setConversationApprovalMode,
   setConversationConfigOptionOverrides,
   setConversationSkills,
@@ -57,6 +58,9 @@ import {
   type UpdateMessageInput
 } from "./conversations.js";
 import { getSetting, setSetting, getLanguage } from "./settings.js";
+import { getCallerUserId } from "./callerContext.js";
+import { recordSessionOwner, clearSessionOwner } from "./sessionOwners.js";
+import { safeSendToWebContents } from "./ipcSend.js";
 import { setTelemetryEnabled, trackTelemetryEvent } from "../telemetry.js";
 import { normalizeTelemetryAdapter } from "../telemetryPrivacy.js";
 import {
@@ -235,7 +239,13 @@ const ATTACHMENT_EXTENSIONS = [
   "yml",
   "toml",
   "xml",
-  "sh"
+  "sh",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx"
 ];
 
 function attachmentMimeFromExtension(extension: string): string {
@@ -257,6 +267,18 @@ function attachmentMimeFromExtension(extension: string): string {
       return "application/json";
     case "csv":
       return "text/csv";
+    case "doc":
+      return "application/msword";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "xls":
+      return "application/vnd.ms-excel";
+    case "xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "ppt":
+      return "application/vnd.ms-powerpoint";
+    case "pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
     default:
       return "text/plain";
   }
@@ -272,6 +294,15 @@ function attachmentCandidate(filePath: string) {
     extension,
     mimeType: attachmentMimeFromExtension(extension)
   };
+}
+
+const CONVERSATIONS_CHANGED_CHANNEL = "conversations://changed";
+function notifyConversationsChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    safeSendToWebContents(win.webContents, CONVERSATIONS_CHANGED_CHANNEL, {
+      at: Date.now()
+    });
+  }
 }
 
 export function registerCliIpc() {
@@ -566,6 +597,13 @@ export function registerCliIpc() {
   registerHandler("cli:run", async (event, args: CliRunArgs) => {
     const win = senderWindow(event);
     if (!win) throw new Error("no sender window");
+    const conversation = args.conversationId
+      ? requireOwnedConversation(args.conversationId)
+      : undefined;
+    if (args.conversationId && !conversation) {
+      throw new Error("conversation_not_found");
+    }
+    recordSessionOwner(args.sessionId, conversation?.ownerId ?? getCallerUserId());
     const {
       contextReferences: _rendererContextReferences,
       ...rendererArgs
@@ -599,7 +637,10 @@ export function registerCliIpc() {
     (_event, args: SessionConfigProbeInput) =>
       inspectSessionConfigOptions(args)
   );
-  registerHandler("cli:kill", (_e, sessionId: string) => cliKill(sessionId));
+  registerHandler("cli:kill", (_e, sessionId: string) => {
+    clearSessionOwner(sessionId);
+    return cliKill(sessionId);
+  });
   registerHandler(
     "draft-tool:resolve",
     (event, resolution: DraftToolResolution) =>
@@ -742,7 +783,9 @@ export function registerCliIpc() {
   registerHandler("cli:listConversations", (_e, args: ListConversationsArgs = {}) =>
     listConversations(args)
   );
-  registerHandler("cli:getConversation", (_e, id: string) => getConversation(id));
+  registerHandler("cli:getConversation", (_e, id: string) =>
+    requireOwnedConversation(id)
+  );
   registerHandler(
     "cli:createConversation",
     (_e, input: CreateConversationInput) => {
@@ -752,6 +795,7 @@ export function registerCliIpc() {
         has_workspace: Boolean(input.cwd),
         approval_mode: input.approvalMode ?? "default"
       });
+      notifyConversationsChanged();
       return conversation;
     }
   );
@@ -846,6 +890,7 @@ export function registerCliIpc() {
         throw error;
       }
 
+      notifyConversationsChanged();
       return {
         conversation: txResult.conversation,
         briefId,
@@ -853,8 +898,7 @@ export function registerCliIpc() {
         warning: brief ? undefined : "brief_extraction_failed"
       };
     }
-  );
-  registerHandler(
+  );  registerHandler(
     "cli:createConversationShare",
     (
       _e,
@@ -938,7 +982,10 @@ export function registerCliIpc() {
         title: string;
         titleSource?: ConversationTitleSource | null;
       }
-    ) => renameConversation(args.id, args.title, args.titleSource)
+    ) => {
+      renameConversation(args.id, args.title, args.titleSource);
+      notifyConversationsChanged();
+    }
   );
   registerHandler(
     "cli:updateConversationAgentName",
@@ -947,16 +994,20 @@ export function registerCliIpc() {
   );
   registerHandler(
     "cli:archiveConversation",
-    (_e, args: { id: string; archived: boolean }) =>
-      archiveConversation(args.id, args.archived)
+    (_e, args: { id: string; archived: boolean }) => {
+      archiveConversation(args.id, args.archived);
+      notifyConversationsChanged();
+    }
   );
   registerHandler("cli:deleteConversation", (_e, id: string) => {
+    if (!requireOwnedConversation(id)) return;
     const transcriptPath = getHandoffBriefByTarget(id)?.transcript?.path;
     deleteConversation(id);
     deleteHandoffTranscriptSnapshot(getDataDir(), transcriptPath);
     for (const orphanPath of deleteUnreferencedConversationContextSnapshots()) {
       deleteHandoffTranscriptSnapshot(getDataDir(), orphanPath);
     }
+    notifyConversationsChanged();
   });
 
   registerHandler(
@@ -982,14 +1033,15 @@ export function registerCliIpc() {
   );
 
   registerHandler("cli:listMessages", (_e, conversationId: string) =>
-    listMessages(conversationId)
+    requireOwnedConversation(conversationId) ? listMessages(conversationId) : []
   );
   registerHandler("cli:listMessage", (_e, id: string) =>
     listMessage(id)
   );
-  registerHandler("cli:appendMessage", (_e, input: AppendMessageInput) =>
-    appendMessage(input)
-  );
+  registerHandler("cli:appendMessage", (_e, input: AppendMessageInput) => {
+    if (!requireOwnedConversation(input.conversationId)) return undefined;
+    return appendMessage(input);
+  });
   registerHandler("cli:updateMessage", (_e, input: UpdateMessageInput) =>
     updateMessage(input)
   );

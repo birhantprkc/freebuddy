@@ -7,13 +7,23 @@ import { WebSocketServer, WebSocket } from "ws";
 
 import { sendJson, readJsonBody } from "./httpUtils.js";
 import {
-  authenticatePassword,
+  resolveWorkspaceRoots,
+  isPathWithinRoots,
+  parentWithinRoots
+} from "./shared/workspaceRoots.js";
+import {
+  consumeQrToken,
+  buildSessionCookieHeader,
+  readSessionCookie,
   createSession,
   checkSession,
   extractBearerToken,
-  hasRemotePassword,
-  consumeQrToken
+  sessionUserId
 } from "./remoteAuth.js";
+import { verifyUserLogin, getOwnerUser, listUsers, getUserRoots } from "./cli/users.js";
+import { runAsCaller } from "./cli/callerContext.js";
+import { getSessionOwner } from "./cli/sessionOwners.js";
+import { classifyWsChannel } from "./shared/wsChannelPolicy.js";
 import { localInvoke } from "./invokeRegistry.js";
 import { setEventBroadcaster } from "./eventBus.js";
 import {
@@ -27,6 +37,7 @@ const WEBUI_DEFAULT_PORT = 18080;
 let webuiServer: http.Server | null = null;
 let wss: WebSocketServer | null = null;
 const authedClients = new Set<WebSocket>();
+const clientUsers = new Map<WebSocket, string>();
 let currentPort = WEBUI_DEFAULT_PORT;
 let currentHost = "127.0.0.1";
 let currentAllowRemote = false;
@@ -136,22 +147,29 @@ function serveStatic(
 }
 
 function isAuthed(req: IncomingMessage): boolean {
-  return checkSession(extractBearerToken(req.headers.authorization));
+  return (
+    checkSession(extractBearerToken(req.headers.authorization)) ||
+    checkSession(readSessionCookie(req.headers.cookie))
+  );
 }
 
 async function handleLogin(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   if (url.pathname !== "/api/login" || req.method !== "POST") return false;
-  const body = (await readJsonBody(req)) as { password?: string } | null;
+  const body = (await readJsonBody(req)) as { username?: string; password?: string } | null;
+  const username = typeof body?.username === "string" ? body.username.trim() : "";
   const password = typeof body?.password === "string" ? body.password : "";
-  if (!hasRemotePassword()) {
+  if (listUsers().length === 0) {
     sendJson(res, 200, { ok: false, error: "remote_not_initialized" });
     return true;
   }
-  if (authenticatePassword(password)) {
-    sendJson(res, 200, { ok: true, token: createSession() });
+  const user = verifyUserLogin(username, password);
+  if (user) {
+    const token = createSession(user.id);
+    res.setHeader("Set-Cookie", buildSessionCookieHeader(token));
+    sendJson(res, 200, { ok: true, token });
   } else {
-    sendJson(res, 200, { ok: false, error: "invalid_password" });
+    sendJson(res, 200, { ok: false, error: "invalid_credentials" });
   }
   return true;
 }
@@ -160,11 +178,18 @@ async function handleQrLogin(req: IncomingMessage, res: ServerResponse): Promise
   const url = new URL(req.url || "/", "http://127.0.0.1");
   if (url.pathname !== "/api/qr-login" || req.method !== "POST") return false;
   const body = (await readJsonBody(req)) as { token?: string } | null;
-  if (consumeQrToken(typeof body?.token === "string" ? body.token : null)) {
-    sendJson(res, 200, { ok: true, token: createSession() });
-  } else {
+  if (!consumeQrToken(typeof body?.token === "string" ? body.token : null)) {
     sendJson(res, 200, { ok: false, error: "invalid_or_expired_qr_token" });
+    return true;
   }
+  const owner = getOwnerUser();
+  if (!owner) {
+    sendJson(res, 200, { ok: false, error: "remote_not_initialized" });
+    return true;
+  }
+  const token = createSession(owner.id);
+  res.setHeader("Set-Cookie", buildSessionCookieHeader(token));
+  sendJson(res, 200, { ok: true, token });
   return true;
 }
 
@@ -172,7 +197,7 @@ function handleStatus(res: ServerResponse): void {
   sendJson(res, 200, {
     ok: true,
     webui: true,
-    hasPassword: hasRemotePassword()
+    hasPassword: listUsers().length > 0
   });
 }
 
@@ -192,8 +217,13 @@ async function handleInvoke(req: IncomingMessage, res: ServerResponse): Promise<
     return true;
   }
   const args = Array.isArray(body?.args) ? body.args : [];
+  const userId =
+    sessionUserId(extractBearerToken(req.headers.authorization)) ||
+    sessionUserId(readSessionCookie(req.headers.cookie));
   try {
-    const result = await localInvoke(channel, ...args);
+    const result = userId
+      ? await runAsCaller(userId, () => localInvoke(channel, ...args))
+      : await localInvoke(channel, ...args);
     sendJson(res, 200, { ok: true, result });
   } catch (error) {
     sendJson(res, 200, {
@@ -280,6 +310,49 @@ async function handleUpload(
   return true;
 }
 
+function handleListDirs(req: IncomingMessage, res: ServerResponse): boolean {
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  if (url.pathname !== "/api/listDirs" || req.method !== "GET") return false;
+  if (!isAuthed(req)) {
+    sendJson(res, 401, { ok: false, error: "unauthorized" });
+    return true;
+  }
+  const callerUserId =
+    sessionUserId(extractBearerToken(req.headers.authorization)) ||
+    sessionUserId(readSessionCookie(req.headers.cookie));
+  const roots = resolveWorkspaceRoots(callerUserId ? getUserRoots(callerUserId) : []);
+  const requested = url.searchParams.get("path");
+  const target = path.resolve(requested || roots[0] || os.homedir());
+  if (!isPathWithinRoots(target, roots)) {
+    sendJson(res, 403, { ok: false, error: "forbidden" });
+    return true;
+  }
+  try {
+    if (!fs.statSync(target).isDirectory()) {
+      sendJson(res, 400, { ok: false, error: "not_a_directory" });
+      return true;
+    }
+    const entries: { name: string }[] = [];
+    for (const dirent of fs.readdirSync(target, { withFileTypes: true })) {
+      if (!dirent.isDirectory() || dirent.name.startsWith(".")) continue;
+      entries.push({ name: dirent.name });
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    sendJson(res, 200, {
+      ok: true,
+      result: {
+        path: target,
+        parent: parentWithinRoots(target, roots),
+        roots,
+        entries
+      }
+    });
+  } catch {
+    sendJson(res, 400, { ok: false, error: "read_failed" });
+  }
+  return true;
+}
+
 function proxyToDevServer(
   req: IncomingMessage,
   res: ServerResponse,
@@ -362,12 +435,15 @@ function setupWebSocket(server: http.Server): void {
           type?: unknown;
           token?: unknown;
         };
-        if (
-          msg.type === "auth" &&
-          checkSession(extractBearerToken(`Bearer ${msg.token}`))
-        ) {
+        const token =
+          msg.type === "auth"
+            ? extractBearerToken(`Bearer ${msg.token}`)
+            : null;
+        const userId = token ? sessionUserId(token) : null;
+        if (userId) {
           authed = true;
           authedClients.add(ws);
+          clientUsers.set(ws, userId);
           ws.send(JSON.stringify({ type: "authed" }));
         } else {
           ws.close(1008);
@@ -378,22 +454,30 @@ function setupWebSocket(server: http.Server): void {
     });
     ws.on("close", () => {
       authedClients.delete(ws);
+      clientUsers.delete(ws);
     });
     ws.on("error", () => {
       authedClients.delete(ws);
+      clientUsers.delete(ws);
     });
   });
 
   setEventBroadcaster((channel: string, payload: unknown) => {
     if (authedClients.size === 0) return;
+    const classified = classifyWsChannel(channel);
+    if (classified.kind === "drop") return;
     const message = JSON.stringify({ channel, payload });
     for (const client of authedClients) {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(message);
-        } catch {
-          authedClients.delete(client);
-        }
+      if (client.readyState !== WebSocket.OPEN) continue;
+      if (classified.kind === "session") {
+        const owner = getSessionOwner(classified.sessionId);
+        if (owner !== clientUsers.get(client)) continue;
+      }
+      try {
+        client.send(message);
+      } catch {
+        authedClients.delete(client);
+        clientUsers.delete(client);
       }
     }
   });
@@ -438,7 +522,7 @@ export function getWebUIStatus(): WebUIStatus {
     host: currentHost,
     lanIp,
     accessUrl: `http://${currentAllowRemote ? lanIp : "127.0.0.1"}:${currentPort}`,
-    hasPassword: hasRemotePassword()
+    hasPassword: listUsers().length > 0
   };
 }
 
@@ -482,6 +566,7 @@ export function startWebUIServer(options: WebUIServerOptions = {}): Promise<void
           if (await handleInvoke(req, res)) return;
           if (handleAttachment(req, res)) return;
           if (await handleUpload(req, res)) return;
+          if (handleListDirs(req, res)) return;
 
           if (req.method === "GET" && !url.pathname.startsWith("/api")) {
             if (devServerUrl) {
@@ -535,6 +620,7 @@ export function stopWebUIServer(): Promise<void> {
       wss = null;
     }
     authedClients.clear();
+    clientUsers.clear();
     const server = webuiServer;
     webuiServer = null;
     if (server) {

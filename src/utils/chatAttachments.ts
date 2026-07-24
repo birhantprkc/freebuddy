@@ -51,7 +51,13 @@ const DOCUMENT_MIME: Record<string, string> = {
   md: "text/markdown",
   json: "application/json",
   csv: "text/csv",
-  log: "text/plain"
+  log: "text/plain",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 };
 
 const CODE_EXTENSIONS = new Set([

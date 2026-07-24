@@ -6,6 +6,10 @@ import { cleanupOrphanHandoffTranscriptSnapshots } from "../shared/handoffTransc
 
 let dbInstance: DB | null = null;
 
+export function setDbForTest(db: DB | null): void {
+  dbInstance = db;
+}
+
 export function getDb(): DB {
   if (dbInstance) return dbInstance;
 
@@ -258,7 +262,13 @@ export function migrate(db: DB) {
       archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      last_message_at TEXT
+      last_message_at TEXT,
+      source_conversation_id TEXT,
+      source_agent_id TEXT,
+      source_agent_name TEXT,
+      source_adapter TEXT,
+      source_brief_id TEXT,
+      owner_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_conversations_updated
       ON conversations(archived, updated_at DESC);
@@ -277,6 +287,7 @@ export function migrate(db: DB) {
       role_label TEXT,
       workflow_run_id TEXT,
       workflow_step_row_id TEXT,
+      author_username TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
@@ -496,6 +507,20 @@ export function migrate(db: DB) {
     );
     CREATE INDEX IF NOT EXISTS idx_context_share_snapshot
       ON conversation_share_tokens(snapshot_id);
+
+    CREATE TABLE IF NOT EXISTS remote_users (
+      id           TEXT PRIMARY KEY,
+      username     TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      is_owner     INTEGER NOT NULL DEFAULT 0,
+      created_at   INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS remote_user_roots (
+      user_id    TEXT NOT NULL,
+      root_path  TEXT NOT NULL,
+      PRIMARY KEY (user_id, root_path)
+    );
   `);
 
   const handoffColumns = db
@@ -649,6 +674,9 @@ export function migrate(db: DB) {
       "ALTER TABLE conversation_messages ADD COLUMN workflow_step_row_id TEXT"
     );
   }
+  if (!messageCols.some((c) => c.name === "author_username")) {
+    db.exec("ALTER TABLE conversation_messages ADD COLUMN author_username TEXT");
+  }
 
   const conversationCols = db
     .prepare("PRAGMA table_info(conversations)")
@@ -679,6 +707,9 @@ export function migrate(db: DB) {
   }
   if (!conversationCols.some((c) => c.name === "source_brief_id")) {
     db.exec("ALTER TABLE conversations ADD COLUMN source_brief_id TEXT");
+  }
+  if (!conversationCols.some((c) => c.name === "owner_id")) {
+    db.exec("ALTER TABLE conversations ADD COLUMN owner_id TEXT");
   }
 
   const workflowRunCols = db

@@ -1,10 +1,18 @@
 import { registerHandler } from "../invokeRegistry.js";
 import { getSetting, setSetting } from "./settings.js";
 import {
-  setRemotePassword,
-  hasRemotePassword,
-  generateRandomPassword
-} from "../remoteAuth.js";
+  listUsers,
+  createUser,
+  deleteUser,
+  resetUserPassword,
+  ensureOwnerUser,
+  getUserRoots,
+  setUserRoots,
+  migrateGlobalRootsToOwner,
+  getUserById,
+  type RemoteUser
+} from "./users.js";
+import { getCallerUserId } from "./callerContext.js";
 import {
   restartWebUIServer,
   getWebUIStatus,
@@ -23,6 +31,11 @@ function resolveLaunchOptions(allowRemote: boolean): WebUIServerOptions {
 }
 
 function registerRemoteIpc(): void {
+  registerHandler("remote:whoami", async (): Promise<RemoteUser | null> => {
+    const id = getCallerUserId();
+    return id ? getUserById(id) : null;
+  });
+
   registerHandler("remote:getStatus", async (): Promise<WebUIStatus> => {
     return getWebUIStatus();
   });
@@ -32,25 +45,41 @@ function registerRemoteIpc(): void {
     async (_event, enabled: boolean): Promise<{ status: WebUIStatus; initialPassword: string | null }> => {
       setSetting("remote.enabled", enabled ? "1" : "0");
       let initialPassword: string | null = null;
-      if (enabled && !hasRemotePassword()) {
-        initialPassword = generateRandomPassword();
-        setRemotePassword(initialPassword);
+      if (enabled) {
+        const { user, password } = ensureOwnerUser();
+        migrateGlobalRootsToOwner(user.id);
+        if (password) initialPassword = password;
       }
       const status = await restartWebUIServer(resolveLaunchOptions(enabled));
       return { status, initialPassword };
     }
   );
 
-  registerHandler("remote:setPassword", async (_event, plain: string): Promise<boolean> => {
-    setRemotePassword(plain);
-    return true;
-  });
+  registerHandler("remote:listUsers", async (): Promise<RemoteUser[]> => listUsers());
 
-  registerHandler("remote:resetPassword", async (): Promise<string> => {
-    const plain = generateRandomPassword();
-    setRemotePassword(plain);
-    return plain;
-  });
+  registerHandler(
+    "remote:createUser",
+    async (_event, input: { username: string; password?: string }) =>
+      createUser(input)
+  );
+
+  registerHandler("remote:resetUserPassword", async (_event, id: string) =>
+    resetUserPassword(id)
+  );
+
+  registerHandler("remote:deleteUser", async (_event, id: string) => deleteUser(id));
+
+  registerHandler("remote:listUserRoots", async (_event, userId: string) =>
+    getUserRoots(userId)
+  );
+
+  registerHandler(
+    "remote:setUserRoots",
+    async (_event, args: { userId: string; roots: string[] }) => {
+      setUserRoots(args.userId, args.roots);
+      return getUserRoots(args.userId);
+    }
+  );
 }
 
 export function initRemoteControl(options: WebUIServerOptions): void {

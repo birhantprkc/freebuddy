@@ -1,0 +1,150 @@
+import "./fixtures/electron-stub.mjs";
+import test from "node:test";
+import assert from "node:assert/strict";
+
+let Database;
+let bindingAvailable = true;
+try {
+  Database = (await import("better-sqlite3")).default;
+  new Database(":memory:").close();
+} catch {
+  bindingAvailable = false;
+}
+
+function makeDb() {
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  return db;
+}
+
+test("createUser makes the first user the owner and verifies login", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  const { setDbForTest, createUser, verifyUserLogin, getLocalUserId, listUsers } =
+    await import("../dist-electron/cli/users.js");
+  setDbForTest(db);
+
+  const { user: owner, password } = createUser({ username: "owner" });
+  assert.equal(owner.username, "owner");
+  assert.equal(owner.isOwner, true);
+  assert.ok(password.length >= 8);
+  assert.equal(getLocalUserId(), owner.id);
+  assert.equal(listUsers().length, 1);
+
+  assert.deepEqual(verifyUserLogin("owner", password)?.id, owner.id);
+  assert.equal(verifyUserLogin("owner", "wrong"), null);
+  assert.equal(verifyUserLogin("nobody", password), null);
+});
+
+test("createUser rejects duplicate / invalid usernames; second user is not owner", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  const { setDbForTest, createUser } = await import("../dist-electron/cli/users.js");
+  setDbForTest(db);
+  createUser({ username: "owner" });
+
+  const second = createUser({ username: "alice" });
+  assert.equal(second.user.isOwner, false);
+
+  assert.throws(() => createUser({ username: "owner" }), /username_taken/);
+  assert.throws(() => createUser({ username: "ab" }), /invalid_username/);
+  assert.throws(() => createUser({ username: "bad name!" }), /invalid_username/);
+  assert.throws(() => createUser({ username: "x".repeat(33) }), /invalid_username/);
+});
+
+test("deleteUser refuses the owner; resetUserPassword rotates the password", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  const { setDbForTest, createUser, deleteUser, resetUserPassword, verifyUserLogin, getUserById } =
+    await import("../dist-electron/cli/users.js");
+  setDbForTest(db);
+  const { user: owner } = createUser({ username: "owner" });
+  const { user: alice, password: alicePw } = createUser({ username: "alice" });
+
+  assert.throws(() => deleteUser(owner.id), /cannot_delete_owner/);
+  assert.equal(deleteUser(alice.id), true);
+  assert.equal(getUserById(alice.id), null);
+
+  const reset = resetUserPassword(owner.id);
+  assert.equal(verifyUserLogin("owner", "freshly-generated-not-this"), null);
+  assert.deepEqual(verifyUserLogin("owner", reset.password)?.id, owner.id);
+  assert.equal(verifyUserLogin("owner", alicePw), null);
+});
+
+test("bootstrapOwnerFromLegacyPassword migrates the old single password", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  const { hashPassword } = await import("../dist-electron/shared/passwordHash.js");
+  const legacyHash = hashPassword("legacy-secret");
+  db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?)").run("remote.password", legacyHash);
+
+  const { setDbForTest, bootstrapOwnerFromLegacyPassword, getOwnerUser, verifyUserLogin } =
+    await import("../dist-electron/cli/users.js");
+  setDbForTest(db);
+
+  bootstrapOwnerFromLegacyPassword();
+  const owner = getOwnerUser();
+  assert.equal(owner?.username, "owner");
+  assert.equal(owner?.isOwner, true);
+  assert.deepEqual(verifyUserLogin("owner", "legacy-secret")?.id, owner.id);
+
+  // idempotent: running again does not create a second owner
+  bootstrapOwnerFromLegacyPassword();
+  assert.equal(getOwnerUser()?.id, owner.id);
+});
+
+test("getUserRoots/setUserRoots store per-user workspace roots", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  const { setDbForTest, createUser, getUserRoots, setUserRoots } =
+    await import("../dist-electron/cli/users.js");
+  setDbForTest(db);
+  const { user: owner } = createUser({ username: "owner" });
+  const { user: alice } = createUser({ username: "alice" });
+
+  assert.deepEqual(getUserRoots(owner.id), [], "defaults to empty");
+
+  setUserRoots(owner.id, ["/home/owner/projects", "/srv/repos"]);
+  setUserRoots(alice.id, ["/home/alice"]);
+
+  assert.deepEqual(getUserRoots(owner.id), ["/home/owner/projects", "/srv/repos"]);
+  assert.deepEqual(getUserRoots(alice.id), ["/home/alice"], "isolated per user");
+
+  // replace (not append)
+  setUserRoots(owner.id, ["/only"]);
+  assert.deepEqual(getUserRoots(owner.id), ["/only"]);
+  assert.deepEqual(getUserRoots(alice.id), ["/home/alice"], "alice unaffected");
+});
+
+test("migrateGlobalRootsToOwner moves the legacy global setting to the owner", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  const { setDbForTest, createUser, migrateGlobalRootsToOwner, getUserRoots } =
+    await import("../dist-electron/cli/users.js");
+  setDbForTest(db);
+  const { user: owner } = createUser({ username: "owner" });
+
+  db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?)").run(
+    "remote.workspaceRoots",
+    JSON.stringify(["/legacy/a", "/legacy/b"])
+  );
+
+  migrateGlobalRootsToOwner(owner.id);
+  assert.deepEqual(getUserRoots(owner.id), ["/legacy/a", "/legacy/b"]);
+
+  // idempotent: re-running does not duplicate
+  migrateGlobalRootsToOwner(owner.id);
+  assert.deepEqual(getUserRoots(owner.id), ["/legacy/a", "/legacy/b"]);
+});

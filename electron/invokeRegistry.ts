@@ -1,10 +1,20 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { runAsCaller } from "./cli/callerContext.js";
+import { getOwnerUser } from "./cli/users.js";
 
 type InvokeHandler = (event: IpcMainInvokeEvent, ...args: any[]) => any;
 
 const handlers = new Map<string, InvokeHandler>();
 
 let mainWindowGetter: (() => BrowserWindow | null) | null = null;
+let desktopOwnerId: string | null = null;
+
+function resolveDesktopCaller(): string | null {
+  if (desktopOwnerId) return desktopOwnerId;
+  const owner = getOwnerUser()?.id ?? null;
+  if (owner) desktopOwnerId = owner;
+  return owner;
+}
 
 export function setLocalInvokeWindowGetter(
   getter: () => BrowserWindow | null
@@ -14,7 +24,12 @@ export function setLocalInvokeWindowGetter(
 
 export function registerHandler(channel: string, handler: InvokeHandler): void {
   handlers.set(channel, handler);
-  ipcMain.handle(channel, handler);
+  const wrapped: InvokeHandler = (event, ...args) => {
+    const owner = resolveDesktopCaller();
+    if (owner) return runAsCaller(owner, () => handler(event, ...args), true);
+    return handler(event, ...args);
+  };
+  ipcMain.handle(channel, wrapped);
 }
 
 export function listInvokeChannels(): string[] {
@@ -46,7 +61,13 @@ const REMOTE_BLOCKED_CHANNELS = new Set<string>([
   "plugins:removeMarketplace",
   "remote:setEnabled",
   "remote:setPassword",
-  "remote:resetPassword"
+  "remote:resetPassword",
+  "remote:listUsers",
+  "remote:createUser",
+  "remote:resetUserPassword",
+  "remote:deleteUser",
+  "remote:listUserRoots",
+  "remote:setUserRoots"
 ]);
 
 export function isChannelRemoteCallable(channel: string): boolean {

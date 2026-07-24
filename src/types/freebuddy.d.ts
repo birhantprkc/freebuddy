@@ -109,6 +109,8 @@ declare global {
 
     listRuntimes(): Promise<CliRuntime[]>;
     onRuntimeUpdated(cb: (runtime: CliRuntime) => void): () => void;
+    onConversationsChanged(cb: () => void): () => void;
+    onMessagesChanged(cb: (conversationId: string) => void): () => void;
     codexUsage(): Promise<CodexUsageResult>;
     usageSummary(period?: AgentUsagePeriod): Promise<AgentUsageSummary>;
     refreshUsage(period?: AgentUsagePeriod): Promise<AgentUsageSummary>;
@@ -268,6 +270,10 @@ declare global {
     ): () => void;
     onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
+  }
+
+  interface FreebuddySession {
+    logout(): void;
   }
 
   interface FreebuddySettings {
@@ -499,13 +505,28 @@ declare global {
     hasPassword: boolean;
   }
 
+  interface RemoteUser {
+    id: string;
+    username: string;
+    isOwner: boolean;
+    createdAt: number;
+  }
+
   interface FreebuddyRemote {
+    whoami(): Promise<RemoteUser | null>;
     getStatus(): Promise<RemoteStatus | null>;
     setEnabled(
       enabled: boolean
     ): Promise<{ status: RemoteStatus | null; initialPassword: string | null }>;
-    setPassword(plain: string): Promise<boolean>;
-    resetPassword(): Promise<string>;
+    listUsers(): Promise<RemoteUser[]>;
+    createUser(input: { username: string; password?: string }): Promise<{
+      user: RemoteUser;
+      password: string;
+    }>;
+    resetUserPassword(id: string): Promise<{ user: RemoteUser; password: string } | null>;
+    deleteUser(id: string): Promise<boolean>;
+    listUserRoots(userId: string): Promise<string[]>;
+    setUserRoots(args: { userId: string; roots: string[] }): Promise<string[]>;
   }
 
   interface FreebuddyApi {
@@ -527,6 +548,7 @@ declare global {
     feed: FreebuddyFeed;
     infoCards: FreebuddyInfoCards;
     window: FreebuddyWindow;
+    session?: FreebuddySession;
     updater: FreebuddyUpdater;
     shell: FreebuddyShell;
     remote: FreebuddyRemote;

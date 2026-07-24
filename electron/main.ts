@@ -12,7 +12,9 @@ import { handleDraftRequest } from "./draftProtocol.js";
 import { startPreviewServer } from "./previewServer.js";
 import { startWebUIServer } from "./webUIServer.js";
 import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
-import { ensureRemotePassword, setRemotePassword } from "./remoteAuth.js";
+import { ensureOwnerUser, getOwnerUser } from "./cli/users.js";
+import { backfillMissingOwners, bindConversationNotifier } from "./cli/conversations.js";
+import { migrateGlobalRootsToOwner } from "./cli/users.js";
 import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
 import { getSetting } from "./cli/settings.js";
@@ -283,6 +285,11 @@ app.whenReady().then(async () => {
     mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null
   );
   getDb();
+  const existingOwner = getOwnerUser();
+  if (existingOwner) {
+    backfillMissingOwners(existingOwner.id);
+    migrateGlobalRootsToOwner(existingOwner.id);
+  }
   setLocalInvokeWindowGetter(() =>
     mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
   );
@@ -290,18 +297,15 @@ app.whenReady().then(async () => {
     getSetting("remote.enabled") === "1" || process.env.FB_REMOTE === "1";
   if (remoteEnabled) {
     const customPw = process.env.FB_REMOTE_PASSWORD;
+    const { password } = ensureOwnerUser({
+      password: customPw && customPw.length >= 8 ? customPw : undefined
+    });
     if (customPw && customPw.length >= 8) {
-      setRemotePassword(customPw);
       console.log("[FreeBuddy] Remote access password (FB_REMOTE_PASSWORD):", customPw);
+    } else if (password) {
+      console.log("[FreeBuddy] Remote owner initial password:", password);
     } else {
-      const seeded = ensureRemotePassword();
-      if (seeded.isNew && seeded.password) {
-        console.log("[FreeBuddy] Remote access initial password:", seeded.password);
-      } else {
-        console.log(
-          "[FreeBuddy] Remote access enabled (password already set). Set FB_REMOTE_PASSWORD to reset it."
-        );
-      }
+      console.log("[FreeBuddy] Remote access enabled (owner already configured).");
     }
   }
   const distDir = path.join(__dirname, "..", "dist");
@@ -318,6 +322,11 @@ app.whenReady().then(async () => {
   seedBuiltinSkills();
   seedBuiltinWorkflowTeams();
   registerCliIpc();
+  bindConversationNotifier((conversationId) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      safeSendToWebContents(win.webContents, "messages://changed", { conversationId });
+    }
+  });
   registerUpdaterIpc();
   const appIcon = loadAppIcon();
   if (process.platform === "darwin" && app.dock && appIcon) {

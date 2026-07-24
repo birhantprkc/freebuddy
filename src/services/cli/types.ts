@@ -528,6 +528,8 @@ export interface Conversation {
   sourceAgentName?: string;
   sourceAdapter?: string;
   sourceBriefId?: string;
+  ownerId?: string | null;
+  ownerUsername?: string | null;
 }
 
 export type MessageRole = "user" | "assistant" | "system";
@@ -554,6 +556,7 @@ export interface ConversationMessage {
   roleLabel?: string;
   workflowRunId?: string;
   workflowStepRowId?: string;
+  authorUsername?: string | null;
   createdAt: string;
   updatedAt: string;
 }
