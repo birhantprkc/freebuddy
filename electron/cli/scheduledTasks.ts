@@ -1,4 +1,5 @@
 import { BrowserWindow, ipcMain, type WebContents } from "electron";
+import { registerHandler } from "../invokeRegistry.js";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import path from "node:path";
@@ -701,25 +702,25 @@ export function initializeScheduledTaskScheduler(
 }
 
 export function registerScheduledTaskIpc(): void {
-  ipcMain.handle("scheduledTasks:list", () => listScheduledTasks());
-  ipcMain.handle("scheduledTasks:listRuns", (_event, taskId: string) =>
+  registerHandler("scheduledTasks:list", () => listScheduledTasks());
+  registerHandler("scheduledTasks:listRuns", (_event, taskId: string) =>
     listScheduledTaskRuns(taskId)
   );
-  ipcMain.handle("scheduledTasks:listAgents", () =>
+  registerHandler("scheduledTasks:listAgents", () =>
     listCliMembers()
       .filter((member) => member.enabled !== false)
       .map((member) => ({ id: member.id, name: member.name, adapter: member.cli.adapter }))
   );
-  ipcMain.handle("scheduledTasks:create", (_event, input: ScheduledTaskInput) =>
+  registerHandler("scheduledTasks:create", (_event, input: ScheduledTaskInput) =>
     createScheduledTask(input)
   );
-  ipcMain.handle(
+  registerHandler(
     "scheduledTasks:update",
     (_event, args: { id: string; input: ScheduledTaskInput }) =>
       updateScheduledTask(args.id, args.input)
   );
-  ipcMain.handle("scheduledTasks:delete", (_event, id: string) => deleteScheduledTask(id));
-  ipcMain.handle("scheduledTasks:run", (event, id: string) => {
+  registerHandler("scheduledTasks:delete", (_event, id: string) => deleteScheduledTask(id));
+  registerHandler("scheduledTasks:run", (event, id: string) => {
     if (!getScheduledTask(id) || runningTaskIds.has(id)) return false;
     void runScheduledTask(id, event.sender);
     return true;

@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { registerHandler } from "../invokeRegistry.js";
 
 import { listCliMembers } from "./members.js";
 import {
@@ -60,11 +61,11 @@ function ensureRuntime(event: IpcMainInvokeEvent): WorkflowRuntime {
 export function registerWorkflowIpc() {
   recoverInterruptedWorkflowRuns();
 
-  ipcMain.handle("workflow:validate", (_e, plan: WorkflowPlan) =>
+  registerHandler("workflow:validate", (_e, plan: WorkflowPlan) =>
     validateWorkflowPlan(plan, workflowAgents())
   );
 
-  ipcMain.handle(
+  registerHandler(
     "workflow:previewReviewLoop",
     (_e, input: { goal: string; cwd?: string; targetPaths?: string[] }) => {
       const agents = workflowAgents();
@@ -88,7 +89,7 @@ export function registerWorkflowIpc() {
     }
   );
 
-  ipcMain.handle(
+  registerHandler(
     "workflow:coordinatorPrompt",
     (_e, input: { goal: string; cwd?: string; targetPaths?: string[] }) =>
       reviewLoopCoordinatorPrompt({
@@ -99,7 +100,7 @@ export function registerWorkflowIpc() {
       })
   );
 
-  ipcMain.handle(
+  registerHandler(
     "workflow:createRun",
     (event, input: { conversationId?: string; plan: WorkflowPlan }) => {
       const rt = ensureRuntime(event);
@@ -111,33 +112,33 @@ export function registerWorkflowIpc() {
     }
   );
 
-  ipcMain.handle("workflow:start", (event, runId: string) => {
+  registerHandler("workflow:start", (event, runId: string) => {
     void ensureRuntime(event).start(runId);
     return true;
   });
-  ipcMain.handle("workflow:pause", (event, runId: string) => {
+  registerHandler("workflow:pause", (event, runId: string) => {
     ensureRuntime(event).pause(runId);
     return true;
   });
-  ipcMain.handle("workflow:resume", (event, runId: string) => {
+  registerHandler("workflow:resume", (event, runId: string) => {
     void ensureRuntime(event).resume(runId);
     return true;
   });
-  ipcMain.handle("workflow:stop", (event, runId: string) => {
+  registerHandler("workflow:stop", (event, runId: string) => {
     ensureRuntime(event).stop(runId);
     return true;
   });
-  ipcMain.handle(
+  registerHandler(
     "workflow:retryStep",
     (event, args: { runId: string; stepRowId: string }) =>
       ensureRuntime(event).retryStep(args.runId, args.stepRowId)
   );
-  ipcMain.handle(
+  registerHandler(
     "workflow:approveGate",
     (event, args: { runId: string; phaseId: string }) =>
       ensureRuntime(event).approveGate(args.runId, args.phaseId)
   );
-  ipcMain.handle(
+  registerHandler(
     "workflow:requestGateChanges",
     (event, args: { runId: string; phaseId: string; feedback: string }) =>
       ensureRuntime(event).requestGateChanges(
@@ -146,24 +147,24 @@ export function registerWorkflowIpc() {
         args.feedback
       )
   );
-  ipcMain.handle("workflow:continueImplementReview", (event, runId: string) =>
+  registerHandler("workflow:continueImplementReview", (event, runId: string) =>
     ensureRuntime(event).continueImplementReview(runId)
   );
 
-  ipcMain.handle("workflow:getRun", (_e, runId: string) => getWorkflowRun(runId));
-  ipcMain.handle("workflow:listActiveRuns", () => listActiveWorkflowRuns());
-  ipcMain.handle("workflow:getSteps", (_e, runId: string) =>
+  registerHandler("workflow:getRun", (_e, runId: string) => getWorkflowRun(runId));
+  registerHandler("workflow:listActiveRuns", () => listActiveWorkflowRuns());
+  registerHandler("workflow:getSteps", (_e, runId: string) =>
     getWorkflowSteps(runId)
   );
-  ipcMain.handle(
+  registerHandler(
     "workflow:listRuns",
     (_e, conversationId: string) =>
       listWorkflowRunsByConversation(conversationId)
   );
 
-  ipcMain.handle("workflowTeams:list", () => listWorkflowTeams());
-  ipcMain.handle("workflowTeams:get", (_e, id: string) => getWorkflowTeam(id));
-  ipcMain.handle(
+  registerHandler("workflowTeams:list", () => listWorkflowTeams());
+  registerHandler("workflowTeams:get", (_e, id: string) => getWorkflowTeam(id));
+  registerHandler(
     "workflowTeams:create",
     (_e, input: UpsertWorkflowTeamInput) => {
       const validation = validateWorkflowTeam(
@@ -175,7 +176,7 @@ export function registerWorkflowIpc() {
       return { ok: true as const, team };
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "workflowTeams:update",
     (_e, args: { id: string; patch: UpdateWorkflowTeamPatch }) => {
       const existing = getWorkflowTeam(args.id);
@@ -200,16 +201,16 @@ export function registerWorkflowIpc() {
         : { ok: false as const, errors: ["team not found"] };
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "workflowTeams:delete",
     (_e, id: string) => deleteWorkflowTeam(id)
   );
-  ipcMain.handle("workflowTeams:seedBuiltins", () => {
+  registerHandler("workflowTeams:seedBuiltins", () => {
     seedBuiltinWorkflowTeams();
     return listWorkflowTeams();
   });
 
-  ipcMain.handle(
+  registerHandler(
     "workflow:previewTeamRun",
     (
       _e,
@@ -243,7 +244,7 @@ export function registerWorkflowIpc() {
     }
   );
 
-  ipcMain.handle(
+  registerHandler(
     "workflow:createTeamRun",
     (
       event,

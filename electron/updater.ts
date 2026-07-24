@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain } from "electron";
+import { registerHandler } from "./invokeRegistry.js";
 import electronUpdater from "electron-updater";
 import { APP_VERSION } from "./app-meta.js";
 import { safeSendToWebContents } from "./cli/ipcSend.js";
@@ -90,9 +91,9 @@ export function initAutoUpdater() {
 }
 
 export function registerUpdaterIpc() {
-  ipcMain.handle("app:getVersion", () => APP_VERSION);
+  registerHandler("app:getVersion", () => APP_VERSION);
 
-  ipcMain.handle("updater:check", async () => {
+  registerHandler("updater:check", async () => {
     bindAutoUpdater();
     try {
       const result = await autoUpdater.checkForUpdates();
@@ -106,7 +107,7 @@ export function registerUpdaterIpc() {
     }
   });
 
-  ipcMain.handle("updater:download", async () => {
+  registerHandler("updater:download", async () => {
     bindAutoUpdater();
     try {
       await autoUpdater.downloadUpdate();
@@ -116,7 +117,7 @@ export function registerUpdaterIpc() {
     }
   });
 
-  ipcMain.handle("updater:quitAndInstall", () => {
+  registerHandler("updater:quitAndInstall", () => {
     try {
       autoUpdater.quitAndInstall(false, true);
       return true;

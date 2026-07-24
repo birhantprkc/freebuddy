@@ -12,7 +12,28 @@
     "install": "安装",
     "installing": "安装中…",
     "saving": "保存中…",
-    "saved": "已保存"
+    "saved": "已保存",
+    "copy": "复制",
+    "copied": "已复制"
+  },
+  "remote": {
+    "title": "远程访问",
+    "enableLabel": "允许远程访问",
+    "enableDescription": "在同一网络下，用手机、平板或其他电脑的浏览器访问 FreeBuddy。",
+    "listeningOn": "正在监听 {{host}}:{{port}}",
+    "accessTitle": "访问地址",
+    "lanIpHint": "局域网 IP：{{ip}}。本机可使用 http://127.0.0.1:{{port}}。",
+    "passwordTitle": "密码",
+    "passwordSetHint": "已设置密码。可在下方修改或重置。",
+    "noPasswordHint": "尚未设置密码。请在下方设置，或重置以生成随机密码。",
+    "newPasswordPlaceholder": "新密码",
+    "setPassword": "设置",
+    "resetPassword": "重置",
+    "passwordMinLength": "至少 8 个字符。",
+    "passwordGenerated": "已生成新密码。请立即复制——它不会再次显示。",
+    "passwordUpdated": "密码已更新。",
+    "passwordTooShort": "密码至少需要 8 个字符。",
+    "desktopOnly": "远程访问只能在桌面端配置。"
   },
   "status": {
     "running": "运行中",
@@ -742,6 +763,7 @@
       "plugins": "插件",
       "workflowTeams": "工作流团队",
       "feed": "信息卡片",
+      "remote": "远程",
       "about": "关于"
     },
     "cli": {

@@ -454,6 +454,13 @@ const shellApi = {
     ipcRenderer.invoke("shell:showItemInFolder", targetPath) as Promise<boolean>
 };
 
+const remote = {
+  getStatus: () => ipcRenderer.invoke("remote:getStatus"),
+  setEnabled: (enabled: boolean) => ipcRenderer.invoke("remote:setEnabled", enabled),
+  setPassword: (plain: string) => ipcRenderer.invoke("remote:setPassword", plain),
+  resetPassword: () => ipcRenderer.invoke("remote:resetPassword")
+};
+
 contextBridge.exposeInMainWorld("freebuddy", {
   platform: process.platform,
   arch: process.arch,
@@ -474,5 +481,6 @@ contextBridge.exposeInMainWorld("freebuddy", {
   infoCards,
   window,
   updater,
-  shell: shellApi
+  shell: shellApi,
+  remote
 });

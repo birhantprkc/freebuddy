@@ -12,7 +12,9 @@
     "install": "Install",
     "installing": "Installing…",
     "saving": "Saving…",
-    "saved": "Saved"
+    "saved": "Saved",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "status": {
     "running": "Running",
@@ -23,6 +25,25 @@
     "idle": "Idle",
     "ready": "Ready",
     "sent": "Sent"
+  },
+  "remote": {
+    "title": "Remote Access",
+    "enableLabel": "Allow remote access",
+    "enableDescription": "Access FreeBuddy from a browser on your phone, tablet, or other computers on the same network.",
+    "listeningOn": "Listening on {{host}}:{{port}}",
+    "accessTitle": "Access address",
+    "lanIpHint": "LAN IP: {{ip}}. On this machine use http://127.0.0.1:{{port}}.",
+    "passwordTitle": "Password",
+    "passwordSetHint": "A password is set. Use the fields below to change or reset it.",
+    "noPasswordHint": "No password set yet. Set one below or reset to generate a random one.",
+    "newPasswordPlaceholder": "New password",
+    "setPassword": "Set",
+    "resetPassword": "Reset",
+    "passwordMinLength": "Minimum 8 characters.",
+    "passwordGenerated": "New password generated. Copy it now — it won't be shown again.",
+    "passwordUpdated": "Password updated.",
+    "passwordTooShort": "Password must be at least 8 characters.",
+    "desktopOnly": "Remote access can only be configured from the desktop app."
   },
   "general": {
     "languageLabel": "Language",
@@ -756,6 +777,7 @@
       "plugins": "Plugins",
       "workflowTeams": "Workflow Teams",
       "feed": "Information Cards",
+      "remote": "Remote",
       "about": "About"
     },
     "cli": {

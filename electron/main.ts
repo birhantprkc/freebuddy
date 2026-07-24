@@ -10,8 +10,13 @@ import { safeSendToWebContents } from "./cli/ipcSend.js";
 import { handleFreebuddyFileRequest } from "./freebuddyFileProtocol.js";
 import { handleDraftRequest } from "./draftProtocol.js";
 import { startPreviewServer } from "./previewServer.js";
+import { startWebUIServer } from "./webUIServer.js";
+import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
+import { ensureRemotePassword, setRemotePassword } from "./remoteAuth.js";
 import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
+import { getSetting } from "./cli/settings.js";
+import { initRemoteControl } from "./cli/remoteControl.js";
 import { cleanupOrphanManagedAttachments } from "./cli/attachments.js";
 import { seedBuiltinWorkflowTeams } from "./cli/workflowTeams.js";
 import { seedBuiltinSkills } from "./cli/skills.js";
@@ -278,6 +283,35 @@ app.whenReady().then(async () => {
     mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null
   );
   getDb();
+  setLocalInvokeWindowGetter(() =>
+    mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  );
+  const remoteEnabled =
+    getSetting("remote.enabled") === "1" || process.env.FB_REMOTE === "1";
+  if (remoteEnabled) {
+    const customPw = process.env.FB_REMOTE_PASSWORD;
+    if (customPw && customPw.length >= 8) {
+      setRemotePassword(customPw);
+      console.log("[FreeBuddy] Remote access password (FB_REMOTE_PASSWORD):", customPw);
+    } else {
+      const seeded = ensureRemotePassword();
+      if (seeded.isNew && seeded.password) {
+        console.log("[FreeBuddy] Remote access initial password:", seeded.password);
+      } else {
+        console.log(
+          "[FreeBuddy] Remote access enabled (password already set). Set FB_REMOTE_PASSWORD to reset it."
+        );
+      }
+    }
+  }
+  const distDir = path.join(__dirname, "..", "dist");
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  void startWebUIServer({
+    allowRemote: remoteEnabled,
+    distDir,
+    devServerUrl
+  });
+  initRemoteControl({ distDir, devServerUrl });
   initializeAgentUsageReconciler();
   initializeTelemetry();
   cleanupOrphanManagedAttachments();

@@ -489,6 +489,25 @@ declare global {
     showItemInFolder(targetPath: string): Promise<boolean>;
   }
 
+  interface RemoteStatus {
+    running: boolean;
+    enabled: boolean;
+    port: number;
+    host: string;
+    lanIp: string;
+    accessUrl: string;
+    hasPassword: boolean;
+  }
+
+  interface FreebuddyRemote {
+    getStatus(): Promise<RemoteStatus | null>;
+    setEnabled(
+      enabled: boolean
+    ): Promise<{ status: RemoteStatus | null; initialPassword: string | null }>;
+    setPassword(plain: string): Promise<boolean>;
+    resetPassword(): Promise<string>;
+  }
+
   interface FreebuddyApi {
     platform: string;
     arch: string;
@@ -510,6 +529,7 @@ declare global {
     window: FreebuddyWindow;
     updater: FreebuddyUpdater;
     shell: FreebuddyShell;
+    remote: FreebuddyRemote;
   }
 
   interface Window {

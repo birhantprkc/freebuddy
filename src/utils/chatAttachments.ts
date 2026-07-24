@@ -212,5 +212,9 @@ export function composeMessageWithAttachments(
 export function attachmentPreviewUrl(filePath: string): string {
   const normalized = filePath.trim().replace(/\\/g, "/");
   if (!normalized) return "";
-  return `freebuddy-file://open?path=${encodeURIComponent(normalized)}`;
+  const encoded = encodeURIComponent(normalized);
+  if (typeof window !== "undefined" && window.freebuddy?.platform === "web") {
+    return `/api/attachment?path=${encoded}`;
+  }
+  return `freebuddy-file://open?path=${encoded}`;
 }

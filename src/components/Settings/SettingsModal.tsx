@@ -7,8 +7,9 @@ import { GeneralTab } from "./GeneralTab";
 import { InfoCardsTab } from "./InfoCardsTab";
 import { SkillsTab } from "./SkillsTab";
 import { PluginsTab } from "./PluginsTab";
+import { RemoteTab } from "./RemoteTab";
 
-export type SettingsTab = "general" | "cli" | "skills" | "plugins" | "feed" | "about";
+export type SettingsTab = "general" | "cli" | "skills" | "plugins" | "feed" | "remote" | "about";
 
 export const SETTINGS_TABS: { key: SettingsTab; labelKey: string }[] = [
   { key: "cli", labelKey: "settings.tabs.cli" },
@@ -16,6 +17,7 @@ export const SETTINGS_TABS: { key: SettingsTab; labelKey: string }[] = [
   { key: "plugins", labelKey: "settings.tabs.plugins" },
   { key: "feed", labelKey: "settings.tabs.feed" },
   { key: "general", labelKey: "settings.tabs.general" },
+  { key: "remote", labelKey: "settings.tabs.remote" },
   { key: "about", labelKey: "settings.tabs.about" }
 ];
 
@@ -91,6 +93,7 @@ function SettingsContent({
       {activeTab === "skills" && <SkillsTab />}
       {activeTab === "plugins" && <PluginsTab />}
       {activeTab === "feed" && <InfoCardsTab />}
+      {activeTab === "remote" && <RemoteTab />}
       {activeTab === "about" && <AboutTab />}
     </>
   );

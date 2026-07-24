@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, dialog, shell, type IpcMainInvokeEvent } from "electron";
+import { registerHandler } from "../invokeRegistry.js";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -275,17 +276,17 @@ function attachmentCandidate(filePath: string) {
 
 export function registerCliIpc() {
   recoverInterruptedMessages();
-  ipcMain.handle("plugins:list", (_event, agent: unknown) =>
+  registerHandler("plugins:list", (_event, agent: unknown) =>
     listNativePlugins(nativePluginAgent(agent))
   );
-  ipcMain.handle("plugins:install", (_event, args: Record<string, unknown> = {}) =>
+  registerHandler("plugins:install", (_event, args: Record<string, unknown> = {}) =>
     installNativePlugin(
       nativePluginAgent(args.agent),
       requiredPluginString(args.pluginId, "Plugin id"),
       nativePluginScope(args.scope)
     )
   );
-  ipcMain.handle("plugins:update", (_event, args: Record<string, unknown> = {}) =>
+  registerHandler("plugins:update", (_event, args: Record<string, unknown> = {}) =>
     updateNativePlugin(
       nativePluginAgent(args.agent),
       requiredPluginString(args.pluginId, "Plugin id"),
@@ -293,14 +294,14 @@ export function registerCliIpc() {
       nativePluginScope(args.scope)
     )
   );
-  ipcMain.handle("plugins:uninstall", (_event, args: Record<string, unknown> = {}) =>
+  registerHandler("plugins:uninstall", (_event, args: Record<string, unknown> = {}) =>
     uninstallNativePlugin(
       nativePluginAgent(args.agent),
       requiredPluginString(args.pluginId, "Plugin id"),
       nativePluginScope(args.scope)
     )
   );
-  ipcMain.handle("plugins:addMarketplace", (_event, args: Record<string, unknown> = {}) =>
+  registerHandler("plugins:addMarketplace", (_event, args: Record<string, unknown> = {}) =>
     addNativePluginMarketplace(
       nativePluginAgent(args.agent),
       requiredPluginString(args.source, "Marketplace source"),
@@ -308,35 +309,35 @@ export function registerCliIpc() {
       nativePluginScope(args.scope)
     )
   );
-  ipcMain.handle("plugins:updateMarketplace", (_event, args: Record<string, unknown> = {}) =>
+  registerHandler("plugins:updateMarketplace", (_event, args: Record<string, unknown> = {}) =>
     updateNativePluginMarketplace(
       nativePluginAgent(args.agent),
       typeof args.marketplace === "string" ? args.marketplace : undefined
     )
   );
-  ipcMain.handle("plugins:removeMarketplace", (_event, args: Record<string, unknown> = {}) =>
+  registerHandler("plugins:removeMarketplace", (_event, args: Record<string, unknown> = {}) =>
     removeNativePluginMarketplace(
       nativePluginAgent(args.agent),
       requiredPluginString(args.marketplace, "Marketplace")
     )
   );
-  ipcMain.handle("skills:list", () => listSkills());
-  ipcMain.handle("skills:import", (_event, sourcePath: string) =>
+  registerHandler("skills:list", () => listSkills());
+  registerHandler("skills:import", (_event, sourcePath: string) =>
     importSkills(sourcePath)
   );
-  ipcMain.handle("skills:setEnabled", (_event, id: string, enabled: boolean) =>
+  registerHandler("skills:setEnabled", (_event, id: string, enabled: boolean) =>
     setSkillEnabled(id, enabled)
   );
-  ipcMain.handle("skills:setTrusted", (_event, id: string, trusted: unknown) => {
+  registerHandler("skills:setTrusted", (_event, id: string, trusted: unknown) => {
     if (typeof id !== "string" || !id.trim()) return undefined;
     if (trusted !== true && trusted !== false) {
       throw new Error("skills:setTrusted requires a strict boolean");
     }
     return setSkillTrusted(id.trim(), trusted);
   });
-  ipcMain.handle("skills:delete", (_event, id: string) => deleteSkill(id));
-  ipcMain.handle("skills:read", (_event, id: string) => readSkillMarkdown(id));
-  ipcMain.handle("skills:selectDirectory", async (event) => {
+  registerHandler("skills:delete", (_event, id: string) => deleteSkill(id));
+  registerHandler("skills:read", (_event, id: string) => readSkillMarkdown(id));
+  registerHandler("skills:selectDirectory", async (event) => {
     const win = senderWindow(event);
     if (!win) return null;
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -344,7 +345,7 @@ export function registerCliIpc() {
     });
     return canceled ? null : filePaths[0] ?? null;
   });
-  ipcMain.handle("skills:selectArchive", async (event) => {
+  registerHandler("skills:selectArchive", async (event) => {
     const win = senderWindow(event);
     if (!win) return null;
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -353,13 +354,13 @@ export function registerCliIpc() {
     });
     return canceled ? null : filePaths[0] ?? null;
   });
-  ipcMain.handle("skills:reveal", (_event, id: string) => {
+  registerHandler("skills:reveal", (_event, id: string) => {
     const skill = listSkills().find((entry) => entry.id === id);
     if (!skill) return false;
     shell.showItemInFolder(path.join(skill.rootPath, "SKILL.md"));
     return true;
   });
-  ipcMain.handle("shell:showItemInFolder", (_event, targetPath: unknown) => {
+  registerHandler("shell:showItemInFolder", (_event, targetPath: unknown) => {
     if (typeof targetPath !== "string" || !targetPath.trim()) return false;
     const resolved = path.resolve(targetPath.trim());
     if (!path.isAbsolute(resolved)) return false;
@@ -367,13 +368,13 @@ export function registerCliIpc() {
     shell.showItemInFolder(resolved);
     return true;
   });
-  ipcMain.handle("skills:marketProviders", () => listSkillMarketProviders());
-  ipcMain.handle("skills:getMarketProvider", () => getSkillMarketProvider());
-  ipcMain.handle(
+  registerHandler("skills:marketProviders", () => listSkillMarketProviders());
+  registerHandler("skills:getMarketProvider", () => getSkillMarketProvider());
+  registerHandler(
     "skills:setMarketProvider",
     (_event, provider: SkillMarketProviderId) => setSkillMarketProvider(provider)
   );
-  ipcMain.handle(
+  registerHandler(
     "skills:searchMarket",
     (
       _event,
@@ -391,15 +392,15 @@ export function registerCliIpc() {
         limit: typeof args.limit === "number" ? args.limit : undefined
       })
   );
-  ipcMain.handle("skills:installFromMarket", (_event, request: unknown) =>
+  registerHandler("skills:installFromMarket", (_event, request: unknown) =>
     installSkillFromMarket(request)
   );
-  ipcMain.handle("skills:openMarketUrl", async (_event, url: string) => {
+  registerHandler("skills:openMarketUrl", async (_event, url: string) => {
     if (typeof url !== "string" || !isAllowedSkillMarketHomepage(url)) return false;
     await shell.openExternal(url);
     return true;
   });
-  ipcMain.handle(
+  registerHandler(
     "skills:resolveMarketHomepage",
     (
       _event,
@@ -426,7 +427,7 @@ export function registerCliIpc() {
     }
   );
 
-  ipcMain.handle(
+  registerHandler(
     "cli:searchWorkspaceFiles",
     (
       _event,
@@ -439,7 +440,7 @@ export function registerCliIpc() {
     }
   );
 
-  ipcMain.handle("cli:selectDirectory", async (event) => {
+  registerHandler("cli:selectDirectory", async (event) => {
     const win = senderWindow(event);
     if (!win) return null;
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -449,7 +450,7 @@ export function registerCliIpc() {
     return filePaths[0] ?? null;
   });
 
-  ipcMain.handle("cli:selectAttachments", async (event) => {
+  registerHandler("cli:selectAttachments", async (event) => {
     const win = senderWindow(event);
     if (!win) return [];
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -471,17 +472,17 @@ export function registerCliIpc() {
       .map(attachmentCandidate);
   });
 
-  ipcMain.handle(
+  registerHandler(
     "cli:prepareAttachmentFiles",
     (_e, payloads: PrepareAttachmentPayload[]) =>
       prepareAttachmentFiles(Array.isArray(payloads) ? payloads : [])
   );
 
-  ipcMain.handle("cli:discardManagedAttachment", (_e, filePath: string) =>
+  registerHandler("cli:discardManagedAttachment", (_e, filePath: string) =>
     discardManagedAttachment(typeof filePath === "string" ? filePath : "")
   );
 
-  ipcMain.handle(
+  registerHandler(
     "cli:discardManagedAttachmentIfUnreferenced",
     (_e, filePath: string) =>
       discardManagedAttachmentIfUnreferenced(typeof filePath === "string" ? filePath : "")
@@ -494,18 +495,18 @@ export function registerCliIpc() {
     );
   });
 
-  ipcMain.handle("cli:listAdapters", () => cliAdapterDefinitions);
-  ipcMain.handle("cli:usageSummary", (_event, rawPeriod: unknown) => {
+  registerHandler("cli:listAdapters", () => cliAdapterDefinitions);
+  registerHandler("cli:usageSummary", (_event, rawPeriod: unknown) => {
     const period = normalizeAgentUsagePeriod(rawPeriod);
     return getAgentUsageSummary(period);
   });
-  ipcMain.handle("cli:refreshUsage", async (_event, rawPeriod: unknown) => {
+  registerHandler("cli:refreshUsage", async (_event, rawPeriod: unknown) => {
     const period = normalizeAgentUsagePeriod(rawPeriod);
     await reconcileAgentUsage(period);
     return getAgentUsageSummary(period);
   });
-  ipcMain.handle("cli:cursorUsageStatus", () => getCursorUsageStatus());
-  ipcMain.handle("cli:connectCursorUsage", (_event, rawInput: unknown) => {
+  registerHandler("cli:cursorUsageStatus", () => getCursorUsageStatus());
+  registerHandler("cli:connectCursorUsage", (_event, rawInput: unknown) => {
     const input = rawInput && typeof rawInput === "object"
       ? rawInput as Record<string, unknown>
       : {};
@@ -514,27 +515,27 @@ export function registerCliIpc() {
       accountName: typeof input.accountName === "string" ? input.accountName : undefined
     });
   });
-  ipcMain.handle("cli:disconnectCursorUsage", () => disconnectCursorUsage());
-  ipcMain.handle("cli:openCursorUsageSettings", () =>
+  registerHandler("cli:disconnectCursorUsage", () => disconnectCursorUsage());
+  registerHandler("cli:openCursorUsageSettings", () =>
     shell.openExternal("https://www.cursor.com/settings")
   );
 
-  ipcMain.handle("cli:listOverrides", () => listOverrides());
-  ipcMain.handle(
+  registerHandler("cli:listOverrides", () => listOverrides());
+  registerHandler(
     "cli:upsertOverride",
     (_e, override: CLIExecutorOverride) => upsertOverride(override)
   );
-  ipcMain.handle("cli:resetOverride", (_e, id: string) => resetOverride(id));
+  registerHandler("cli:resetOverride", (_e, id: string) => resetOverride(id));
 
-  ipcMain.handle("cli:listRuntimes", () => listRuntimes());
-  ipcMain.handle("cli:codexUsage", () => readCodexUsage());
-  ipcMain.handle("cli:probeAuthentication", (_e, args: CliAuthControlArgs) =>
+  registerHandler("cli:listRuntimes", () => listRuntimes());
+  registerHandler("cli:codexUsage", () => readCodexUsage());
+  registerHandler("cli:probeAuthentication", (_e, args: CliAuthControlArgs) =>
     probeAcpAuthentication(args)
   );
-  ipcMain.handle("cli:logout", (_e, args: CliAuthControlArgs) =>
+  registerHandler("cli:logout", (_e, args: CliAuthControlArgs) =>
     logoutAcpAgent(args)
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:check",
     async (
       _e,
@@ -546,10 +547,10 @@ export function registerCliIpc() {
       }
     ) => cliCheck(args.adapter, args.binary, args.env, args.runtimeAdapter)
   );
-  ipcMain.handle("cli:install", async (_e, args: { adapter: string; command: string }) =>
+  registerHandler("cli:install", async (_e, args: { adapter: string; command: string }) =>
     cliInstall(args.command, args.adapter)
   );
-  ipcMain.handle("cli:installStream", async (event, args: {
+  registerHandler("cli:installStream", async (event, args: {
     adapter: string;
     command: string;
     requestId: string;
@@ -562,7 +563,7 @@ export function registerCliIpc() {
     )
   );
 
-  ipcMain.handle("cli:run", async (event, args: CliRunArgs) => {
+  registerHandler("cli:run", async (event, args: CliRunArgs) => {
     const win = senderWindow(event);
     if (!win) throw new Error("no sender window");
     const {
@@ -588,24 +589,24 @@ export function registerCliIpc() {
     void cliRun(win.webContents, runArgs);
     return { sessionId: args.sessionId };
   });
-  ipcMain.handle(
+  registerHandler(
     "cli:getCachedSessionConfigOptions",
     (_event, args: SessionConfigProbeInput) =>
       getCachedSessionConfigOptions(args)
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:inspectSessionConfigOptions",
     (_event, args: SessionConfigProbeInput) =>
       inspectSessionConfigOptions(args)
   );
-  ipcMain.handle("cli:kill", (_e, sessionId: string) => cliKill(sessionId));
-  ipcMain.handle(
+  registerHandler("cli:kill", (_e, sessionId: string) => cliKill(sessionId));
+  registerHandler(
     "draft-tool:resolve",
     (event, resolution: DraftToolResolution) =>
       resolveDraftToolRequest(event.sender, resolution)
   );
 
-  ipcMain.handle(
+  registerHandler(
     "cli:permissionDecision",
     (
       _e,
@@ -627,7 +628,7 @@ export function registerCliIpc() {
     }
   );
 
-  ipcMain.handle(
+  registerHandler(
     "cli:authenticationDecision",
     (
       _e,
@@ -649,33 +650,33 @@ export function registerCliIpc() {
     }
   );
 
-  ipcMain.handle(
+  registerHandler(
     "cli:authenticationTerminalInput",
     (_e, args: { sessionId: string; requestId: string; data: string }) =>
       writeAuthenticationTerminal(args.sessionId, args.requestId, args.data)
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:authenticationTerminalCancel",
     (_e, args: { sessionId: string; requestId: string }) =>
       cancelAuthenticationTerminal(args.sessionId, args.requestId)
   );
 
-  ipcMain.handle("cli:listTasks", (_e, args: CliTaskListArgs = {}) =>
+  registerHandler("cli:listTasks", (_e, args: CliTaskListArgs = {}) =>
     listTasks(args)
   );
-  ipcMain.handle("cli:getTask", (_e, id: string) => getTask(id));
-  ipcMain.handle(
+  registerHandler("cli:getTask", (_e, id: string) => getTask(id));
+  registerHandler(
     "cli:readTaskLog",
     (_e, args: { taskId: string; startLine?: number; limit?: number; maxBytes?: number }) =>
       readTaskLog(args.taskId, args)
   );
 
-  ipcMain.handle(
+  registerHandler(
     "cli:getToolSession",
     (_e, args: { agentId: string; workspacePath: string }) =>
       getToolSession(args.agentId, args.workspacePath)
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:saveToolSession",
     (
       _e,
@@ -696,17 +697,17 @@ export function registerCliIpc() {
       )
   );
 
-  ipcMain.handle("cli:resolveDraftEntry", (_e, cwd: string) =>
+  registerHandler("cli:resolveDraftEntry", (_e, cwd: string) =>
     resolveDraftEntry(cwd ?? "")
   );
 
-  ipcMain.handle(
+  registerHandler(
     "cli:readDraftMarkdown",
     (_e, args: { cwd?: string; rel?: string }) =>
       readDraftMarkdown(args?.cwd ?? "", args?.rel ?? "")
   );
 
-  ipcMain.handle("cli:openDraftExternal", async (_e, url: string) => {
+  registerHandler("cli:openDraftExternal", async (_e, url: string) => {
     if (!url) return false;
     if (/^https?:\/\//i.test(url)) {
       await shell.openExternal(url);
@@ -725,7 +726,7 @@ export function registerCliIpc() {
     return true;
   });
 
-  ipcMain.handle(
+  registerHandler(
     "cli:ensureAgentGuides",
     (
       _e,
@@ -738,11 +739,11 @@ export function registerCliIpc() {
 
   // ---- Conversations -----------------------------------------------------
 
-  ipcMain.handle("cli:listConversations", (_e, args: ListConversationsArgs = {}) =>
+  registerHandler("cli:listConversations", (_e, args: ListConversationsArgs = {}) =>
     listConversations(args)
   );
-  ipcMain.handle("cli:getConversation", (_e, id: string) => getConversation(id));
-  ipcMain.handle(
+  registerHandler("cli:getConversation", (_e, id: string) => getConversation(id));
+  registerHandler(
     "cli:createConversation",
     (_e, input: CreateConversationInput) => {
       const conversation = createConversation(input);
@@ -754,7 +755,7 @@ export function registerCliIpc() {
       return conversation;
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:previewHandoffBrief",
     (_e, input: PreviewHandoffBriefInput): PreviewHandoffBriefResult => {
       const conversation = getConversation(input.sourceConversationId);
@@ -769,7 +770,7 @@ export function registerCliIpc() {
       }
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:transferConversation",
     (_e, input: TransferConversationInput): TransferConversationResult => {
       const source = getConversation(input.sourceConversationId);
@@ -853,7 +854,7 @@ export function registerCliIpc() {
       };
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:createConversationShare",
     (
       _e,
@@ -897,7 +898,7 @@ export function registerCliIpc() {
       }
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:attachConversationShares",
     (
       _e,
@@ -912,12 +913,12 @@ export function registerCliIpc() {
       );
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:listConversationContextReferences",
     (_e, conversationId: string) =>
       listConversationContextReferences(conversationId)
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:removeConversationContextReference",
     (
       _e,
@@ -928,7 +929,7 @@ export function registerCliIpc() {
         input.referenceId
       )
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:renameConversation",
     (
       _e,
@@ -939,17 +940,17 @@ export function registerCliIpc() {
       }
     ) => renameConversation(args.id, args.title, args.titleSource)
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:updateConversationAgentName",
     (_e, args: { agentId: string; agentName: string }) =>
       updateConversationAgentName(args.agentId, args.agentName)
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:archiveConversation",
     (_e, args: { id: string; archived: boolean }) =>
       archiveConversation(args.id, args.archived)
   );
-  ipcMain.handle("cli:deleteConversation", (_e, id: string) => {
+  registerHandler("cli:deleteConversation", (_e, id: string) => {
     const transcriptPath = getHandoffBriefByTarget(id)?.transcript?.path;
     deleteConversation(id);
     deleteHandoffTranscriptSnapshot(getDataDir(), transcriptPath);
@@ -958,13 +959,13 @@ export function registerCliIpc() {
     }
   });
 
-  ipcMain.handle(
+  registerHandler(
     "cli:setConversationApprovalMode",
     (_e, args: { id: string; approvalMode: "auto" | "ask" | null }) =>
       setConversationApprovalMode(args.id, args.approvalMode)
   );
 
-  ipcMain.handle(
+  registerHandler(
     "cli:setConversationConfigOptionOverrides",
     (
       _e,
@@ -974,27 +975,27 @@ export function registerCliIpc() {
       return getConversation(args.id);
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "cli:setConversationSkills",
     (_e, args: { id: string; skillIds: string[] }) =>
       setConversationSkills(args.id, Array.isArray(args.skillIds) ? args.skillIds : [])
   );
 
-  ipcMain.handle("cli:listMessages", (_e, conversationId: string) =>
+  registerHandler("cli:listMessages", (_e, conversationId: string) =>
     listMessages(conversationId)
   );
-  ipcMain.handle("cli:listMessage", (_e, id: string) =>
+  registerHandler("cli:listMessage", (_e, id: string) =>
     listMessage(id)
   );
-  ipcMain.handle("cli:appendMessage", (_e, input: AppendMessageInput) =>
+  registerHandler("cli:appendMessage", (_e, input: AppendMessageInput) =>
     appendMessage(input)
   );
-  ipcMain.handle("cli:updateMessage", (_e, input: UpdateMessageInput) =>
+  registerHandler("cli:updateMessage", (_e, input: UpdateMessageInput) =>
     updateMessage(input)
   );
 
-  ipcMain.handle("settings:get", (_e, key: string) => getSetting(key));
-  ipcMain.handle("settings:set", (_e, args: { key: string; value: string }) => {
+  registerHandler("settings:get", (_e, key: string) => getSetting(key));
+  registerHandler("settings:set", (_e, args: { key: string; value: string }) => {
     if (args.key === "telemetry.enabled") {
       setTelemetryEnabled(args.value === "true");
       return;
@@ -1008,46 +1009,46 @@ export function registerCliIpc() {
     }
   });
 
-  ipcMain.handle("feed:listSources", () => listFeedSources());
-  ipcMain.handle("feed:addSource", (_e, input: AddFeedSourceInput) =>
+  registerHandler("feed:listSources", () => listFeedSources());
+  registerHandler("feed:addSource", (_e, input: AddFeedSourceInput) =>
     addFeedSource(input)
   );
-  ipcMain.handle("feed:updateSource", (_e, input: UpdateFeedSourceInput) =>
+  registerHandler("feed:updateSource", (_e, input: UpdateFeedSourceInput) =>
     updateFeedSource(input)
   );
-  ipcMain.handle("feed:deleteSource", (_e, id: string) =>
+  registerHandler("feed:deleteSource", (_e, id: string) =>
     deleteFeedSource(id)
   );
-  ipcMain.handle("feed:listItems", (_e, args: { limit?: number; offset?: number } = {}) =>
+  registerHandler("feed:listItems", (_e, args: { limit?: number; offset?: number } = {}) =>
     listFeedItems(args)
   );
-  ipcMain.handle("feed:refreshSource", (_e, id: string) =>
+  registerHandler("feed:refreshSource", (_e, id: string) =>
     refreshFeedSource(id)
   );
-  ipcMain.handle("feed:refreshAll", () => refreshAllFeedSources());
-  ipcMain.handle("feed:markInterpreted", (_e, id: string) =>
+  registerHandler("feed:refreshAll", () => refreshAllFeedSources());
+  registerHandler("feed:markInterpreted", (_e, id: string) =>
     markFeedItemInterpreted(id)
   );
 
-  ipcMain.handle("infoCards:list", () => listInfoCards());
-  ipcMain.handle("infoCards:create", (_e, input: CreateInfoCardInput) =>
+  registerHandler("infoCards:list", () => listInfoCards());
+  registerHandler("infoCards:create", (_e, input: CreateInfoCardInput) =>
     createInfoCard(input)
   );
-  ipcMain.handle("infoCards:update", (_e, input: UpdateInfoCardInput) =>
+  registerHandler("infoCards:update", (_e, input: UpdateInfoCardInput) =>
     updateInfoCard(input)
   );
-  ipcMain.handle("infoCards:delete", (_e, id: string) => deleteInfoCard(id));
-  ipcMain.handle("infoCards:reorder", (_e, ids: string[]) =>
+  registerHandler("infoCards:delete", (_e, id: string) => deleteInfoCard(id));
+  registerHandler("infoCards:reorder", (_e, ids: string[]) =>
     reorderInfoCards(ids)
   );
-  ipcMain.handle("infoCards:snapshot", (_e, id: string) =>
+  registerHandler("infoCards:snapshot", (_e, id: string) =>
     getInfoCardSnapshot(id)
   );
-  ipcMain.handle("infoCards:refresh", (_e, id: string, timeZone?: string) =>
+  registerHandler("infoCards:refresh", (_e, id: string, timeZone?: string) =>
     refreshInfoCard(id, timeZone)
   );
-  ipcMain.handle("infoCards:marketProvider", () => getMarketProviderConfig());
-  ipcMain.handle("infoCards:searchMarketSymbols", (_e, query: string) =>
+  registerHandler("infoCards:marketProvider", () => getMarketProviderConfig());
+  registerHandler("infoCards:searchMarketSymbols", (_e, query: string) =>
     searchMarketSymbols(query)
   );
 
