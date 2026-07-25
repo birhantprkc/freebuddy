@@ -67,7 +67,8 @@ const REMOTE_BLOCKED_CHANNELS = new Set<string>([
   "remote:resetUserPassword",
   "remote:deleteUser",
   "remote:listUserRoots",
-  "remote:setUserRoots"
+  "remote:setUserRoots",
+  "remote:getQrLogin"
 ]);
 
 export function isChannelRemoteCallable(channel: string): boolean {

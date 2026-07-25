@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
+import QRCode from "qrcode";
 
 export function RemoteTab() {
   const { t } = useTranslation();
@@ -14,6 +15,7 @@ export function RemoteTab() {
   const [roots, setRoots] = useState<string[]>([]);
   const [rootsUserId, setRootsUserId] = useState<string>("");
   const [newRoot, setNewRoot] = useState("");
+  const [qr, setQr] = useState<{ url: string; dataUrl: string; expiresAt: number } | null>(null);
 
   const isWeb = window.freebuddy?.platform === "web";
 
@@ -130,6 +132,23 @@ export function RemoteTab() {
     }
   };
 
+  const handleShowQr = async () => {
+    setBusy(true);
+    try {
+      const res = await window.freebuddy!.remote!.getQrLogin();
+      if (!res) {
+        flash(t("remote.qrUnavailable"));
+        return;
+      }
+      const dataUrl = await QRCode.toDataURL(res.url, { width: 240, margin: 1 });
+      setQr({ url: res.url, dataUrl, expiresAt: Date.now() + res.expiresIn * 1000 });
+    } catch (e) {
+      flash(String((e as Error)?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const persistRoots = async (next: string[]) => {
     if (!rootsUserId) return;
     try {
@@ -232,6 +251,37 @@ export function RemoteTab() {
           )}
         </div>
       </section>
+
+      {enabled && status?.running && (
+        <section className="settings-section">
+          <h3>{t("remote.qrTitle")}</h3>
+          <p className="settings-hint">{t("remote.qrHint")}</p>
+          {qr ? (
+            <div className="remote-qr-card">
+              <img src={qr.dataUrl} alt={t("remote.qrTitle")} className="remote-qr-img" />
+              <code className="remote-access-url">{qr.url}</code>
+              <div className="remote-qr-actions">
+                <button className="permission-btn" onClick={() => copy(qr.url)}>
+                  {t("common.copy")}
+                </button>
+                <button className="permission-btn" disabled={busy} onClick={() => void handleShowQr()}>
+                  <RefreshCw size={14} />
+                  {t("remote.qrRefresh")}
+                </button>
+              </div>
+              <small className="settings-hint">{t("remote.qrExpires")}</small>
+            </div>
+          ) : (
+            <button
+              className="permission-btn permission-btn-primary"
+              disabled={busy}
+              onClick={() => void handleShowQr()}
+            >
+              {t("remote.qrShow")}
+            </button>
+          )}
+        </section>
+      )}
 
       {enabled && (
         <section className="settings-section">

@@ -67,7 +67,13 @@
     "usernameInvalid": "Username must be 3–32 chars: letters, numbers, _ or -.",
     "userCreated": "User created.",
     "userDeleted": "User deleted.",
-    "passwordReset": "Password reset."
+    "passwordReset": "Password reset.",
+    "qrTitle": "Pair a device",
+    "qrHint": "Scan this with a phone camera to sign in as the owner on that device (valid 5 minutes).",
+    "qrShow": "Show QR code",
+    "qrRefresh": "Refresh",
+    "qrExpires": "Expires in 5 minutes — refresh if it runs out.",
+    "qrUnavailable": "Start remote access first."
   },
   "general": {
     "languageLabel": "Language",

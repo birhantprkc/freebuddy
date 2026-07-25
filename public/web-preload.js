@@ -383,6 +383,7 @@
     remote: {
       whoami: function () { return invoke("remote:whoami"); },
       getStatus: function () { return invoke("remote:getStatus"); },
+      getQrLogin: function () { return invoke("remote:getQrLogin"); },
       setEnabled: function () { return Promise.resolve({ status: null, initialPassword: null }); },
       listUsers: function () { return Promise.resolve([]); },
       createUser: function () { return Promise.resolve({ user: { id: "", username: "", isOwner: false, createdAt: 0 }, password: "" }); },

@@ -19,6 +19,7 @@ import {
   type WebUIServerOptions,
   type WebUIStatus
 } from "../webUIServer.js";
+import { generateQrToken } from "../remoteAuth.js";
 
 let launchOptions: WebUIServerOptions = {};
 
@@ -39,6 +40,17 @@ function registerRemoteIpc(): void {
   registerHandler("remote:getStatus", async (): Promise<WebUIStatus> => {
     return getWebUIStatus();
   });
+
+  registerHandler(
+    "remote:getQrLogin",
+    async (): Promise<{ url: string; token: string; expiresIn: number } | null> => {
+      const status = getWebUIStatus();
+      if (!status.running) return null;
+      const token = generateQrToken();
+      const url = `${status.accessUrl.replace(/\/$/, "")}/qr-login?token=${token}`;
+      return { url, token, expiresIn: 300 };
+    }
+  );
 
   registerHandler(
     "remote:setEnabled",

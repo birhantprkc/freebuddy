@@ -17350,6 +17350,28 @@ button.ghost:focus-visible,
 .remote-roots-user-select {
   margin-top: 10px;
 }
+.remote-qr-card {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--fb-border);
+  border-radius: 12px;
+  background: var(--fb-panel-soft);
+}
+.remote-qr-img {
+  width: 220px;
+  height: 220px;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px;
+}
+.remote-qr-actions {
+  display: flex;
+  gap: 8px;
+}
 .remote-roots-user-select label {
   display: inline-flex;
   align-items: center;

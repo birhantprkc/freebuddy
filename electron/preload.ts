@@ -471,6 +471,7 @@ const shellApi = {
 const remote = {
   whoami: () => ipcRenderer.invoke("remote:whoami"),
   getStatus: () => ipcRenderer.invoke("remote:getStatus"),
+  getQrLogin: () => ipcRenderer.invoke("remote:getQrLogin"),
   setEnabled: (enabled: boolean) => ipcRenderer.invoke("remote:setEnabled", enabled),
   listUsers: () => ipcRenderer.invoke("remote:listUsers"),
   createUser: (input: { username: string; password?: string }) =>

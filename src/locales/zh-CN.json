@@ -57,7 +57,13 @@
     "usernameInvalid": "用户名需为 3–32 位：字母、数字、_ 或 -",
     "userCreated": "用户已创建。",
     "userDeleted": "用户已删除。",
-    "passwordReset": "密码已重置。"
+    "passwordReset": "密码已重置。",
+    "qrTitle": "设备配对",
+    "qrHint": "用手机相机扫描此码，即可在该设备以 owner 身份登录（5 分钟内有效）。",
+    "qrShow": "显示二维码",
+    "qrRefresh": "刷新",
+    "qrExpires": "5 分钟内有效——过期请刷新。",
+    "qrUnavailable": "请先开启远程访问。"
   },
   "status": {
     "running": "运行中",

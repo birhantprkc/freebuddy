@@ -515,6 +515,7 @@ declare global {
   interface FreebuddyRemote {
     whoami(): Promise<RemoteUser | null>;
     getStatus(): Promise<RemoteStatus | null>;
+    getQrLogin(): Promise<{ url: string; token: string; expiresIn: number } | null>;
     setEnabled(
       enabled: boolean
     ): Promise<{ status: RemoteStatus | null; initialPassword: string | null }>;
