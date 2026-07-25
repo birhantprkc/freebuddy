@@ -1,6 +1,7 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { getSetting, setSetting } from "./cli/settings.js";
+import { getDb } from "./cli/db.js";
 import {
   generateRandomPassword,
   hashPassword,
@@ -21,6 +22,51 @@ interface Session {
 }
 
 const sessions = new Map<string, Session>();
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function persistSession(session: Session): void {
+  try {
+    getDb()
+      .prepare(
+        "INSERT OR REPLACE INTO remote_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
+      )
+      .run(hashToken(session.token), session.userId, session.createdAt, session.expiresAt);
+  } catch {
+    // DB may be unavailable very early in startup; the in-memory entry still works.
+  }
+}
+
+function deletePersistedSession(token: string): void {
+  try {
+    getDb().prepare("DELETE FROM remote_sessions WHERE token_hash = ?").run(hashToken(token));
+  } catch {
+    /* ignore */
+  }
+}
+
+function lookupSession(token: string): Session | null {
+  const cached = sessions.get(token);
+  if (cached) return cached;
+  try {
+    const row = getDb()
+      .prepare("SELECT user_id, created_at, expires_at FROM remote_sessions WHERE token_hash = ?")
+      .get(hashToken(token)) as { user_id: string; created_at: number; expires_at: number } | undefined;
+    if (!row) return null;
+    const session: Session = {
+      token,
+      userId: row.user_id,
+      createdAt: row.created_at,
+      expiresAt: row.expires_at
+    };
+    sessions.set(token, session);
+    return session;
+  } catch {
+    return null;
+  }
+}
 
 export function getStoredPasswordHash(): string | null {
   const raw = getSetting(PASSWORD_KEY);
@@ -59,40 +105,48 @@ export function createSession(userId: string): string {
   pruneExpiredSessions();
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
-  sessions.set(token, { token, userId, createdAt: now, expiresAt: now + SESSION_TTL_MS });
+  const session: Session = { token, userId, createdAt: now, expiresAt: now + SESSION_TTL_MS };
+  sessions.set(token, session);
+  persistSession(session);
   while (sessions.size > MAX_SESSIONS) {
     const oldest = [...sessions.values()].sort(
       (a, b) => a.createdAt - b.createdAt
     )[0];
-    if (oldest) sessions.delete(oldest.token);
-    else break;
+    if (oldest) {
+      sessions.delete(oldest.token);
+      deletePersistedSession(oldest.token);
+    } else break;
   }
   return token;
 }
 
 export function sessionUserId(token: string | null | undefined): string | null {
   if (!token) return null;
-  const session = sessions.get(token);
+  const session = lookupSession(token);
   if (!session) return null;
   if (Date.now() > session.expiresAt) {
     sessions.delete(token);
+    deletePersistedSession(token);
     return null;
   }
   return session.userId;
 }
 
 export function checkSession(token: string | null | undefined): boolean {
-  if (!token) return false;
-  const session = sessions.get(token);
-  if (!session) return false;
-  if (Date.now() > session.expiresAt) {
-    sessions.delete(token);
-    return false;
-  }
-  return true;
+  return sessionUserId(token) !== null;
 }
 
 export function invalidateAllSessions(): void {
+  sessions.clear();
+  try {
+    getDb().prepare("DELETE FROM remote_sessions").run();
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Test-only: drop the in-memory cache so lookups fall through to the DB. */
+export function __resetInMemorySessionsForTest(): void {
   sessions.clear();
 }
 
@@ -130,6 +184,11 @@ function pruneExpiredSessions(): void {
   const now = Date.now();
   for (const [token, session] of sessions) {
     if (now > session.expiresAt) sessions.delete(token);
+  }
+  try {
+    getDb().prepare("DELETE FROM remote_sessions WHERE expires_at < ?").run(now);
+  } catch {
+    /* ignore */
   }
 }
 

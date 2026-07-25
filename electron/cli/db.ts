@@ -522,6 +522,13 @@ export function migrate(db: DB) {
       root_path  TEXT NOT NULL,
       PRIMARY KEY (user_id, root_path)
     );
+
+    CREATE TABLE IF NOT EXISTS remote_sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
   `);
 
   const handoffColumns = db

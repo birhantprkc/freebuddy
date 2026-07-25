@@ -19,6 +19,10 @@ async function loadRemoteAuth() {
     "const getSetting = () => null; const setSetting = () => {};"
   );
   stubbed = stubbed.replace(
+    /^import \{[^}]*\} from "\.\/cli\/db\.js";\s*$/m,
+    "const getDb = () => { throw new Error('no db'); };"
+  );
+  stubbed = stubbed.replace(
     /^import \{[^}]*\} from "\.\/shared\/passwordHash\.js";\s*$/m,
     "const generateRandomPassword = () => 'x'; const hashPassword = () => 'h'; const verifyPassword = () => false;"
   );
