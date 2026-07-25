@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import ts from "typescript";
+
+const HOME = path.resolve("/Users/me");
+const ROOT_AB = path.resolve("/a/b");
+const ROOT_CD = path.resolve("/c/d");
+const ROOT_X = path.resolve("/x");
 
 async function loadWorkspaceRoots() {
   const source = fs.readFileSync(
@@ -22,11 +28,11 @@ async function loadWorkspaceRoots() {
 test("resolveWorkspaceRoots defaults to homedir and dedups/normalizes", async () => {
   const { resolveWorkspaceRoots } = await loadWorkspaceRoots();
 
-  assert.deepEqual(resolveWorkspaceRoots(undefined, "/Users/me"), ["/Users/me"]);
-  assert.deepEqual(resolveWorkspaceRoots([], "/Users/me"), ["/Users/me"]);
+  assert.deepEqual(resolveWorkspaceRoots(undefined, HOME), [HOME]);
+  assert.deepEqual(resolveWorkspaceRoots([], HOME), [HOME]);
   assert.deepEqual(
-    resolveWorkspaceRoots(["/a/b", "/a/b", " /c/d ", "", null, 5], "/Users/me"),
-    ["/a/b", "/c/d"],
+    resolveWorkspaceRoots(["/a/b", "/a/b", " /c/d ", "", null, 5], HOME),
+    [ROOT_AB, ROOT_CD],
     "trims, dedups, drops invalid entries"
   );
 });
@@ -34,12 +40,12 @@ test("resolveWorkspaceRoots defaults to homedir and dedups/normalizes", async ()
 test("normalizeRoot expands ~ and maps bare /home to the real homedir on darwin", async () => {
   const { normalizeRoot } = await loadWorkspaceRoots();
 
-  assert.equal(normalizeRoot("~", "/Users/me"), "/Users/me");
-  assert.equal(normalizeRoot("~/Projects", "/Users/me"), "/Users/me/Projects");
+  assert.equal(normalizeRoot("~", HOME), HOME);
+  assert.equal(normalizeRoot("~/Projects", HOME), path.join(HOME, "Projects"));
   if (process.platform === "darwin") {
     assert.equal(
-      normalizeRoot("/home", "/Users/me"),
-      "/Users/me",
+      normalizeRoot("/home", HOME),
+      HOME,
       "macOS /home is not the user home directory"
     );
   }
@@ -48,23 +54,23 @@ test("normalizeRoot expands ~ and maps bare /home to the real homedir on darwin"
 test("isPathWithinRoots allows exact root and nested children only", async () => {
   const { isPathWithinRoots } = await loadWorkspaceRoots();
 
-  assert.ok(isPathWithinRoots("/a/b", ["/a/b"]), "exact root allowed");
-  assert.ok(isPathWithinRoots("/a/b/c", ["/a/b"]), "nested child allowed");
+  assert.ok(isPathWithinRoots(ROOT_AB, [ROOT_AB]), "exact root allowed");
+  assert.ok(isPathWithinRoots(path.join(ROOT_AB, "c"), [ROOT_AB]), "nested child allowed");
   assert.ok(
-    !isPathWithinRoots("/a/bb", ["/a/b"]),
+    !isPathWithinRoots(path.resolve("/a/bb"), [ROOT_AB]),
     "sibling prefix without separator must be rejected"
   );
-  assert.ok(!isPathWithinRoots("/a/other", ["/a/b"]), "sibling dir rejected");
-  assert.ok(!isPathWithinRoots("/x", ["/a/b"]), "unrelated path rejected");
-  assert.ok(isPathWithinRoots("/a/b", ["/x", "/a/b"]), "matches one of several roots");
+  assert.ok(!isPathWithinRoots(path.resolve("/a/other"), [ROOT_AB]), "sibling dir rejected");
+  assert.ok(!isPathWithinRoots(ROOT_X, [ROOT_AB]), "unrelated path rejected");
+  assert.ok(isPathWithinRoots(ROOT_AB, [ROOT_X, ROOT_AB]), "matches one of several roots");
 });
 
 test("parentWithinRoots clamps at the root boundary", async () => {
   const { parentWithinRoots } = await loadWorkspaceRoots();
 
-  assert.equal(parentWithinRoots("/a/b/c", ["/a/b"]), "/a/b");
-  assert.equal(parentWithinRoots("/a/b", ["/a/b"]), null, "no parent above root");
-  assert.equal(parentWithinRoots("/x/y", ["/a/b"]), null, "outside roots");
+  assert.equal(parentWithinRoots(path.join(ROOT_AB, "c"), [ROOT_AB]), ROOT_AB);
+  assert.equal(parentWithinRoots(ROOT_AB, [ROOT_AB]), null, "no parent above root");
+  assert.equal(parentWithinRoots(path.join(ROOT_X, "y"), [ROOT_AB]), null, "outside roots");
 });
 
 test("webUIServer exposes an authed, sandboxed /api/listDirs endpoint", () => {

@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const electronDir = new URL("../electron/", import.meta.url);
+const electronDirPath = fileURLToPath(electronDir);
 
 async function loadPolicy() {
   const source = fs.readFileSync(
@@ -33,7 +35,7 @@ function walk(dir, files = []) {
 
 function registeredChannels() {
   const channels = new Set();
-  for (const file of walk(path.dirname(new URL("x", electronDir).pathname))) {
+  for (const file of walk(electronDirPath)) {
     const source = fs.readFileSync(file, "utf8");
     for (const match of source.matchAll(/registerHandler\(\s*"([^"]+)"/g)) {
       channels.add(match[1]);
