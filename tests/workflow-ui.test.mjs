@@ -247,7 +247,10 @@ test("Settings page opens with CLI agents before General", () => {
 test("MessageBubble supports inline copy button", () => {
   const src = read("../src/components/CLI/MessageBubble.tsx");
   const css = read("../styles.css");
-  assert.match(src, /navigator\.clipboard\?\.writeText/);
+  assert.match(src, /import \{ copyToClipboard \} from "@\/utils\/clipboard"/);
+  assert.match(src, /copyToClipboard\(text\)/);
+  const clipboardSrc = read("../src/utils/clipboard.ts");
+  assert.match(clipboardSrc, /navigator\.clipboard\?\.writeText/);
   assert.match(src, /copyableItemText/);
   assert.match(src, /item\.kind === "text" \|\| item\.kind === "raw"/);
   const copyableHelper = src.match(/function copyableItemText[\s\S]*?function messageText/)?.[0] ?? src;

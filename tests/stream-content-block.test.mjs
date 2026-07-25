@@ -29,7 +29,7 @@ test("MarkdownText supports links and blockquotes", () => {
 });
 
 test("MarkdownText recursively renders inline markup inside emphasis and links", () => {
-  assert.match(streamItemSource, /function renderInline\(text: string, keyPrefix = "i", depth = 0\)/);
+  assert.match(streamItemSource, /function renderInline\(\s*text: string,\s*keyPrefix = "i",\s*depth = 0,\s*cwd = ""\s*\)/);
   assert.match(streamItemSource, /renderNested\(part\.slice\(2, -2\), `\$\{key\}-strong`\)/);
   assert.match(streamItemSource, /renderNested\(label, `\$\{key\}-link`\)/);
 });
