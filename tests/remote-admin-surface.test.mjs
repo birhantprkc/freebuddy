@@ -76,6 +76,17 @@ test("deleting a user clears the data they own before the account row", () => {
   assert.match(cleanup, /deleteScheduledTask\(id\)/);
 });
 
+test("desktop whoami falls back to the host owner for the sidebar identity", () => {
+  assert.match(
+    control,
+    /getCallerUserId\(\)\s*\?\?\s*getOwnerUser\(\)\?\.id/,
+    "desktop windows resolve to the owner account when there is no remote session"
+  );
+  const app = read("../src/App.tsx");
+  assert.match(app, /SidebarUserMenu/, "desktop sidebar uses the same avatar + name control");
+  assert.match(app, /showLogout=\{platform === "web"\}/, "logout stays web-only");
+});
+
 test("the settings page surfaces sessions, audit and server controls", () => {
   assert.match(tab, /listSessions\(\)/, "loads sessions");
   assert.match(tab, /revokeSession\(tokenHash\)/, "can sign out one device");

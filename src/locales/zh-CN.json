@@ -281,6 +281,7 @@
     "collapse": "收起侧边栏",
     "toggleTheme": "切换主题",
     "logout": "退出登录",
+    "hostAccount": "本机",
     "primaryNavigation": "工作区导航",
     "newConversation": "新会话",
     "scheduledTasks": "定时任务",

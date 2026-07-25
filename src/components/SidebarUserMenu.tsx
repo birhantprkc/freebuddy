@@ -4,12 +4,18 @@ import { LogOut, Settings } from "lucide-react";
 import { useConversationStore } from "@/store/conversationStore";
 
 export function SidebarUserMenu({
-  onOpenSettings
+  onOpenSettings,
+  showLogout = true
 }: {
   onOpenSettings: () => void;
+  showLogout?: boolean;
 }) {
   const { t } = useTranslation();
-  const username = useConversationStore((s) => s.currentUser?.username ?? "");
+  const me = useConversationStore((s) => s.currentUser);
+  const platform = window.freebuddy?.platform;
+  const username =
+    me?.username?.trim() ||
+    (platform !== "web" ? t("sidebar.hostAccount") : "");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -70,15 +76,17 @@ export function SidebarUserMenu({
             <Settings size={15} strokeWidth={1.8} />
             {t("common.settings")}
           </button>
-          <button
-            type="button"
-            className="sidebar-user-item danger"
-            role="menuitem"
-            onClick={handleLogout}
-          >
-            <LogOut size={15} strokeWidth={1.8} />
-            {t("sidebar.logout")}
-          </button>
+          {showLogout && (
+            <button
+              type="button"
+              className="sidebar-user-item danger"
+              role="menuitem"
+              onClick={handleLogout}
+            >
+              <LogOut size={15} strokeWidth={1.8} />
+              {t("sidebar.logout")}
+            </button>
+          )}
         </div>
       )}
     </div>

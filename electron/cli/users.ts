@@ -27,6 +27,8 @@ export interface RemoteUser {
 
 export const USERNAME_RE = /^[a-zA-Z0-9_-]{3,32}$/;
 export const MIN_PASSWORD_LENGTH = 8;
+/** Default login name for the host admin account created on first enable. */
+export const DEFAULT_OWNER_USERNAME = "buddy";
 
 interface UserRow {
   id: string;
@@ -188,7 +190,10 @@ export function ensureOwnerUser(options: { password?: string } = {}): {
     }
     return { user: existing, password: null };
   }
-  const created = createUser({ username: "owner", password: options.password });
+  const created = createUser({
+    username: DEFAULT_OWNER_USERNAME,
+    password: options.password
+  });
   return { user: created.user, password: created.password };
 }
 
@@ -290,5 +295,5 @@ export function bootstrapOwnerFromLegacyPassword(): void {
     .prepare(
       "INSERT INTO remote_users (id, username, password_hash, is_owner, created_at) VALUES (?, ?, ?, 1, ?)"
     )
-    .run(id, "owner", legacyHash, Date.now());
+    .run(id, DEFAULT_OWNER_USERNAME, legacyHash, Date.now());
 }

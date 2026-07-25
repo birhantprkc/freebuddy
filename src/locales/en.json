@@ -281,6 +281,7 @@
     "collapse": "Collapse sidebar",
     "toggleTheme": "Toggle theme",
     "logout": "Log out",
+    "hostAccount": "Host",
     "primaryNavigation": "Workspace navigation",
     "newConversation": "New conversation",
     "scheduledTasks": "Scheduled tasks",

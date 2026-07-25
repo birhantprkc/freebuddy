@@ -7,11 +7,11 @@ UI and business logic with zero renderer changes.
 ## Quick start (LAN)
 
 1. Desktop → **Settings → Remote** → toggle **Allow remote access** on.
-2. The first time you enable it, an **owner** account (`username: owner`) is
+2. The first time you enable it, an **owner** account (`username: buddy`) is
    created and its password is revealed once — copy it.
 3. Copy the access URL (e.g. `http://192.168.1.10:18080`) and open it from a
    browser on the same network.
-4. Sign in with `owner` + the password. Other users are added from the same
+4. Sign in with `buddy` + the password. Other users are added from the same
    **Settings → Remote → Users** section (admin-managed).
 
 Each user has their own conversations, messages, scheduled tasks, workflow

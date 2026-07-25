@@ -235,7 +235,7 @@ export function RemoteTab() {
       const res = await window.freebuddy!.remote!.setEnabled(enabled);
       if (res?.status) setStatus(res.status);
       if (res?.initialPassword) {
-        setRevealed({ username: "owner", password: res.initialPassword });
+        setRevealed({ username: "buddy", password: res.initialPassword });
         setShowRevealedPassword(true);
         showToast(t("remote.userCreated"), "success");
       } else {

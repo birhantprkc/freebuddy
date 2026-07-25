@@ -107,7 +107,9 @@ function listSessionsWithUsers(): RemoteSessionInfo[] {
 
 function registerRemoteIpc(): void {
   registerHandler("remote:whoami", async (): Promise<RemoteUser | null> => {
-    const id = getCallerUserId();
+    // Desktop has no remote session; treat the host owner account as "me"
+    // so the sidebar can show the same avatar + nickname as WebUI.
+    const id = getCallerUserId() ?? getOwnerUser()?.id ?? null;
     return id ? getUserById(id) : null;
   });
 
