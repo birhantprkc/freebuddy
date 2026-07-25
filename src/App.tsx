@@ -262,6 +262,13 @@ function App() {
   const members = useConversationStore((s) => s.members);
   const activeId = useConversationStore((s) => s.activeId);
   const setActive = useConversationStore((s) => s.setActive);
+
+  // On mobile, selecting a conversation closes the drawer sidebar.
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 760) {
+      setSidebarCollapsed(false);
+    }
+  }, [activeId]);
   const activeConversation = conversations.find((c) => c.id === activeId);
   const contextSource = conversations.find((c) => c.id === contextSourceId);
   const activeConversationRunning = useConversationStore((s) => {
@@ -482,6 +489,7 @@ function App() {
       <main className={`workspace${settingsOpen ? " settings-workspace" : ""}`}>
         <header className="titlebar">
           {sidebarCollapsed && renderToggleButton("floating")}
+          {renderToggleButton("mobile-only")}
           <div
             className="breadcrumb"
             title={workspaceTitle}

@@ -321,6 +321,10 @@ button {
   color: var(--fb-text-primary);
 }
 
+.sidebar-toggle.mobile-only {
+  display: none;
+}
+
 /* macOS traffic lights visible: lift the in-header toggle into the
    top-left system-button row, anchored to .sidebar-header (which sets
    position: relative above). */
@@ -954,6 +958,28 @@ button {
   .sidebar,
   .details-panel {
     display: none;
+  }
+
+  .sidebar-toggle.mobile-only {
+    display: inline-flex;
+  }
+  .sidebar-toggle.floating {
+    display: none;
+  }
+  .sidebar {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(300px, 86vw);
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.3);
+  }
+  .app-shell.sidebar-collapsed .sidebar {
+    transform: translateX(0);
   }
 
   .titlebar {
