@@ -33,6 +33,34 @@ async function loadDraftPreviewStoreModule() {
     .outputText.replace(
       /^import \{ create \} from "zustand";\s*$/m,
       "const create = (factory) => factory(() => {}, () => ({}));"
+    )
+    .replace(
+      /^import \{[^}]*\} from "@\/utils\/chatAttachments";\s*$/m,
+      [
+        "const attachmentPreviewUrl = (filePath) => {",
+        '  const normalized = String(filePath || "").trim().replace(/\\\\/g, "/");',
+        "  if (!normalized) return \"\";",
+        '  if (typeof window !== "undefined" && window.freebuddy?.platform === "web") {',
+        "    const params = new URLSearchParams({ path: normalized });",
+        "    const token = window.freebuddy.sessionToken?.()?.trim();",
+        '    if (token) params.set("token", token);',
+        '    return `/api/attachment?${params.toString()}`;',
+        "  }",
+        '  return `freebuddy-file://open?path=${encodeURIComponent(normalized)}`;',
+        "};",
+        "const withWebMediaAuth = (url, extra) => {",
+        "  if (!url) return \"\";",
+        '  const parsed = new URL(url, "http://local.invalid");',
+        '  if (typeof window !== "undefined" && window.freebuddy?.platform === "web") {',
+        "    const token = window.freebuddy.sessionToken?.()?.trim();",
+        '    if (token) parsed.searchParams.set("token", token);',
+        "  }",
+        "  if (extra) for (const [k, v] of Object.entries(extra)) parsed.searchParams.set(k, v);",
+        '  return parsed.protocol.startsWith("http")',
+        "    ? `${parsed.pathname}${parsed.search}${parsed.hash}`",
+        "    : parsed.toString();",
+        "};"
+      ].join("\n")
     );
   return import(`data:text/javascript;base64,${Buffer.from(output).toString("base64")}`);
 }
@@ -80,16 +108,100 @@ test("Draft image detection reads extension from freebuddy-file path query", asy
   assert.equal(isImageDraftTarget("freebuddy-file://open?path=%2Ftmp%2Fnotes.txt", ""), false);
 });
 
+test("Draft image detection reads extension from /api/attachment path query", async () => {
+  const { isImageDraftTarget, draftTargetExtension } = await loadDraftCanvasModule();
+  const source = "/api/attachment?path=%2Ftmp%2Fgenerated%20poster.png&freebuddyDraft=3";
+
+  assert.equal(draftTargetExtension(undefined, source), "png");
+  assert.equal(isImageDraftTarget(undefined, source), true);
+  assert.equal(
+    isImageDraftTarget(undefined, "/api/attachment?path=%2Ftmp%2Fnotes.txt"),
+    false
+  );
+});
+
 test("Draft preview converts absolute local image paths to freebuddy-file URLs", async () => {
   const { composeDraftPreviewUrl } = await loadDraftPreviewStoreModule();
-  const filePath = path.normalize("/tmp/generated poster.png").replace(/\\/g, "/");
-  const url = composeDraftPreviewUrl("/Users/me/workspace", filePath, 3);
-  const parsed = new URL(url);
+  const previous = globalThis.window;
+  globalThis.window = undefined;
+  try {
+    const filePath = path.normalize("/tmp/generated poster.png").replace(/\\/g, "/");
+    const url = composeDraftPreviewUrl("/Users/me/workspace", filePath, 3);
+    const parsed = new URL(url);
 
-  assert.equal(parsed.protocol, "freebuddy-file:");
-  assert.equal(parsed.hostname, "open");
-  assert.equal(decodeURIComponent(parsed.searchParams.get("path") ?? ""), filePath);
-  assert.equal(parsed.searchParams.get("freebuddyDraft"), "3");
+    assert.equal(parsed.protocol, "freebuddy-file:");
+    assert.equal(parsed.hostname, "open");
+    assert.equal(decodeURIComponent(parsed.searchParams.get("path") ?? ""), filePath);
+    assert.equal(parsed.searchParams.get("freebuddyDraft"), "3");
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test("Draft preview converts absolute local image paths to /api/attachment on web", async () => {
+  const { composeDraftPreviewUrl } = await loadDraftPreviewStoreModule();
+  const previous = globalThis.window;
+  globalThis.window = { freebuddy: { platform: "web" } };
+  try {
+    const filePath = path.normalize("/tmp/generated poster.png").replace(/\\/g, "/");
+    const url = composeDraftPreviewUrl("/Users/me/workspace", filePath, 3);
+    const parsed = new URL(url, "http://local.invalid");
+
+    assert.equal(parsed.pathname, "/api/attachment");
+    assert.equal(decodeURIComponent(parsed.searchParams.get("path") ?? ""), filePath);
+    assert.equal(parsed.searchParams.get("freebuddyDraft"), "3");
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test("Draft preview converts workspace-relative HTML to /api/draft-render on web", async () => {
+  const { composeDraftPreviewUrl } = await loadDraftPreviewStoreModule();
+  const previous = globalThis.window;
+  globalThis.window = { freebuddy: { platform: "web" } };
+  try {
+    const url = composeDraftPreviewUrl("/Users/me/workspace", "index.html", 4);
+    const parsed = new URL(url, "http://local.invalid");
+
+    assert.equal(parsed.pathname, "/api/draft-render/%2FUsers%2Fme%2Fworkspace/index.html");
+    assert.equal(parsed.searchParams.get("v"), "4");
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test("Draft preview resolves workspace-relative images to absolute file preview URLs", async () => {
+  const { composeDraftPreviewUrl } = await loadDraftPreviewStoreModule();
+  const previous = globalThis.window;
+  try {
+    globalThis.window = { freebuddy: { platform: "web" } };
+    const webUrl = composeDraftPreviewUrl(
+      "/Users/me/workspace",
+      "generated-images/poster.png",
+      4
+    );
+    const webParsed = new URL(webUrl, "http://local.invalid");
+    assert.equal(webParsed.pathname, "/api/attachment");
+    assert.equal(
+      decodeURIComponent(webParsed.searchParams.get("path") ?? ""),
+      "/Users/me/workspace/generated-images/poster.png"
+    );
+
+    globalThis.window = undefined;
+    const desktopUrl = composeDraftPreviewUrl(
+      "/Users/me/workspace",
+      "generated-images/poster.png",
+      2
+    );
+    const desktopParsed = new URL(desktopUrl);
+    assert.equal(desktopParsed.protocol, "freebuddy-file:");
+    assert.equal(
+      decodeURIComponent(desktopParsed.searchParams.get("path") ?? ""),
+      "/Users/me/workspace/generated-images/poster.png"
+    );
+  } finally {
+    globalThis.window = previous;
+  }
 });
 
 test("Draft preview converts absolute HTML paths to freebuddy-draft URLs without a workspace", async () => {

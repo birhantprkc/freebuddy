@@ -210,6 +210,26 @@ export function composeMessageWithAttachments(
   return `${i18next.t("attachments.userMessage")}\n${body}\n\n${i18next.t("attachments.attached")}\n${attachments.map(formatAttachmentForPrompt).join("\n")}`;
 }
 
+/** True for POSIX absolute paths and Windows drive paths. */
+export function isAbsoluteLocalPath(filePath: string): boolean {
+  return /^([A-Za-z]:[\\/]|\/)/.test(filePath.trim());
+}
+
+/**
+ * Resolve a workspace-relative or absolute local path. Relative paths require
+ * `cwd`; without it they cannot be turned into a previewable absolute path.
+ */
+export function resolveLocalFilePath(filePath: string, cwd = ""): string {
+  const normalized = filePath.trim().replace(/\\/g, "/");
+  if (!normalized) return "";
+  if (isAbsoluteLocalPath(normalized)) return normalized;
+  const root = cwd.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  if (!root) return "";
+  const rel = normalized.replace(/^\.\//, "");
+  if (!rel || rel.startsWith("../") || rel.includes("/../")) return "";
+  return `${root}/${rel}`;
+}
+
 /**
  * Build a renderer-safe URL for a local attachment path. The custom
  * `freebuddy-file://` protocol is registered in the main process and reads the
@@ -218,9 +238,37 @@ export function composeMessageWithAttachments(
 export function attachmentPreviewUrl(filePath: string): string {
   const normalized = filePath.trim().replace(/\\/g, "/");
   if (!normalized) return "";
-  const encoded = encodeURIComponent(normalized);
   if (typeof window !== "undefined" && window.freebuddy?.platform === "web") {
-    return `/api/attachment?path=${encoded}`;
+    const params = new URLSearchParams({ path: normalized });
+    // <img> / <iframe> cannot send Authorization; include the session token so
+    // restored localStorage logins still load workspace files.
+    const token = window.freebuddy.sessionToken?.()?.trim();
+    if (token) params.set("token", token);
+    return `/api/attachment?${params.toString()}`;
   }
-  return `freebuddy-file://open?path=${encoded}`;
+  return `freebuddy-file://open?path=${encodeURIComponent(normalized)}`;
+}
+
+/** Append auth + cache-buster query params for WebUI Draft image URLs. */
+export function withWebMediaAuth(url: string, extra?: Record<string, string>): string {
+  if (!url) return "";
+  if (typeof window === "undefined" || window.freebuddy?.platform !== "web") {
+    if (!extra) return url;
+    const parsed = new URL(url, "http://local.invalid");
+    for (const [key, value] of Object.entries(extra)) {
+      parsed.searchParams.set(key, value);
+    }
+    return parsed.protocol.startsWith("http")
+      ? `${parsed.pathname}${parsed.search}${parsed.hash}`
+      : parsed.toString();
+  }
+  const parsed = new URL(url, "http://local.invalid");
+  const token = window.freebuddy.sessionToken?.()?.trim();
+  if (token) parsed.searchParams.set("token", token);
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
+      parsed.searchParams.set(key, value);
+    }
+  }
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
 }

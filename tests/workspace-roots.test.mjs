@@ -22,13 +22,27 @@ async function loadWorkspaceRoots() {
 test("resolveWorkspaceRoots defaults to homedir and dedups/normalizes", async () => {
   const { resolveWorkspaceRoots } = await loadWorkspaceRoots();
 
-  assert.deepEqual(resolveWorkspaceRoots(undefined, "/home/me"), ["/home/me"]);
-  assert.deepEqual(resolveWorkspaceRoots([], "/home/me"), ["/home/me"]);
+  assert.deepEqual(resolveWorkspaceRoots(undefined, "/Users/me"), ["/Users/me"]);
+  assert.deepEqual(resolveWorkspaceRoots([], "/Users/me"), ["/Users/me"]);
   assert.deepEqual(
-    resolveWorkspaceRoots(["/a/b", "/a/b", " /c/d ", "", null, 5], "/home/me"),
+    resolveWorkspaceRoots(["/a/b", "/a/b", " /c/d ", "", null, 5], "/Users/me"),
     ["/a/b", "/c/d"],
     "trims, dedups, drops invalid entries"
   );
+});
+
+test("normalizeRoot expands ~ and maps bare /home to the real homedir on darwin", async () => {
+  const { normalizeRoot } = await loadWorkspaceRoots();
+
+  assert.equal(normalizeRoot("~", "/Users/me"), "/Users/me");
+  assert.equal(normalizeRoot("~/Projects", "/Users/me"), "/Users/me/Projects");
+  if (process.platform === "darwin") {
+    assert.equal(
+      normalizeRoot("/home", "/Users/me"),
+      "/Users/me",
+      "macOS /home is not the user home directory"
+    );
+  }
 });
 
 test("isPathWithinRoots allows exact root and nested children only", async () => {
@@ -80,4 +94,19 @@ test("webUIServer exposes an authed, sandboxed /api/listDirs endpoint", () => {
     /handleListDirs\(req,\s*res\)/,
     "must dispatch to handleListDirs"
   );
+});
+
+test("webUIServer serves workspace files via /api/attachment and /api/draft-render", () => {
+  const server = fs.readFileSync(
+    new URL("../electron/webUIServer.ts", import.meta.url),
+    "utf8"
+  );
+  const attachment = server.slice(server.indexOf("function handleAttachment"));
+  const attachmentBlock = attachment.slice(0, attachment.indexOf("async function handleUpload"));
+
+  assert.match(attachmentBlock, /canServeAttachmentPath/);
+  assert.match(attachmentBlock, /remoteRootsForUser/);
+  assert.match(server, /\/api\/draft-render/);
+  assert.match(server, /handleDraftRender/);
+  assert.match(server, /handleDraftRequest/);
 });

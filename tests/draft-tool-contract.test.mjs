@@ -131,6 +131,71 @@ test("Draft MCP remains available without a selected workspace", async () => {
   }
 });
 
+test("Draft tool resolve accepts remote callers without a matching WebContents sender", async () => {
+  setActiveBridgePort(17878);
+  let webContents;
+  webContents = {
+    id: 99,
+    isDestroyed: () => false,
+    on: () => webContents,
+    once: () => webContents,
+    mainFrame: {
+      isDestroyed: () => false,
+      send(channel, payload) {
+        setImmediate(() => {
+          // WebUI localInvoke may pass an undefined sender when no desktop window exists.
+          assert.equal(
+            resolveDraftToolRequest(undefined, {
+              requestId: payload.requestId,
+              result: {
+                ok: true,
+                conversationId: payload.conversationId,
+                cwd: payload.cwd,
+                loadState: "ready",
+                visible: true
+              }
+            }),
+            true
+          );
+        });
+      }
+    }
+  };
+
+  const config = await registerDraftToolSession({
+    taskSessionId: "task-remote-resolve",
+    conversationId: "conv-remote-resolve",
+    cwd: "/tmp/project",
+    webContents
+  });
+  const token = config.env.find(
+    (entry) => entry.name === "FREEBUDDY_DRAFT_TOKEN"
+  )?.value;
+
+  let statusCode = 0;
+  const request = Readable.from([
+    JSON.stringify({ action: "show", params: { target: "/tmp/photo.png" } })
+  ]);
+  Object.assign(request, {
+    url: "/freebuddy/draft-tool",
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` }
+  });
+  const response = {
+    writeHead(code) {
+      statusCode = code;
+    },
+    end() {}
+  };
+
+  try {
+    assert.equal(await handleDraftToolHttpRequest(request, response), true);
+    assert.equal(statusCode, 200);
+  } finally {
+    unregisterDraftToolSession("task-remote-resolve");
+  }
+});
+
 test("Draft tool capability token routes a request to its bound conversation", async () => {
   setActiveBridgePort(17879);
   const sent = [];

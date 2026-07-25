@@ -148,6 +148,7 @@
     arch: "web",
     versions: { chrome: "", electron: "", node: "" },
     appVersion: "",
+    sessionToken: function () { return getToken(); },
 
     cli: {
       listAdapters: function () { return invoke("cli:listAdapters"); },
@@ -534,10 +535,25 @@
     setTimeout(function () { userInput.focus(); }, 0);
   }
 
+  async function syncSessionCookie() {
+    var token = getToken();
+    if (!token) return;
+    try {
+      await fetch("/api/session-cookie", {
+        method: "POST",
+        headers: authHeaders()
+      });
+    } catch (e) {
+      // Cookie sync is best-effort; media URLs also pass ?token=.
+    }
+  }
+
   async function bootstrap() {
     if (!getToken()) {
       await showLogin();
+      return;
     }
+    await syncSessionCookie();
   }
 
   void bootstrap();

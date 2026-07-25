@@ -6,6 +6,10 @@ export function setEventBroadcaster(fn: EventBroadcaster | null): void {
   activeBroadcaster = fn;
 }
 
+export function hasEventBroadcaster(): boolean {
+  return activeBroadcaster !== null;
+}
+
 export function broadcastEvent(channel: string, payload: unknown): void {
   if (!activeBroadcaster) return;
   try {

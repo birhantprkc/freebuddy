@@ -18,12 +18,17 @@ import { useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { CliStreamItem } from "@/services/cli/parsers";
+import { useConversationStore } from "@/store/conversationStore";
 import { dedupeCommands, dedupeToolResults } from "@/store/conversationUtils";
 import { useImagePreviewStore } from "@/store/imagePreviewStore";
 import { useTerminalStore } from "@/store/terminalStore";
 import { splitAutolinkSegments } from "@/utils/autolink";
 import { prepareToolResultText } from "@/utils/streamMedia";
-import { attachmentPreviewUrl, formatBytes } from "@/utils/chatAttachments";
+import {
+  attachmentPreviewUrl,
+  formatBytes,
+  resolveLocalFilePath
+} from "@/utils/chatAttachments";
 import { useImageLightbox } from "./ImageLightbox";
 
 const IMAGE_PATH_EXTENSIONS = "png|jpe?g|webp|gif|bmp|svg|avif|heic|heif";
@@ -43,16 +48,12 @@ function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value) || /^data:image\//i.test(value);
 }
 
-function resolveImageSrc(raw: string): string {
+function resolveImageSrc(raw: string, cwd = ""): string {
   const value = raw.trim();
   if (!value) return "";
   if (isHttpUrl(value)) return value;
-  // Absolute local path (POSIX or Windows). Route through custom protocol.
-  if (/^([A-Za-z]:[\\/]|\/)/.test(value)) {
-    return attachmentPreviewUrl(value);
-  }
-  // Anything else (relative, ~/, etc.) is rendered as plain text by callers.
-  return "";
+  const abs = resolveLocalFilePath(value, cwd);
+  return abs ? attachmentPreviewUrl(abs) : "";
 }
 
 function formatTokens(n: number): string {
@@ -64,14 +65,19 @@ function formatCost(amount: number, currency?: string): string {
   return currency === "USD" ? `$${value}` : `${value} ${currency ?? ""}`.trim();
 }
 
-function renderInline(text: string, keyPrefix = "i", depth = 0): ReactNode[] {
+function renderInline(
+  text: string,
+  keyPrefix = "i",
+  depth = 0,
+  cwd = ""
+): ReactNode[] {
   const nodes: ReactNode[] = [];
   // Strip markdown image syntax: image previews are rendered as separate figure blocks.
   const cleaned = text.replace(MARKDOWN_IMAGE_REGEX, "").replace(/[ \t]{2,}/g, " ");
   const parts = cleaned.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|\[[^\]]+\]\([^)]+\))/g);
 
   const renderNested = (value: string, key: string) =>
-    depth < 8 ? renderInline(value, key, depth + 1) : value;
+    depth < 8 ? renderInline(value, key, depth + 1, cwd) : value;
 
   parts.forEach((part, index) => {
     if (!part) return;
@@ -97,7 +103,7 @@ function renderInline(text: string, keyPrefix = "i", depth = 0): ReactNode[] {
     const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (linkMatch) {
       const label = linkMatch[1];
-      const href = resolveLinkHref(linkMatch[2]);
+      const href = resolveLinkHref(linkMatch[2], cwd);
       if (href) {
         nodes.push(
           <a
@@ -139,13 +145,12 @@ function renderAutolinkedText(text: string, keyPrefix: string): ReactNode[] {
   });
 }
 
-function resolveLinkHref(raw: string): string {
+function resolveLinkHref(raw: string, cwd = ""): string {
   const value = raw.trim();
   if (!value) return "";
   if (isHttpUrl(value)) return value;
-  if (/^([A-Za-z]:[\\/]|\/)/.test(value)) {
-    return attachmentPreviewUrl(value);
-  }
+  const abs = resolveLocalFilePath(value, cwd);
+  if (abs) return attachmentPreviewUrl(abs);
   if (/^file:\/\//i.test(value)) {
     return value;
   }
@@ -173,13 +178,13 @@ interface InlineImageRef {
 }
 
 /** Collect image references from a chunk of text: markdown ![alt](src) and bare absolute paths. */
-function collectInlineImages(text: string): InlineImageRef[] {
+function collectInlineImages(text: string, cwd = ""): InlineImageRef[] {
   const seen = new Set<string>();
   const refs: InlineImageRef[] = [];
   let stripped = text;
 
   stripped = stripped.replace(MARKDOWN_IMAGE_REGEX, (_match, alt: string, src: string) => {
-    const resolved = resolveImageSrc(src) || (isHttpUrl(src) ? src : "");
+    const resolved = resolveImageSrc(src, cwd) || (isHttpUrl(src) ? src : "");
     if (resolved && !seen.has(resolved)) {
       seen.add(resolved);
       refs.push({ alt: (alt || "").trim(), src: resolved });
@@ -190,7 +195,7 @@ function collectInlineImages(text: string): InlineImageRef[] {
   const matches = stripped.match(IMAGE_PATH_REGEX);
   if (matches) {
     for (const raw of matches) {
-      const resolved = resolveImageSrc(raw);
+      const resolved = resolveImageSrc(raw, cwd);
       if (!resolved || seen.has(resolved)) continue;
       seen.add(resolved);
       refs.push({ alt: "", src: resolved });
@@ -278,7 +283,19 @@ function CodeBlockCard({ lang, code }: { lang?: string; code: string }) {
   );
 }
 
-export function MarkdownText({ content }: { content: string }) {
+export function MarkdownText({
+  content,
+  cwd: cwdProp
+}: {
+  content: string;
+  cwd?: string;
+}) {
+  const activeCwd = useConversationStore((s) => {
+    const id = s.activeId;
+    if (!id) return "";
+    return s.conversations.find((conv) => conv.id === id)?.cwd ?? "";
+  });
+  const cwd = cwdProp ?? activeCwd ?? "";
   const blocks: ReactNode[] = [];
   const lines = content.replace(/\r\n/g, "\n").split("\n");
   let i = 0;
@@ -298,7 +315,7 @@ export function MarkdownText({ content }: { content: string }) {
       const Tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
       blocks.push(
         <Tag key={`h-${i}`} className="markdown-heading">
-          {renderInline(text, `h-${i}`)}
+          {renderInline(text, `h-${i}`, 0, cwd)}
         </Tag>
       );
       i += 1;
@@ -313,7 +330,7 @@ export function MarkdownText({ content }: { content: string }) {
       }
       blocks.push(
         <blockquote key={`quote-${i}`} className="markdown-blockquote">
-          {renderInline(quoteLines.join("\n"), `quote-${i}`)}
+          {renderInline(quoteLines.join("\n"), `quote-${i}`, 0, cwd)}
         </blockquote>
       );
       continue;
@@ -348,7 +365,9 @@ export function MarkdownText({ content }: { content: string }) {
             <thead>
               <tr>
                 {headers.map((header, headerIndex) => (
-                  <th key={headerIndex}>{renderInline(header, `th-${i}-${headerIndex}`)}</th>
+                  <th key={headerIndex}>
+                    {renderInline(header, `th-${i}-${headerIndex}`, 0, cwd)}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -357,7 +376,12 @@ export function MarkdownText({ content }: { content: string }) {
                 <tr key={rowIndex}>
                   {headers.map((_, cellIndex) => (
                     <td key={cellIndex}>
-                      {renderInline(row[cellIndex] ?? "", `td-${i}-${rowIndex}-${cellIndex}`)}
+                      {renderInline(
+                        row[cellIndex] ?? "",
+                        `td-${i}-${rowIndex}-${cellIndex}`,
+                        0,
+                        cwd
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -380,7 +404,9 @@ export function MarkdownText({ content }: { content: string }) {
       blocks.push(
         <ListTag key={`list-${i}`}>
           {items.map((item, itemIndex) => (
-            <li key={itemIndex}>{renderInline(item, `li-${i}-${itemIndex}`)}</li>
+            <li key={itemIndex}>
+              {renderInline(item, `li-${i}-${itemIndex}`, 0, cwd)}
+            </li>
           ))}
         </ListTag>
       );
@@ -403,7 +429,7 @@ export function MarkdownText({ content }: { content: string }) {
     }
 
     const paragraphText = paragraph.join("\n");
-    const images = collectInlineImages(paragraphText);
+    const images = collectInlineImages(paragraphText, cwd);
     const trimmed = paragraphText.trim();
     const isImageOnly =
       images.length > 0 &&
@@ -411,7 +437,7 @@ export function MarkdownText({ content }: { content: string }) {
 
     if (!isImageOnly) {
       blocks.push(
-        <p key={`p-${i}`}>{renderInline(paragraphText, `p-${i}`)}</p>
+        <p key={`p-${i}`}>{renderInline(paragraphText, `p-${i}`, 0, cwd)}</p>
       );
     }
 

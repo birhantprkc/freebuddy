@@ -130,10 +130,66 @@ test("formats attachments for agent prompts", async () => {
 
 test("attachmentPreviewUrl uses query-based freebuddy-file URLs", async () => {
   const { attachmentPreviewUrl } = await loadModule();
-  const url = attachmentPreviewUrl("/tmp/photo.png");
-  assert.match(url, /^freebuddy-file:\/\/open\?path=/);
+  const previous = globalThis.window;
+  globalThis.window = undefined;
+  try {
+    const url = attachmentPreviewUrl("/tmp/photo.png");
+    assert.match(url, /^freebuddy-file:\/\/open\?path=/);
+    assert.equal(
+      decodeURIComponent(new URL(url).searchParams.get("path") ?? ""),
+      "/tmp/photo.png"
+    );
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test("attachmentPreviewUrl uses /api/attachment on the web platform", async () => {
+  const { attachmentPreviewUrl } = await loadModule();
+  const previous = globalThis.window;
+  globalThis.window = {
+    freebuddy: { platform: "web", sessionToken: () => "tok-123" }
+  };
+  try {
+    const url = attachmentPreviewUrl("/tmp/photo.png");
+    assert.match(url, /^\/api\/attachment\?/);
+    const parsed = new URL(url, "http://local.invalid");
+    assert.equal(parsed.pathname, "/api/attachment");
+    assert.equal(
+      decodeURIComponent(parsed.searchParams.get("path") ?? ""),
+      "/tmp/photo.png"
+    );
+    assert.equal(parsed.searchParams.get("token"), "tok-123");
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test("resolveLocalFilePath joins workspace-relative image paths", async () => {
+  const { resolveLocalFilePath, attachmentPreviewUrl } = await loadModule();
   assert.equal(
-    decodeURIComponent(new URL(url).searchParams.get("path") ?? ""),
-    "/tmp/photo.png"
+    resolveLocalFilePath("generated-images/poster.png", "/Users/me/workspace"),
+    "/Users/me/workspace/generated-images/poster.png"
   );
+  assert.equal(resolveLocalFilePath("generated-images/poster.png", ""), "");
+  assert.equal(
+    resolveLocalFilePath("/abs/poster.png", "/Users/me/workspace"),
+    "/abs/poster.png"
+  );
+
+  const previous = globalThis.window;
+  globalThis.window = { freebuddy: { platform: "web" } };
+  try {
+    const abs = resolveLocalFilePath(
+      "generated-images/poster.png",
+      "/Users/me/workspace"
+    );
+    const url = attachmentPreviewUrl(abs);
+    assert.equal(
+      decodeURIComponent(new URL(url, "http://local.invalid").searchParams.get("path") ?? ""),
+      "/Users/me/workspace/generated-images/poster.png"
+    );
+  } finally {
+    globalThis.window = previous;
+  }
 });

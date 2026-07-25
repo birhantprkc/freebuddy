@@ -7,6 +7,7 @@ import {
   extensionFromName,
   resolveManagedBufferAttachment
 } from "../shared/managedBufferValidation.js";
+import { isPathWithinRoots } from "../shared/workspaceRoots.js";
 import { getDataDir, getDb } from "./db.js";
 
 export {
@@ -237,6 +238,15 @@ export function isManagedAttachmentPath(filePath: string): boolean {
   const managedDir = path.resolve(getManagedAttachmentsDir());
   const resolved = path.resolve(filePath);
   return resolved === managedDir || resolved.startsWith(`${managedDir}${path.sep}`);
+}
+
+/** Managed uploads plus paths inside the caller's remote workspace roots. */
+export function canServeAttachmentPath(
+  filePath: string,
+  roots: string[]
+): boolean {
+  if (isManagedAttachmentPath(filePath)) return true;
+  return isPathWithinRoots(filePath, roots);
 }
 
 export function discardManagedAttachment(filePath: string): boolean {

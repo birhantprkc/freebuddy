@@ -1,6 +1,10 @@
 import { create } from "zustand";
 
 import type { DraftLoadState } from "@/services/cli/types";
+import {
+  attachmentPreviewUrl,
+  withWebMediaAuth
+} from "@/utils/chatAttachments";
 
 export interface DraftPreviewEntry {
   cwd: string;
@@ -46,6 +50,10 @@ const LOCAL_FILE_PREVIEW_EXTENSIONS = new Set([
 /** Absolute HTML/Markdown previewed via freebuddy-draft with the file's directory as root. */
 const LOCAL_DRAFT_DOCUMENT_EXTENSIONS = new Set(["html", "htm", "md"]);
 
+function isWebPlatform(): boolean {
+  return typeof window !== "undefined" && window.freebuddy?.platform === "web";
+}
+
 function withDraftNonce(target: string, nonce: number): string {
   const url = new URL(target);
   url.searchParams.set("freebuddyDraft", String(nonce));
@@ -77,6 +85,15 @@ export function isAbsoluteLocalPath(target: string): boolean {
   return /^([A-Za-z]:[\\/]|\/)/.test(target);
 }
 
+function joinWorkspacePath(cwd: string, rel: string): string {
+  const root = cwd.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  const cleaned = rel.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+  if (!root || !cleaned) return "";
+  if (isAbsoluteLocalPath(cleaned)) return cleaned;
+  if (cleaned.startsWith("../") || cleaned.includes("/../")) return "";
+  return `${root}/${cleaned}`;
+}
+
 /** Split an absolute file path into parent directory + basename for draft reads. */
 export function splitAbsoluteLocalFile(target: string): { root: string; rel: string } | null {
   const normalized = target.trim().replace(/\\/g, "/").split("?")[0];
@@ -91,17 +108,44 @@ export function splitAbsoluteLocalFile(target: string): { root: string; rel: str
 
 function filePreviewUrl(target: string, nonce: number): string {
   const normalized = target.trim().replace(/\\/g, "/");
+  if (isWebPlatform()) {
+    return withWebMediaAuth(attachmentPreviewUrl(normalized), {
+      freebuddyDraft: String(nonce)
+    });
+  }
   const url = new URL("freebuddy-file://open");
   url.searchParams.set("path", normalized);
   url.searchParams.set("freebuddyDraft", String(nonce));
   return url.toString();
 }
 
+function draftRenderUrl(root: string, rel: string, nonce: number): string {
+  const encodedRoot = encodeURIComponent(root);
+  const encodedRel = rel.split("/").map(encodeURIComponent).join("/");
+  if (isWebPlatform()) {
+    return withWebMediaAuth(
+      `/api/draft-render/${encodedRoot}/${encodedRel}`,
+      { v: String(nonce) }
+    );
+  }
+  return `freebuddy-draft://render/${encodedRoot}/${encodedRel}?v=${nonce}`;
+}
+
 /** Serve an absolute HTML/Markdown file under freebuddy-draft using its parent directory as root. */
 function absoluteLocalDraftUrl(target: string, nonce: number): string {
   const parts = splitAbsoluteLocalFile(target);
   if (!parts) return "";
-  return `freebuddy-draft://render/${encodeURIComponent(parts.root)}/${encodeURIComponent(parts.rel)}?v=${nonce}`;
+  return draftRenderUrl(parts.root, parts.rel, nonce);
+}
+
+function pathFromFreebuddyFileUrl(target: string): string | null {
+  try {
+    const parsed = new URL(target);
+    if (parsed.protocol !== "freebuddy-file:") return null;
+    return parsed.searchParams.get("path");
+  } catch {
+    return null;
+  }
 }
 
 export function composeDraftPreviewUrl(
@@ -115,6 +159,10 @@ export function composeDraftPreviewUrl(
     return withDraftNonce(target, nonce);
   }
   if (/^freebuddy-file:\/\//i.test(target)) {
+    if (isWebPlatform()) {
+      const filePath = pathFromFreebuddyFileUrl(target);
+      if (filePath) return filePreviewUrl(filePath, nonce);
+    }
     return withDraftNonce(target, nonce);
   }
   if (isAbsoluteLocalPath(target)) {
@@ -127,8 +175,15 @@ export function composeDraftPreviewUrl(
     }
   }
   if (!cwd) return "";
-  const rel = target.split("/").map(encodeURIComponent).join("/");
-  return `freebuddy-draft://render/${encodeURIComponent(cwd)}/${rel}?v=${nonce}`;
+  const ext = localFileExtension(target);
+  if (LOCAL_FILE_PREVIEW_EXTENSIONS.has(ext)) {
+    const abs = joinWorkspacePath(cwd, target);
+    return abs ? filePreviewUrl(abs, nonce) : "";
+  }
+  if (LOCAL_DRAFT_DOCUMENT_EXTENSIONS.has(ext)) {
+    return draftRenderUrl(cwd, target, nonce);
+  }
+  return draftRenderUrl(cwd, target, nonce);
 }
 
 function entryOf(entry: DraftPreviewEntry | undefined): string | null | undefined {

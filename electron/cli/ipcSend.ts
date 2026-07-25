@@ -1,6 +1,6 @@
 import type { WebContents } from "electron";
 
-import { broadcastEvent } from "../eventBus.js";
+import { broadcastEvent, hasEventBroadcaster } from "../eventBus.js";
 
 export function safeSendToWebContents(
   webContents: WebContents | null | undefined,
@@ -20,5 +20,6 @@ export function safeSendToWebContents(
     }
   }
   broadcastEvent(channel, payload);
-  return delivered;
+  // WebUI clients receive via the event bus even when desktop webContents is gone.
+  return delivered || hasEventBroadcaster();
 }

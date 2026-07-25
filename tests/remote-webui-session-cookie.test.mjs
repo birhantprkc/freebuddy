@@ -65,6 +65,14 @@ test("webUIServer authenticates <img> requests via the session cookie and sets i
     new URL("../electron/webUIServer.ts", import.meta.url),
     "utf8"
   );
+  const preload = fs.readFileSync(
+    new URL("../public/web-preload.js", import.meta.url),
+    "utf8"
+  );
+  const attachments = fs.readFileSync(
+    new URL("../src/utils/chatAttachments.ts", import.meta.url),
+    "utf8"
+  );
 
   assert.match(
     server,
@@ -79,6 +87,16 @@ test("webUIServer authenticates <img> requests via the session cookie and sets i
     "password login must set the session cookie"
   );
   assert.match(loginBlock, /Set-Cookie/);
+
+  // Restored localStorage sessions never get Set-Cookie; media GETs must also
+  // accept ?token= and the client must re-hydrate the HttpOnly cookie on boot.
+  assert.match(server, /mediaAuthToken/);
+  assert.match(server, /\/api\/session-cookie/);
+  assert.match(server, /searchParams\.get\("token"\)/);
+  assert.match(preload, /sessionToken:\s*function/);
+  assert.match(preload, /\/api\/session-cookie/);
+  assert.match(attachments, /sessionToken/);
+  assert.match(attachments, /params\.set\("token"/);
 });
 
 test("unauthenticated login UI follows the host app language from /api/status", () => {

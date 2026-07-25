@@ -46,10 +46,11 @@ import {
 import { localInvoke } from "./invokeRegistry.js";
 import { setEventBroadcaster } from "./eventBus.js";
 import {
-  isManagedAttachmentPath,
+  canServeAttachmentPath,
   prepareAttachmentFiles,
   type PrepareAttachmentPayload
 } from "./cli/attachments.js";
+import { handleDraftRequest, parseDraftUrl } from "./draftProtocol.js";
 
 export const WEBUI_DEFAULT_PORT = 18080;
 export const WEBUI_MIN_PORT = 1024;
@@ -182,6 +183,21 @@ function isAuthed(req: IncomingMessage): boolean {
     checkSession(extractBearerToken(req.headers.authorization)) ||
     checkSession(readSessionCookie(req.headers.cookie))
   );
+}
+
+/** Auth for <img>/<iframe> media routes: cookie, bearer, or ?token=. */
+function mediaAuthToken(req: IncomingMessage): string | null {
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  const fromQuery = url.searchParams.get("token")?.trim();
+  return (
+    extractBearerToken(req.headers.authorization) ||
+    readSessionCookie(req.headers.cookie) ||
+    (fromQuery ? fromQuery : null)
+  );
+}
+
+function isMediaAuthed(req: IncomingMessage): boolean {
+  return checkSession(mediaAuthToken(req));
 }
 
 function requestToken(req: IncomingMessage): string | null {
@@ -347,10 +363,40 @@ async function handleInvoke(req: IncomingMessage, res: ServerResponse): Promise<
   return true;
 }
 
+function callerUserIdFromRequest(req: IncomingMessage): string | null {
+  return (
+    sessionUserId(extractBearerToken(req.headers.authorization)) ||
+    sessionUserId(readSessionCookie(req.headers.cookie))
+  );
+}
+
+function callerUserIdFromMediaRequest(req: IncomingMessage): string | null {
+  return sessionUserId(mediaAuthToken(req));
+}
+
+async function handleSessionCookie(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<boolean> {
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  if (url.pathname !== "/api/session-cookie" || req.method !== "POST") {
+    return false;
+  }
+  const token = extractBearerToken(req.headers.authorization);
+  if (!token || !checkSession(token)) {
+    sendJson(res, 401, { ok: false, error: "unauthorized" });
+    return true;
+  }
+  // Re-hydrate the HttpOnly cookie for <img> requests after a localStorage restore.
+  res.setHeader("Set-Cookie", buildSessionCookieHeader(token));
+  sendJson(res, 200, { ok: true });
+  return true;
+}
+
 function handleAttachment(req: IncomingMessage, res: ServerResponse): boolean {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   if (url.pathname !== "/api/attachment" || req.method !== "GET") return false;
-  if (!isAuthed(req)) {
+  if (!isMediaAuthed(req)) {
     sendJson(res, 401, { ok: false, error: "unauthorized" });
     return true;
   }
@@ -359,7 +405,8 @@ function handleAttachment(req: IncomingMessage, res: ServerResponse): boolean {
     sendJson(res, 400, { ok: false, error: "missing_path" });
     return true;
   }
-  if (!isManagedAttachmentPath(filePath)) {
+  const roots = remoteRootsForUser(callerUserIdFromMediaRequest(req));
+  if (!canServeAttachmentPath(filePath, roots)) {
     sendJson(res, 403, { ok: false, error: "forbidden" });
     return true;
   }
@@ -375,6 +422,54 @@ function handleAttachment(req: IncomingMessage, res: ServerResponse): boolean {
   } catch {
     sendJson(res, 404, { ok: false, error: "not_found" });
   }
+  return true;
+}
+
+async function handleDraftRender(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<boolean> {
+  const url = new URL(req.url || "/", "http://127.0.0.1");
+  if (!url.pathname.startsWith("/api/draft-render") || req.method !== "GET") {
+    return false;
+  }
+  if (!isMediaAuthed(req)) {
+    sendJson(res, 401, { ok: false, error: "unauthorized" });
+    return true;
+  }
+
+  const suffix = url.pathname.slice("/api/draft-render".length) || "/";
+  // Strip the media auth token before handing the URL to the draft renderer.
+  const draftUrl = new URL(suffix + url.search, "http://127.0.0.1/");
+  draftUrl.searchParams.delete("token");
+  let root: string;
+  let rel: string;
+  try {
+    const parsed = parseDraftUrl(draftUrl.toString());
+    root = parsed.root;
+    rel = parsed.rel;
+  } catch {
+    sendJson(res, 400, { ok: false, error: "invalid_draft_path" });
+    return true;
+  }
+
+  const roots = remoteRootsForUser(callerUserIdFromMediaRequest(req));
+  const abs = path.resolve(root, rel);
+  if (!isPathWithinRoots(root, roots) && !isPathWithinRoots(abs, roots)) {
+    sendJson(res, 403, { ok: false, error: "forbidden" });
+    return true;
+  }
+
+  const response = await handleDraftRequest(
+    new Request(draftUrl.toString(), { method: "GET" })
+  );
+  const body = Buffer.from(await response.arrayBuffer());
+  res.writeHead(response.status, {
+    "Content-Type":
+      response.headers.get("Content-Type") || "application/octet-stream",
+    "Cache-Control": response.headers.get("Cache-Control") || "no-cache"
+  });
+  res.end(body);
   return true;
 }
 
@@ -793,6 +888,7 @@ export function startWebUIServer(options: WebUIServerOptions = {}): Promise<void
         void (async () => {
           if (await handleLogin(req, res)) return;
           if (await handleLogout(req, res)) return;
+          if (await handleSessionCookie(req, res)) return;
 
           const url = new URL(req.url || "/", "http://127.0.0.1");
           if (url.pathname === "/api/status" && req.method === "GET") {
@@ -802,6 +898,7 @@ export function startWebUIServer(options: WebUIServerOptions = {}): Promise<void
 
           if (await handleInvoke(req, res)) return;
           if (handleAttachment(req, res)) return;
+          if (await handleDraftRender(req, res)) return;
           if (await handleUpload(req, res)) return;
           if (handleListDirs(req, res)) return;
 

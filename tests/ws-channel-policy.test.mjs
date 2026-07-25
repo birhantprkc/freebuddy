@@ -34,9 +34,14 @@ test("classifyWsChannel routes global, session-scoped, and desktop-only channels
   assert.deepEqual(classifyWsChannel("cli://install"), { kind: "drop" });
   assert.deepEqual(classifyWsChannel("window:chrome"), { kind: "drop" });
   assert.deepEqual(classifyWsChannel("freebuddy://bridge"), { kind: "drop" });
-  assert.deepEqual(classifyWsChannel("freebuddy://draft-tool"), { kind: "drop" });
   assert.deepEqual(classifyWsChannel("updater://event"), { kind: "drop" });
   assert.deepEqual(classifyWsChannel("unknown://whatever"), { kind: "drop" });
+
+  // Draft MCP events carry conversationId in the payload so WebUI can open
+  // the Draft panel for the owning conversation.
+  assert.deepEqual(classifyWsChannel("freebuddy://draft-tool"), {
+    kind: "conversationPayload"
+  });
 });
 
 test("conversation-scoped channels are classified for per-owner delivery", async () => {

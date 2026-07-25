@@ -13,6 +13,9 @@ test("safe IPC send checks the main frame before sending", () => {
   assert.match(src, /frame\.isDestroyed\(\)/);
   assert.match(src, /frame\.send\(channel, payload\)/);
   assert.match(src, /catch\s*\{/);
+  // WebUI clients receive via the event bus even when desktop webContents is gone.
+  assert.match(src, /hasEventBroadcaster/);
+  assert.match(src, /delivered \|\| hasEventBroadcaster\(\)/);
 });
 
 test("long-running main-process streams use safe IPC send", () => {

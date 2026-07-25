@@ -13,7 +13,11 @@ const GLOBAL_CHANNELS = new Set([
   "infoCards://changed",
   "conversations://changed"
 ]);
-const CONVERSATION_PAYLOAD_CHANNELS = new Set(["messages://changed"]);
+const CONVERSATION_PAYLOAD_CHANNELS = new Set([
+  "messages://changed",
+  // Draft MCP show/inspect/report events include conversationId in the payload.
+  "freebuddy://draft-tool"
+]);
 const OWNER_PAYLOAD_CHANNELS = new Set(["scheduledTasks://changed"]);
 const CLI_SESSION_PREFIX = "cli://";
 const WORKFLOW_MESSAGE_PREFIX = "workflow://message/";

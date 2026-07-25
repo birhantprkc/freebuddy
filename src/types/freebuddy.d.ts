@@ -598,6 +598,8 @@ declare global {
       node?: string;
     };
     appVersion: string;
+    /** WebUI only: bearer token for media URLs that cannot send Authorization headers. */
+    sessionToken?: () => string;
     cli: FreebuddyCli;
     workflow: FreebuddyWorkflow;
     workflowTeams: FreebuddyWorkflowTeams;
