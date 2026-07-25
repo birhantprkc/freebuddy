@@ -1021,6 +1021,62 @@ button {
   }
 }
 
+/* ---------- Mobile chat / composer (<=760px) ---------- */
+@media (max-width: 760px) {
+  /* The chat composer is position:fixed with a desktop left offset (sidebar
+     width); on mobile the sidebar is a drawer that doesn't take layout space,
+     so reset it to full width. */
+  .chat-composer {
+    left: 0;
+    right: 0;
+    width: calc(100vw - 24px);
+    margin: 0 12px;
+    bottom: 12px;
+    border-radius: 18px;
+  }
+  .chat-composer textarea {
+    min-height: 56px;
+    max-height: 160px;
+    /* 16px avoids iOS auto-zoom on focus */
+    font-size: 16px;
+    padding: 10px 12px;
+  }
+  .chat-composer-actions {
+    padding: 6px 10px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chat-scroll {
+    padding: 16px 12px calc(var(--chat-composer-reserve) + 12px);
+  }
+  .chat-view {
+    --chat-composer-reserve: 130px;
+  }
+  .msg {
+    gap: 8px;
+  }
+
+  /* New conversation (home) view + toolbar */
+  .new-task-view {
+    padding: 20px 14px 32px;
+  }
+  .new-task-stack {
+    gap: 12px;
+  }
+  .new-task-toolbar {
+    flex-wrap: wrap;
+    min-height: 0;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .new-task-toolbar-tail {
+    width: 100%;
+  }
+  .home-view {
+    padding: 20px 14px 28px;
+  }
+}
+
 /* ---------- CLI workspace ---------- */
 
 .muted { color: var(--fb-text-tertiary); }
