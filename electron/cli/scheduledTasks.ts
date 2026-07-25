@@ -7,6 +7,7 @@ import path from "node:path";
 import { getDb } from "./db.js";
 import { appendMessage, createConversation, getConversation } from "./conversations.js";
 import { listCliMembers } from "./members.js";
+import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 import { createCliStepExecutor, WorkflowRuntime } from "./workflowRuntime.js";
 import { extractVisibleStepOutput } from "./workflowScheduler.js";
 import type { WorkflowAgentRef, WorkflowPlan } from "./workflowTypes.js";
@@ -42,6 +43,7 @@ export interface ScheduledTask {
   lastError?: string;
   lastConversationId?: string;
   lastWorkflowRunId?: string;
+  ownerId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -92,6 +94,7 @@ interface ScheduledTaskRow {
   last_error: string | null;
   last_conversation_id: string | null;
   last_workflow_run_id: string | null;
+  owner_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -196,6 +199,7 @@ function rowToTask(row: ScheduledTaskRow): ScheduledTask {
     lastError: row.last_error ?? undefined,
     lastConversationId: row.last_conversation_id ?? undefined,
     lastWorkflowRunId: row.last_workflow_run_id ?? undefined,
+    ownerId: row.owner_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -215,9 +219,31 @@ function rowToRun(row: ScheduledTaskRunRow): ScheduledTaskRun {
 }
 
 export function listScheduledTasks(): ScheduledTask[] {
+  const caller = getCallerUserId();
+  if (caller === null || isCallerAdmin()) {
+    return (getDb()
+      .prepare("SELECT * FROM scheduled_tasks ORDER BY created_at DESC")
+      .all() as ScheduledTaskRow[]).map(rowToTask);
+  }
   return (getDb()
-    .prepare("SELECT * FROM scheduled_tasks ORDER BY created_at DESC")
-    .all() as ScheduledTaskRow[]).map(rowToTask);
+    .prepare(
+      "SELECT * FROM scheduled_tasks WHERE owner_id = ? ORDER BY created_at DESC"
+    )
+    .all(caller) as ScheduledTaskRow[]).map(rowToTask);
+}
+
+export function requireOwnedScheduledTask(id: string): ScheduledTask | undefined {
+  const task = getScheduledTask(id);
+  if (!task) return undefined;
+  if (isCallerAdmin() || getCallerUserId() === null) return task;
+  return task.ownerId === getCallerUserId() ? task : undefined;
+}
+
+export function backfillScheduledTaskOwners(ownerId: string): number {
+  const info = getDb()
+    .prepare("UPDATE scheduled_tasks SET owner_id = ? WHERE owner_id IS NULL")
+    .run(ownerId);
+  return info.changes;
 }
 
 export function getScheduledTask(id: string): ScheduledTask | undefined {
@@ -320,8 +346,8 @@ export function createScheduledTask(
         (id, title, prompt, agent_id, time_local, schedule_type,
           schedule_date, weekdays, month_day, cwd, execution_mode,
           config_option_overrides, enabled,
-          next_run_at, last_status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`
+          next_run_at, last_status, owner_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)`
     )
     .run(
       id,
@@ -338,6 +364,7 @@ export function createScheduledTask(
       serializedConfigOptionOverrides(input.configOptionOverrides),
       input.enabled ? 1 : 0,
       nextRunAt(input),
+      getCallerUserId(),
       now,
       now
     );
@@ -717,11 +744,15 @@ export function registerScheduledTaskIpc(): void {
   registerHandler(
     "scheduledTasks:update",
     (_event, args: { id: string; input: ScheduledTaskInput }) =>
-      updateScheduledTask(args.id, args.input)
+      requireOwnedScheduledTask(args.id)
+        ? updateScheduledTask(args.id, args.input)
+        : { ok: false as const, errors: ["scheduledTasks.errors.taskNotFound"] }
   );
-  registerHandler("scheduledTasks:delete", (_event, id: string) => deleteScheduledTask(id));
+  registerHandler("scheduledTasks:delete", (_event, id: string) =>
+    requireOwnedScheduledTask(id) ? deleteScheduledTask(id) : false
+  );
   registerHandler("scheduledTasks:run", (event, id: string) => {
-    if (!getScheduledTask(id) || runningTaskIds.has(id)) return false;
+    if (!requireOwnedScheduledTask(id) || runningTaskIds.has(id)) return false;
     void runScheduledTask(id, event.sender);
     return true;
   });

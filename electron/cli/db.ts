@@ -422,6 +422,7 @@ export function migrate(db: DB) {
       last_error TEXT,
       last_conversation_id TEXT,
       last_workflow_run_id TEXT,
+      owner_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -710,6 +711,13 @@ export function migrate(db: DB) {
   }
   if (!conversationCols.some((c) => c.name === "owner_id")) {
     db.exec("ALTER TABLE conversations ADD COLUMN owner_id TEXT");
+  }
+
+  const scheduledTaskOwnerCols = db
+    .prepare("PRAGMA table_info(scheduled_tasks)")
+    .all() as Array<{ name: string }>;
+  if (!scheduledTaskOwnerCols.some((c) => c.name === "owner_id")) {
+    db.exec("ALTER TABLE scheduled_tasks ADD COLUMN owner_id TEXT");
   }
 
   const workflowRunCols = db

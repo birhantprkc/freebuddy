@@ -14,6 +14,7 @@ import { startWebUIServer } from "./webUIServer.js";
 import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
 import { ensureOwnerUser, getOwnerUser } from "./cli/users.js";
 import { backfillMissingOwners, bindConversationNotifier } from "./cli/conversations.js";
+import { backfillScheduledTaskOwners } from "./cli/scheduledTasks.js";
 import { migrateGlobalRootsToOwner } from "./cli/users.js";
 import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
@@ -288,6 +289,7 @@ app.whenReady().then(async () => {
   const existingOwner = getOwnerUser();
   if (existingOwner) {
     backfillMissingOwners(existingOwner.id);
+    backfillScheduledTaskOwners(existingOwner.id);
     migrateGlobalRootsToOwner(existingOwner.id);
   }
   setLocalInvokeWindowGetter(() =>
