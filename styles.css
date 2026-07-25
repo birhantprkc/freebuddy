@@ -321,10 +321,6 @@ button {
   color: var(--fb-text-primary);
 }
 
-.sidebar-toggle.mobile-only {
-  display: none;
-}
-
 /* macOS traffic lights visible: lift the in-header toggle into the
    top-left system-button row, anchored to .sidebar-header (which sets
    position: relative above). */
@@ -958,28 +954,6 @@ button {
   .sidebar,
   .details-panel {
     display: none;
-  }
-
-  .sidebar-toggle.mobile-only {
-    display: inline-flex;
-  }
-  .sidebar-toggle.floating {
-    display: none;
-  }
-  .sidebar {
-    display: flex;
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: min(300px, 86vw);
-    z-index: 200;
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.3);
-  }
-  .app-shell.sidebar-collapsed .sidebar {
-    transform: translateX(0);
   }
 
   .titlebar {
@@ -17575,59 +17549,4 @@ button.ghost:focus-visible,
   color: var(--fb-brand);
   font-size: 12px;
   font-weight: 600;
-}
-
-/* ---------- Mobile chat / composer (<=760px) ----------
-   Placed last so it wins the cascade over the desktop .chat-composer rule
-   and the <=1080px media query (which both set a left offset for the
-   sidebar width that must not apply when the sidebar is a drawer). */
-@media (max-width: 760px) {
-  .chat-composer {
-    left: 0;
-    right: 0;
-    width: calc(100vw - 24px);
-    margin: 0 12px;
-    bottom: 12px;
-    border-radius: 18px;
-  }
-  .chat-composer textarea {
-    min-height: 56px;
-    max-height: 160px;
-    /* 16px avoids iOS auto-zoom on focus */
-    font-size: 16px;
-    padding: 10px 12px;
-  }
-  .chat-composer-actions {
-    padding: 6px 10px;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .chat-scroll {
-    padding: 16px 12px calc(var(--chat-composer-reserve) + 12px);
-  }
-  .chat-view {
-    --chat-composer-reserve: 130px;
-  }
-  .msg {
-    gap: 8px;
-  }
-
-  .new-task-view {
-    padding: 20px 14px 32px;
-  }
-  .new-task-stack {
-    gap: 12px;
-  }
-  .new-task-toolbar {
-    flex-wrap: wrap;
-    min-height: 0;
-    gap: 8px;
-    padding: 8px 10px;
-  }
-  .new-task-toolbar-tail {
-    width: 100%;
-  }
-  .home-view {
-    padding: 20px 14px 28px;
-  }
 }
