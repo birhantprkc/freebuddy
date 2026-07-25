@@ -79,11 +79,26 @@ test("webUIServer authenticates <img> requests via the session cookie and sets i
     "password login must set the session cookie"
   );
   assert.match(loginBlock, /Set-Cookie/);
+});
 
-  const qrBlock = server.slice(server.indexOf("handleQrLogin"));
-  assert.match(
-    qrBlock,
-    /buildSessionCookieHeader/,
-    "qr login must set the session cookie"
+test("unauthenticated login UI follows the host app language from /api/status", () => {
+  const server = fs.readFileSync(
+    new URL("../electron/webUIServer.ts", import.meta.url),
+    "utf8"
   );
+  const preload = fs.readFileSync(
+    new URL("../public/web-preload.js", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(server, /getLanguage\(\)/, "status exposes the resolved app locale");
+  assert.match(
+    server,
+    /language:\s*getLanguage\(\)/,
+    "/api/status must include language for the login page"
+  );
+  assert.match(preload, /\/api\/status/, "login bootstrap reads host language");
+  assert.match(preload, /normalizeLoginLang/, "maps zh-CN to the zh dictionary");
+  assert.match(preload, /远程访问登录/, "Chinese login copy is present");
+  assert.match(preload, /too_many_attempts/, "rate-limit errors are localized");
 });

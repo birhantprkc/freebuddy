@@ -471,16 +471,35 @@ const shellApi = {
 const remote = {
   whoami: () => ipcRenderer.invoke("remote:whoami"),
   getStatus: () => ipcRenderer.invoke("remote:getStatus"),
-  getQrLogin: () => ipcRenderer.invoke("remote:getQrLogin"),
+  getServerConfig: () => ipcRenderer.invoke("remote:getServerConfig"),
+  setServerConfig: (input: { port?: number; bindMode?: "local" | "lan" }) =>
+    ipcRenderer.invoke("remote:setServerConfig", input),
   setEnabled: (enabled: boolean) => ipcRenderer.invoke("remote:setEnabled", enabled),
   listUsers: () => ipcRenderer.invoke("remote:listUsers"),
   createUser: (input: { username: string; password?: string }) =>
     ipcRenderer.invoke("remote:createUser", input),
+  renameUser: (input: { id: string; username: string }) =>
+    ipcRenderer.invoke("remote:renameUser", input),
+  setUserDisabled: (input: { id: string; disabled: boolean }) =>
+    ipcRenderer.invoke("remote:setUserDisabled", input),
   resetUserPassword: (id: string) => ipcRenderer.invoke("remote:resetUserPassword", id),
+  setUserPassword: (input: { id: string; password: string }) =>
+    ipcRenderer.invoke("remote:setUserPassword", input),
+  getUserDataFootprint: (id: string) =>
+    ipcRenderer.invoke("remote:getUserDataFootprint", id),
   deleteUser: (id: string) => ipcRenderer.invoke("remote:deleteUser", id),
   listUserRoots: (userId: string) => ipcRenderer.invoke("remote:listUserRoots", userId),
   setUserRoots: (args: { userId: string; roots: string[] }) =>
-    ipcRenderer.invoke("remote:setUserRoots", args)
+    ipcRenderer.invoke("remote:setUserRoots", args),
+  checkRootsExist: (roots: string[]) =>
+    ipcRenderer.invoke("remote:checkRootsExist", roots),
+  listSessions: () => ipcRenderer.invoke("remote:listSessions"),
+  revokeSession: (tokenHash: string) =>
+    ipcRenderer.invoke("remote:revokeSession", tokenHash),
+  revokeUserSessions: (userId: string) =>
+    ipcRenderer.invoke("remote:revokeUserSessions", userId),
+  revokeAllSessions: () => ipcRenderer.invoke("remote:revokeAllSessions"),
+  listAuditLog: (limit?: number) => ipcRenderer.invoke("remote:listAuditLog", limit)
 };
 
 contextBridge.exposeInMainWorld("freebuddy", {

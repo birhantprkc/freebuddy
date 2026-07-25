@@ -23,6 +23,86 @@ test("conversation data handlers enforce ownership at the boundary", () => {
   assert.match(run, /requireOwnedConversation/, "run checks conversation ownership");
 });
 
+test("conversation mutations and handoff exports enforce ownership", () => {
+  const ipc = read("../electron/cli/ipc.ts");
+
+  // Each handler body ends at the next registerHandler call, so slicing to the
+  // following registration keeps the assertion scoped to one handler.
+  const handlerBody = (channel) => {
+    const start = ipc.indexOf(`"${channel}"`);
+    assert.ok(start > 0, `${channel} is registered`);
+    const next = ipc.indexOf("registerHandler(", start);
+    return next > 0 ? ipc.slice(start, next) : ipc.slice(start);
+  };
+
+  for (const channel of [
+    "cli:renameConversation",
+    "cli:archiveConversation",
+    "cli:setConversationApprovalMode",
+    "cli:setConversationConfigOptionOverrides",
+    "cli:setConversationSkills",
+    "cli:listConversationContextReferences",
+    "cli:removeConversationContextReference",
+    "cli:previewHandoffBrief",
+    "cli:transferConversation",
+    "cli:createConversationShare",
+    "cli:attachConversationShares"
+  ]) {
+    assert.match(
+      handlerBody(channel),
+      /requireOwnedConversation/,
+      `${channel} checks conversation ownership`
+    );
+  }
+
+  for (const channel of ["cli:listMessage", "cli:updateMessage"]) {
+    assert.match(
+      handlerBody(channel),
+      /callerCanAccessMessage\(/,
+      `${channel} resolves ownership through the message's conversation`
+    );
+  }
+});
+
+test("enabling remote access backfills legacy ownership immediately", () => {
+  const remoteControl = read("../electron/cli/remoteControl.ts");
+  const main = read("../electron/main.ts");
+  const backfill = read("../electron/cli/ownerBackfill.ts");
+
+  const setEnabled = remoteControl.slice(remoteControl.indexOf('"remote:setEnabled"'));
+  assert.match(
+    setEnabled,
+    /applyOwnerBackfill\(user\.id\)/,
+    "remote:setEnabled backfills right after the owner is created"
+  );
+  assert.match(
+    main,
+    /applyOwnerBackfill\(user\.id\)/,
+    "startup backfills after ensureOwnerUser creates the owner"
+  );
+  assert.match(backfill, /backfillMissingOwners/);
+  assert.match(backfill, /backfillScheduledTaskOwners/);
+  assert.match(backfill, /migrateGlobalRootsToOwner/);
+});
+
+test("scheduled runs execute under the task owner's identity", () => {
+  const scheduled = read("../electron/cli/scheduledTasks.ts");
+
+  const runTask = scheduled.slice(scheduled.indexOf("export async function runScheduledTask"));
+  assert.match(
+    runTask,
+    /runAsCaller\(task\.ownerId, \(\) => executeScheduledTask\(task, webContents\)\)/,
+    "the run is wrapped in the task owner's caller context"
+  );
+
+  const listRuns = scheduled.slice(scheduled.indexOf('"scheduledTasks:listRuns"'));
+  assert.match(
+    listRuns,
+    /requireOwnedScheduledTask\(taskId\)/,
+    "run history is scoped to the task owner"
+  );
+});
+
 test("the remote invoke bridge runs handlers under the session user's identity", () => {
   const server = read("../electron/webUIServer.ts");
   assert.match(server, /sessionUserId\(extractBearerToken/, "resolves userId from the bearer token");

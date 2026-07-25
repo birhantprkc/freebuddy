@@ -44,7 +44,16 @@ test("RemoteTab manages per-user workspace roots", () => {
     /setUserRoots\(/,
     "persists roots per user via setUserRoots"
   );
-  assert.match(remoteTab, /handleAddRoot/, "can add a root");
-  assert.match(remoteTab, /handleRemoveRoot/, "can remove a root");
-  assert.match(remoteTab, /selectRootsUser/, "can switch the targeted user");
+  assert.match(remoteTab, /handleBrowseFolderForUser/, "can add a root");
+  assert.match(remoteTab, /handleRemoveRootForUser/, "can remove a root");
+  assert.match(
+    remoteTab,
+    /userRootsMap\[u\.id\]/,
+    "each user card reads its own roots"
+  );
+  assert.match(
+    remoteTab,
+    /isNestedUnder\(path, root\)/,
+    "rejects a directory already covered by an assigned parent"
+  );
 });

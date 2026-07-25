@@ -63,7 +63,16 @@ test("webUIServer exposes an authed, sandboxed /api/listDirs endpoint", () => {
   const block = server.slice(server.indexOf("/api/listDirs"));
   assert.match(block, /isAuthed\(req\)/, "must require auth");
   assert.match(block, /isPathWithinRoots/, "must enforce allowlist containment");
-  assert.match(block, /resolveWorkspaceRoots/, "must resolve roots from the setting");
+  assert.match(
+    block,
+    /remoteRootsForUser\(callerUserId\)/,
+    "must resolve roots for the calling user, not globally"
+  );
+  assert.match(
+    block,
+    /roots\.length === 0/,
+    "a user with no assigned roots must browse nothing"
+  );
   assert.match(block, /path\.resolve/, "must normalize the requested path");
   assert.match(block, /dirent\.isDirectory\(\)/, "must list directories only");
   assert.match(

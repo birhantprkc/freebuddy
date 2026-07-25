@@ -37,6 +37,7 @@ import {
 import {
   appendMessage,
   archiveConversation,
+  callerCanAccessMessage,
   createConversation,
   deleteConversation,
   getConversation,
@@ -297,6 +298,7 @@ function attachmentCandidate(filePath: string) {
 }
 
 const CONVERSATIONS_CHANGED_CHANNEL = "conversations://changed";
+
 function notifyConversationsChanged(): void {
   for (const win of BrowserWindow.getAllWindows()) {
     safeSendToWebContents(win.webContents, CONVERSATIONS_CHANGED_CHANNEL, {
@@ -802,7 +804,7 @@ export function registerCliIpc() {
   registerHandler(
     "cli:previewHandoffBrief",
     (_e, input: PreviewHandoffBriefInput): PreviewHandoffBriefResult => {
-      const conversation = getConversation(input.sourceConversationId);
+      const conversation = requireOwnedConversation(input.sourceConversationId);
       if (!conversation) {
         return { brief: null, warning: "brief_extraction_failed" };
       }
@@ -817,7 +819,7 @@ export function registerCliIpc() {
   registerHandler(
     "cli:transferConversation",
     (_e, input: TransferConversationInput): TransferConversationResult => {
-      const source = getConversation(input.sourceConversationId);
+      const source = requireOwnedConversation(input.sourceConversationId);
       if (!source) {
         throw new Error("Source conversation not found");
       }
@@ -904,7 +906,7 @@ export function registerCliIpc() {
       _e,
       input: CreateConversationShareInput
     ): CreateConversationShareResult => {
-      const source = getConversation(input.sourceConversationId);
+      const source = requireOwnedConversation(input.sourceConversationId);
       if (!source) throw new Error("Source conversation not found");
       const messages = listMessages(source.id);
       const brief = extractHandoffBrief({ conversation: source, messages });
@@ -948,7 +950,7 @@ export function registerCliIpc() {
       _e,
       input: AttachConversationSharesInput
     ): AttachConversationSharesResult => {
-      if (!getConversation(input.targetConversationId)) {
+      if (!requireOwnedConversation(input.targetConversationId)) {
         throw new Error("Target conversation not found");
       }
       return attachConversationSharesFromText(
@@ -960,18 +962,22 @@ export function registerCliIpc() {
   registerHandler(
     "cli:listConversationContextReferences",
     (_e, conversationId: string) =>
-      listConversationContextReferences(conversationId)
+      requireOwnedConversation(conversationId)
+        ? listConversationContextReferences(conversationId)
+        : []
   );
   registerHandler(
     "cli:removeConversationContextReference",
     (
       _e,
       input: { targetConversationId: string; referenceId: string }
-    ) =>
-      removeConversationContextReference(
+    ) => {
+      if (!requireOwnedConversation(input.targetConversationId)) return [];
+      return removeConversationContextReference(
         input.targetConversationId,
         input.referenceId
-      )
+      );
+    }
   );
   registerHandler(
     "cli:renameConversation",
@@ -983,6 +989,7 @@ export function registerCliIpc() {
         titleSource?: ConversationTitleSource | null;
       }
     ) => {
+      if (!requireOwnedConversation(args.id)) return;
       renameConversation(args.id, args.title, args.titleSource);
       notifyConversationsChanged();
     }
@@ -995,6 +1002,7 @@ export function registerCliIpc() {
   registerHandler(
     "cli:archiveConversation",
     (_e, args: { id: string; archived: boolean }) => {
+      if (!requireOwnedConversation(args.id)) return;
       archiveConversation(args.id, args.archived);
       notifyConversationsChanged();
     }
@@ -1012,8 +1020,10 @@ export function registerCliIpc() {
 
   registerHandler(
     "cli:setConversationApprovalMode",
-    (_e, args: { id: string; approvalMode: "auto" | "ask" | null }) =>
-      setConversationApprovalMode(args.id, args.approvalMode)
+    (_e, args: { id: string; approvalMode: "auto" | "ask" | null }) => {
+      if (!requireOwnedConversation(args.id)) return;
+      setConversationApprovalMode(args.id, args.approvalMode);
+    }
   );
 
   registerHandler(
@@ -1022,29 +1032,36 @@ export function registerCliIpc() {
       _e,
       args: { id: string; overrides: Record<string, string> | null }
     ) => {
+      if (!requireOwnedConversation(args.id)) return undefined;
       setConversationConfigOptionOverrides(args.id, args.overrides);
       return getConversation(args.id);
     }
   );
   registerHandler(
     "cli:setConversationSkills",
-    (_e, args: { id: string; skillIds: string[] }) =>
-      setConversationSkills(args.id, Array.isArray(args.skillIds) ? args.skillIds : [])
+    (_e, args: { id: string; skillIds: string[] }) => {
+      if (!requireOwnedConversation(args.id)) return undefined;
+      return setConversationSkills(
+        args.id,
+        Array.isArray(args.skillIds) ? args.skillIds : []
+      );
+    }
   );
 
   registerHandler("cli:listMessages", (_e, conversationId: string) =>
     requireOwnedConversation(conversationId) ? listMessages(conversationId) : []
   );
   registerHandler("cli:listMessage", (_e, id: string) =>
-    listMessage(id)
+    callerCanAccessMessage(id) ? listMessage(id) : undefined
   );
   registerHandler("cli:appendMessage", (_e, input: AppendMessageInput) => {
     if (!requireOwnedConversation(input.conversationId)) return undefined;
     return appendMessage(input);
   });
-  registerHandler("cli:updateMessage", (_e, input: UpdateMessageInput) =>
-    updateMessage(input)
-  );
+  registerHandler("cli:updateMessage", (_e, input: UpdateMessageInput) => {
+    if (!callerCanAccessMessage(input.id)) return;
+    updateMessage(input);
+  });
 
   registerHandler("settings:get", (_e, key: string) => getSetting(key));
   registerHandler("settings:set", (_e, args: { key: string; value: string }) => {

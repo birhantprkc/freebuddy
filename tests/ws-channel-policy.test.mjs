@@ -25,7 +25,6 @@ test("classifyWsChannel routes global, session-scoped, and desktop-only channels
   assert.deepEqual(classifyWsChannel("cli://runtime"), { kind: "global" });
   assert.deepEqual(classifyWsChannel("infoCards://changed"), { kind: "global" });
   assert.deepEqual(classifyWsChannel("conversations://changed"), { kind: "global" });
-  assert.deepEqual(classifyWsChannel("messages://changed"), { kind: "global" });
 
   assert.deepEqual(classifyWsChannel("cli://abc-123"), {
     kind: "session",
@@ -38,4 +37,41 @@ test("classifyWsChannel routes global, session-scoped, and desktop-only channels
   assert.deepEqual(classifyWsChannel("freebuddy://draft-tool"), { kind: "drop" });
   assert.deepEqual(classifyWsChannel("updater://event"), { kind: "drop" });
   assert.deepEqual(classifyWsChannel("unknown://whatever"), { kind: "drop" });
+});
+
+test("conversation-scoped channels are classified for per-owner delivery", async () => {
+  const { classifyWsChannel, conversationIdFromPayload } = await loadPolicy();
+
+  assert.deepEqual(classifyWsChannel("messages://changed"), {
+    kind: "conversationPayload"
+  });
+  assert.deepEqual(classifyWsChannel("workflow://message/conv-1"), {
+    kind: "conversation",
+    conversationId: "conv-1"
+  });
+  assert.deepEqual(classifyWsChannel("workflow://message/"), { kind: "drop" });
+
+  assert.equal(conversationIdFromPayload({ conversationId: "conv-1" }), "conv-1");
+  assert.equal(conversationIdFromPayload({ conversationId: "" }), null);
+  assert.equal(conversationIdFromPayload({ at: 1 }), null);
+  assert.equal(conversationIdFromPayload(null), null);
+});
+
+test("owner-carrying payloads are classified for per-owner delivery", async () => {
+  const { classifyWsChannel, ownerFromPayload } = await loadPolicy();
+
+  assert.deepEqual(classifyWsChannel("scheduledTasks://changed"), {
+    kind: "ownerPayload"
+  });
+
+  assert.deepEqual(ownerFromPayload({ id: "t1", ownerId: "alice" }), {
+    kind: "owner",
+    ownerId: "alice"
+  });
+  assert.deepEqual(ownerFromPayload({ id: "t1", ownerId: null }), {
+    kind: "owner",
+    ownerId: null
+  });
+  // No record attached: nothing to leak, so every client may refetch.
+  assert.deepEqual(ownerFromPayload(undefined), { kind: "signal" });
 });

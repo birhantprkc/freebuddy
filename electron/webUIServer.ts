@@ -12,18 +12,37 @@ import {
   parentWithinRoots
 } from "./shared/workspaceRoots.js";
 import {
-  consumeQrToken,
   buildSessionCookieHeader,
+  buildExpiredSessionCookieHeader,
   readSessionCookie,
   createSession,
   checkSession,
+  destroySession,
   extractBearerToken,
-  sessionUserId
+  hashSessionToken,
+  sessionUserId,
+  setSessionRevocationListener,
+  type SessionRevocation
 } from "./remoteAuth.js";
-import { verifyUserLogin, getOwnerUser, listUsers, getUserRoots } from "./cli/users.js";
+import { verifyUserLogin, getOwnerUser, getUserById, listUsers } from "./cli/users.js";
+import { getLanguage } from "./cli/settings.js";
+import { remoteRootsForUser } from "./cli/remoteRoots.js";
+import { recordAudit } from "./cli/remoteAudit.js";
+import {
+  checkLoginAllowed,
+  loginAttemptKey,
+  recordLoginFailure,
+  recordLoginSuccess
+} from "./remoteLoginLimit.js";
 import { runAsCaller } from "./cli/callerContext.js";
 import { getSessionOwner } from "./cli/sessionOwners.js";
-import { classifyWsChannel } from "./shared/wsChannelPolicy.js";
+import { getConversation } from "./cli/conversations.js";
+import {
+  classifyWsChannel,
+  conversationIdFromPayload,
+  ownerFromPayload,
+  type WsChannelClass
+} from "./shared/wsChannelPolicy.js";
 import { localInvoke } from "./invokeRegistry.js";
 import { setEventBroadcaster } from "./eventBus.js";
 import {
@@ -32,13 +51,25 @@ import {
   type PrepareAttachmentPayload
 } from "./cli/attachments.js";
 
-const WEBUI_DEFAULT_PORT = 18080;
+export const WEBUI_DEFAULT_PORT = 18080;
+export const WEBUI_MIN_PORT = 1024;
+export const WEBUI_MAX_PORT = 65535;
+
+export function normalizeWebUIPort(value: unknown): number {
+  const port = typeof value === "string" ? Number.parseInt(value, 10) : Number(value);
+  if (!Number.isInteger(port) || port < WEBUI_MIN_PORT || port > WEBUI_MAX_PORT) {
+    return WEBUI_DEFAULT_PORT;
+  }
+  return port;
+}
 
 let webuiServer: http.Server | null = null;
 let wss: WebSocketServer | null = null;
 const authedClients = new Set<WebSocket>();
 const clientUsers = new Map<WebSocket, string>();
+const clientTokenHashes = new Map<WebSocket, string>();
 let currentPort = WEBUI_DEFAULT_PORT;
+let requestedPort = WEBUI_DEFAULT_PORT;
 let currentHost = "127.0.0.1";
 let currentAllowRemote = false;
 
@@ -153,6 +184,48 @@ function isAuthed(req: IncomingMessage): boolean {
   );
 }
 
+function requestToken(req: IncomingMessage): string | null {
+  return (
+    extractBearerToken(req.headers.authorization) ??
+    readSessionCookie(req.headers.cookie)
+  );
+}
+
+function clientIp(req: IncomingMessage): string | null {
+  const forwarded = req.headers["x-forwarded-for"];
+  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  if (typeof first === "string" && first.trim()) {
+    return first.split(",")[0]!.trim();
+  }
+  return req.socket.remoteAddress ?? null;
+}
+
+function userAgent(req: IncomingMessage): string | null {
+  const value = req.headers["user-agent"];
+  return typeof value === "string" ? value.slice(0, 256) : null;
+}
+
+/** Closes the live sockets belonging to sessions an admin just revoked. */
+function dropRevokedSockets(revocation: SessionRevocation): void {
+  const tokens = new Set(revocation.tokens ?? []);
+  const users = new Set(revocation.userIds ?? []);
+  for (const client of [...authedClients]) {
+    const matches =
+      revocation.all === true ||
+      tokens.has(clientTokenHashes.get(client) ?? "") ||
+      users.has(clientUsers.get(client) ?? "");
+    if (!matches) continue;
+    authedClients.delete(client);
+    clientUsers.delete(client);
+    clientTokenHashes.delete(client);
+    try {
+      client.close(1008, "session_revoked");
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
 async function handleLogin(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   if (url.pathname !== "/api/login" || req.method !== "POST") return false;
@@ -163,33 +236,64 @@ async function handleLogin(req: IncomingMessage, res: ServerResponse): Promise<b
     sendJson(res, 200, { ok: false, error: "remote_not_initialized" });
     return true;
   }
+
+  const ip = clientIp(req);
+  const attemptKey = loginAttemptKey(ip, username);
+  const gate = checkLoginAllowed(attemptKey);
+  if (!gate.allowed) {
+    const retryAfter = Math.ceil(gate.retryAfterMs / 1000);
+    res.setHeader("Retry-After", String(retryAfter));
+    sendJson(res, 429, { ok: false, error: "too_many_attempts", retryAfter });
+    return true;
+  }
+
   const user = verifyUserLogin(username, password);
   if (user) {
-    const token = createSession(user.id);
+    recordLoginSuccess(attemptKey);
+    const token = createSession(user.id, { ip, userAgent: userAgent(req) });
     res.setHeader("Set-Cookie", buildSessionCookieHeader(token));
+    recordAudit({
+      event: "login.success",
+      actorId: user.id,
+      actorName: user.username,
+      ip,
+      detail: userAgent(req)
+    });
     sendJson(res, 200, { ok: true, token });
   } else {
+    const lockedForMs = recordLoginFailure(attemptKey);
+    recordAudit({
+      event: lockedForMs > 0 ? "login.locked" : "login.failure",
+      actorName: username || null,
+      ip,
+      detail: lockedForMs > 0 ? `locked for ${Math.ceil(lockedForMs / 1000)}s` : null
+    });
     sendJson(res, 200, { ok: false, error: "invalid_credentials" });
   }
   return true;
 }
 
-async function handleQrLogin(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+async function handleLogout(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<boolean> {
   const url = new URL(req.url || "/", "http://127.0.0.1");
-  if (url.pathname !== "/api/qr-login" || req.method !== "POST") return false;
-  const body = (await readJsonBody(req)) as { token?: string } | null;
-  if (!consumeQrToken(typeof body?.token === "string" ? body.token : null)) {
-    sendJson(res, 200, { ok: false, error: "invalid_or_expired_qr_token" });
-    return true;
+  if (url.pathname !== "/api/logout" || req.method !== "POST") return false;
+  const token = requestToken(req);
+  if (token) {
+    const userId = sessionUserId(token);
+    destroySession(token);
+    if (userId) {
+      recordAudit({
+        event: "logout",
+        actorId: userId,
+        actorName: getUserById(userId)?.username ?? null,
+        ip: clientIp(req)
+      });
+    }
   }
-  const owner = getOwnerUser();
-  if (!owner) {
-    sendJson(res, 200, { ok: false, error: "remote_not_initialized" });
-    return true;
-  }
-  const token = createSession(owner.id);
-  res.setHeader("Set-Cookie", buildSessionCookieHeader(token));
-  sendJson(res, 200, { ok: true, token });
+  res.setHeader("Set-Cookie", buildExpiredSessionCookieHeader());
+  sendJson(res, 200, { ok: true });
   return true;
 }
 
@@ -197,7 +301,10 @@ function handleStatus(res: ServerResponse): void {
   sendJson(res, 200, {
     ok: true,
     webui: true,
-    hasPassword: listUsers().length > 0
+    hasPassword: listUsers().length > 0,
+    // Unauthenticated login UI uses this so the page matches the host app locale
+    // instead of whatever the browser happens to report.
+    language: getLanguage()
   });
 }
 
@@ -220,10 +327,16 @@ async function handleInvoke(req: IncomingMessage, res: ServerResponse): Promise<
   const userId =
     sessionUserId(extractBearerToken(req.headers.authorization)) ||
     sessionUserId(readSessionCookie(req.headers.cookie));
+  if (!userId) {
+    // Running without an identity would skip ownership scoping and fall back to
+    // the host home directory for path checks.
+    sendJson(res, 401, { ok: false, error: "unauthorized" });
+    return true;
+  }
   try {
-    const result = userId
-      ? await runAsCaller(userId, () => localInvoke(channel, ...args))
-      : await localInvoke(channel, ...args);
+    const result = await runAsCaller(userId, () =>
+      localInvoke(channel, { userId }, ...args)
+    );
     sendJson(res, 200, { ok: true, result });
   } catch (error) {
     sendJson(res, 200, {
@@ -320,9 +433,16 @@ function handleListDirs(req: IncomingMessage, res: ServerResponse): boolean {
   const callerUserId =
     sessionUserId(extractBearerToken(req.headers.authorization)) ||
     sessionUserId(readSessionCookie(req.headers.cookie));
-  const roots = resolveWorkspaceRoots(callerUserId ? getUserRoots(callerUserId) : []);
+  const roots = remoteRootsForUser(callerUserId);
+  if (roots.length === 0) {
+    sendJson(res, 200, {
+      ok: true,
+      result: { path: "", parent: null, roots: [], entries: [] }
+    });
+    return true;
+  }
   const requested = url.searchParams.get("path");
-  const target = path.resolve(requested || roots[0] || os.homedir());
+  const target = path.resolve(requested || roots[0]!);
   if (!isPathWithinRoots(target, roots)) {
     sendJson(res, 403, { ok: false, error: "forbidden" });
     return true;
@@ -454,6 +574,48 @@ function proxyUpgradeToDevServer(
   proxyReq.end();
 }
 
+type ChannelAudience =
+  | { kind: "all" }
+  | { kind: "user"; userId: string | null }
+  | { kind: "none" };
+
+function conversationAudience(conversationId: string): ChannelAudience {
+  const conversation = getConversation(conversationId);
+  if (!conversation) return { kind: "none" };
+  // Rows created before per-user ownership existed belong to the desktop owner.
+  return {
+    kind: "user",
+    userId: conversation.ownerId ?? getOwnerUser()?.id ?? null
+  };
+}
+
+function resolveChannelAudience(
+  classified: WsChannelClass,
+  payload: unknown
+): ChannelAudience {
+  switch (classified.kind) {
+    case "global":
+      return { kind: "all" };
+    case "session":
+      return { kind: "user", userId: getSessionOwner(classified.sessionId) };
+    case "conversation":
+      return conversationAudience(classified.conversationId);
+    case "conversationPayload": {
+      const conversationId = conversationIdFromPayload(payload);
+      return conversationId
+        ? conversationAudience(conversationId)
+        : { kind: "none" };
+    }
+    case "ownerPayload": {
+      const owner = ownerFromPayload(payload);
+      if (owner.kind === "signal") return { kind: "all" };
+      return { kind: "user", userId: owner.ownerId ?? getOwnerUser()?.id ?? null };
+    }
+    default:
+      return { kind: "none" };
+  }
+}
+
 function setupWebSocket(server: http.Server, devServerUrl = ""): void {
   wss = new WebSocketServer({ noServer: true });
 
@@ -486,10 +648,11 @@ function setupWebSocket(server: http.Server, devServerUrl = ""): void {
             ? extractBearerToken(`Bearer ${msg.token}`)
             : null;
         const userId = token ? sessionUserId(token) : null;
-        if (userId) {
+        if (userId && token) {
           authed = true;
           authedClients.add(ws);
           clientUsers.set(ws, userId);
+          clientTokenHashes.set(ws, hashSessionToken(token));
           ws.send(JSON.stringify({ type: "authed" }));
         } else {
           ws.close(1008);
@@ -501,22 +664,28 @@ function setupWebSocket(server: http.Server, devServerUrl = ""): void {
     ws.on("close", () => {
       authedClients.delete(ws);
       clientUsers.delete(ws);
+      clientTokenHashes.delete(ws);
     });
     ws.on("error", () => {
       authedClients.delete(ws);
       clientUsers.delete(ws);
+      clientTokenHashes.delete(ws);
     });
   });
+
+  setSessionRevocationListener(dropRevokedSockets);
 
   setEventBroadcaster((channel: string, payload: unknown) => {
     if (authedClients.size === 0) return;
     const classified = classifyWsChannel(channel);
     if (classified.kind === "drop") return;
+    const audience = resolveChannelAudience(classified, payload);
+    if (audience.kind === "none") return;
     const message = JSON.stringify({ channel, payload });
     for (const client of authedClients) {
       if (client.readyState !== WebSocket.OPEN) continue;
-      if (classified.kind === "session") {
-        const owner = getSessionOwner(classified.sessionId);
+      if (audience.kind === "user") {
+        const owner = audience.userId;
         if (owner !== clientUsers.get(client)) continue;
       }
       try {
@@ -542,8 +711,12 @@ function getLanIp(): string {
   return "127.0.0.1";
 }
 
+/** `local` keeps the listener on the loopback interface, for reverse proxies. */
+export type WebUIBindMode = "local" | "lan";
+
 export interface WebUIServerOptions {
   allowRemote?: boolean;
+  bindMode?: WebUIBindMode;
   distDir?: string;
   port?: number;
   devServerUrl?: string;
@@ -552,24 +725,38 @@ export interface WebUIServerOptions {
 export interface WebUIStatus {
   running: boolean;
   enabled: boolean;
+  bindMode: WebUIBindMode;
   port: number;
+  /** The port the admin asked for, which differs after a bind conflict. */
+  requestedPort: number;
   host: string;
   lanIp: string;
   accessUrl: string;
   hasPassword: boolean;
+  /** True when the listener is reachable off-device over plain HTTP. */
+  exposedOverPlainHttp: boolean;
 }
 
 export function getWebUIStatus(): WebUIStatus {
   const lanIp = getLanIp();
+  const onLan = currentHost === "0.0.0.0";
   return {
     running: webuiServer !== null,
     enabled: currentAllowRemote,
+    bindMode: onLan ? "lan" : "local",
     port: currentPort,
+    requestedPort: requestedPort,
     host: currentHost,
     lanIp,
-    accessUrl: `http://${currentAllowRemote ? lanIp : "127.0.0.1"}:${currentPort}`,
-    hasPassword: listUsers().length > 0
+    accessUrl: `http://${onLan ? lanIp : "127.0.0.1"}:${currentPort}`,
+    hasPassword: listUsers().length > 0,
+    exposedOverPlainHttp: webuiServer !== null && onLan
   };
+}
+
+/** Token hashes of the clients currently holding an authenticated socket. */
+export function getConnectedSessionHashes(): string[] {
+  return [...clientTokenHashes.values()];
 }
 
 export function startWebUIServer(options: WebUIServerOptions = {}): Promise<void> {
@@ -582,11 +769,15 @@ export function startWebUIServer(options: WebUIServerOptions = {}): Promise<void
     const allowRemote = options.allowRemote === true;
     const distDir = options.distDir ? path.resolve(options.distDir) : "";
     const devServerUrl = options.devServerUrl || "";
-    const host = allowRemote ? "0.0.0.0" : "127.0.0.1";
-    const basePort = options.port ?? WEBUI_DEFAULT_PORT;
+    // Loopback-only is the safe choice when the admin fronts the WebUI with a
+    // TLS-terminating proxy, so remote access and LAN exposure are separate.
+    const bindMode: WebUIBindMode = options.bindMode ?? "lan";
+    const host = allowRemote && bindMode === "lan" ? "0.0.0.0" : "127.0.0.1";
+    const basePort = normalizeWebUIPort(options.port);
 
     currentAllowRemote = allowRemote;
     currentHost = host;
+    requestedPort = basePort;
 
     let port = basePort;
     const maxPort = basePort + 20;
@@ -601,7 +792,7 @@ export function startWebUIServer(options: WebUIServerOptions = {}): Promise<void
       const server = http.createServer((req, res) => {
         void (async () => {
           if (await handleLogin(req, res)) return;
-          if (await handleQrLogin(req, res)) return;
+          if (await handleLogout(req, res)) return;
 
           const url = new URL(req.url || "/", "http://127.0.0.1");
           if (url.pathname === "/api/status" && req.method === "GET") {
@@ -667,6 +858,8 @@ export function stopWebUIServer(): Promise<void> {
     }
     authedClients.clear();
     clientUsers.clear();
+    clientTokenHashes.clear();
+    setSessionRevocationListener(null);
     const server = webuiServer;
     webuiServer = null;
     if (server) {

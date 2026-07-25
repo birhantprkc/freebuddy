@@ -1,6 +1,14 @@
 import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { runAsCaller } from "./cli/callerContext.js";
 import { getOwnerUser } from "./cli/users.js";
+import {
+  classifyRemoteChannel,
+  isRemoteChannelCallable
+} from "./shared/remoteChannelPolicy.js";
+import {
+  guardRemoteInvokeArgs,
+  filterRemoteInvokeResult
+} from "./cli/remoteInvokeGuard.js";
 
 type InvokeHandler = (event: IpcMainInvokeEvent, ...args: any[]) => any;
 
@@ -36,57 +44,36 @@ export function listInvokeChannels(): string[] {
   return Array.from(handlers.keys());
 }
 
-const REMOTE_BLOCKED_CHANNELS = new Set<string>([
-  "cli:selectDirectory",
-  "cli:selectAttachments",
-  "cli:install",
-  "cli:installStream",
-  "cli:openDraftExternal",
-  "cli:openCursorUsageSettings",
-  "skills:selectDirectory",
-  "skills:selectArchive",
-  "skills:reveal",
-  "skills:openMarketUrl",
-  "skills:import",
-  "skills:installFromMarket",
-  "shell:showItemInFolder",
-  "updater:check",
-  "updater:download",
-  "updater:quitAndInstall",
-  "plugins:install",
-  "plugins:uninstall",
-  "plugins:update",
-  "plugins:addMarketplace",
-  "plugins:updateMarketplace",
-  "plugins:removeMarketplace",
-  "remote:setEnabled",
-  "remote:setPassword",
-  "remote:resetPassword",
-  "remote:listUsers",
-  "remote:createUser",
-  "remote:resetUserPassword",
-  "remote:deleteUser",
-  "remote:listUserRoots",
-  "remote:setUserRoots",
-  "remote:getQrLogin"
-]);
+export function isChannelRemoteCallable(channel: string, isAdmin = false): boolean {
+  return handlers.has(channel) && isRemoteChannelCallable(channel, isAdmin);
+}
 
-export function isChannelRemoteCallable(channel: string): boolean {
-  return handlers.has(channel) && !REMOTE_BLOCKED_CHANNELS.has(channel);
+export interface LocalInvokeContext {
+  /** Remote user on whose behalf the call runs; null for local CLI callers. */
+  userId?: string | null;
+  isAdmin?: boolean;
 }
 
 export async function localInvoke(
   channel: string,
+  context: LocalInvokeContext,
   ...args: unknown[]
 ): Promise<unknown> {
   const handler = handlers.get(channel);
   if (!handler) {
     throw new Error(`unknown channel: ${channel}`);
   }
-  if (!isChannelRemoteCallable(channel)) {
-    throw new Error(`channel not available remotely: ${channel}`);
+  const isAdmin = context.isAdmin === true;
+  if (!isChannelRemoteCallable(channel, isAdmin)) {
+    const reason =
+      classifyRemoteChannel(channel) === "adminOnly"
+        ? "channel requires an administrator"
+        : "channel not available remotely";
+    throw new Error(`${reason}: ${channel}`);
   }
+  const guardedArgs = guardRemoteInvokeArgs(channel, args, context.userId ?? null);
   const win = mainWindowGetter ? mainWindowGetter() : null;
   const event = { sender: win ? win.webContents : undefined } as IpcMainInvokeEvent;
-  return handler(event, ...args);
+  const result = await handler(event, ...guardedArgs);
+  return filterRemoteInvokeResult(channel, result);
 }

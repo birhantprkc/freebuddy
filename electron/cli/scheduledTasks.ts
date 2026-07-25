@@ -5,9 +5,10 @@ import { statSync } from "node:fs";
 import path from "node:path";
 
 import { getDb } from "./db.js";
+import { safeSendToWebContents } from "./ipcSend.js";
 import { appendMessage, createConversation, getConversation } from "./conversations.js";
 import { listCliMembers } from "./members.js";
-import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
+import { getCallerUserId, isCallerAdmin, runAsCaller } from "./callerContext.js";
 import { createCliStepExecutor, WorkflowRuntime } from "./workflowRuntime.js";
 import { extractVisibleStepOutput } from "./workflowScheduler.js";
 import type { WorkflowAgentRef, WorkflowPlan } from "./workflowTypes.js";
@@ -510,6 +511,18 @@ export async function runScheduledTask(
 ): Promise<boolean> {
   const task = getScheduledTask(id);
   if (!task || runningTaskIds.has(id)) return false;
+  // The scheduler has no caller context of its own, so conversations and
+  // messages created by the run would otherwise end up without an owner.
+  return task.ownerId
+    ? runAsCaller(task.ownerId, () => executeScheduledTask(task, webContents))
+    : executeScheduledTask(task, webContents);
+}
+
+async function executeScheduledTask(
+  task: ScheduledTask,
+  webContents: WebContents | undefined
+): Promise<boolean> {
+  const id = task.id;
   runningTaskIds.add(id);
   const startedAt = new Date();
   const taskRunId = randomUUID();
@@ -675,7 +688,8 @@ export async function runScheduledTask(
 
 function notifyChanged(task?: ScheduledTask): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send("scheduledTasks://changed", task);
+    if (win.isDestroyed()) continue;
+    safeSendToWebContents(win.webContents, "scheduledTasks://changed", task);
   }
 }
 
@@ -731,7 +745,7 @@ export function initializeScheduledTaskScheduler(
 export function registerScheduledTaskIpc(): void {
   registerHandler("scheduledTasks:list", () => listScheduledTasks());
   registerHandler("scheduledTasks:listRuns", (_event, taskId: string) =>
-    listScheduledTaskRuns(taskId)
+    requireOwnedScheduledTask(taskId) ? listScheduledTaskRuns(taskId) : []
   );
   registerHandler("scheduledTasks:listAgents", () =>
     listCliMembers()

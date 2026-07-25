@@ -354,6 +354,23 @@ export function requireOwnedConversation(id: string): Conversation | undefined {
   return conv.ownerId === caller ? conv : undefined;
 }
 
+// Message-level gate for handlers that only receive a message id. Kept as a
+// single joined query because it sits on the streaming update path.
+export function callerCanAccessMessage(messageId: string): boolean {
+  if (isCallerAdmin()) return true;
+  const caller = getCallerUserId();
+  if (caller === null) return true;
+  const row = getDb()
+    .prepare(
+      `SELECT c.owner_id AS owner_id
+       FROM conversation_messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.id = ?`
+    )
+    .get(messageId) as { owner_id: string | null } | undefined;
+  return row ? row.owner_id === caller : false;
+}
+
 export function renameConversation(
   id: string,
   title: string,

@@ -77,6 +77,46 @@ test("requireOwnedConversation hides other users' conversations", async (t) => {
   assert.equal(requireOwnedConversation("b1")?.id, "b1");
 });
 
+test("callerCanAccessMessage gates messages by their conversation owner", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  setDbForTest(db);
+  const { createConversation, appendMessage, callerCanAccessMessage } =
+    await import("../dist-electron/cli/conversations.js");
+  const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
+
+  runAsCaller("alice", () => createConversation(baseInput("a1")));
+  runAsCaller("alice", () =>
+    appendMessage({
+      id: "m1",
+      conversationId: "a1",
+      role: "user",
+      status: "sent",
+      content: "hi"
+    })
+  );
+
+  assert.equal(runAsCaller("alice", () => callerCanAccessMessage("m1")), true);
+  assert.equal(
+    runAsCaller("bob", () => callerCanAccessMessage("m1")),
+    false,
+    "bob cannot read or update a message in alice's conversation"
+  );
+  assert.equal(
+    runAsCaller("bob", () => callerCanAccessMessage("missing")),
+    false,
+    "unknown message ids are denied"
+  );
+  assert.equal(
+    runAsCaller("owner", () => callerCanAccessMessage("m1"), true),
+    true,
+    "admin keeps access"
+  );
+  assert.equal(callerCanAccessMessage("m1"), true, "internal calls keep access");
+});
+
 test("backfillMissingOwners assigns legacy rows to the owner", async (t) => {
   if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
   const db = makeDb();

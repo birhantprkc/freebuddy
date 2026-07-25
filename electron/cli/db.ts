@@ -514,7 +514,8 @@ export function migrate(db: DB) {
       username     TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       is_owner     INTEGER NOT NULL DEFAULT 0,
-      created_at   INTEGER NOT NULL
+      created_at   INTEGER NOT NULL,
+      disabled     INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS remote_user_roots (
@@ -529,7 +530,46 @@ export function migrate(db: DB) {
       created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS remote_audit_log (
+      id         TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL,
+      event      TEXT NOT NULL,
+      actor_id   TEXT,
+      actor_name TEXT,
+      target_id  TEXT,
+      target_name TEXT,
+      ip         TEXT,
+      detail     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_remote_audit_created
+      ON remote_audit_log(created_at DESC);
   `);
+
+  const remoteUserCols = db
+    .prepare("PRAGMA table_info(remote_users)")
+    .all() as Array<{ name: string }>;
+  if (!remoteUserCols.some((c) => c.name === "disabled")) {
+    db.exec(
+      "ALTER TABLE remote_users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0"
+    );
+  }
+
+  const remoteSessionCols = db
+    .prepare("PRAGMA table_info(remote_sessions)")
+    .all() as Array<{ name: string }>;
+  if (!remoteSessionCols.some((c) => c.name === "ip")) {
+    db.exec("ALTER TABLE remote_sessions ADD COLUMN ip TEXT");
+  }
+  if (!remoteSessionCols.some((c) => c.name === "user_agent")) {
+    db.exec("ALTER TABLE remote_sessions ADD COLUMN user_agent TEXT");
+  }
+  if (!remoteSessionCols.some((c) => c.name === "last_seen_at")) {
+    db.exec("ALTER TABLE remote_sessions ADD COLUMN last_seen_at INTEGER");
+  }
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_remote_sessions_user ON remote_sessions(user_id)"
+  );
 
   const handoffColumns = db
     .prepare("PRAGMA table_info(handoff_briefs)")

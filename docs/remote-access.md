@@ -23,23 +23,58 @@ for oversight; remote users only see their own.
 - `FB_REMOTE=1` — enable remote access on startup.
 - `FB_REMOTE_PASSWORD=...` — seed/reset the owner password (≥ 8 chars).
 
+## Server settings
+
+**Settings → Remote → Server** controls where the WebUI listens:
+
+- **Port** — defaults to `18080`. If the port is taken the server walks up to
+  the next free one and the settings page reports which port it actually got.
+- **Network exposure** — *Local network* binds `0.0.0.0`; *This machine only*
+  binds `127.0.0.1`, which is what you want when a reverse proxy terminates TLS
+  in front of FreeBuddy.
+
 ## Security notes
 
-- The WebUI listens on `:18080`; the agent bridge stays bound to `127.0.0.1:17878`.
+- The agent bridge stays bound to `127.0.0.1:17878` regardless of WebUI settings.
 - Passwords are stored as scrypt hashes; sessions are HttpOnly + `SameSite=Strict`
   cookies so authenticated `<img>` / download requests work without exposing the
   token to JavaScript.
+- Remote calls go through an explicit channel allow-list
+  (`electron/shared/remoteChannelPolicy.ts`). Channels are `allow`, `adminOnly`
+  or `deny`, and anything unclassified is refused — a contract test fails when a
+  newly registered handler has not been categorised.
+- The executable, arguments and environment used to spawn a CLI are resolved on
+  the host from the stored adapter overrides. Values sent by a remote client are
+  discarded, and `cwd` must fall inside that user's assigned directories.
+- `settings:get` / `settings:set` are limited to a small key allow-list over the
+  bridge, so the stored password hash is not readable from a browser.
 - WebSocket session events (`cli://<sessionId>`) are delivered only to the owning
   user; desktop-only event channels are never forwarded to remote clients.
-- Browsable workspace directories are constrained per user by an allowlist
-  (`Settings → Remote → Browsable workspace roots`); empty defaults to the host
+- Browsable workspace directories are assigned per user. **A member with no
+  assigned directory can browse nothing**; only the owner falls back to the host
   home folder.
+- Failed sign-ins are counted per IP + username. After five attempts the pair is
+  locked out with an exponential backoff, capped at fifteen minutes.
+- Deleting a user also deletes their conversations and scheduled tasks, and
+  disabling or deleting an account (or changing its password) immediately
+  invalidates its sessions and closes its WebSockets.
+
+## Sessions and auditing
+
+- **Settings → Remote** lists every signed-in device with its IP, browser and
+  last-seen time. Sessions can be revoked individually, per user, or all at once.
+- The **Activity log** records sign-ins, lockouts, account changes, directory
+  changes and session revocations. The last 2000 entries are kept.
 
 ## Public / HTTPS deployment
 
 The built-in server is plain HTTP, which is fine for a trusted LAN. **For
 internet or any untrusted network, terminate TLS in a reverse proxy** in front
 of the WebUI. The server itself intentionally does not manage certificates.
+
+Set **Network exposure** to *This machine only* when you do this, so the plain
+HTTP port is not reachable directly. The proxy should forward `X-Forwarded-For`
+so session records and the activity log show the real client address.
 
 Example with Caddy (automatic HTTPS):
 

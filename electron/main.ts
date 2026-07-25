@@ -13,13 +13,16 @@ import { startPreviewServer } from "./previewServer.js";
 import { startWebUIServer } from "./webUIServer.js";
 import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
 import { ensureOwnerUser, getOwnerUser } from "./cli/users.js";
-import { backfillMissingOwners, bindConversationNotifier } from "./cli/conversations.js";
-import { backfillScheduledTaskOwners } from "./cli/scheduledTasks.js";
-import { migrateGlobalRootsToOwner } from "./cli/users.js";
+import { bindConversationNotifier } from "./cli/conversations.js";
+import { applyOwnerBackfill } from "./cli/ownerBackfill.js";
 import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
 import { getSetting } from "./cli/settings.js";
-import { initRemoteControl } from "./cli/remoteControl.js";
+import {
+  initRemoteControl,
+  getConfiguredBindMode,
+  getConfiguredPort
+} from "./cli/remoteControl.js";
 import { cleanupOrphanManagedAttachments } from "./cli/attachments.js";
 import { seedBuiltinWorkflowTeams } from "./cli/workflowTeams.js";
 import { seedBuiltinSkills } from "./cli/skills.js";
@@ -288,9 +291,7 @@ app.whenReady().then(async () => {
   getDb();
   const existingOwner = getOwnerUser();
   if (existingOwner) {
-    backfillMissingOwners(existingOwner.id);
-    backfillScheduledTaskOwners(existingOwner.id);
-    migrateGlobalRootsToOwner(existingOwner.id);
+    applyOwnerBackfill(existingOwner.id);
   }
   setLocalInvokeWindowGetter(() =>
     mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
@@ -299,9 +300,10 @@ app.whenReady().then(async () => {
     getSetting("remote.enabled") === "1" || process.env.FB_REMOTE === "1";
   if (remoteEnabled) {
     const customPw = process.env.FB_REMOTE_PASSWORD;
-    const { password } = ensureOwnerUser({
+    const { user, password } = ensureOwnerUser({
       password: customPw && customPw.length >= 8 ? customPw : undefined
     });
+    applyOwnerBackfill(user.id);
     if (customPw && customPw.length >= 8) {
       console.log("[FreeBuddy] Remote access password (FB_REMOTE_PASSWORD):", customPw);
     } else if (password) {
@@ -312,12 +314,14 @@ app.whenReady().then(async () => {
   }
   const distDir = path.join(__dirname, "..", "dist");
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  initRemoteControl({ distDir, devServerUrl });
   void startWebUIServer({
     allowRemote: remoteEnabled,
+    bindMode: getConfiguredBindMode(),
+    port: getConfiguredPort(),
     distDir,
     devServerUrl
   });
-  initRemoteControl({ distDir, devServerUrl });
   initializeAgentUsageReconciler();
   initializeTelemetry();
   cleanupOrphanManagedAttachments();

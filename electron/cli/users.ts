@@ -22,9 +22,11 @@ export interface RemoteUser {
   username: string;
   isOwner: boolean;
   createdAt: number;
+  disabled: boolean;
 }
 
-const USERNAME_RE = /^[a-zA-Z0-9_-]{3,32}$/;
+export const USERNAME_RE = /^[a-zA-Z0-9_-]{3,32}$/;
+export const MIN_PASSWORD_LENGTH = 8;
 
 interface UserRow {
   id: string;
@@ -32,6 +34,7 @@ interface UserRow {
   password_hash: string;
   is_owner: number;
   created_at: number;
+  disabled: number | null;
 }
 
 function rowToUser(row: UserRow): RemoteUser {
@@ -39,11 +42,25 @@ function rowToUser(row: UserRow): RemoteUser {
     id: row.id,
     username: row.username,
     isOwner: row.is_owner === 1,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    disabled: row.disabled === 1
   };
 }
 
-const USER_COLUMNS = "id, username, password_hash, is_owner, created_at";
+const USER_COLUMNS = "id, username, password_hash, is_owner, created_at, disabled";
+
+/**
+ * Session revocation lives in remoteAuth, which reads the users table. Taking
+ * the dependency the other way would be circular, so the wiring is injected
+ * from main during startup.
+ */
+type SessionInvalidator = (userId: string) => void;
+
+let invalidateSessionsForUser: SessionInvalidator = () => {};
+
+export function setSessionInvalidator(fn: SessionInvalidator): void {
+  invalidateSessionsForUser = fn;
+}
 
 export function listUsers(): RemoteUser[] {
   return (getDb()
@@ -96,7 +113,10 @@ export function createUser(input: {
       "INSERT INTO remote_users (id, username, password_hash, is_owner, created_at) VALUES (?, ?, ?, ?, ?)"
     )
     .run(id, username, hashPassword(password), isOwner, createdAt);
-  return { user: { id, username, isOwner: isOwner === 1, createdAt }, password };
+  return {
+    user: { id, username, isOwner: isOwner === 1, createdAt, disabled: false },
+    password
+  };
 }
 
 export function verifyUserLogin(username: string, password: string): RemoteUser | null {
@@ -104,6 +124,7 @@ export function verifyUserLogin(username: string, password: string): RemoteUser 
     .prepare(`SELECT ${USER_COLUMNS} FROM remote_users WHERE username = ?`)
     .get(username.trim()) as UserRow | undefined;
   if (!row) return null;
+  if (row.disabled === 1) return null;
   if (!verifyPassword(password, row.password_hash)) return null;
   return rowToUser(row);
 }
@@ -115,17 +136,44 @@ export function resetUserPassword(id: string): { user: RemoteUser; password: str
   getDb()
     .prepare("UPDATE remote_users SET password_hash = ? WHERE id = ?")
     .run(hashPassword(password), id);
+  invalidateSessionsForUser(id);
   return { user, password };
 }
 
 export function setUserPassword(id: string, plain: string): boolean {
-  if (plain.length < 8) throw new Error("password_too_short");
+  if (plain.length < MIN_PASSWORD_LENGTH) throw new Error("password_too_short");
   const user = getUserById(id);
   if (!user) return false;
   getDb()
     .prepare("UPDATE remote_users SET password_hash = ? WHERE id = ?")
     .run(hashPassword(plain), id);
+  invalidateSessionsForUser(id);
   return true;
+}
+
+export function renameUser(id: string, nextUsername: string): RemoteUser | null {
+  const username = nextUsername.trim();
+  if (!USERNAME_RE.test(username)) throw new Error("invalid_username");
+  const user = getUserById(id);
+  if (!user) return null;
+  if (user.username === username) return user;
+  const taken = getDb()
+    .prepare("SELECT 1 FROM remote_users WHERE username = ? AND id != ?")
+    .get(username, id);
+  if (taken) throw new Error("username_taken");
+  getDb().prepare("UPDATE remote_users SET username = ? WHERE id = ?").run(username, id);
+  return getUserById(id);
+}
+
+export function setUserDisabled(id: string, disabled: boolean): RemoteUser | null {
+  const user = getUserById(id);
+  if (!user) return null;
+  if (user.isOwner && disabled) throw new Error("cannot_disable_owner");
+  getDb()
+    .prepare("UPDATE remote_users SET disabled = ? WHERE id = ?")
+    .run(disabled ? 1 : 0, id);
+  if (disabled) invalidateSessionsForUser(id);
+  return getUserById(id);
 }
 
 export function ensureOwnerUser(options: { password?: string } = {}): {
@@ -191,11 +239,41 @@ export function migrateGlobalRootsToOwner(ownerId: string): void {
   );
 }
 
+export interface UserDataFootprint {
+  conversations: number;
+  scheduledTasks: number;
+}
+
+export function getUserDataFootprint(id: string): UserDataFootprint {
+  const count = (sql: string): number => {
+    try {
+      return (getDb().prepare(sql).get(id) as { n: number } | undefined)?.n ?? 0;
+    } catch {
+      return 0;
+    }
+  };
+  return {
+    conversations: count("SELECT COUNT(*) AS n FROM conversations WHERE owner_id = ?"),
+    scheduledTasks: count("SELECT COUNT(*) AS n FROM scheduled_tasks WHERE owner_id = ?")
+  };
+}
+
+/**
+ * Removes the account itself. Conversations and scheduled tasks are cleared
+ * beforehand by ownerCleanup, which reuses the per-record delete paths so
+ * managed attachments on disk are released too.
+ */
 export function deleteUser(id: string): boolean {
   const user = getUserById(id);
   if (!user) return false;
   if (user.isOwner) throw new Error("cannot_delete_owner");
-  getDb().prepare("DELETE FROM remote_users WHERE id = ?").run(id);
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare("DELETE FROM remote_user_roots WHERE user_id = ?").run(id);
+    db.prepare("DELETE FROM remote_users WHERE id = ?").run(id);
+  });
+  tx();
+  invalidateSessionsForUser(id);
   return true;
 }
 

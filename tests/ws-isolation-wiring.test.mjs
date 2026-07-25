@@ -22,6 +22,52 @@ test("the WS broadcaster only delivers session events to the owning user", () =>
   );
 });
 
+test("conversation-scoped WS events are delivered to the conversation owner only", () => {
+  const server = read("../electron/webUIServer.ts");
+
+  const audience = server.slice(server.indexOf("function resolveChannelAudience"));
+  assert.match(
+    audience,
+    /case "conversation":\s*\n\s*return conversationAudience\(classified\.conversationId\)/,
+    "workflow message channels resolve the owner from the conversation id"
+  );
+  assert.match(
+    audience,
+    /conversationIdFromPayload\(payload\)/,
+    "messages://changed resolves the conversation id from the payload"
+  );
+
+  const conversationAudience = server.slice(
+    server.indexOf("function conversationAudience")
+  );
+  assert.match(
+    conversationAudience,
+    /if \(!conversation\) return \{ kind: "none" \}/,
+    "events for unknown conversations are dropped"
+  );
+  assert.match(
+    conversationAudience,
+    /conversation\.ownerId \?\? getOwnerUser\(\)\?\.id/,
+    "legacy conversations without an owner fall back to the desktop owner"
+  );
+  assert.match(
+    audience,
+    /ownerFromPayload\(payload\)/,
+    "owner-carrying payloads resolve the owner from the payload"
+  );
+});
+
+test("scheduled task changes reach remote clients", () => {
+  const scheduled = read("../electron/cli/scheduledTasks.ts");
+
+  const notify = scheduled.slice(scheduled.indexOf("function notifyChanged"));
+  assert.match(
+    notify,
+    /safeSendToWebContents\(\s*win\.webContents,\s*"scheduledTasks:\/\/changed"/,
+    "the notifier goes through the broadcasting send helper"
+  );
+});
+
 test("run records the session owner and kill clears it", () => {
   const ipc = read("../electron/cli/ipc.ts");
 

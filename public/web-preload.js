@@ -40,6 +40,7 @@
     });
     if (res.status === 401) {
       clearToken();
+      closeWs();
       showLogin();
       throw new Error("unauthorized");
     }
@@ -54,10 +55,18 @@
 
   var ws = null;
   var wsConnecting = false;
+  var wsStopped = false;
   var subscribers = new Map();
 
+  function closeWs() {
+    wsStopped = true;
+    try { if (ws) ws.close(); } catch (e) {}
+    ws = null;
+    wsConnecting = false;
+  }
+
   function openWs() {
-    if (ws || wsConnecting) return;
+    if (ws || wsConnecting || wsStopped) return;
     wsConnecting = true;
     try {
       var proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -75,12 +84,23 @@
           }
         } catch (e) {}
       };
-      ws.onclose = function () { ws = null; wsConnecting = false; setTimeout(openWs, 2500); };
+      ws.onclose = function (ev) {
+        ws = null;
+        wsConnecting = false;
+        // 1008 means the server rejected or revoked this session. Retrying
+        // would spin forever against a token that can never authenticate.
+        if (ev && ev.code === 1008) {
+          clearToken();
+          showLogin();
+          return;
+        }
+        if (!wsStopped) setTimeout(openWs, 2500);
+      };
       ws.onerror = function () { try { ws.close(); } catch (e) {} };
     } catch (e) {
       ws = null;
       wsConnecting = false;
-      setTimeout(openWs, 2500);
+      if (!wsStopped) setTimeout(openWs, 2500);
     }
   }
 
@@ -263,8 +283,15 @@
 
     session: {
       logout: function () {
-        clearToken();
-        showLogin();
+        // The session cookie is HttpOnly, so only the server can retire it.
+        // Clearing the local token alone would leave the browser signed in.
+        return fetch("/api/logout", { method: "POST", headers: authHeaders() })
+          .catch(function () {})
+          .then(function () {
+            clearToken();
+            closeWs();
+            showLogin();
+          });
       }
     },
 
@@ -383,7 +410,6 @@
     remote: {
       whoami: function () { return invoke("remote:whoami"); },
       getStatus: function () { return invoke("remote:getStatus"); },
-      getQrLogin: function () { return invoke("remote:getQrLogin"); },
       setEnabled: function () { return Promise.resolve({ status: null, initialPassword: null }); },
       listUsers: function () { return Promise.resolve([]); },
       createUser: function () { return Promise.resolve({ user: { id: "", username: "", isOwner: false, createdAt: 0 }, password: "" }); },
@@ -394,10 +420,7 @@
     }
   };
 
-  var LOGIN_LANG = (function () {
-    var tag = navigator.language || navigator.userLanguage || "en";
-    return String(tag).toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
-  })();
+  var LOGIN_LANG = null;
   var LOGIN_I18N = {
     en: {
       title: "Remote access login",
@@ -407,7 +430,8 @@
       signing: "Signing in...",
       failed: "Login failed",
       invalid_credentials: "Wrong username or password",
-      remote_not_initialized: "Remote access is not set up yet"
+      remote_not_initialized: "Remote access is not set up yet",
+      too_many_attempts: "Too many attempts. Try again later."
     },
     zh: {
       title: "远程访问登录",
@@ -417,32 +441,66 @@
       signing: "登录中…",
       failed: "登录失败",
       invalid_credentials: "用户名或密码错误",
-      remote_not_initialized: "远程访问尚未配置"
+      remote_not_initialized: "远程访问尚未配置",
+      too_many_attempts: "尝试次数过多，请稍后再试。"
     }
   };
+
+  function browserLoginLang() {
+    var tag = navigator.language || navigator.userLanguage || "en";
+    return String(tag).toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+  }
+
+  function normalizeLoginLang(value) {
+    if (!value) return null;
+    var v = String(value).toLowerCase();
+    if (v.indexOf("zh") === 0) return "zh";
+    if (v === "en" || v.indexOf("en-") === 0) return "en";
+    return null;
+  }
+
+  async function resolveLoginLang() {
+    if (LOGIN_LANG) return LOGIN_LANG;
+    try {
+      var res = await fetch("/api/status");
+      var json = await res.json();
+      LOGIN_LANG = normalizeLoginLang(json && json.language) || browserLoginLang();
+    } catch (e) {
+      LOGIN_LANG = browserLoginLang();
+    }
+    try {
+      document.documentElement.lang = LOGIN_LANG === "zh" ? "zh-CN" : "en";
+    } catch (e) {}
+    return LOGIN_LANG;
+  }
+
   function loginT(key) {
-    var dict = LOGIN_I18N[LOGIN_LANG] || LOGIN_I18N.en;
+    var lang = LOGIN_LANG || browserLoginLang();
+    var dict = LOGIN_I18N[lang] || LOGIN_I18N.en;
     return dict[key] || LOGIN_I18N.en[key] || key;
   }
+
   function loginErrorMessage(code) {
-    var dict = LOGIN_I18N[LOGIN_LANG] || LOGIN_I18N.en;
+    var lang = LOGIN_LANG || browserLoginLang();
+    var dict = LOGIN_I18N[lang] || LOGIN_I18N.en;
     if (code && dict[code]) return dict[code];
     return code || dict.failed;
   }
 
-  function showLogin(message) {
+  async function showLogin(message) {
     if (document.getElementById("fb-login-root")) return;
+    await resolveLoginLang();
     var root = document.createElement("div");
     root.id = "fb-login-root";
     root.style.cssText =
-      "position:fixed;inset:0;background:#0b1329;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:system-ui,-apple-system,sans-serif;";
+      "position:fixed;inset:0;background:#0b1329;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:system-ui,-apple-system,\"PingFang SC\",\"Hiragino Sans GB\",\"Microsoft YaHei\",sans-serif;";
     root.innerHTML =
       '<div style="width:320px;padding:28px;background:#131c36;border:1px solid #243154;border-radius:14px;color:#e6ebf5;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.4);">' +
       '<div style="font-size:20px;font-weight:700;margin-bottom:4px;">FreeBuddy</div>' +
       '<div style="font-size:13px;color:#8b97b8;margin-bottom:18px;">' + (message || loginT("title")) + "</div>" +
       '<input id="fb-login-user" type="text" placeholder="' + loginT("username") + '" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:10px;outline:none;" />' +
       '<input id="fb-login-pw" type="password" placeholder="' + loginT("password") + '" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:12px;outline:none;" />' +
-      '<button id="fb-login-btn" style="width:100%;padding:10px;border-radius:8px;border:none;background:#3b6ef0;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">' + loginT("signin") + "</button>" +
+      '<button id="fb-login-btn" style="width:100%;padding:10px;border-radius:8px;border:none;background:#10b981;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">' + loginT("signin") + "</button>" +
       '<div id="fb-login-err" style="color:#ff6b6b;font-size:12px;margin-top:10px;min-height:16px;"></div>' +
       "</div>";
     if (document.body) document.body.appendChild(root);
@@ -472,27 +530,15 @@
     }
     btn.addEventListener("click", doLogin);
     input.addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+    userInput.addEventListener("keydown", function (e) { if (e.key === "Enter") input.focus(); });
     setTimeout(function () { userInput.focus(); }, 0);
   }
 
   async function bootstrap() {
-    var params = new URLSearchParams(location.search);
-    var qrToken = params.get("token");
-    if (qrToken && (location.pathname === "/qr-login" || location.pathname === "/")) {
-      try {
-        var json = await postJson("/api/qr-login", { token: qrToken });
-        if (json.ok) {
-          setToken(json.token);
-          history.replaceState(null, "", "/");
-          location.reload();
-          return;
-        }
-      } catch (e) {}
-    }
     if (!getToken()) {
-      showLogin();
+      await showLogin();
     }
   }
 
-  bootstrap();
+  void bootstrap();
 })();
