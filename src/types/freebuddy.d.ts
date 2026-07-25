@@ -109,6 +109,8 @@ declare global {
 
     listRuntimes(): Promise<CliRuntime[]>;
     onRuntimeUpdated(cb: (runtime: CliRuntime) => void): () => void;
+    onConversationsChanged(cb: () => void): () => void;
+    onMessagesChanged(cb: (conversationId: string) => void): () => void;
     codexUsage(): Promise<CodexUsageResult>;
     usageSummary(period?: AgentUsagePeriod): Promise<AgentUsageSummary>;
     refreshUsage(period?: AgentUsagePeriod): Promise<AgentUsageSummary>;
@@ -268,6 +270,10 @@ declare global {
     ): () => void;
     onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
+  }
+
+  interface FreebuddySession {
+    logout(): void;
   }
 
   interface FreebuddySettings {
@@ -489,6 +495,100 @@ declare global {
     showItemInFolder(targetPath: string): Promise<boolean>;
   }
 
+  type RemoteBindMode = "local" | "lan";
+
+  interface RemoteStatus {
+    running: boolean;
+    enabled: boolean;
+    bindMode: RemoteBindMode;
+    port: number;
+    requestedPort: number;
+    host: string;
+    lanIp: string;
+    accessUrl: string;
+    hasPassword: boolean;
+    exposedOverPlainHttp: boolean;
+  }
+
+  interface RemoteUser {
+    id: string;
+    username: string;
+    isOwner: boolean;
+    createdAt: number;
+    disabled: boolean;
+  }
+
+  interface RemoteServerConfig {
+    port: number;
+    bindMode: RemoteBindMode;
+    defaultPort: number;
+  }
+
+  interface RemoteSessionInfo {
+    tokenHash: string;
+    userId: string;
+    username: string | null;
+    createdAt: number;
+    expiresAt: number;
+    lastSeenAt: number | null;
+    ip: string | null;
+    userAgent: string | null;
+    online: boolean;
+    current: boolean;
+  }
+
+  interface RemoteAuditEntry {
+    id: string;
+    createdAt: number;
+    event: string;
+    actorId: string | null;
+    actorName: string | null;
+    targetId: string | null;
+    targetName: string | null;
+    ip: string | null;
+    detail: string | null;
+  }
+
+  interface RemoteUserDataFootprint {
+    conversations: number;
+    scheduledTasks: number;
+  }
+
+  interface FreebuddyRemote {
+    whoami(): Promise<RemoteUser | null>;
+    getStatus(): Promise<RemoteStatus | null>;
+    getServerConfig(): Promise<RemoteServerConfig>;
+    setServerConfig(input: {
+      port?: number;
+      bindMode?: RemoteBindMode;
+    }): Promise<RemoteStatus>;
+    setEnabled(
+      enabled: boolean
+    ): Promise<{ status: RemoteStatus | null; initialPassword: string | null }>;
+    listUsers(): Promise<RemoteUser[]>;
+    createUser(input: { username: string; password?: string }): Promise<{
+      user: RemoteUser;
+      password: string;
+    }>;
+    renameUser(input: { id: string; username: string }): Promise<RemoteUser | null>;
+    setUserDisabled(input: {
+      id: string;
+      disabled: boolean;
+    }): Promise<RemoteUser | null>;
+    resetUserPassword(id: string): Promise<{ user: RemoteUser; password: string } | null>;
+    setUserPassword(input: { id: string; password: string }): Promise<boolean>;
+    getUserDataFootprint(id: string): Promise<RemoteUserDataFootprint>;
+    deleteUser(id: string): Promise<boolean>;
+    listUserRoots(userId: string): Promise<string[]>;
+    setUserRoots(args: { userId: string; roots: string[] }): Promise<string[]>;
+    checkRootsExist(roots: string[]): Promise<Record<string, boolean>>;
+    listSessions(): Promise<RemoteSessionInfo[]>;
+    revokeSession(tokenHash: string): Promise<boolean>;
+    revokeUserSessions(userId: string): Promise<boolean>;
+    revokeAllSessions(): Promise<boolean>;
+    listAuditLog(limit?: number): Promise<RemoteAuditEntry[]>;
+  }
+
   interface FreebuddyApi {
     platform: string;
     arch: string;
@@ -498,6 +598,8 @@ declare global {
       node?: string;
     };
     appVersion: string;
+    /** WebUI only: bearer token for media URLs that cannot send Authorization headers. */
+    sessionToken?: () => string;
     cli: FreebuddyCli;
     workflow: FreebuddyWorkflow;
     workflowTeams: FreebuddyWorkflowTeams;
@@ -508,8 +610,10 @@ declare global {
     feed: FreebuddyFeed;
     infoCards: FreebuddyInfoCards;
     window: FreebuddyWindow;
+    session?: FreebuddySession;
     updater: FreebuddyUpdater;
     shell: FreebuddyShell;
+    remote: FreebuddyRemote;
   }
 
   interface Window {

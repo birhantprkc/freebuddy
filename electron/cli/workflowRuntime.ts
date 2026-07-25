@@ -14,6 +14,7 @@ import { getLanguage } from "./settings.js";
 import {
   appendMessage,
   listMessages,
+  requireOwnedConversation,
   updateMessage
 } from "./conversations.js";
 import type {
@@ -274,6 +275,12 @@ export class WorkflowRuntime {
     plan: WorkflowPlan;
     agents: WorkflowAgentRef[];
   }): { ok: true; run: WorkflowRunRow } | { ok: false; errors: string[] } {
+    if (
+      input.conversationId &&
+      !requireOwnedConversation(input.conversationId)
+    ) {
+      return { ok: false, errors: ["conversation not found"] };
+    }
     const validation = validateWorkflowPlan(input.plan, input.agents);
     if (!validation.ok) return { ok: false, errors: validation.errors };
     const run = createWorkflowRun({
@@ -326,6 +333,12 @@ export class WorkflowRuntime {
     return getWorkflowSteps(runId);
   }
 
+  // getWorkflowRun resolves only for callers that own the run's conversation,
+  // so it doubles as the control-path gate for pause/stop/retry/approve.
+  private callerControlsRun(runId: string): boolean {
+    return getWorkflowRun(runId) !== undefined;
+  }
+
   async start(runId: string): Promise<void> {
     const run = getWorkflowRun(runId);
     if (!run) throw new Error(`workflow run ${runId} not found`);
@@ -369,6 +382,7 @@ export class WorkflowRuntime {
   }
 
   approveGate(runId: string, phaseId: string): boolean {
+    if (!this.callerControlsRun(runId)) return false;
     const run = this.active.get(runId);
     if (!run) return false;
     run.approvedPhases.add(phaseId);
@@ -457,12 +471,14 @@ export class WorkflowRuntime {
   }
 
   pause(runId: string): void {
+    if (!this.callerControlsRun(runId)) return;
     const run = this.active.get(runId);
     if (run) run.paused = true;
     updateWorkflowRun(runId, { status: "paused" });
   }
 
   resume(runId: string): Promise<void> {
+    if (!this.callerControlsRun(runId)) return Promise.resolve();
     const active = this.active.get(runId);
     if (active) {
       active.paused = false;
@@ -506,6 +522,7 @@ export class WorkflowRuntime {
   }
 
   stop(runId: string): void {
+    if (!this.callerControlsRun(runId)) return;
     const run = this.active.get(runId);
     const endedAt = new Date().toISOString();
     if (run) {
@@ -532,6 +549,9 @@ export class WorkflowRuntime {
   }
 
   async retryStep(runId: string, stepRowId: string): Promise<void> {
+    // getWorkflowSteps is caller-scoped, so this also rejects a step row that
+    // belongs to a different (possibly another user's) run.
+    if (!getWorkflowSteps(runId).some((step) => step.id === stepRowId)) return;
     // Mark the failed step pending again and re-drive. Retry creates a new
     // CLI task (new sessionId) rather than mutating the old task record.
     resetWorkflowStepForRetry(stepRowId);

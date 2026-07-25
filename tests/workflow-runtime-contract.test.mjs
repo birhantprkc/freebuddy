@@ -30,6 +30,41 @@ test("runtime pauses before entering a manual-gated write phase", () => {
   assert.match(runtimeSource, /status: "paused"/);
 });
 
+test("runtime control paths are limited to the run's conversation owner", () => {
+  const createStart = runtimeSource.indexOf("  createPendingRun(input: {");
+  const createBody = runtimeSource.slice(
+    createStart,
+    runtimeSource.indexOf("private seedSteps", createStart)
+  );
+  assert.match(
+    createBody,
+    /requireOwnedConversation\(input\.conversationId\)/,
+    "a run cannot be attached to another user's conversation"
+  );
+
+  assert.match(
+    runtimeSource,
+    /private callerControlsRun\(runId: string\): boolean \{\s*\n\s*return getWorkflowRun\(runId\) !== undefined;/,
+    "the control gate reuses the caller-scoped run lookup"
+  );
+  for (const method of ["approveGate", "pause", "resume", "stop"]) {
+    const start = runtimeSource.indexOf(`  ${method}(runId`);
+    assert.notEqual(start, -1, `${method} is defined`);
+    assert.match(
+      runtimeSource.slice(start, start + 220),
+      /callerControlsRun\(runId\)/,
+      `${method} checks that the caller controls the run`
+    );
+  }
+
+  const retryStart = runtimeSource.indexOf("async retryStep(runId");
+  assert.match(
+    runtimeSource.slice(retryStart, retryStart + 400),
+    /getWorkflowSteps\(runId\)\.some\(\(step\) => step\.id === stepRowId\)/,
+    "retry rejects a step row from another run"
+  );
+});
+
 test("runtime reports whether manual gate approval reached an active run", () => {
   assert.match(runtimeSource, /approveGate\(runId: string, phaseId: string\): boolean/);
   assert.match(runtimeSource, /if \(!run\) return false/);

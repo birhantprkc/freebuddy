@@ -1,4 +1,5 @@
 import { getDb } from "./db.js";
+import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 import type {
   WorkflowRunRow,
   WorkflowRunStatus,
@@ -162,16 +163,28 @@ export function updateWorkflowRun(
     .run(...params);
 }
 
+function callerOwnsConversation(conversationId: string | null | undefined): boolean {
+  if (isCallerAdmin() || getCallerUserId() === null) return true;
+  if (!conversationId) return false;
+  const row = getDb()
+    .prepare("SELECT owner_id FROM conversations WHERE id = ?")
+    .get(conversationId) as { owner_id: string | null } | undefined;
+  return row?.owner_id === getCallerUserId();
+}
+
 export function getWorkflowRun(id: string): WorkflowRunRow | undefined {
   const row = getDb()
     .prepare(`SELECT * FROM workflow_runs WHERE id = ?`)
     .get(id) as any;
-  return row ? rowToRun(row) : undefined;
+  if (!row) return undefined;
+  const run = rowToRun(row);
+  return callerOwnsConversation(run.conversationId) ? run : undefined;
 }
 
 export function listWorkflowRunsByConversation(
   conversationId: string
 ): WorkflowRunRow[] {
+  if (!callerOwnsConversation(conversationId)) return [];
   const rows = getDb()
     .prepare(
       `SELECT * FROM workflow_runs WHERE conversation_id = ?
@@ -189,7 +202,9 @@ export function listActiveWorkflowRuns(): WorkflowRunRow[] {
        ORDER BY created_at DESC`
     )
     .all() as any[];
-  return rows.map(rowToRun);
+  return rows
+    .map(rowToRun)
+    .filter((run) => callerOwnsConversation(run.conversationId));
 }
 
 export function recoverInterruptedWorkflowRuns(): number {
@@ -323,6 +338,8 @@ export function updateWorkflowStep(
 }
 
 export function getWorkflowSteps(runId: string): WorkflowStepRow[] {
+  const run = getWorkflowRun(runId);
+  if (!run) return [];
   const rows = getDb()
     .prepare(
       `SELECT * FROM workflow_steps WHERE workflow_run_id = ?

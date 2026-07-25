@@ -18,10 +18,26 @@ import { register } from "node:module";
 const electronStubUrl =
   "data:text/javascript," +
   encodeURIComponent(
-    `export const app = {
+    `
+     const noop = function () {};
+     const any = new Proxy({}, { get: () => noop });
+     export const app = {
        getPath: () => "/tmp/freebuddy-test",
        getLocale: () => "en-US"
-     };`
+     };
+     export const BrowserWindow = Object.assign(function () {}, { getAllWindows: () => [] });
+     export const contextBridge = any;
+     export const dialog = any;
+     export const ipcMain = { handle: noop, off: noop };
+     export const ipcRenderer = any;
+     export const Menu = noop;
+     export const MenuItem = noop;
+     export const nativeImage = any;
+     export const protocol = any;
+     export const safeStorage = any;
+     export const shell = any;
+     export const webUtils = any;
+    `
   );
 
 const hookModuleUrl =

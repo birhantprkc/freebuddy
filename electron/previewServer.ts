@@ -52,7 +52,7 @@ export function startPreviewServer(
       });
     });
 
-    server.on("error", (err: any) => {
+    server.on("error", (err: NodeJS.ErrnoException) => {
       if (err.code === "EADDRINUSE") {
         server.close();
         tryListen(port + 1);

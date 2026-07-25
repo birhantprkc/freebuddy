@@ -7,6 +7,7 @@ import {
   extensionFromName,
   resolveManagedBufferAttachment
 } from "../shared/managedBufferValidation.js";
+import { isPathWithinRoots } from "../shared/workspaceRoots.js";
 import { getDataDir, getDb } from "./db.js";
 
 export {
@@ -48,7 +49,13 @@ const ATTACHMENT_EXTENSIONS = new Set([
   "yml",
   "toml",
   "xml",
-  "sh"
+  "sh",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx"
 ]);
 
 export interface AttachmentCandidateResult {
@@ -90,6 +97,18 @@ function attachmentMimeFromExtension(extension: string): string {
       return "application/json";
     case "csv":
       return "text/csv";
+    case "doc":
+      return "application/msword";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "xls":
+      return "application/vnd.ms-excel";
+    case "xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "ppt":
+      return "application/vnd.ms-powerpoint";
+    case "pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
     default:
       return "text/plain";
   }
@@ -219,6 +238,15 @@ export function isManagedAttachmentPath(filePath: string): boolean {
   const managedDir = path.resolve(getManagedAttachmentsDir());
   const resolved = path.resolve(filePath);
   return resolved === managedDir || resolved.startsWith(`${managedDir}${path.sep}`);
+}
+
+/** Managed uploads plus paths inside the caller's remote workspace roots. */
+export function canServeAttachmentPath(
+  filePath: string,
+  roots: string[]
+): boolean {
+  if (isManagedAttachmentPath(filePath)) return true;
+  return isPathWithinRoots(filePath, roots);
 }
 
 export function discardManagedAttachment(filePath: string): boolean {

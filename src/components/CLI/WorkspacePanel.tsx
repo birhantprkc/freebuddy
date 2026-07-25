@@ -15,6 +15,7 @@ import type { CliStreamItem } from "@/services/cli/parsers";
 import { useConversationStore } from "@/store/conversationStore";
 import { useReplayStore } from "@/store/replayStore";
 import { useWorkflowStore } from "@/store/workflowStore";
+import { copyToClipboard } from "@/utils/clipboard";
 import { formatDuration } from "@/utils/duration";
 import { AgentAvatar } from "./AgentAvatar";
 import { InfoCardHost } from "../InfoCards/InfoCardHost";
@@ -321,9 +322,10 @@ export function WorkspacePanel({
                   }
                   onClick={() => {
                     if (!latestSessionId) return;
-                    void navigator.clipboard.writeText(latestSessionId);
-                    setCopiedSession(true);
-                    window.setTimeout(() => setCopiedSession(false), 1200);
+                    void copyToClipboard(latestSessionId).then(() => {
+                      setCopiedSession(true);
+                      window.setTimeout(() => setCopiedSession(false), 1200);
+                    });
                   }}
                 >
                   {copiedSession

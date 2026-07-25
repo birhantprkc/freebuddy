@@ -81,7 +81,7 @@ test("Cursor usage can be configured end-to-end without exposing the token", () 
   assert.match(page, /cliClient\.openCursorUsageSettings/);
   assert.match(client, /connectCursorUsage\(input: CursorUsageConnectInput\)/);
   assert.match(preload, /ipcRenderer\.invoke\("cli:connectCursorUsage", input\)/);
-  assert.match(ipc, /ipcMain\.handle\("cli:connectCursorUsage"/);
+  assert.match(ipc, /registerHandler\("cli:connectCursorUsage"/);
   assert.match(ipc, /https:\/\/www\.cursor\.com\/settings/);
   assert.match(reconciler, /pty\.spawn/);
   assert.match(reconciler, /terminal\.write/);

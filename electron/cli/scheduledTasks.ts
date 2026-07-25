@@ -1,11 +1,14 @@
 import { BrowserWindow, ipcMain, type WebContents } from "electron";
+import { registerHandler } from "../invokeRegistry.js";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import path from "node:path";
 
 import { getDb } from "./db.js";
+import { safeSendToWebContents } from "./ipcSend.js";
 import { appendMessage, createConversation, getConversation } from "./conversations.js";
 import { listCliMembers } from "./members.js";
+import { getCallerUserId, isCallerAdmin, runAsCaller } from "./callerContext.js";
 import { createCliStepExecutor, WorkflowRuntime } from "./workflowRuntime.js";
 import { extractVisibleStepOutput } from "./workflowScheduler.js";
 import type { WorkflowAgentRef, WorkflowPlan } from "./workflowTypes.js";
@@ -41,6 +44,7 @@ export interface ScheduledTask {
   lastError?: string;
   lastConversationId?: string;
   lastWorkflowRunId?: string;
+  ownerId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +95,7 @@ interface ScheduledTaskRow {
   last_error: string | null;
   last_conversation_id: string | null;
   last_workflow_run_id: string | null;
+  owner_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -195,6 +200,7 @@ function rowToTask(row: ScheduledTaskRow): ScheduledTask {
     lastError: row.last_error ?? undefined,
     lastConversationId: row.last_conversation_id ?? undefined,
     lastWorkflowRunId: row.last_workflow_run_id ?? undefined,
+    ownerId: row.owner_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -214,9 +220,31 @@ function rowToRun(row: ScheduledTaskRunRow): ScheduledTaskRun {
 }
 
 export function listScheduledTasks(): ScheduledTask[] {
+  const caller = getCallerUserId();
+  if (caller === null || isCallerAdmin()) {
+    return (getDb()
+      .prepare("SELECT * FROM scheduled_tasks ORDER BY created_at DESC")
+      .all() as ScheduledTaskRow[]).map(rowToTask);
+  }
   return (getDb()
-    .prepare("SELECT * FROM scheduled_tasks ORDER BY created_at DESC")
-    .all() as ScheduledTaskRow[]).map(rowToTask);
+    .prepare(
+      "SELECT * FROM scheduled_tasks WHERE owner_id = ? ORDER BY created_at DESC"
+    )
+    .all(caller) as ScheduledTaskRow[]).map(rowToTask);
+}
+
+export function requireOwnedScheduledTask(id: string): ScheduledTask | undefined {
+  const task = getScheduledTask(id);
+  if (!task) return undefined;
+  if (isCallerAdmin() || getCallerUserId() === null) return task;
+  return task.ownerId === getCallerUserId() ? task : undefined;
+}
+
+export function backfillScheduledTaskOwners(ownerId: string): number {
+  const info = getDb()
+    .prepare("UPDATE scheduled_tasks SET owner_id = ? WHERE owner_id IS NULL")
+    .run(ownerId);
+  return info.changes;
 }
 
 export function getScheduledTask(id: string): ScheduledTask | undefined {
@@ -319,8 +347,8 @@ export function createScheduledTask(
         (id, title, prompt, agent_id, time_local, schedule_type,
           schedule_date, weekdays, month_day, cwd, execution_mode,
           config_option_overrides, enabled,
-          next_run_at, last_status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)`
+          next_run_at, last_status, owner_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?, ?)`
     )
     .run(
       id,
@@ -337,6 +365,7 @@ export function createScheduledTask(
       serializedConfigOptionOverrides(input.configOptionOverrides),
       input.enabled ? 1 : 0,
       nextRunAt(input),
+      getCallerUserId(),
       now,
       now
     );
@@ -482,6 +511,18 @@ export async function runScheduledTask(
 ): Promise<boolean> {
   const task = getScheduledTask(id);
   if (!task || runningTaskIds.has(id)) return false;
+  // The scheduler has no caller context of its own, so conversations and
+  // messages created by the run would otherwise end up without an owner.
+  return task.ownerId
+    ? runAsCaller(task.ownerId, () => executeScheduledTask(task, webContents))
+    : executeScheduledTask(task, webContents);
+}
+
+async function executeScheduledTask(
+  task: ScheduledTask,
+  webContents: WebContents | undefined
+): Promise<boolean> {
+  const id = task.id;
   runningTaskIds.add(id);
   const startedAt = new Date();
   const taskRunId = randomUUID();
@@ -647,7 +688,8 @@ export async function runScheduledTask(
 
 function notifyChanged(task?: ScheduledTask): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send("scheduledTasks://changed", task);
+    if (win.isDestroyed()) continue;
+    safeSendToWebContents(win.webContents, "scheduledTasks://changed", task);
   }
 }
 
@@ -701,26 +743,30 @@ export function initializeScheduledTaskScheduler(
 }
 
 export function registerScheduledTaskIpc(): void {
-  ipcMain.handle("scheduledTasks:list", () => listScheduledTasks());
-  ipcMain.handle("scheduledTasks:listRuns", (_event, taskId: string) =>
-    listScheduledTaskRuns(taskId)
+  registerHandler("scheduledTasks:list", () => listScheduledTasks());
+  registerHandler("scheduledTasks:listRuns", (_event, taskId: string) =>
+    requireOwnedScheduledTask(taskId) ? listScheduledTaskRuns(taskId) : []
   );
-  ipcMain.handle("scheduledTasks:listAgents", () =>
+  registerHandler("scheduledTasks:listAgents", () =>
     listCliMembers()
       .filter((member) => member.enabled !== false)
       .map((member) => ({ id: member.id, name: member.name, adapter: member.cli.adapter }))
   );
-  ipcMain.handle("scheduledTasks:create", (_event, input: ScheduledTaskInput) =>
+  registerHandler("scheduledTasks:create", (_event, input: ScheduledTaskInput) =>
     createScheduledTask(input)
   );
-  ipcMain.handle(
+  registerHandler(
     "scheduledTasks:update",
     (_event, args: { id: string; input: ScheduledTaskInput }) =>
-      updateScheduledTask(args.id, args.input)
+      requireOwnedScheduledTask(args.id)
+        ? updateScheduledTask(args.id, args.input)
+        : { ok: false as const, errors: ["scheduledTasks.errors.taskNotFound"] }
   );
-  ipcMain.handle("scheduledTasks:delete", (_event, id: string) => deleteScheduledTask(id));
-  ipcMain.handle("scheduledTasks:run", (event, id: string) => {
-    if (!getScheduledTask(id) || runningTaskIds.has(id)) return false;
+  registerHandler("scheduledTasks:delete", (_event, id: string) =>
+    requireOwnedScheduledTask(id) ? deleteScheduledTask(id) : false
+  );
+  registerHandler("scheduledTasks:run", (event, id: string) => {
+    if (!requireOwnedScheduledTask(id) || runningTaskIds.has(id)) return false;
     void runScheduledTask(id, event.sender);
     return true;
   });

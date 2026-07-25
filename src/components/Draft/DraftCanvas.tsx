@@ -47,20 +47,27 @@ function clampImageZoom(value: number): number {
   return Math.min(MAX_IMAGE_ZOOM, Math.max(MIN_IMAGE_ZOOM, value));
 }
 
+function extensionFromLocalPath(filePath: string): string {
+  return filePath.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+}
+
 export function draftTargetExtension(
   target: string | undefined,
   url: string | undefined
 ): string {
   const value = target || url || "";
   try {
-    const parsed = new URL(value);
-    if (parsed.protocol === "freebuddy-file:") {
+    const parsed = new URL(value, "http://local.invalid");
+    if (
+      parsed.protocol === "freebuddy-file:" ||
+      parsed.pathname === "/api/attachment"
+    ) {
       const filePath = parsed.searchParams.get("path") ?? parsed.pathname;
-      return filePath.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+      return extensionFromLocalPath(filePath);
     }
-    return parsed.pathname.split(".").pop()?.toLowerCase() ?? "";
+    return extensionFromLocalPath(parsed.pathname);
   } catch {
-    return value.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+    return extensionFromLocalPath(value);
   }
 }
 
@@ -416,7 +423,7 @@ export function DraftCanvas({ onClose }: { onClose?: () => void }) {
                 className="draft-markdown-wrap"
                 style={{ transform: `scale(${zoom})`, transformOrigin: "top center" }}
               >
-                {markdown != null && <MarkdownText content={markdown} />}
+                {markdown != null && <MarkdownText content={markdown} cwd={cwd} />}
               </div>
             ) : isDocument ? (
               <div

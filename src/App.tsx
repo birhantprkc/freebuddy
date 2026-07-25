@@ -23,6 +23,7 @@ import {
   SettingsPage,
   type SettingsTab
 } from "./components/Settings/SettingsModal";
+import { SidebarUserMenu } from "./components/SidebarUserMenu";
 import { CliInstallPanelHost } from "./components/Settings/CliInstallPanelHost";
 import { ScheduledTasksTab } from "./components/Settings/ScheduledTasksTab";
 import { WorkflowTeamsTab } from "./components/Settings/WorkflowTeamsTab";
@@ -36,24 +37,6 @@ import { useNewTaskUiStore } from "./store/newTaskUiStore";
 import { useWorkflowStore } from "./store/workflowStore";
 import i18next from "i18next";
 import { useTranslation } from "react-i18next";
-
-function GearIcon() {
-  return (
-    <svg
-      className="footer-icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
 
 function nextThemePreference(theme: "system" | "light" | "dark") {
   if (theme === "system") return "light";
@@ -110,6 +93,28 @@ function App() {
     });
     return () => off?.();
   }, [refreshConversationList]);
+
+  useEffect(() => {
+    const off = window.freebuddy?.cli?.onConversationsChanged?.(() => {
+      void refreshConversationList();
+    });
+    return () => off?.();
+  }, [refreshConversationList]);
+
+  useEffect(() => {
+    const off = window.freebuddy?.cli?.onMessagesChanged?.((conversationId) => {
+      const state = useConversationStore.getState();
+      if (state.currentUser?.isOwner !== true) return;
+      if (conversationId !== state.activeId) return;
+      // Skip conversations this client is already live-streaming (e.g. the
+      // admin's own active run) — live streaming owns their real-time updates.
+      const live = state.live[conversationId];
+      const isStreaming = !!live && (live.status === "starting" || live.status === "running");
+      if (isStreaming) return;
+      void state.loadMessages(conversationId);
+    });
+    return () => off?.();
+  }, []);
 
   useEffect(() => {
     const off = window.freebuddy?.window?.onChromeVisible?.((visible) => {
@@ -409,13 +414,10 @@ function App() {
             <ConversationList onNewTaskInProject={(cwd) => startNewTask({ cwd })} />
 
             <div className="sidebar-footer">
-              <button
-                className="footer-action"
-                onClick={() => openSettings("cli")}
-              >
-                <GearIcon />
-                {t("common.settings")}
-              </button>
+              <SidebarUserMenu
+                onOpenSettings={() => openSettings("cli")}
+                showLogout={platform === "web"}
+              />
               {appVersion && (
                 <span className="footer-version-wrap">
                   <span className="footer-version">v{appVersion}</span>

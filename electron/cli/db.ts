@@ -6,6 +6,10 @@ import { cleanupOrphanHandoffTranscriptSnapshots } from "../shared/handoffTransc
 
 let dbInstance: DB | null = null;
 
+export function setDbForTest(db: DB | null): void {
+  dbInstance = db;
+}
+
 export function getDb(): DB {
   if (dbInstance) return dbInstance;
 
@@ -258,7 +262,13 @@ export function migrate(db: DB) {
       archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      last_message_at TEXT
+      last_message_at TEXT,
+      source_conversation_id TEXT,
+      source_agent_id TEXT,
+      source_agent_name TEXT,
+      source_adapter TEXT,
+      source_brief_id TEXT,
+      owner_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_conversations_updated
       ON conversations(archived, updated_at DESC);
@@ -277,6 +287,7 @@ export function migrate(db: DB) {
       role_label TEXT,
       workflow_run_id TEXT,
       workflow_step_row_id TEXT,
+      author_username TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
@@ -411,6 +422,7 @@ export function migrate(db: DB) {
       last_error TEXT,
       last_conversation_id TEXT,
       last_workflow_run_id TEXT,
+      owner_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -496,7 +508,68 @@ export function migrate(db: DB) {
     );
     CREATE INDEX IF NOT EXISTS idx_context_share_snapshot
       ON conversation_share_tokens(snapshot_id);
+
+    CREATE TABLE IF NOT EXISTS remote_users (
+      id           TEXT PRIMARY KEY,
+      username     TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      is_owner     INTEGER NOT NULL DEFAULT 0,
+      created_at   INTEGER NOT NULL,
+      disabled     INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS remote_user_roots (
+      user_id    TEXT NOT NULL,
+      root_path  TEXT NOT NULL,
+      PRIMARY KEY (user_id, root_path)
+    );
+
+    CREATE TABLE IF NOT EXISTS remote_sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS remote_audit_log (
+      id         TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL,
+      event      TEXT NOT NULL,
+      actor_id   TEXT,
+      actor_name TEXT,
+      target_id  TEXT,
+      target_name TEXT,
+      ip         TEXT,
+      detail     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_remote_audit_created
+      ON remote_audit_log(created_at DESC);
   `);
+
+  const remoteUserCols = db
+    .prepare("PRAGMA table_info(remote_users)")
+    .all() as Array<{ name: string }>;
+  if (!remoteUserCols.some((c) => c.name === "disabled")) {
+    db.exec(
+      "ALTER TABLE remote_users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0"
+    );
+  }
+
+  const remoteSessionCols = db
+    .prepare("PRAGMA table_info(remote_sessions)")
+    .all() as Array<{ name: string }>;
+  if (!remoteSessionCols.some((c) => c.name === "ip")) {
+    db.exec("ALTER TABLE remote_sessions ADD COLUMN ip TEXT");
+  }
+  if (!remoteSessionCols.some((c) => c.name === "user_agent")) {
+    db.exec("ALTER TABLE remote_sessions ADD COLUMN user_agent TEXT");
+  }
+  if (!remoteSessionCols.some((c) => c.name === "last_seen_at")) {
+    db.exec("ALTER TABLE remote_sessions ADD COLUMN last_seen_at INTEGER");
+  }
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_remote_sessions_user ON remote_sessions(user_id)"
+  );
 
   const handoffColumns = db
     .prepare("PRAGMA table_info(handoff_briefs)")
@@ -649,6 +722,9 @@ export function migrate(db: DB) {
       "ALTER TABLE conversation_messages ADD COLUMN workflow_step_row_id TEXT"
     );
   }
+  if (!messageCols.some((c) => c.name === "author_username")) {
+    db.exec("ALTER TABLE conversation_messages ADD COLUMN author_username TEXT");
+  }
 
   const conversationCols = db
     .prepare("PRAGMA table_info(conversations)")
@@ -679,6 +755,16 @@ export function migrate(db: DB) {
   }
   if (!conversationCols.some((c) => c.name === "source_brief_id")) {
     db.exec("ALTER TABLE conversations ADD COLUMN source_brief_id TEXT");
+  }
+  if (!conversationCols.some((c) => c.name === "owner_id")) {
+    db.exec("ALTER TABLE conversations ADD COLUMN owner_id TEXT");
+  }
+
+  const scheduledTaskOwnerCols = db
+    .prepare("PRAGMA table_info(scheduled_tasks)")
+    .all() as Array<{ name: string }>;
+  if (!scheduledTaskOwnerCols.some((c) => c.name === "owner_id")) {
+    db.exec("ALTER TABLE scheduled_tasks ADD COLUMN owner_id TEXT");
   }
 
   const workflowRunCols = db

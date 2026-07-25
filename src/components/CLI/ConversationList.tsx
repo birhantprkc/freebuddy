@@ -53,6 +53,10 @@ const ConversationRow = memo(function ConversationRow({
   onDelete: (id: string, title: string) => void;
 }) {
   const { t } = useTranslation();
+  const currentUser = useConversationStore((s) => s.currentUser);
+  const showOwner = currentUser?.isOwner === true;
+  const ownerName = conversation.ownerUsername?.trim() || "";
+  const isOwnConversation = ownerName === (currentUser?.username ?? "");
   const isBusy = isRunning || isWorkflowRunning;
 
   return (
@@ -79,6 +83,9 @@ const ConversationRow = memo(function ConversationRow({
         <div className="conv-item-title-row">
           <strong>{conversation.title}</strong>
         </div>
+        {showOwner && ownerName && !isOwnConversation && (
+          <div className="conv-owner-sub" title={`@${ownerName}`}>@{ownerName}</div>
+        )}
       </div>
       <div className={`conv-item-side${isBusy ? " running" : isUnread ? " unread" : ""}`}>
         {isBusy ? (

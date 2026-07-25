@@ -5,6 +5,16 @@ import {
 } from "./attachments.js";
 import { resolveSkillSnapshots } from "./skills.js";
 import type { SkillSnapshot } from "./skillTypes.js";
+import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
+import { getUserById } from "./users.js";
+
+let notifyMessagesChangedHandler: ((conversationId: string) => void) | null = null;
+
+export function bindConversationNotifier(
+  fn: ((conversationId: string) => void) | null
+): void {
+  notifyMessagesChangedHandler = fn;
+}
 
 export interface ChatAttachment {
   id: string;
@@ -39,6 +49,8 @@ export interface Conversation {
   sourceAgentName?: string;
   sourceAdapter?: string;
   sourceBriefId?: string;
+  ownerId?: string | null;
+  ownerUsername?: string | null;
 }
 
 export interface ConversationMessage {
@@ -57,6 +69,7 @@ export interface ConversationMessage {
   roleLabel?: string;
   workflowRunId?: string;
   workflowStepRowId?: string;
+  authorUsername?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -125,7 +138,9 @@ function rowToConversation(r: any): Conversation {
     sourceAgentId: r.source_agent_id ?? undefined,
     sourceAgentName: r.source_agent_name ?? undefined,
     sourceAdapter: r.source_adapter ?? undefined,
-    sourceBriefId: r.source_brief_id ?? undefined
+    sourceBriefId: r.source_brief_id ?? undefined,
+    ownerId: r.owner_id ?? null,
+    ownerUsername: r.owner_username ?? null
   };
 }
 
@@ -173,6 +188,7 @@ function rowToMessage(r: any): ConversationMessage {
     roleLabel: r.role_label ?? undefined,
     workflowRunId: r.workflow_run_id ?? undefined,
     workflowStepRowId: r.workflow_step_row_id ?? undefined,
+    authorUsername: r.author_username ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at
   };
@@ -194,19 +210,21 @@ export interface CreateConversationInput {
   sourceAgentName?: string;
   sourceAdapter?: string;
   sourceBriefId?: string;
+  ownerId?: string | null;
 }
 
 export function createConversation(input: CreateConversationInput): Conversation {
   const now = new Date().toISOString();
+  const ownerId = input.ownerId ?? getCallerUserId() ?? null;
   getDb()
     .prepare(
       `INSERT INTO conversations
          (id, title, agent_id, agent_name, adapter, cwd, approval_mode,
           config_option_overrides, skill_snapshot, title_source, archived,
           source_conversation_id, source_agent_id, source_agent_name,
-          source_adapter, source_brief_id,
+          source_adapter, source_brief_id, owner_id,
           created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -227,10 +245,18 @@ export function createConversation(input: CreateConversationInput): Conversation
       input.sourceAgentName ?? null,
       input.sourceAdapter ?? null,
       input.sourceBriefId ?? null,
+      ownerId,
       now,
       now
     );
   return getConversation(input.id) as Conversation;
+}
+
+export function backfillMissingOwners(ownerId: string): number {
+  const info = getDb()
+    .prepare("UPDATE conversations SET owner_id = ? WHERE owner_id IS NULL")
+    .run(ownerId);
+  return info.changes;
 }
 
 export function setConversationSkills(
@@ -277,7 +303,12 @@ export function setConversationConfigOptionOverrides(
 
 export function getConversation(id: string): Conversation | undefined {
   const row = getDb()
-    .prepare(`SELECT * FROM conversations WHERE id = ?`)
+    .prepare(
+      `SELECT c.*, u.username AS owner_username
+       FROM conversations c
+       LEFT JOIN remote_users u ON u.id = c.owner_id
+       WHERE c.id = ?`
+    )
     .get(id) as any;
   return row ? rowToConversation(row) : undefined;
 }
@@ -286,24 +317,58 @@ export interface ListConversationsArgs {
   archived?: boolean;
   agentId?: string;
   limit?: number;
+  ownerId?: string | null;
 }
 
 export function listConversations(args: ListConversationsArgs = {}): Conversation[] {
   const where: string[] = [];
   const params: any[] = [];
-  where.push("archived = ?");
+  where.push("c.archived = ?");
   params.push(args.archived ? 1 : 0);
   if (args.agentId) {
-    where.push("agent_id = ?");
+    where.push("c.agent_id = ?");
     params.push(args.agentId);
   }
+  const owner = args.ownerId !== undefined ? args.ownerId : getCallerUserId();
+  if (owner !== null && owner !== undefined && !isCallerAdmin()) {
+    where.push("c.owner_id = ?");
+    params.push(owner);
+  }
   const sql = `
-    SELECT * FROM conversations
+    SELECT c.*, u.username AS owner_username
+    FROM conversations c
+    LEFT JOIN remote_users u ON u.id = c.owner_id
     WHERE ${where.join(" AND ")}
-    ORDER BY COALESCE(last_message_at, updated_at) DESC
+    ORDER BY COALESCE(c.last_message_at, c.updated_at) DESC
     LIMIT ?`;
   params.push(args.limit ?? 200);
   return (getDb().prepare(sql).all(...params) as any[]).map(rowToConversation);
+}
+
+export function requireOwnedConversation(id: string): Conversation | undefined {
+  const conv = getConversation(id);
+  if (!conv) return undefined;
+  if (isCallerAdmin()) return conv;
+  const caller = getCallerUserId();
+  if (caller === null) return conv;
+  return conv.ownerId === caller ? conv : undefined;
+}
+
+// Message-level gate for handlers that only receive a message id. Kept as a
+// single joined query because it sits on the streaming update path.
+export function callerCanAccessMessage(messageId: string): boolean {
+  if (isCallerAdmin()) return true;
+  const caller = getCallerUserId();
+  if (caller === null) return true;
+  const row = getDb()
+    .prepare(
+      `SELECT c.owner_id AS owner_id
+       FROM conversation_messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.id = ?`
+    )
+    .get(messageId) as { owner_id: string | null } | undefined;
+  return row ? row.owner_id === caller : false;
 }
 
 export function renameConversation(
@@ -397,18 +462,26 @@ export interface AppendMessageInput {
   roleLabel?: string;
   workflowRunId?: string;
   workflowStepRowId?: string;
+  authorUsername?: string | null;
 }
 
 export function appendMessage(input: AppendMessageInput): ConversationMessage {
   const now = new Date().toISOString();
+  const caller = getCallerUserId();
+  const authorUsername =
+    input.authorUsername !== undefined
+      ? input.authorUsername
+      : caller
+        ? getUserById(caller)?.username ?? null
+        : null;
   getDb()
     .prepare(
       `INSERT INTO conversation_messages
          (id, conversation_id, role, status, content, attachments, task_id,
           agent_id, agent_name, adapter, role_label,
-          workflow_run_id, workflow_step_row_id,
+          workflow_run_id, workflow_step_row_id, author_username,
           created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -424,10 +497,12 @@ export function appendMessage(input: AppendMessageInput): ConversationMessage {
       input.roleLabel ?? null,
       input.workflowRunId ?? null,
       input.workflowStepRowId ?? null,
+      authorUsername,
       now,
       now
     );
   touchConversation(input.conversationId, now);
+  notifyMessagesChangedHandler?.(input.conversationId);
   return getMessage(input.id) as ConversationMessage;
 }
 
@@ -458,6 +533,10 @@ export function updateMessage(input: UpdateMessageInput): void {
   getDb()
     .prepare(`UPDATE conversation_messages SET ${fields.join(", ")} WHERE id = ?`)
     .run(...params);
+  if (input.status !== undefined) {
+    const msg = getMessage(input.id);
+    if (msg) notifyMessagesChangedHandler?.(msg.conversationId);
+  }
 }
 
 // A force-quit while an agent is streaming leaves the assistant message row at

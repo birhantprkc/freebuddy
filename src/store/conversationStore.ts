@@ -74,6 +74,7 @@ export interface ConversationState {
   live: Record<string, LiveAssistant>;
   unreadConversations: UnreadConversationMap;
   pendingFreshContext: Record<string, boolean>;
+  currentUser: { username: string; isOwner: boolean } | null;
 
   load(): Promise<void>;
   refreshList(): Promise<void>;
@@ -406,6 +407,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   live: {},
   unreadConversations: loadUnreadConversations(),
   pendingFreshContext: {},
+  currentUser: null,
 
   async load() {
     if (!cliClient.isAvailable()) return;
@@ -413,6 +415,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     const list = await cliClient.listConversations({ archived: false });
     const synced = syncConversationAgentNames(list, members);
     persistSyncedConversationAgentNames(synced);
+    try {
+      const me = await window.freebuddy?.remote?.whoami();
+      if (me?.username) {
+        set({ currentUser: { username: me.username, isOwner: !!me.isOwner } });
+      }
+    } catch {
+      // current user unavailable; non-fatal
+    }
     set({ members, conversations: synced.conversations });
     const cur = get().activeId;
     if (cur && !list.find((c) => c.id === cur)) {
@@ -788,6 +798,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         status: "sent",
         content: trimmed,
         ...(attachments.length ? { attachments } : {}),
+        authorUsername: get().currentUser?.username ?? null,
         createdAt: now,
         updatedAt: now
       };
@@ -815,7 +826,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
             s.messages[conversationId] ?? [],
             {
               ...userMsg,
-              attachments: savedUser.attachments ?? userMsg.attachments
+              attachments: savedUser.attachments ?? userMsg.attachments,
+              authorUsername: savedUser.authorUsername ?? userMsg.authorUsername
             }
           )
         }

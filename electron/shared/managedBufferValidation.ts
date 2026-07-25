@@ -26,7 +26,13 @@ const ATTACHMENT_EXTENSIONS = new Set([
   "yml",
   "toml",
   "xml",
-  "sh"
+  "sh",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx"
 ]);
 
 const BINARY_ATTACHMENT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif", "pdf"]);
@@ -50,6 +56,18 @@ function attachmentMimeFromExtension(extension: string): string {
       return "application/json";
     case "csv":
       return "text/csv";
+    case "doc":
+      return "application/msword";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "xls":
+      return "application/vnd.ms-excel";
+    case "xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "ppt":
+      return "application/vnd.ms-powerpoint";
+    case "pptx":
+      return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
     default:
       return "text/plain";
   }
@@ -76,6 +94,18 @@ export function extensionFromMime(mimeType: string): string | null {
       return "json";
     case "text/csv":
       return "csv";
+    case "application/msword":
+      return "doc";
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      return "docx";
+    case "application/vnd.ms-excel":
+      return "xls";
+    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      return "xlsx";
+    case "application/vnd.ms-powerpoint":
+      return "ppt";
+    case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      return "pptx";
     default:
       return null;
   }

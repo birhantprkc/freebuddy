@@ -41,6 +41,20 @@ const cli = {
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.off(channel, handler);
   },
+  onConversationsChanged: (cb: () => void): (() => void) => {
+    const channel = "conversations://changed";
+    const handler = () => cb();
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
+  },
+  onMessagesChanged: (cb: (conversationId: string) => void): (() => void) => {
+    const channel = "messages://changed";
+    const handler = (_e: IpcRendererEvent, payload: { conversationId?: string }) => {
+      if (payload?.conversationId) cb(payload.conversationId);
+    };
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
+  },
   codexUsage: () => ipcRenderer.invoke("cli:codexUsage"),
   usageSummary: (period?: unknown) => ipcRenderer.invoke("cli:usageSummary", period),
   refreshUsage: (period?: unknown) => ipcRenderer.invoke("cli:refreshUsage", period),
@@ -454,6 +468,40 @@ const shellApi = {
     ipcRenderer.invoke("shell:showItemInFolder", targetPath) as Promise<boolean>
 };
 
+const remote = {
+  whoami: () => ipcRenderer.invoke("remote:whoami"),
+  getStatus: () => ipcRenderer.invoke("remote:getStatus"),
+  getServerConfig: () => ipcRenderer.invoke("remote:getServerConfig"),
+  setServerConfig: (input: { port?: number; bindMode?: "local" | "lan" }) =>
+    ipcRenderer.invoke("remote:setServerConfig", input),
+  setEnabled: (enabled: boolean) => ipcRenderer.invoke("remote:setEnabled", enabled),
+  listUsers: () => ipcRenderer.invoke("remote:listUsers"),
+  createUser: (input: { username: string; password?: string }) =>
+    ipcRenderer.invoke("remote:createUser", input),
+  renameUser: (input: { id: string; username: string }) =>
+    ipcRenderer.invoke("remote:renameUser", input),
+  setUserDisabled: (input: { id: string; disabled: boolean }) =>
+    ipcRenderer.invoke("remote:setUserDisabled", input),
+  resetUserPassword: (id: string) => ipcRenderer.invoke("remote:resetUserPassword", id),
+  setUserPassword: (input: { id: string; password: string }) =>
+    ipcRenderer.invoke("remote:setUserPassword", input),
+  getUserDataFootprint: (id: string) =>
+    ipcRenderer.invoke("remote:getUserDataFootprint", id),
+  deleteUser: (id: string) => ipcRenderer.invoke("remote:deleteUser", id),
+  listUserRoots: (userId: string) => ipcRenderer.invoke("remote:listUserRoots", userId),
+  setUserRoots: (args: { userId: string; roots: string[] }) =>
+    ipcRenderer.invoke("remote:setUserRoots", args),
+  checkRootsExist: (roots: string[]) =>
+    ipcRenderer.invoke("remote:checkRootsExist", roots),
+  listSessions: () => ipcRenderer.invoke("remote:listSessions"),
+  revokeSession: (tokenHash: string) =>
+    ipcRenderer.invoke("remote:revokeSession", tokenHash),
+  revokeUserSessions: (userId: string) =>
+    ipcRenderer.invoke("remote:revokeUserSessions", userId),
+  revokeAllSessions: () => ipcRenderer.invoke("remote:revokeAllSessions"),
+  listAuditLog: (limit?: number) => ipcRenderer.invoke("remote:listAuditLog", limit)
+};
+
 contextBridge.exposeInMainWorld("freebuddy", {
   platform: process.platform,
   arch: process.arch,
@@ -474,5 +522,6 @@ contextBridge.exposeInMainWorld("freebuddy", {
   infoCards,
   window,
   updater,
-  shell: shellApi
+  shell: shellApi,
+  remote
 });

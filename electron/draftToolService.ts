@@ -223,12 +223,15 @@ async function dispatchDraftToolRequest(
 }
 
 export function resolveDraftToolRequest(
-  sender: WebContents,
+  sender: WebContents | null | undefined,
   resolution: DraftToolResolution
 ): boolean {
   if (!resolution || typeof resolution.requestId !== "string") return false;
   const pending = pendingRequests.get(resolution.requestId);
-  if (!pending || pending.binding.webContents.id !== sender.id) return false;
+  if (!pending) return false;
+  // Desktop IPC callers must match the bound window. Remote WebUI invokes may
+  // pass an undefined sender when no BrowserWindow is available.
+  if (sender && pending.binding.webContents.id !== sender.id) return false;
   if (
     !resolution.result ||
     resolution.result.conversationId !== pending.binding.conversationId
