@@ -28,10 +28,10 @@
     "sent": "Sent"
   },
   "remote": {
-    "title": "Remote Access",
+    "title": "Shared Access",
     "statusOn": "Running · {{host}}:{{port}}",
     "statusOff": "Off",
-    "enableDescription": "Access FreeBuddy from a browser on your phone, tablet, or other computers on the same network.",
+    "enableDescription": "Configure agents once on this computer, then let teammates use FreeBuddy from a browser on the same network.",
     "lanIpHint": "LAN IP: {{ip}}. On this machine use http://127.0.0.1:{{port}}.",
     "passwordTitle": "Password",
     "newPasswordPlaceholder": "New password (optional)",
@@ -39,7 +39,7 @@
     "passwordMinLength": "Minimum 8 characters.",
     "passwordUpdated": "Password updated. Existing sessions were signed out.",
     "passwordTooShort": "Password must be at least 8 characters.",
-    "desktopOnly": "Remote access can only be configured from the desktop app.",
+    "desktopOnly": "Shared access can only be configured from the desktop app.",
     "rootsTitle": "Workspace directories",
     "rootsForUser": "User",
     "rootsRemove": "Remove",
@@ -67,7 +67,7 @@
     "showPassword": "Show password",
     "hidePassword": "Hide password",
     "unifiedTitle": "User Management",
-    "unifiedDescription": "Manage remote user accounts and configure isolated workspace directories for each user.",
+    "unifiedDescription": "Manage shared user accounts and configure isolated workspace directories for each user.",
     "addDirectory": "Add directory",
     "defaultHomeAccess": "Home directory",
     "defaultRootsNotice": "No directories assigned. The owner falls back to the host home directory.",
@@ -132,8 +132,8 @@
       "user.roots_changed": "Directories changed",
       "session.revoked": "Session revoked",
       "session.revoked_all": "All sessions revoked",
-      "server.enabled": "Remote access enabled",
-      "server.disabled": "Remote access disabled",
+      "server.enabled": "Shared access enabled",
+      "server.disabled": "Shared access disabled",
       "server.config_changed": "Server settings changed"
     }
   },
@@ -875,7 +875,7 @@
       "plugins": "Plugins",
       "workflowTeams": "Workflow Teams",
       "feed": "Information Cards",
-      "remote": "Remote",
+      "remote": "Shared",
       "about": "About"
     },
     "cli": {

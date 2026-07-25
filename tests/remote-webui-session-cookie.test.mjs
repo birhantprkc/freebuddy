@@ -117,6 +117,6 @@ test("unauthenticated login UI follows the host app language from /api/status", 
   );
   assert.match(preload, /\/api\/status/, "login bootstrap reads host language");
   assert.match(preload, /normalizeLoginLang/, "maps zh-CN to the zh dictionary");
-  assert.match(preload, /远程访问登录/, "Chinese login copy is present");
+  assert.match(preload, /共享访问登录/, "Chinese login copy is present");
   assert.match(preload, /too_many_attempts/, "rate-limit errors are localized");
 });

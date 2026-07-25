@@ -424,25 +424,25 @@
   var LOGIN_LANG = null;
   var LOGIN_I18N = {
     en: {
-      title: "Remote access login",
+      title: "Shared access login",
       username: "Username",
       password: "Password",
       signin: "Sign in",
       signing: "Signing in...",
       failed: "Login failed",
       invalid_credentials: "Wrong username or password",
-      remote_not_initialized: "Remote access is not set up yet",
+      remote_not_initialized: "Shared access is not set up yet",
       too_many_attempts: "Too many attempts. Try again later."
     },
     zh: {
-      title: "远程访问登录",
+      title: "共享访问登录",
       username: "用户名",
       password: "密码",
       signin: "登录",
       signing: "登录中…",
       failed: "登录失败",
       invalid_credentials: "用户名或密码错误",
-      remote_not_initialized: "远程访问尚未配置",
+      remote_not_initialized: "共享访问尚未配置",
       too_many_attempts: "尝试次数过多，请稍后再试。"
     }
   };

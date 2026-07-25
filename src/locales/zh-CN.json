@@ -18,10 +18,10 @@
     "copyFailed": "复制失败"
   },
   "remote": {
-    "title": "远程访问",
+    "title": "共享访问",
     "statusOn": "运行中 · {{host}}:{{port}}",
     "statusOff": "未开启",
-    "enableDescription": "在同一网络下，用手机、平板或其他电脑的浏览器访问 FreeBuddy。",
+    "enableDescription": "在一台电脑上配好 Agent，同一网络下的其他成员用浏览器即可使用 FreeBuddy。",
     "lanIpHint": "局域网 IP：{{ip}}。本机可使用 http://127.0.0.1:{{port}}。",
     "passwordTitle": "密码",
     "newPasswordPlaceholder": "自定义密码（可留空）",
@@ -29,7 +29,7 @@
     "passwordMinLength": "至少 8 个字符。",
     "passwordUpdated": "密码已更新，该账号的已登录设备已被登出。",
     "passwordTooShort": "密码至少需要 8 个字符。",
-    "desktopOnly": "远程访问只能在桌面端配置。",
+    "desktopOnly": "共享访问只能在桌面端配置。",
     "rootsTitle": "工作目录",
     "rootsForUser": "用户",
     "rootsRemove": "移除",
@@ -57,7 +57,7 @@
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
     "unifiedTitle": "用户管理",
-    "unifiedDescription": "管理远程登录用户及其各自允许访问的隔离工作目录。",
+    "unifiedDescription": "管理共享登录用户及其各自允许访问的隔离工作目录。",
     "addDirectory": "添加目录",
     "defaultHomeAccess": "家目录",
     "defaultRootsNotice": "未分配目录，主账号默认回落到主机家目录。",
@@ -122,8 +122,8 @@
       "user.roots_changed": "修改目录权限",
       "session.revoked": "踢出会话",
       "session.revoked_all": "全部登出",
-      "server.enabled": "开启远程访问",
-      "server.disabled": "关闭远程访问",
+      "server.enabled": "开启共享访问",
+      "server.disabled": "关闭共享访问",
       "server.config_changed": "修改服务设置"
     }
   },
@@ -861,7 +861,7 @@
       "plugins": "插件",
       "workflowTeams": "工作流团队",
       "feed": "信息卡片",
-      "remote": "远程",
+      "remote": "共享",
       "about": "关于"
     },
     "cli": {
