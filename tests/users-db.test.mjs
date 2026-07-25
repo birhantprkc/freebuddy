@@ -1,6 +1,7 @@
 import "./fixtures/electron-stub.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 
 let Database;
 let bindingAvailable = true;
@@ -114,16 +115,23 @@ test("getUserRoots/setUserRoots store per-user workspace roots", async (t) => {
 
   assert.deepEqual(getUserRoots(owner.id), [], "defaults to empty");
 
+  const ownerRoots = [
+    path.resolve("/home/owner/projects"),
+    path.resolve("/srv/repos")
+  ].sort();
+  const aliceRoot = path.resolve("/home/alice");
+  const onlyRoot = path.resolve("/only");
+
   setUserRoots(owner.id, ["/home/owner/projects", "/srv/repos"]);
   setUserRoots(alice.id, ["/home/alice"]);
 
-  assert.deepEqual(getUserRoots(owner.id), ["/home/owner/projects", "/srv/repos"]);
-  assert.deepEqual(getUserRoots(alice.id), ["/home/alice"], "isolated per user");
+  assert.deepEqual(getUserRoots(owner.id), ownerRoots);
+  assert.deepEqual(getUserRoots(alice.id), [aliceRoot], "isolated per user");
 
   // replace (not append)
   setUserRoots(owner.id, ["/only"]);
-  assert.deepEqual(getUserRoots(owner.id), ["/only"]);
-  assert.deepEqual(getUserRoots(alice.id), ["/home/alice"], "alice unaffected");
+  assert.deepEqual(getUserRoots(owner.id), [onlyRoot]);
+  assert.deepEqual(getUserRoots(alice.id), [aliceRoot], "alice unaffected");
 });
 
 test("migrateGlobalRootsToOwner moves the legacy global setting to the owner", async (t) => {
@@ -136,15 +144,20 @@ test("migrateGlobalRootsToOwner moves the legacy global setting to the owner", a
   setDbForTest(db);
   const { user: owner } = createUser({ username: "buddy" });
 
+  const legacyRoots = [
+    path.resolve("/legacy/a"),
+    path.resolve("/legacy/b")
+  ].sort();
+
   db.prepare("INSERT INTO app_settings (key, value) VALUES (?, ?)").run(
     "remote.workspaceRoots",
     JSON.stringify(["/legacy/a", "/legacy/b"])
   );
 
   migrateGlobalRootsToOwner(owner.id);
-  assert.deepEqual(getUserRoots(owner.id), ["/legacy/a", "/legacy/b"]);
+  assert.deepEqual(getUserRoots(owner.id), legacyRoots);
 
   // idempotent: re-running does not duplicate
   migrateGlobalRootsToOwner(owner.id);
-  assert.deepEqual(getUserRoots(owner.id), ["/legacy/a", "/legacy/b"]);
+  assert.deepEqual(getUserRoots(owner.id), legacyRoots);
 });
