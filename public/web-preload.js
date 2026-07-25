@@ -393,6 +393,42 @@
     }
   };
 
+  var LOGIN_LANG = (function () {
+    var tag = navigator.language || navigator.userLanguage || "en";
+    return String(tag).toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+  })();
+  var LOGIN_I18N = {
+    en: {
+      title: "Remote access login",
+      username: "Username",
+      password: "Password",
+      signin: "Sign in",
+      signing: "Signing in...",
+      failed: "Login failed",
+      invalid_credentials: "Wrong username or password",
+      remote_not_initialized: "Remote access is not set up yet"
+    },
+    zh: {
+      title: "远程访问登录",
+      username: "用户名",
+      password: "密码",
+      signin: "登录",
+      signing: "登录中…",
+      failed: "登录失败",
+      invalid_credentials: "用户名或密码错误",
+      remote_not_initialized: "远程访问尚未配置"
+    }
+  };
+  function loginT(key) {
+    var dict = LOGIN_I18N[LOGIN_LANG] || LOGIN_I18N.en;
+    return dict[key] || LOGIN_I18N.en[key] || key;
+  }
+  function loginErrorMessage(code) {
+    var dict = LOGIN_I18N[LOGIN_LANG] || LOGIN_I18N.en;
+    if (code && dict[code]) return dict[code];
+    return code || dict.failed;
+  }
+
   function showLogin(message) {
     if (document.getElementById("fb-login-root")) return;
     var root = document.createElement("div");
@@ -402,10 +438,10 @@
     root.innerHTML =
       '<div style="width:320px;padding:28px;background:#131c36;border:1px solid #243154;border-radius:14px;color:#e6ebf5;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.4);">' +
       '<div style="font-size:20px;font-weight:700;margin-bottom:4px;">FreeBuddy</div>' +
-      '<div style="font-size:13px;color:#8b97b8;margin-bottom:18px;">' + (message || "Remote access login") + "</div>" +
-      '<input id="fb-login-user" type="text" placeholder="Username" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:10px;outline:none;" />' +
-      '<input id="fb-login-pw" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:12px;outline:none;" />' +
-      '<button id="fb-login-btn" style="width:100%;padding:10px;border-radius:8px;border:none;background:#3b6ef0;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Sign in</button>' +
+      '<div style="font-size:13px;color:#8b97b8;margin-bottom:18px;">' + (message || loginT("title")) + "</div>" +
+      '<input id="fb-login-user" type="text" placeholder="' + loginT("username") + '" autocomplete="username" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:10px;outline:none;" />' +
+      '<input id="fb-login-pw" type="password" placeholder="' + loginT("password") + '" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3a5e;background:#0b1329;color:#e6ebf5;font-size:14px;margin-bottom:12px;outline:none;" />' +
+      '<button id="fb-login-btn" style="width:100%;padding:10px;border-radius:8px;border:none;background:#3b6ef0;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">' + loginT("signin") + "</button>" +
       '<div id="fb-login-err" style="color:#ff6b6b;font-size:12px;margin-top:10px;min-height:16px;"></div>' +
       "</div>";
     if (document.body) document.body.appendChild(root);
@@ -417,20 +453,20 @@
     function doLogin() {
       err.textContent = "";
       btn.disabled = true;
-      btn.textContent = "Signing in...";
+      btn.textContent = loginT("signing");
       postJson("/api/login", { username: userInput.value, password: input.value }).then(function (json) {
         if (json.ok) {
           setToken(json.token);
           location.reload();
         } else {
-          err.textContent = json.error || "Login failed";
+          err.textContent = loginErrorMessage(json.error);
           btn.disabled = false;
-          btn.textContent = "Sign in";
+          btn.textContent = loginT("signin");
         }
       }).catch(function (e) {
         err.textContent = String(e);
         btn.disabled = false;
-        btn.textContent = "Sign in";
+        btn.textContent = loginT("signin");
       });
     }
     btn.addEventListener("click", doLogin);
