@@ -412,18 +412,64 @@ function proxyToDevServer(
   req.pipe(proxyReq);
 }
 
-function setupWebSocket(server: http.Server): void {
+function proxyUpgradeToDevServer(
+  req: IncomingMessage,
+  socket: import("node:stream").Duplex,
+  head: Buffer,
+  devServerUrl: string
+): void {
+  let target: URL;
+  try {
+    target = new URL(devServerUrl);
+  } catch {
+    socket.destroy();
+    return;
+  }
+  const proxyReq = http.request({
+    hostname: target.hostname,
+    port: target.port,
+    path: req.url,
+    headers: { ...req.headers, host: target.host }
+  });
+  proxyReq.on("upgrade", (proxyRes, proxySocket, proxyHead) => {
+    socket.write(
+      `HTTP/1.1 101 Switching Protocols\r\n` +
+        Object.entries(proxyRes.headers)
+          .filter(([, v]) => v !== undefined)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("\r\n") +
+        "\r\n\r\n"
+    );
+    if (proxyHead.length) socket.write(proxyHead);
+    proxySocket.pipe(socket);
+    socket.pipe(proxySocket);
+    proxySocket.on("error", () => {
+      try { socket.destroy(); } catch { /* ignore */ }
+    });
+    socket.on("error", () => {
+      try { proxySocket.destroy(); } catch { /* ignore */ }
+    });
+  });
+  proxyReq.on("error", () => socket.destroy());
+  proxyReq.end();
+}
+
+function setupWebSocket(server: http.Server, devServerUrl = ""): void {
   wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
-    if (url.pathname !== "/ws") {
-      socket.destroy();
+    if (url.pathname === "/ws") {
+      wss?.handleUpgrade(req, socket, head, (ws) => {
+        wss?.emit("connection", ws, req);
+      });
       return;
     }
-    wss?.handleUpgrade(req, socket, head, (ws) => {
-      wss?.emit("connection", ws, req);
-    });
+    if (devServerUrl) {
+      proxyUpgradeToDevServer(req, socket, head, devServerUrl);
+      return;
+    }
+    socket.destroy();
   });
 
   wss.on("connection", (ws: WebSocket) => {
@@ -596,7 +642,7 @@ export function startWebUIServer(options: WebUIServerOptions = {}): Promise<void
       server.listen(p, host, () => {
         webuiServer = server;
         currentPort = p;
-        setupWebSocket(server);
+        setupWebSocket(server, devServerUrl);
         console.log(
           `[FreeBuddy] WebUI Server listening on ${host}:${p}` +
             (allowRemote ? " (remote access enabled)" : "")
