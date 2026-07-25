@@ -1696,28 +1696,75 @@ button {
   font-weight: 600;
 }
 
-.share-conversation-link-field > div {
+.share-conversation-link-row {
   display: flex;
-  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid var(--fb-border);
+  border-radius: 10px;
+  background: var(--fb-panel-soft);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.share-conversation-link-row:focus-within {
+  border-color: color-mix(in srgb, var(--fb-brand) 45%, var(--fb-border));
+  box-shadow: 0 0 0 3px var(--fb-brand-glow);
 }
 
 .share-conversation-link-field input {
   min-width: 0;
   flex: 1;
-  padding: 9px 11px;
-  border: 1px solid var(--fb-border);
-  border-radius: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 0;
   color: var(--fb-text-primary);
-  background: var(--fb-panel-soft);
+  background: transparent;
   font-family: var(--fb-font-mono);
   font-size: 12px;
+  outline: none;
 }
 
-.share-conversation-link-field button {
+.share-conversation-copy-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  flex: 0 0 auto;
+  min-width: 84px;
+  margin: 0;
+  padding: 0 14px;
+  border: none;
+  border-left: 1px solid var(--fb-border);
+  border-radius: 0;
+  background: var(--fb-brand);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.share-conversation-copy-btn:hover {
+  background: var(--fb-brand-hover, #059669);
+}
+
+.share-conversation-copy-btn:active {
+  filter: brightness(0.96);
+}
+
+.share-conversation-copy-btn.is-copied {
+  background: color-mix(in srgb, var(--fb-brand) 14%, var(--fb-panel-soft));
+  color: var(--fb-brand);
+  border-left-color: color-mix(in srgb, var(--fb-brand) 28%, var(--fb-border));
+}
+
+.share-conversation-copy-btn.is-copied:hover {
+  background: color-mix(in srgb, var(--fb-brand) 18%, var(--fb-panel-soft));
 }
 
 .modal-header {

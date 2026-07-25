@@ -30,6 +30,8 @@ import {
   ChevronDown
 } from "lucide-react";
 
+import { copyToClipboard as writeClipboard } from "@/utils/clipboard";
+
 const MIN_PASSWORD_LENGTH = 8;
 const STATUS_POLL_MS = 15000;
 
@@ -124,14 +126,15 @@ export function RemoteTab() {
   );
 
   const copyToClipboard = (text: string, key: string) => {
-    try {
-      void navigator.clipboard?.writeText(text);
-      setCopiedKey(key);
-      showToast(t("common.copied"), "success");
-      setTimeout(() => setCopiedKey((curr) => (curr === key ? null : curr)), 2000);
-    } catch {
-      showToast(t("common.copyFailed"), "error");
-    }
+    void writeClipboard(text)
+      .then(() => {
+        setCopiedKey(key);
+        showToast(t("common.copied"), "success");
+        setTimeout(() => setCopiedKey((curr) => (curr === key ? null : curr)), 2000);
+      })
+      .catch(() => {
+        showToast(t("common.copyFailed"), "error");
+      });
   };
 
   const loadRootsForUsers = async (usersList: RemoteUser[]) => {

@@ -23,6 +23,7 @@ import { dedupeCommands, dedupeToolResults } from "@/store/conversationUtils";
 import { useImagePreviewStore } from "@/store/imagePreviewStore";
 import { useTerminalStore } from "@/store/terminalStore";
 import { splitAutolinkSegments } from "@/utils/autolink";
+import { copyToClipboard } from "@/utils/clipboard";
 import { prepareToolResultText } from "@/utils/streamMedia";
 import {
   attachmentPreviewUrl,
@@ -248,9 +249,10 @@ function CodeBlockCard({ lang, code }: { lang?: string; code: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    void copyToClipboard(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   }, [code]);
 
   return (

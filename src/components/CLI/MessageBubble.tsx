@@ -25,6 +25,7 @@ import { useConversationStore } from "@/store/conversationStore";
 import { useImagePreviewStore } from "@/store/imagePreviewStore";
 import { splitAutolinkSegments } from "@/utils/autolink";
 import { formatBytes, attachmentPreviewUrl } from "@/utils/chatAttachments";
+import { copyToClipboard } from "@/utils/clipboard";
 import { stripConversationShareLinks } from "@/utils/conversationShareLinks";
 import { splitWorkspaceFileMentions } from "@/utils/workspaceFileMentions";
 import { pluginDisplayName, splitPluginMentions } from "@/utils/pluginMentions";
@@ -941,9 +942,11 @@ export const MessageBubble = memo(function MessageBubble({
   const copyText = messageText(message, items).trim();
   const showActionBar = message.role === "assistant" && message.status === "done" && Boolean(copyText);
   const doCopy = (text: string) => {
-    if (text) void navigator.clipboard?.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    if (!text) return;
+    void copyToClipboard(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
   };
 
   const actionBarNode = showActionBar ? (

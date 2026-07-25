@@ -7,6 +7,7 @@ import type {
   Conversation,
   CreateConversationShareResult
 } from "@/services/cli/types";
+import { copyToClipboard } from "@/utils/clipboard";
 
 interface ShareConversationPanelProps {
   source: Conversation;
@@ -52,7 +53,7 @@ export function ShareConversationPanel({
   const copyLink = async () => {
     if (!result?.link) return;
     try {
-      await navigator.clipboard.writeText(result.link);
+      await copyToClipboard(result.link);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch (cause) {
@@ -83,11 +84,15 @@ export function ShareConversationPanel({
         <>
           <label className="share-conversation-link-field">
             <span>{t("contextShare.linkLabel")}</span>
-            <div>
+            <div className="share-conversation-link-row">
               <input value={result.link} readOnly aria-readonly="true" />
-              <button type="button" onClick={() => void copyLink()}>
-                {copied ? <Check size={16} /> : <Copy size={16} />}
-                {copied ? t("contextShare.copied") : t("contextShare.copy")}
+              <button
+                type="button"
+                className={`share-conversation-copy-btn${copied ? " is-copied" : ""}`}
+                onClick={() => void copyLink()}
+              >
+                {copied ? <Check size={15} strokeWidth={2.4} /> : <Copy size={15} />}
+                <span>{copied ? t("contextShare.copied") : t("contextShare.copy")}</span>
               </button>
             </div>
           </label>
