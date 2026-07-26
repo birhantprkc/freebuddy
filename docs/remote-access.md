@@ -18,6 +18,34 @@ Each user has their own conversations, messages, scheduled tasks, workflow
 runs, and workspace roots. The desktop owner (admin) can see everyone's data
 for oversight; shared users only see their own.
 
+## Repository isolation
+
+Directories assigned under **Settings → Shared → Users** are source repositories
+that a user is allowed to open. When a browser user starts a task:
+
+1. FreeBuddy resolves the selected directory to its containing Git repository.
+2. It creates (or reuses) a private clone under FreeBuddy's application data
+   directory for that user.
+3. The agent runs in that clone, not in the host's original checkout. Two users
+   assigned the same repository therefore edit independent working trees.
+4. The clone's push URL starts disabled to prevent accidental publication. A
+   desktop administrator can review and publish changes explicitly. This is a
+   safe default, not an immutable policy: an agent that can edit the clone can
+   also change its local Git configuration.
+
+Only committed Git state is copied into a newly created clone. Directories that
+are not inside a Git repository cannot be used as browser-user workspaces in
+this mode. Reused clones are not automatically refreshed from the assigned
+source repository in this first version.
+
+Browser-started agents also run inside a lightweight OS process sandbox. On
+macOS this uses Seatbelt; on Linux the sandbox runtime uses bubblewrap. The
+sandbox grants read/write access to the user's managed clone and required agent
+configuration, denies the rest of the host user directories, and proxies
+outbound network access. Private, loopback, and local network destinations are
+denied; normal public package registries, source hosts, and agent APIs remain
+available. Desktop-started agents keep the existing unrestricted local behavior.
+
 ## Environment variables
 
 - `FB_REMOTE=1` — enable shared access on startup.
@@ -45,7 +73,8 @@ for oversight; shared users only see their own.
   newly registered handler has not been categorised.
 - The executable, arguments and environment used to spawn a CLI are resolved on
   the host from the stored adapter overrides. Values sent by a shared client are
-  discarded, and `cwd` must fall inside that user's assigned directories.
+  discarded, and the requested `cwd` must fall inside that user's assigned
+  source directories before it is mapped to a managed clone.
 - `settings:get` / `settings:set` are limited to a small key allow-list over the
   bridge, so the stored password hash is not readable from a browser.
 - WebSocket session events (`cli://<sessionId>`) are delivered only to the owning
@@ -53,6 +82,9 @@ for oversight; shared users only see their own.
 - Browsable workspace directories are assigned per user. **A member with no
   assigned directory can browse nothing**; only the owner falls back to the host
   home folder.
+- Task records, reusable tool sessions, terminal decisions, and process-control
+  requests are scoped to the owning user. A browser user cannot stop, approve,
+  or resume another user's agent process.
 - Failed sign-ins are counted per IP + username. After five attempts the pair is
   locked out with an exponential backoff, capped at fifteen minutes.
 - Deleting a user also deletes their conversations and scheduled tasks, and

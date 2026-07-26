@@ -600,8 +600,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     ensureWorkflowMessageSubscription(conv.id, async (cid, messageIds) => {
       await get().loadMessages(cid, messageIds);
     });
-    if (cwd) {
-      void cliClient.ensureAgentGuides(cwd, {
+    if (conv.cwd) {
+      void cliClient.ensureAgentGuides(conv.cwd, {
         nativeDraftTools:
           useCliExecutorStore.getState().resolve(conv.adapter)?.protocol === "acp"
       }).catch((err) => {

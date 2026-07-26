@@ -18,7 +18,7 @@ export interface AcpTerminalManager {
     cwd?: string;
     env?: { name: string; value: string }[];
     outputByteLimit?: number;
-  }): { terminalId: string };
+  }): Promise<{ terminalId: string }>;
   output(terminalId: string): TerminalSnapshot;
   waitForExit(
     terminalId: string
@@ -57,6 +57,17 @@ function snapshot(record: TerminalRecord): TerminalSnapshot {
 export function createAcpTerminalManager(options: {
   defaultCwd?: string;
   onOutput?: (terminalId: string, snap: TerminalSnapshot) => void;
+  prepareSpawn?: (input: {
+    command: string;
+    args: string[];
+    cwd: string;
+    env: Record<string, string>;
+  }) => Promise<{
+    command: string;
+    args: string[];
+    env: Record<string, string | undefined>;
+  }>;
+  onPreparedSpawnExit?: () => void;
 }): AcpTerminalManager {
   const terminals = new Map<string, TerminalRecord>();
 
@@ -102,7 +113,7 @@ export function createAcpTerminalManager(options: {
   }
 
   return {
-    create(params) {
+    async create(params) {
       const terminalId = `term_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
       const byteLimit = params.outputByteLimit ?? 1024 * 1024;
       const env = { ...process.env } as Record<string, string>;
@@ -110,9 +121,18 @@ export function createAcpTerminalManager(options: {
         env[entry.name] = entry.value;
       }
 
-      const child = spawn(params.command, params.args ?? [], {
-        cwd: params.cwd || options.defaultCwd,
-        env,
+      const cwd = params.cwd || options.defaultCwd || process.cwd();
+      const prepared = options.prepareSpawn
+        ? await options.prepareSpawn({
+            command: params.command,
+            args: params.args ?? [],
+            cwd,
+            env
+          })
+        : { command: params.command, args: params.args ?? [], env };
+      const child = spawn(prepared.command, prepared.args, {
+        cwd,
+        env: prepared.env,
         stdio: ["ignore", "pipe", "pipe"]
       });
 
@@ -132,6 +152,7 @@ export function createAcpTerminalManager(options: {
       child.stdout?.on("data", (chunk) => appendOutput(record, chunk));
       child.stderr?.on("data", (chunk) => appendOutput(record, chunk));
       child.on("close", (code, signal) => {
+        if (options.prepareSpawn) options.onPreparedSpawnExit?.();
         markExited(record, code, signal);
       });
       child.on("error", () => {

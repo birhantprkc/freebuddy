@@ -16,6 +16,7 @@ import {
   type Running
 } from "./runtimeShared.js";
 import { killProcessTree } from "./process-kill.js";
+import { clearSessionOwner } from "./sessionOwners.js";
 
 export interface LegacyRuntimeInput {
   child: ChildProcessByStdio<Writable, Readable, Readable>;
@@ -75,6 +76,7 @@ export function runLegacyCliAgent({
     if (timer) clearTimeout(timer);
     const exitCode = code ?? -1;
     running.delete(args.sessionId);
+    clearSessionOwner(args.sessionId);
     appendLog(logStream, "system", `exit code=${exitCode}`);
     emit({ type: "done", exitCode });
     const status = exitCode === 0 ? "done" : "failed";

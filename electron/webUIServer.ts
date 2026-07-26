@@ -26,7 +26,10 @@ import {
 } from "./remoteAuth.js";
 import { verifyUserLogin, getOwnerUser, getUserById, listUsers } from "./cli/users.js";
 import { getLanguage } from "./cli/settings.js";
-import { remoteRootsForUser } from "./cli/remoteRoots.js";
+import {
+  remoteRootsForUser,
+  remoteSourceRootsForUser
+} from "./cli/remoteRoots.js";
 import { recordAudit } from "./cli/remoteAudit.js";
 import {
   checkLoginAllowed,
@@ -528,7 +531,7 @@ function handleListDirs(req: IncomingMessage, res: ServerResponse): boolean {
   const callerUserId =
     sessionUserId(extractBearerToken(req.headers.authorization)) ||
     sessionUserId(readSessionCookie(req.headers.cookie));
-  const roots = remoteRootsForUser(callerUserId);
+  const roots = remoteSourceRootsForUser(callerUserId);
   if (roots.length === 0) {
     sendJson(res, 200, {
       ok: true,

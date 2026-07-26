@@ -11,7 +11,7 @@ test("terminal manager streams output and reports exit status", async () => {
     }
   });
 
-  const { terminalId } = manager.create({
+  const { terminalId } = await manager.create({
     sessionId: "sess-1",
     command: process.platform === "win32" ? "cmd" : "sh",
     args:
@@ -33,7 +33,7 @@ test("terminal manager streams output and reports exit status", async () => {
 
 test("terminal manager enforces output byte limits", async () => {
   const manager = createAcpTerminalManager({});
-  const { terminalId } = manager.create({
+  const { terminalId } = await manager.create({
     sessionId: "sess-2",
     command: process.execPath,
     args: ["-e", "process.stdout.write('prefix-' + 'x'.repeat(200) + '-tail')"],
@@ -53,7 +53,7 @@ test("terminal manager enforces output byte limits", async () => {
 
 test("terminal manager truncates UTF-8 output at character boundaries", async () => {
   const manager = createAcpTerminalManager({});
-  const { terminalId } = manager.create({
+  const { terminalId } = await manager.create({
     sessionId: "sess-3",
     command: process.execPath,
     args: ["-e", "process.stdout.write('前缀内容🙂最终')"],

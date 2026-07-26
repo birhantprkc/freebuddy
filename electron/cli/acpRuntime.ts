@@ -72,6 +72,14 @@ import {
   clearAuthenticationTerminalsForSession,
   runAuthenticationTerminal
 } from "./acpAuthTerminal.js";
+import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
+import {
+  cleanupSandboxCommand,
+  prepareSandboxedSpawn,
+  shouldSandboxCurrentCaller
+} from "./sandboxRuntime.js";
+import { isPathWithinRoots } from "../shared/workspaceRoots.js";
+import { clearSessionOwner } from "./sessionOwners.js";
 
 function writeAcp(
   child: ChildProcessByStdio<Writable, Readable, Readable>,
@@ -139,6 +147,28 @@ export async function runAcpAgent({
     (args.knownAgentStreamMessageIds ?? []).length === 0;
   const terminalManager = createAcpTerminalManager({
     defaultCwd: args.cwd,
+    prepareSpawn: shouldSandboxCurrentCaller()
+      ? async (input) => {
+          const workspaceRoot = args.cwd;
+          if (!workspaceRoot || !isPathWithinRoots(input.cwd, [workspaceRoot])) {
+            throw new Error("forbidden_path: terminal cwd");
+          }
+          const prepared = await prepareSandboxedSpawn({
+            adapter: args.adapter,
+            bin: input.command,
+            args: input.args,
+            cwd: input.cwd,
+            workspaceRoot,
+            env: input.env
+          });
+          return {
+            command: prepared.bin,
+            args: prepared.args,
+            env: prepared.env
+          };
+        }
+      : undefined,
+    onPreparedSpawnExit: cleanupSandboxCommand,
     onOutput: (terminalId, snap) => {
       emit({
         type: "terminal-update",
@@ -183,6 +213,7 @@ export async function runAcpAgent({
     finished = true;
     terminalManager.dispose();
     running.delete(args.sessionId);
+    clearSessionOwner(args.sessionId);
     unregisterDraftToolSession(args.sessionId);
     unregisterBrowserToolSession(args.sessionId);
     unregisterSkillToolSession(args.sessionId);
@@ -515,7 +546,7 @@ export async function runAcpAgent({
                     entry != null
                 )
             : undefined;
-          const created = terminalManager.create({
+          const created = await terminalManager.create({
             sessionId,
             command,
             args: argsList,
@@ -804,6 +835,11 @@ export async function runAcpAgent({
       `authenticating with ACP method ${method.id}`
     );
     if (method.type === "terminal") {
+      if (getCallerUserId() && !isCallerAdmin()) {
+        throw new Error(
+          "Remote interactive agent login is disabled. Configure the agent on the FreeBuddy desktop first."
+        );
+      }
       await stopAcpConnectionForAuthentication();
       await runAuthenticationTerminal({
         sessionId: args.sessionId,

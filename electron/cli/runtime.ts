@@ -33,6 +33,13 @@ import {
   buildSkillAnnouncement,
   reconcileNativeSkillLinks
 } from "./skillRuntime.js";
+import {
+  cleanupSandboxCommand,
+  prepareSandboxedSpawn,
+  sandboxWorkingDirectory,
+  shouldSandboxCurrentCaller
+} from "./sandboxRuntime.js";
+import { isolateRemoteCwdForCaller } from "./remoteWorkspaceAccess.js";
 
 export type { CliEvent, CliRunArgs } from "./runtimeShared.js";
 
@@ -201,15 +208,22 @@ export async function cliRun(
     args.announceSkills && args.skills?.length
       ? { ...args, prompt: buildSkillAnnouncement(args.prompt, args.skills) }
       : args;
+  const sandboxed = shouldSandboxCurrentCaller();
+  const isolatedCwd = sandboxed
+    ? await isolateRemoteCwdForCaller(effectiveArgs.cwd)
+    : effectiveArgs.cwd;
+  const executionArgs: CliRunArgs = sandboxed
+    ? { ...effectiveArgs, cwd: sandboxWorkingDirectory(isolatedCwd) }
+    : effectiveArgs;
 
   let built;
   try {
     built = buildCommand({
-      adapter: args.adapter,
-      binary: args.binary,
-      prompt: effectiveArgs.prompt,
-      extraArgs: args.extraArgs,
-      cwd: args.cwd,
+      adapter: executionArgs.adapter,
+      binary: executionArgs.binary,
+      prompt: executionArgs.prompt,
+      extraArgs: executionArgs.extraArgs,
+      cwd: executionArgs.cwd,
       toolSessionId
     });
   } catch (e) {
@@ -235,11 +249,46 @@ export async function cliRun(
     )
   );
 
-  const child = spawn(built.bin, built.args, {
-    cwd: args.cwd,
-    env,
+  let spawnCommand = {
+    bin: built.bin,
+    args: built.args,
+    env
+  };
+  if (sandboxed) {
+    try {
+      spawnCommand = await prepareSandboxedSpawn({
+        adapter: executionArgs.adapter,
+        bin: built.bin,
+        args: built.args,
+        cwd: executionArgs.cwd!,
+        env,
+        extraReadPaths: [
+          ...(executionArgs.promptAttachments ?? []).map(
+            (attachment) => attachment.path
+          ),
+          ...(executionArgs.skills ?? []).map((skill) => skill.rootPath)
+        ]
+      });
+    } catch (error) {
+      const msg = `sandbox setup failed: ${
+        (error as Error)?.message || String(error)
+      }`;
+      appendLog(logStream, "system", msg);
+      emit({ type: "error", message: msg });
+      emit({ type: "done", exitCode: -1 });
+      updateTaskStatus(args.sessionId, "failed", -1, msg);
+      updateRuntimeRun(args.adapter, msg);
+      logStream?.end();
+      return;
+    }
+  }
+
+  const child = spawn(spawnCommand.bin, spawnCommand.args, {
+    cwd: executionArgs.cwd,
+    env: spawnCommand.env,
     stdio: ["pipe", "pipe", "pipe"]
   }) as ChildProcessByStdio<Writable, Readable, Readable>;
+  if (sandboxed) child.once("close", cleanupSandboxCommand);
 
   let resolved = false;
   await new Promise<void>((resolve) => {
@@ -271,7 +320,7 @@ export async function cliRun(
     await runAcpAgent({
       child,
       webContents,
-      args: effectiveArgs,
+      args: executionArgs,
       pid,
       logStream,
       toolSessionId,
@@ -280,17 +329,18 @@ export async function cliRun(
       capturedSessions,
       emit,
       agentCommand: {
-        bin: built.bin,
-        args: built.args,
-        cwd: args.cwd,
-        env
+        bin: spawnCommand.bin,
+        args: spawnCommand.args,
+        cwd: executionArgs.cwd,
+        env: spawnCommand.env
       },
       restartAgent: async () => {
-        const restarted = spawn(built.bin, built.args, {
-          cwd: args.cwd,
-          env,
+        const restarted = spawn(spawnCommand.bin, spawnCommand.args, {
+          cwd: executionArgs.cwd,
+          env: spawnCommand.env,
           stdio: ["pipe", "pipe", "pipe"]
         }) as ChildProcessByStdio<Writable, Readable, Readable>;
+        if (sandboxed) restarted.once("close", cleanupSandboxCommand);
         await new Promise<void>((resolve, reject) => {
           restarted.once("spawn", resolve);
           restarted.once("error", reject);
@@ -309,7 +359,7 @@ export async function cliRun(
 
   runLegacyCliAgent({
     child,
-    args: effectiveArgs,
+    args: executionArgs,
     built,
     pid,
     logStream,

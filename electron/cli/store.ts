@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { CLIAdapterId } from "./adapters.js";
 import { getDataDir, getDb } from "./db.js";
+import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 
 export interface CLICodexByokConfig {
   enabled?: boolean;
@@ -616,26 +617,32 @@ export interface ToolSessionRecord {
   adapter: string;
   sessionId: string;
   title?: string;
+  ownerId?: string | null;
   updatedAt: string;
 }
 
 export function toolSessionKey(
   agentId: string,
-  workspacePath: string
+  workspacePath: string,
+  ownerId: string | null = getCallerUserId()
 ): string {
-  return `${agentId}::${workspacePath}`;
+  return ownerId
+    ? `${ownerId}::${agentId}::${workspacePath}`
+    : `${agentId}::${workspacePath}`;
 }
 
 export function getToolSession(
   agentId: string,
   workspacePath: string
 ): ToolSessionRecord | undefined {
-  const row = getDb()
+  const ownerId = getCallerUserId();
+  let row = getDb()
     .prepare(
-      `SELECT key, agent_id, workspace_path, adapter, session_id, title, updated_at
+      `SELECT key, agent_id, workspace_path, adapter, session_id, title,
+              owner_id, updated_at
        FROM cli_tool_sessions WHERE key = ?`
     )
-    .get(toolSessionKey(agentId, workspacePath)) as
+    .get(toolSessionKey(agentId, workspacePath, ownerId)) as
     | {
         key: string;
         agent_id: string;
@@ -643,9 +650,19 @@ export function getToolSession(
         adapter: string;
         session_id: string;
         title: string | null;
+        owner_id: string | null;
         updated_at: string;
       }
     | undefined;
+  if (!row && (isCallerAdmin() || ownerId === null)) {
+    row = getDb()
+      .prepare(
+        `SELECT key, agent_id, workspace_path, adapter, session_id, title,
+                owner_id, updated_at
+         FROM cli_tool_sessions WHERE key = ?`
+      )
+      .get(toolSessionKey(agentId, workspacePath, null)) as typeof row;
+  }
   if (!row) return undefined;
   return {
     key: row.key,
@@ -654,6 +671,7 @@ export function getToolSession(
     adapter: row.adapter,
     sessionId: row.session_id,
     title: row.title ?? undefined,
+    ownerId: row.owner_id ?? null,
     updatedAt: row.updated_at
   };
 }
@@ -666,24 +684,28 @@ export function saveToolSession(
   title?: string
 ): void {
   const now = new Date().toISOString();
+  const ownerId = getCallerUserId();
   getDb()
     .prepare(
       `INSERT INTO cli_tool_sessions
-         (key, agent_id, workspace_path, adapter, session_id, title, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+         (key, agent_id, workspace_path, adapter, session_id, title, owner_id,
+          updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET
          adapter=excluded.adapter,
          session_id=excluded.session_id,
          title=COALESCE(excluded.title, cli_tool_sessions.title),
+         owner_id=excluded.owner_id,
          updated_at=excluded.updated_at`
     )
     .run(
-      toolSessionKey(agentId, workspacePath),
+      toolSessionKey(agentId, workspacePath, ownerId),
       agentId,
       workspacePath,
       adapter,
       sessionId,
       title ?? null,
+      ownerId,
       now
     );
 }

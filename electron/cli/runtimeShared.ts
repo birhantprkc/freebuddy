@@ -3,6 +3,7 @@ import { type ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 
 import { getDb } from "./db.js";
+import { getCallerUserId } from "./callerContext.js";
 import type { CLIAdapterId } from "./adapters.js";
 import type { AcpStreamItem } from "./acp.js";
 import type { SkillSnapshot } from "./skillTypes.js";
@@ -167,8 +168,9 @@ export function insertTask(
     .prepare(
       `INSERT INTO cli_tasks
          (id, agent_id, agent_name, adapter, status, cwd, prompt, prompt_summary,
-          session_id, tool_session_id, log_path, started_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          session_id, tool_session_id, log_path, started_at, owner_id,
+          created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       args.sessionId,
@@ -182,6 +184,7 @@ export function insertTask(
       toolSessionId ?? null,
       logPath,
       now,
+      getCallerUserId(),
       now,
       now
     );
