@@ -137,3 +137,66 @@ test("macOS lightweight sandbox resolves a user-local launcher before isolation"
     db.close();
   }
 });
+
+test("Qoder receives a per-user HOME without exposing the host home", async (t) => {
+  if (process.platform !== "darwin") {
+    t.skip("macOS Seatbelt smoke test");
+    return;
+  }
+  if (!bindingAvailable) {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+
+  const db = new Database(":memory:");
+  const { getDataDir, migrate, setDbForTest } =
+    await import("../dist-electron/cli/db.js");
+  migrate(db);
+  setDbForTest(db);
+  const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
+  const { prepareSandboxedSpawn } =
+    await import("../dist-electron/cli/sandboxRuntime.js");
+  const { SandboxManager } = await import("@anthropic-ai/sandbox-runtime");
+
+  const userId = `sandbox-qoder-user-${process.pid}`;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
+  const sandboxHome = path.join(
+    getDataDir(),
+    "remote-workspaces",
+    userId,
+    "sandbox-home"
+  );
+
+  try {
+    const prepared = await runAsCaller(userId, () =>
+      prepareSandboxedSpawn({
+        adapter: "qoder-acp",
+        bin: "/bin/sh",
+        args: ["-c", 'realpath "$HOME"; printf "%s" "$QODER_CONFIG_DIR"'],
+        cwd: workspace,
+        env: { ...process.env }
+      })
+    );
+    const result = spawnSync(prepared.bin, prepared.args, {
+      cwd: workspace,
+      env: prepared.env,
+      encoding: "utf8"
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const outputLines = result.stdout.trim().split("\n");
+    assert.equal(outputLines[0], fs.realpathSync.native(sandboxHome));
+    const hostQoderConfig = path.join(os.homedir(), ".qoder");
+    if (fs.existsSync(hostQoderConfig)) {
+      assert.equal(outputLines[1], hostQoderConfig);
+    } else {
+      assert.equal(prepared.env.QODER_CONFIG_DIR, undefined);
+    }
+    assert.notEqual(prepared.env.HOME, os.homedir());
+  } finally {
+    await SandboxManager.reset();
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(path.dirname(sandboxHome), { recursive: true, force: true });
+    setDbForTest(null);
+    db.close();
+  }
+});

@@ -30,9 +30,11 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   assert.match(sandbox, /remote_sandbox_unavailable/);
   assert.match(
     sandbox,
-    /env:\s*\{\s*\.\.\.input\.env,\s*\.\.\.wrapped\.env\s*\}/,
-    "sandbox proxy environment must override inherited host proxy settings"
+    /env:\s*\{\s*\.\.\.input\.env,\s*\.\.\.wrapped\.env,\s*\.\.\.adapterSandbox\.env\s*\}/,
+    "sandbox proxy environment must override inherited host proxy settings before fixed adapter paths"
   );
+  assert.match(sandbox, /HOME:\s*sandboxHome,/);
+  assert.match(sandbox, /QODER_CONFIG_DIR:\s*qoderConfig/);
 });
 
 test("remote sessions gate task control and interactive decisions by owner", () => {

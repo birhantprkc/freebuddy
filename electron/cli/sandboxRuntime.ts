@@ -206,6 +206,43 @@ function adapterConfigPaths(adapter: string): string[] {
   return existing(paths);
 }
 
+function adapterSandboxEnvironment(
+  adapter: string
+): {
+  env: Record<string, string>;
+  readWritePaths: string[];
+} {
+  if (!adapter.includes("qoder")) {
+    return { env: {}, readWritePaths: [] };
+  }
+
+  const userId = getCallerUserId();
+  if (!userId) {
+    return { env: {}, readWritePaths: [] };
+  }
+
+  const sandboxHome = path.join(
+    getDataDir(),
+    "remote-workspaces",
+    userId,
+    "sandbox-home"
+  );
+  fs.mkdirSync(sandboxHome, { recursive: true, mode: 0o700 });
+  const qoderConfig = path.join(os.homedir(), ".qoder");
+
+  return {
+    env: {
+      // Qoder's Bun runtime resolves HOME during startup. Point it at a
+      // per-WebUI-user directory instead of exposing the host user's home.
+      HOME: sandboxHome,
+      // Keep using the installed Qoder account and settings. This is the
+      // documented environment equivalent of Qoder's --config-dir option.
+      ...(fs.existsSync(qoderConfig) ? { QODER_CONFIG_DIR: qoderConfig } : {})
+    },
+    readWritePaths: [sandboxHome]
+  };
+}
+
 function allAssignedRepositoryRoots(): string[] {
   return existing(listUsers().flatMap((user) => getUserRoots(user.id)));
 }
@@ -233,6 +270,7 @@ export async function prepareSandboxedSpawn(input: {
   const binary = resolveBinary(input.bin, input.env);
   const workspaceRoot = input.workspaceRoot ?? input.cwd;
   const configPaths = adapterConfigPaths(input.adapter);
+  const adapterSandbox = adapterSandboxEnvironment(input.adapter);
   const binaryPaths = binary
     ? existing([
         binary,
@@ -243,6 +281,7 @@ export async function prepareSandboxedSpawn(input: {
   const allowedRead = existing([
     workspaceRoot,
     ...configPaths,
+    ...adapterSandbox.readWritePaths,
     ...binaryPaths,
     ...(input.extraReadPaths ?? [])
   ]);
@@ -265,7 +304,11 @@ export async function prepareSandboxedSpawn(input: {
       filesystem: {
         denyRead,
         allowRead: allowedRead,
-        allowWrite: existing([workspaceRoot, ...configPaths]),
+        allowWrite: existing([
+          workspaceRoot,
+          ...configPaths,
+          ...adapterSandbox.readWritePaths
+        ]),
         denyWrite: []
       },
       git: { safeDirectories: [workspaceRoot] }
@@ -277,8 +320,9 @@ export async function prepareSandboxedSpawn(input: {
     bin: wrapped.argv[0]!,
     args: wrapped.argv.slice(1),
     // The sandbox supplies proxy/socket variables that must override inherited
-    // host values. Reversing this order could silently bypass network routing.
-    env: { ...input.env, ...wrapped.env }
+    // host values. Adapter overrides are limited to the isolated HOME and
+    // explicit config root, so applying them last cannot bypass network routing.
+    env: { ...input.env, ...wrapped.env, ...adapterSandbox.env }
   };
 }
 
