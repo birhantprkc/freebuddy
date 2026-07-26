@@ -250,7 +250,14 @@ export async function prepareSandboxedSpawn(input: {
     process.platform === "darwin" ? "/Users" : "/home",
     ...allAssignedRepositoryRoots()
   ]);
-  const command = [input.bin, ...input.args].map(quotePosix).join(" ");
+  // Resolve PATH-based launchers before entering the sandbox. User-local bin
+  // directories (for example ~/.local/bin) are intentionally hidden from
+  // remote callers, while the launcher target itself is explicitly allowed.
+  // Keeping the original command name here would make the sandbox shell try
+  // PATH lookup after isolation and fail with "command not found".
+  const command = [binary ?? input.bin, ...input.args]
+    .map(quotePosix)
+    .join(" ");
   const wrapped = await SandboxManager.wrapWithSandboxArgv(
     command,
     undefined,
