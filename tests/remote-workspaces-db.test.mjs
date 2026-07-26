@@ -76,3 +76,90 @@ test("remote workspaces create and reuse an independent clone per user", async (
     db.close();
   }
 });
+
+test("ordinary and empty directories become isolated Git-backed snapshots", async (t) => {
+  if (!bindingAvailable) {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+  const db = new Database(":memory:");
+  const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  setDbForTest(db);
+  const {
+    ensureRemoteWorkspace,
+    listRemoteWorkspaces,
+    removeRemoteWorkspacesForUser
+  } = await import("../dist-electron/cli/remoteWorkspaces.js");
+
+  const source = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-folder-source-"));
+  const emptySource = fs.mkdtempSync(
+    path.join(os.tmpdir(), "freebuddy-empty-source-")
+  );
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-outside-"));
+  const alice = `folder-alice-${process.pid}`;
+  const bob = `folder-bob-${process.pid}`;
+  const emptyUser = `folder-empty-${process.pid}`;
+  fs.writeFileSync(path.join(source, "README.md"), "ordinary source\n");
+  fs.writeFileSync(path.join(source, ".gitignore"), "README.md\n");
+  fs.mkdirSync(path.join(source, "node_modules"));
+  fs.writeFileSync(path.join(source, "node_modules", "skip.js"), "skip\n");
+  fs.writeFileSync(path.join(outside, "secret.txt"), "outside\n");
+  fs.symlinkSync(
+    path.relative(source, outside),
+    path.join(source, "outside-link")
+  );
+
+  try {
+    const aliceWorkspace = await ensureRemoteWorkspace(alice, source, [source]);
+    const bobWorkspace = await ensureRemoteWorkspace(bob, source, [source]);
+    assert.notEqual(aliceWorkspace, bobWorkspace);
+    assert.notEqual(fs.realpathSync(aliceWorkspace), fs.realpathSync(source));
+    assert.equal(
+      fs.readFileSync(path.join(aliceWorkspace, "README.md"), "utf8"),
+      "ordinary source\n"
+    );
+    assert.equal(fs.existsSync(path.join(aliceWorkspace, "node_modules")), false);
+    assert.equal(fs.existsSync(path.join(aliceWorkspace, "outside-link")), false);
+    assert.equal(git(["status", "--short"], aliceWorkspace), "");
+    assert.equal(
+      git(["log", "-1", "--format=%s"], aliceWorkspace),
+      "FreeBuddy workspace baseline"
+    );
+    assert.match(git(["ls-files"], aliceWorkspace), /README\.md/);
+    assert.equal(git(["remote"], aliceWorkspace), "");
+    assert.equal(listRemoteWorkspaces(alice).length, 1);
+    assert.equal(listRemoteWorkspaces(bob).length, 1);
+
+    fs.writeFileSync(path.join(aliceWorkspace, "README.md"), "alice\n");
+    assert.equal(
+      fs.readFileSync(path.join(source, "README.md"), "utf8"),
+      "ordinary source\n"
+    );
+    assert.equal(
+      fs.readFileSync(path.join(bobWorkspace, "README.md"), "utf8"),
+      "ordinary source\n"
+    );
+
+    const emptyWorkspace = await ensureRemoteWorkspace(
+      emptyUser,
+      emptySource,
+      [emptySource]
+    );
+    assert.equal(fs.existsSync(path.join(emptyWorkspace, ".git")), true);
+    assert.equal(
+      git(["log", "-1", "--format=%s"], emptyWorkspace),
+      "FreeBuddy workspace baseline"
+    );
+    assert.equal(git(["status", "--short"], emptyWorkspace), "");
+  } finally {
+    removeRemoteWorkspacesForUser(alice);
+    removeRemoteWorkspacesForUser(bob);
+    removeRemoteWorkspacesForUser(emptyUser);
+    fs.rmSync(source, { recursive: true, force: true });
+    fs.rmSync(emptySource, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+    setDbForTest(null);
+    db.close();
+  }
+});

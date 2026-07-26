@@ -18,25 +18,30 @@ Each user has their own conversations, messages, scheduled tasks, workflow
 runs, and workspace roots. The desktop owner (admin) can see everyone's data
 for oversight; shared users only see their own.
 
-## Repository isolation
+## Workspace isolation
 
-Directories assigned under **Settings → Shared → Users** are source repositories
-that a user is allowed to open. When a browser user starts a task:
+Directories assigned under **Settings → Shared → Users** are source locations
+that a user is allowed to open. They may be Git repositories, ordinary folders,
+or empty folders. When a browser user starts a task, FreeBuddy creates (or
+reuses) a private workspace under its application data directory:
 
-1. FreeBuddy resolves the selected directory to its containing Git repository.
-2. It creates (or reuses) a private clone under FreeBuddy's application data
-   directory for that user.
-3. The agent runs in that clone, not in the host's original checkout. Two users
-   assigned the same repository therefore edit independent working trees.
-4. The clone's push URL starts disabled to prevent accidental publication. A
-   desktop administrator can review and publish changes explicitly. This is a
-   safe default, not an immutable policy: an agent that can edit the clone can
-   also change its local Git configuration.
+- A Git project is cloned. Only committed Git state is copied, and the clone's
+  push URL starts disabled to prevent accidental publication.
+- An ordinary folder is copied into a private snapshot and given a clean local
+  Git baseline commit. Dependency and generated-cache directories such as
+  `node_modules`, `.cache`, `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `.vite`,
+  `coverage`, and `target` are omitted.
+- An empty folder becomes an empty private workspace with a local Git baseline.
+- Absolute, dangling, or source-escaping symbolic links are not copied.
 
-Only committed Git state is copied into a newly created clone. Directories that
-are not inside a Git repository cannot be used as browser-user workspaces in
-this mode. Reused clones are not automatically refreshed from the assigned
-source repository in this first version.
+The agent runs in the private workspace, not in the host's original directory.
+Two users assigned the same source therefore edit independent working trees.
+Git push protection is a safe default, not an immutable policy: an agent that
+can edit its workspace can also change its local Git configuration.
+
+Managed workspaces are stable and reused for later tasks. They are not
+automatically refreshed when the assigned source directory changes in this
+first version.
 
 Browser-started agents also run inside a lightweight OS process sandbox. On
 macOS this uses Seatbelt; on Linux the sandbox runtime uses bubblewrap. The

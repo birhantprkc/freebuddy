@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -16,6 +17,20 @@ export interface RemoteWorkspace {
 }
 
 const materializeLocks = new Map<string, Promise<void>>();
+
+const SNAPSHOT_EXCLUDED_NAMES = new Set([".git", ".hg", ".svn"]);
+
+const SNAPSHOT_EXCLUDED_DIRECTORY_NAMES = new Set([
+  "node_modules",
+  ".cache",
+  ".next",
+  ".nuxt",
+  ".svelte-kit",
+  ".turbo",
+  ".vite",
+  "coverage",
+  "target"
+]);
 
 function rowToWorkspace(row: any): RemoteWorkspace {
   return {
@@ -102,7 +117,7 @@ function authorizedSource(
   return { requestedReal, allowedRoot };
 }
 
-function findGitRoot(start: string, allowedRoot: string): string {
+function findGitRoot(start: string, allowedRoot: string): string | null {
   let cursor = start;
   while (isPathWithinRoots(cursor, [allowedRoot])) {
     if (fs.existsSync(path.join(cursor, ".git"))) return cursor;
@@ -111,7 +126,7 @@ function findGitRoot(start: string, allowedRoot: string): string {
     if (parent === cursor) break;
     cursor = parent;
   }
-  throw new Error("remote_workspace_requires_git_repository");
+  return null;
 }
 
 function safeWorkspaceName(sourcePath: string): string {
@@ -124,7 +139,10 @@ function safeWorkspaceName(sourcePath: string): string {
   return `${base}-${digest}`;
 }
 
-function runGit(args: string[]): Promise<void> {
+function runGit(
+  args: string[],
+  errorCode = "remote_workspace_git_failed"
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("git", args, {
       stdio: ["ignore", "ignore", "pipe"],
@@ -140,7 +158,7 @@ function runGit(args: string[]): Promise<void> {
       else {
         reject(
           new Error(
-            `remote_workspace_clone_failed${
+            `${errorCode}${
               stderr.trim() ? `: ${stderr.trim()}` : ""
             }`
           )
@@ -162,7 +180,10 @@ async function cloneWorkspace(
     `.${path.basename(workspacePath)}.tmp-${randomUUID()}`
   );
   try {
-    await runGit(["clone", "--no-hardlinks", "--", sourcePath, temporaryPath]);
+    await runGit(
+      ["clone", "--no-hardlinks", "--", sourcePath, temporaryPath],
+      "remote_workspace_clone_failed"
+    );
     await runGit([
       "-C",
       temporaryPath,
@@ -179,6 +200,89 @@ async function cloneWorkspace(
   }
 }
 
+function shouldCopySnapshotEntry(sourceRoot: string, entryPath: string): boolean {
+  const relative = path.relative(sourceRoot, entryPath);
+  if (!relative) return true;
+  const segments = relative.split(path.sep);
+  if (segments.some((segment) => SNAPSHOT_EXCLUDED_NAMES.has(segment))) {
+    return false;
+  }
+  if (
+    segments
+      .slice(0, -1)
+      .some((segment) => SNAPSHOT_EXCLUDED_DIRECTORY_NAMES.has(segment))
+  ) {
+    return false;
+  }
+
+  try {
+    const stat = fs.lstatSync(entryPath);
+    if (
+      stat.isDirectory() &&
+      SNAPSHOT_EXCLUDED_DIRECTORY_NAMES.has(path.basename(entryPath))
+    ) {
+      return false;
+    }
+    if (!stat.isSymbolicLink()) return stat.isDirectory() || stat.isFile();
+    const target = fs.readlinkSync(entryPath);
+    if (path.isAbsolute(target)) return false;
+    const resolvedTarget = fs.realpathSync.native(entryPath);
+    return isPathWithinRoots(resolvedTarget, [sourceRoot]);
+  } catch {
+    // Skip dangling links and entries that changed while the snapshot was made.
+    return false;
+  }
+}
+
+async function snapshotWorkspace(
+  userId: string,
+  sourcePath: string,
+  workspacePath: string
+): Promise<void> {
+  const ownerDir = path.join(getDataDir(), "remote-workspaces", userId);
+  fs.mkdirSync(ownerDir, { recursive: true, mode: 0o700 });
+  const temporaryPath = path.join(
+    ownerDir,
+    `.${path.basename(workspacePath)}.tmp-${randomUUID()}`
+  );
+  try {
+    await fs.promises.cp(sourcePath, temporaryPath, {
+      recursive: true,
+      force: false,
+      errorOnExist: true,
+      preserveTimestamps: true,
+      verbatimSymlinks: true,
+      filter: (entryPath) => shouldCopySnapshotEntry(sourcePath, entryPath)
+    });
+    await runGit(["-C", temporaryPath, "init", "--initial-branch=main"]);
+    await runGit(["-C", temporaryPath, "add", "-A", "--force"]);
+    await runGit([
+      "-c",
+      `core.hooksPath=${os.devNull}`,
+      "-c",
+      "commit.gpgSign=false",
+      "-C",
+      temporaryPath,
+      "-c",
+      "user.name=FreeBuddy",
+      "-c",
+      "user.email=workspace@freebuddy.local",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "FreeBuddy workspace baseline"
+    ]);
+    fs.renameSync(temporaryPath, workspacePath);
+  } catch (error) {
+    fs.rmSync(temporaryPath, { recursive: true, force: true });
+    throw new Error(
+      `remote_workspace_snapshot_failed: ${
+        (error as Error)?.message || String(error)
+      }`
+    );
+  }
+}
+
 async function materialize(
   userId: string,
   requestedPath: string,
@@ -191,7 +295,8 @@ async function materialize(
     requestedPath,
     sourceRoots
   );
-  const sourcePath = findGitRoot(requestedReal, allowedRoot);
+  const gitRoot = findGitRoot(requestedReal, allowedRoot);
+  const sourcePath = gitRoot ?? requestedReal;
   const relativePath = path.relative(sourcePath, requestedReal);
   const existing = getDb()
     .prepare(
@@ -210,7 +315,11 @@ async function materialize(
     );
 
   if (!fs.existsSync(workspacePath)) {
-    await cloneWorkspace(userId, sourcePath, workspacePath);
+    if (gitRoot) {
+      await cloneWorkspace(userId, sourcePath, workspacePath);
+    } else {
+      await snapshotWorkspace(userId, sourcePath, workspacePath);
+    }
   } else if (!fs.statSync(workspacePath).isDirectory()) {
     throw new Error("remote_workspace_path_unavailable");
   }
@@ -238,8 +347,9 @@ async function materialize(
 }
 
 /**
- * Return a stable, per-user clone for an assigned repository path.
- * Concurrent requests for the same user/path share one clone operation.
+ * Return a stable, per-user workspace for an assigned path. Git repositories
+ * are cloned; ordinary and empty directories are copied into a private
+ * snapshot with a local Git baseline.
  */
 export function ensureRemoteWorkspace(
   userId: string,
@@ -268,10 +378,9 @@ export function ensureRemoteWorkspace(
 export function removeRemoteWorkspacesForUser(userId: string): number {
   const workspaces = listRemoteWorkspaces(userId);
   const managedRoot = path.join(getDataDir(), "remote-workspaces", userId);
-  for (const workspace of workspaces) {
-    if (isPathWithinRoots(workspace.workspacePath, [managedRoot])) {
-      fs.rmSync(workspace.workspacePath, { recursive: true, force: true });
-    }
+  const remoteWorkspaceRoot = path.join(getDataDir(), "remote-workspaces");
+  if (isPathWithinRoots(managedRoot, [remoteWorkspaceRoot])) {
+    fs.rmSync(managedRoot, { recursive: true, force: true });
   }
   getDb().prepare("DELETE FROM remote_workspaces WHERE owner_id = ?").run(userId);
   return workspaces.length;
