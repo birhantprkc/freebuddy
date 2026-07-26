@@ -39,6 +39,14 @@ Two users assigned the same source therefore edit independent working trees.
 Git push protection is a safe default, not an immutable policy: an agent that
 can edit its workspace can also change its local Git configuration.
 
+Each managed workspace has repository-local Git identity configured from the
+WebUI account, for example `test2 <test2@freebuddy.local>`. This configuration
+does not read or change the host's global Git identity. The automated snapshot
+baseline remains authored by `FreeBuddy <workspace@freebuddy.local>`; later
+commits use the WebUI user's local identity. Renaming a WebUI account refreshes
+the workspace configuration the next time it is opened, without rewriting
+existing commit history.
+
 Managed workspaces are stable and reused for later tasks. They are not
 automatically refreshed when the assigned source directory changes in this
 first version.

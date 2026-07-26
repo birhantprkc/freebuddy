@@ -21,6 +21,14 @@ function git(args, cwd) {
   return result.stdout.trim();
 }
 
+function insertUser(db, id, username) {
+  db.prepare(
+    `INSERT INTO remote_users
+       (id, username, password_hash, is_owner, created_at, disabled)
+     VALUES (?, ?, 'test-only', 0, ?, 0)`
+  ).run(id, username, Date.now());
+}
+
 test("remote workspaces create and reuse an independent clone per user", async (t) => {
   if (!bindingAvailable) {
     t.skip("better-sqlite3 native binding unavailable");
@@ -35,6 +43,7 @@ test("remote workspaces create and reuse an independent clone per user", async (
 
   const source = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-source-"));
   const userId = `workspace-test-${process.pid}`;
+  insertUser(db, userId, "git-alice");
   git(["init"], source);
   fs.writeFileSync(path.join(source, "README.md"), "source\n");
   git(["add", "README.md"], source);
@@ -61,6 +70,11 @@ test("remote workspaces create and reuse an independent clone per user", async (
     assert.equal(
       git(["remote", "get-url", "--push", "origin"], first),
       "disabled://freebuddy-managed-workspace"
+    );
+    assert.equal(git(["config", "--local", "user.name"], first), "git-alice");
+    assert.equal(
+      git(["config", "--local", "user.email"], first),
+      "git-alice@freebuddy.local"
     );
 
     fs.writeFileSync(path.join(first, "README.md"), "isolated\n");
@@ -100,6 +114,9 @@ test("ordinary and empty directories become isolated Git-backed snapshots", asyn
   const alice = `folder-alice-${process.pid}`;
   const bob = `folder-bob-${process.pid}`;
   const emptyUser = `folder-empty-${process.pid}`;
+  insertUser(db, alice, "alice");
+  insertUser(db, bob, "bob");
+  insertUser(db, emptyUser, "empty-user");
   fs.writeFileSync(path.join(source, "README.md"), "ordinary source\n");
   fs.writeFileSync(path.join(source, ".gitignore"), "README.md\n");
   fs.mkdirSync(path.join(source, "node_modules"));
@@ -128,6 +145,12 @@ test("ordinary and empty directories become isolated Git-backed snapshots", asyn
     );
     assert.match(git(["ls-files"], aliceWorkspace), /README\.md/);
     assert.equal(git(["remote"], aliceWorkspace), "");
+    assert.equal(git(["config", "--local", "user.name"], aliceWorkspace), "alice");
+    assert.equal(
+      git(["config", "--local", "user.email"], aliceWorkspace),
+      "alice@freebuddy.local"
+    );
+    assert.equal(git(["config", "--local", "user.name"], bobWorkspace), "bob");
     assert.equal(listRemoteWorkspaces(alice).length, 1);
     assert.equal(listRemoteWorkspaces(bob).length, 1);
 
@@ -152,6 +175,21 @@ test("ordinary and empty directories become isolated Git-backed snapshots", asyn
       "FreeBuddy workspace baseline"
     );
     assert.equal(git(["status", "--short"], emptyWorkspace), "");
+
+    db.prepare("UPDATE remote_users SET username = ? WHERE id = ?").run(
+      "alice-renamed",
+      alice
+    );
+    const reused = await ensureRemoteWorkspace(alice, source, [source]);
+    assert.equal(reused, aliceWorkspace);
+    assert.equal(
+      git(["config", "--local", "user.name"], aliceWorkspace),
+      "alice-renamed"
+    );
+    assert.equal(
+      git(["config", "--local", "user.email"], aliceWorkspace),
+      "alice-renamed@freebuddy.local"
+    );
   } finally {
     removeRemoteWorkspacesForUser(alice);
     removeRemoteWorkspacesForUser(bob);

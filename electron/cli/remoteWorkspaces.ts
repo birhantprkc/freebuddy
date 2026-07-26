@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 import { getDataDir, getDb } from "./db.js";
+import { getUserById } from "./users.js";
 import { isPathWithinRoots } from "../shared/workspaceRoots.js";
 
 export interface RemoteWorkspace {
@@ -168,6 +169,30 @@ function runGit(
   });
 }
 
+async function configureWorkspaceGitIdentity(
+  userId: string,
+  workspacePath: string
+): Promise<void> {
+  const user = getUserById(userId);
+  if (!user) throw new Error("remote_workspace_owner_not_found");
+  await runGit([
+    "-C",
+    workspacePath,
+    "config",
+    "--local",
+    "user.name",
+    user.username
+  ]);
+  await runGit([
+    "-C",
+    workspacePath,
+    "config",
+    "--local",
+    "user.email",
+    `${user.username.toLowerCase()}@freebuddy.local`
+  ]);
+}
+
 async function cloneWorkspace(
   userId: string,
   sourcePath: string,
@@ -193,6 +218,7 @@ async function cloneWorkspace(
       "origin",
       "disabled://freebuddy-managed-workspace"
     ]);
+    await configureWorkspaceGitIdentity(userId, temporaryPath);
     fs.renameSync(temporaryPath, workspacePath);
   } catch (error) {
     fs.rmSync(temporaryPath, { recursive: true, force: true });
@@ -255,6 +281,7 @@ async function snapshotWorkspace(
       filter: (entryPath) => shouldCopySnapshotEntry(sourcePath, entryPath)
     });
     await runGit(["-C", temporaryPath, "init", "--initial-branch=main"]);
+    await configureWorkspaceGitIdentity(userId, temporaryPath);
     await runGit(["-C", temporaryPath, "add", "-A", "--force"]);
     await runGit([
       "-c",
@@ -289,7 +316,10 @@ async function materialize(
   sourceRoots: string[]
 ): Promise<string> {
   const alreadyIsolated = existingWorkspacePath(userId, requestedPath);
-  if (alreadyIsolated) return alreadyIsolated;
+  if (alreadyIsolated) {
+    await configureWorkspaceGitIdentity(userId, alreadyIsolated);
+    return alreadyIsolated;
+  }
 
   const { requestedReal, allowedRoot } = authorizedSource(
     requestedPath,
@@ -314,7 +344,8 @@ async function materialize(
       safeWorkspaceName(sourcePath)
     );
 
-  if (!fs.existsSync(workspacePath)) {
+  const needsMaterialization = !fs.existsSync(workspacePath);
+  if (needsMaterialization) {
     if (gitRoot) {
       await cloneWorkspace(userId, sourcePath, workspacePath);
     } else {
@@ -322,6 +353,9 @@ async function materialize(
     }
   } else if (!fs.statSync(workspacePath).isDirectory()) {
     throw new Error("remote_workspace_path_unavailable");
+  }
+  if (!needsMaterialization) {
+    await configureWorkspaceGitIdentity(userId, workspacePath);
   }
 
   const now = new Date().toISOString();
