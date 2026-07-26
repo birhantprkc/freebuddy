@@ -35,6 +35,8 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   );
   assert.match(sandbox, /HOME:\s*sandboxHome,/);
   assert.match(sandbox, /QODER_CONFIG_DIR:\s*qoderConfig/);
+  assert.match(sandbox, /host:\s*"::1"/);
+  assert.match(sandbox, /entry\.replaceAll\("@localhost:",\s*"@\[::1\]:"\)/);
 });
 
 test("remote sessions gate task control and interactive decisions by owner", () => {

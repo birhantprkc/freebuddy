@@ -2,6 +2,7 @@ import "./fixtures/electron-stub.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -13,6 +14,25 @@ try {
   new Database(":memory:").close();
 } catch {
   bindingAvailable = false;
+}
+
+function connectToProxy(host, port) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("proxy connection timed out"));
+    }, 5_000);
+    socket.on("connect", () => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve();
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
 }
 
 test("macOS lightweight sandbox writes inside the workspace but not the host home", async (t) => {
@@ -154,8 +174,10 @@ test("Qoder receives a per-user HOME without exposing the host home", async (t) 
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
+  // Previous tests reset the SandboxManager singleton. Import a fresh runtime
+  // instance so its one-time initialization state matches that reset manager.
   const { prepareSandboxedSpawn } =
-    await import("../dist-electron/cli/sandboxRuntime.js");
+    await import("../dist-electron/cli/sandboxRuntime.js?qoder-proxy");
   const { SandboxManager } = await import("@anthropic-ai/sandbox-runtime");
 
   const userId = `sandbox-qoder-user-${process.pid}`;
@@ -192,6 +214,9 @@ test("Qoder receives a per-user HOME without exposing the host home", async (t) 
       assert.equal(prepared.env.QODER_CONFIG_DIR, undefined);
     }
     assert.notEqual(prepared.env.HOME, os.homedir());
+    const proxyPort = SandboxManager.getProxyPort();
+    assert.ok(proxyPort);
+    await connectToProxy("::1", proxyPort);
   } finally {
     await SandboxManager.reset();
     fs.rmSync(workspace, { recursive: true, force: true });

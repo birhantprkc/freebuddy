@@ -35,6 +35,9 @@ const PUBLIC_AGENT_DOMAINS = [
 ];
 
 let initialization: Promise<void> | null = null;
+let qoderProxyBridge: net.Server | null = null;
+let qoderProxyBridgePort: number | null = null;
+let qoderProxyBridgeInitialization: Promise<void> | null = null;
 
 export function shouldSandboxCurrentCaller(): boolean {
   return Boolean(getCallerUserId()) && !isCallerAdmin();
@@ -135,6 +138,73 @@ async function ensureInitialized(): Promise<void> {
     });
   }
   await initialization;
+}
+
+// Qoder's Bun HTTP client resolves localhost to ::1 on macOS, while SRT's
+// authenticated filtering proxy listens on 127.0.0.1. Forward the same port
+// between loopback families so Qoder still traverses SRT's auth and policy.
+async function ensureQoderProxyBridge(adapter: string): Promise<boolean> {
+  if (process.platform !== "darwin" || !adapter.includes("qoder")) {
+    return false;
+  }
+
+  const proxyPort = SandboxManager.getProxyPort();
+  if (!proxyPort) {
+    return false;
+  }
+  if (qoderProxyBridge?.listening && qoderProxyBridgePort === proxyPort) {
+    return true;
+  }
+  if (qoderProxyBridgeInitialization) {
+    await qoderProxyBridgeInitialization;
+    return qoderProxyBridge?.listening === true;
+  }
+
+  qoderProxyBridgeInitialization = (async () => {
+    if (qoderProxyBridge) {
+      await new Promise<void>((resolve) => {
+        qoderProxyBridge?.close(() => resolve());
+      });
+      qoderProxyBridge = null;
+      qoderProxyBridgePort = null;
+    }
+
+    const bridge = net.createServer((client) => {
+      const upstream = net.connect(proxyPort, "127.0.0.1");
+      client.on("error", () => upstream.destroy());
+      upstream.on("error", () => client.destroy());
+      client.pipe(upstream);
+      upstream.pipe(client);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        bridge.close();
+        reject(
+          new Error(`remote_sandbox_qoder_proxy_unavailable: ${error.message}`)
+        );
+      };
+      bridge.once("error", onError);
+      bridge.listen(
+        { host: "::1", port: proxyPort, ipv6Only: true },
+        () => {
+          bridge.off("error", onError);
+          resolve();
+        }
+      );
+    });
+    bridge.on("error", () => {
+      // Connection-level failures are surfaced by Qoder. Keep the host app
+      // alive so a later agent run can report an actionable network error.
+    });
+    bridge.unref();
+    qoderProxyBridge = bridge;
+    qoderProxyBridgePort = proxyPort;
+  })().finally(() => {
+    qoderProxyBridgeInitialization = null;
+  });
+
+  await qoderProxyBridgeInitialization;
+  return true;
 }
 
 function existing(paths: string[]): string[] {
@@ -266,6 +336,7 @@ export async function prepareSandboxedSpawn(input: {
     );
   }
   await ensureInitialized();
+  const useQoderIpv6Proxy = await ensureQoderProxyBridge(input.adapter);
 
   const binary = resolveBinary(input.bin, input.env);
   const workspaceRoot = input.workspaceRoot ?? input.cwd;
@@ -316,9 +387,14 @@ export async function prepareSandboxedSpawn(input: {
     undefined,
     input.cwd
   );
+  const wrappedArgv = useQoderIpv6Proxy
+    ? wrapped.argv.map((entry) =>
+        entry.replaceAll("@localhost:", "@[::1]:")
+      )
+    : wrapped.argv;
   return {
-    bin: wrapped.argv[0]!,
-    args: wrapped.argv.slice(1),
+    bin: wrappedArgv[0]!,
+    args: wrappedArgv.slice(1),
     // The sandbox supplies proxy/socket variables that must override inherited
     // host values. Adapter overrides are limited to the isolated HOME and
     // explicit config root, so applying them last cannot bypass network routing.
