@@ -170,7 +170,7 @@ export function insertTask(
          (id, agent_id, agent_name, adapter, status, cwd, prompt, prompt_summary,
           session_id, tool_session_id, log_path, started_at, owner_id,
           created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       args.sessionId,

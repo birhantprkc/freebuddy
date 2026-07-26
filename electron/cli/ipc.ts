@@ -25,6 +25,7 @@ import {
   type SessionConfigProbeInput
 } from "./sessionConfigProbe.js";
 import {
+  channelName,
   takeAuthenticationResolver,
   takePermissionResolver
 } from "./runtimeShared.js";
@@ -636,7 +637,21 @@ export function registerCliIpc() {
       };
     }
     // Don't await: spawn returns immediately, streaming continues via events.
-    void cliRun(win.webContents, runArgs);
+    void cliRun(win.webContents, runArgs).catch((error) => {
+      clearSessionOwner(args.sessionId);
+      const message = (error as Error)?.message || String(error);
+      console.error(`[cli] run failed for ${args.sessionId}:`, error);
+      safeSendToWebContents(
+        win.webContents,
+        channelName(args.sessionId),
+        { type: "error", message }
+      );
+      safeSendToWebContents(
+        win.webContents,
+        channelName(args.sessionId),
+        { type: "done", exitCode: -1 }
+      );
+    });
     return { sessionId: args.sessionId };
   });
   registerHandler(

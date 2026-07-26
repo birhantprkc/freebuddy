@@ -21,6 +21,8 @@ test("CLI tasks and tool sessions are scoped to the caller", async (t) => {
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
+  const { insertTask: insertRuntimeTask } =
+    await import("../dist-electron/cli/runtimeShared.js");
   const { listTasks, getTask } = await import("../dist-electron/cli/tasks.js");
   const { saveToolSession, getToolSession } =
     await import("../dist-electron/cli/store.js");
@@ -59,6 +61,26 @@ test("CLI tasks and tool sessions are scoped to the caller", async (t) => {
     runAsCaller("bob", () => getToolSession("agent", "/workspace")?.sessionId),
     "bob-session"
   );
+
+  runAsCaller("alice", () =>
+    insertRuntimeTask(
+      {
+        sessionId: "alice-running-task",
+        agentId: "agent",
+        agentName: "Agent",
+        adapter: "codex",
+        cwd: "/workspace",
+        prompt: "Run the task"
+      },
+      "/tmp/alice-running-task.jsonl"
+    )
+  );
+  const runningTask = runAsCaller("alice", () =>
+    getTask("alice-running-task")
+  );
+  assert.equal(runningTask?.status, "running");
+  assert.equal(runningTask?.ownerId, "alice");
+  assert.equal(runningTask?.cwd, "/workspace");
 
   setDbForTest(null);
   db.close();
