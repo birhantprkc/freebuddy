@@ -40,6 +40,7 @@ import {
   shouldSandboxCurrentCaller
 } from "./sandboxRuntime.js";
 import { isolateRemoteCwdForCaller } from "./remoteWorkspaceAccess.js";
+import { clearSessionOwner } from "./sessionOwners.js";
 
 export type { CliEvent, CliRunArgs } from "./runtimeShared.js";
 
@@ -166,6 +167,7 @@ export async function cliRun(
     /* best-effort */
   }
 
+  const sandboxed = shouldSandboxCurrentCaller();
   let toolSessionId: string | undefined;
   const toolSessionScope = args.toolSessionScope || args.cwd;
   const definition = getAdapterDefinition(args.adapter);
@@ -175,10 +177,19 @@ export async function cliRun(
     !userControlsResume &&
     definition?.capabilities.toolSession
   ) {
-    toolSessionId = args.toolSessionId;
-    if (!toolSessionId && toolSessionScope) {
-      const prev = getToolSession(args.agentId, toolSessionScope);
-      if (prev && prev.adapter === args.adapter) {
+    const prev = toolSessionScope
+      ? getToolSession(args.agentId, toolSessionScope)
+      : undefined;
+    if (sandboxed) {
+      // Renderer history can contain a desktop-owned ACP session id. Remote
+      // callers may resume only the owner-scoped session stored server-side;
+      // trusting a renderer-supplied id can load another user's cwd/config.
+      if (prev?.adapter === args.adapter) {
+        toolSessionId = prev.sessionId;
+      }
+    } else {
+      toolSessionId = args.toolSessionId;
+      if (!toolSessionId && prev?.adapter === args.adapter) {
         toolSessionId = prev.sessionId;
       }
     }
@@ -208,7 +219,6 @@ export async function cliRun(
     args.announceSkills && args.skills?.length
       ? { ...args, prompt: buildSkillAnnouncement(args.prompt, args.skills) }
       : args;
-  const sandboxed = shouldSandboxCurrentCaller();
   const isolatedCwd = sandboxed
     ? await isolateRemoteCwdForCaller(effectiveArgs.cwd)
     : effectiveArgs.cwd;
@@ -231,6 +241,7 @@ export async function cliRun(
     appendLog(logStream, "system", msg);
     emit({ type: "error", message: msg });
     emit({ type: "done", exitCode: -1 });
+    clearSessionOwner(args.sessionId);
     updateTaskStatus(args.sessionId, "failed", -1, msg);
     updateRuntimeRun(args.adapter, msg);
     logStream?.end();
@@ -276,6 +287,7 @@ export async function cliRun(
       appendLog(logStream, "system", msg);
       emit({ type: "error", message: msg });
       emit({ type: "done", exitCode: -1 });
+      clearSessionOwner(args.sessionId);
       updateTaskStatus(args.sessionId, "failed", -1, msg);
       updateRuntimeRun(args.adapter, msg);
       logStream?.end();
@@ -304,6 +316,7 @@ export async function cliRun(
       appendLog(logStream, "system", msg);
       emit({ type: "error", message: msg });
       emit({ type: "done", exitCode: -1 });
+      clearSessionOwner(args.sessionId);
       updateTaskStatus(args.sessionId, "failed", -1, msg);
       updateRuntimeRun(args.adapter, msg);
       logStream?.end();

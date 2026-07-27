@@ -46,9 +46,66 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   assert.match(sandbox, /host:\s*"::1"/);
   assert.match(sandbox, /entry\.replaceAll\("@localhost:",\s*"@\[::1\]:"\)/);
   assert.match(
+    sandbox,
+    /entry\.replaceAll\("@localhost:",\s*"@127\.0\.0\.1:"\)/,
+    "CodeBuddy must not perform a blocked localhost DNS lookup for the SRT proxy"
+  );
+  assert.match(
     acpRuntime,
     /if \(args\.conversationId && !sandboxedCaller\)/,
     "remote WebUI sessions must not receive desktop-only Draft/Browser MCP servers"
+  );
+});
+
+test("remote terminal events are broadcast before their session owner is cleared", () => {
+  const acpRuntime = fs.readFileSync(
+    new URL("../electron/cli/acpRuntime.ts", import.meta.url),
+    "utf8"
+  );
+  const legacyRuntime = fs.readFileSync(
+    new URL("../electron/cli/legacyRuntime.ts", import.meta.url),
+    "utf8"
+  );
+
+  const acpFinish = acpRuntime.slice(
+    acpRuntime.indexOf("const finish ="),
+    acpRuntime.indexOf("const cancelRun")
+  );
+  assert.ok(
+    acpFinish.indexOf('emit({ type: "done"') <
+      acpFinish.indexOf("clearSessionOwner(args.sessionId)"),
+    "ACP done must retain the owner mapping while the WebUI broadcaster routes it"
+  );
+
+  const legacyClose = legacyRuntime.slice(
+    legacyRuntime.indexOf('child.on("close"'),
+    legacyRuntime.indexOf("capturedSessions.delete")
+  );
+  assert.ok(
+    legacyClose.indexOf('emit({ type: "done"') <
+      legacyClose.indexOf("clearSessionOwner(args.sessionId)"),
+    "legacy done must retain the owner mapping while the WebUI broadcaster routes it"
+  );
+});
+
+test("remote callers cannot resume renderer-supplied desktop agent sessions", () => {
+  const runtime = fs.readFileSync(
+    new URL("../electron/cli/runtime.ts", import.meta.url),
+    "utf8"
+  );
+  const selection = runtime.slice(
+    runtime.indexOf("const sandboxed = shouldSandboxCurrentCaller()"),
+    runtime.indexOf("insertTask(")
+  );
+  const remoteBranch = selection.slice(
+    selection.indexOf("if (sandboxed)"),
+    selection.indexOf("} else {")
+  );
+  assert.match(remoteBranch, /prev\?\.adapter === args\.adapter/);
+  assert.doesNotMatch(
+    remoteBranch,
+    /args\.toolSessionId/,
+    "a WebUI-supplied session id must not cross the owner/workspace boundary"
   );
 });
 

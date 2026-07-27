@@ -438,11 +438,18 @@ export async function prepareSandboxedSpawn(input: {
     undefined,
     input.cwd
   );
-  const wrappedArgv = useQoderIpv6Proxy
-    ? wrapped.argv.map((entry) =>
-        entry.replaceAll("@localhost:", "@[::1]:")
-      )
-    : wrapped.argv;
+  const wrappedArgv = wrapped.argv.map((entry) => {
+    if (useQoderIpv6Proxy) {
+      return entry.replaceAll("@localhost:", "@[::1]:");
+    }
+    // CodeBuddy performs an explicit DNS lookup for the SRT proxy hostname
+    // from inside Seatbelt, where resolving localhost is denied. The proxy
+    // itself listens on IPv4 loopback, so use its numeric address.
+    if (input.adapter.includes("codebuddy")) {
+      return entry.replaceAll("@localhost:", "@127.0.0.1:");
+    }
+    return entry;
+  });
   return {
     bin: wrappedArgv[0]!,
     args: wrappedArgv.slice(1),

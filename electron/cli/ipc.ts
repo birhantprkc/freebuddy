@@ -638,7 +638,6 @@ export function registerCliIpc() {
     }
     // Don't await: spawn returns immediately, streaming continues via events.
     void cliRun(win.webContents, runArgs).catch((error) => {
-      clearSessionOwner(args.sessionId);
       const message = (error as Error)?.message || String(error);
       console.error(`[cli] run failed for ${args.sessionId}:`, error);
       safeSendToWebContents(
@@ -651,6 +650,7 @@ export function registerCliIpc() {
         channelName(args.sessionId),
         { type: "done", exitCode: -1 }
       );
+      clearSessionOwner(args.sessionId);
     });
     return { sessionId: args.sessionId };
   });
@@ -666,8 +666,11 @@ export function registerCliIpc() {
   );
   registerHandler("cli:kill", (_e, sessionId: string) => {
     if (!callerCanControlSession(sessionId)) return false;
-    clearSessionOwner(sessionId);
-    return cliKill(sessionId);
+    const killed = cliKill(sessionId);
+    // A live run clears its owner after broadcasting its terminal event.
+    // Clean up here only when there is no process that can do so.
+    if (!killed) clearSessionOwner(sessionId);
+    return killed;
   });
   registerHandler(
     "draft-tool:resolve",

@@ -76,9 +76,10 @@ export function runLegacyCliAgent({
     if (timer) clearTimeout(timer);
     const exitCode = code ?? -1;
     running.delete(args.sessionId);
-    clearSessionOwner(args.sessionId);
     appendLog(logStream, "system", `exit code=${exitCode}`);
     emit({ type: "done", exitCode });
+    // The WebUI broadcaster needs the owner mapping while delivering done.
+    clearSessionOwner(args.sessionId);
     const status = exitCode === 0 ? "done" : "failed";
     updateTaskStatus(args.sessionId, status, exitCode);
     updateRuntimeRun(

@@ -214,7 +214,6 @@ export async function runAcpAgent({
     finished = true;
     terminalManager.dispose();
     running.delete(args.sessionId);
-    clearSessionOwner(args.sessionId);
     unregisterDraftToolSession(args.sessionId);
     unregisterBrowserToolSession(args.sessionId);
     unregisterSkillToolSession(args.sessionId);
@@ -224,6 +223,10 @@ export async function runAcpAgent({
     clearPermissionResolversForSession(args.sessionId);
     if (errorMessage) emit({ type: "error", message: errorMessage });
     emit({ type: "done", exitCode });
+    // WebUI session events are routed through the in-memory owner mapping.
+    // Keep it alive until the terminal events have been broadcast, otherwise
+    // remote clients see streamed content but never receive done/error.
+    clearSessionOwner(args.sessionId);
     updateTaskStatus(args.sessionId, status, exitCode, errorMessage);
     updateRuntimeRun(args.adapter, status === "failed" ? errorMessage : undefined);
     if (activeAcpSessionId && toolSessionScope) {

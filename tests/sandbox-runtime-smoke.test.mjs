@@ -232,6 +232,14 @@ test("macOS lightweight sandbox permits Agent-internal loopback IPC", async (t) 
         env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
       })
     );
+    assert.equal(
+      prepared.args.some((entry) => entry.includes("@localhost:")),
+      false
+    );
+    assert.equal(
+      prepared.args.some((entry) => entry.includes("@127.0.0.1:")),
+      true
+    );
     const result = spawnSync(prepared.bin, prepared.args, {
       cwd: workspace,
       env: prepared.env,
