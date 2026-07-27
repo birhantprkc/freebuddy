@@ -70,15 +70,20 @@ test("project form modal and sidebar wiring expose create/edit project UI", () =
 
   assert.match(list, /PROJECT_LIST_LIMIT/);
   assert.match(list, /showMoreProjects/);
+  assert.match(list, /showFewerProjects/);
   assert.match(list, /visibleProjects/);
   assert.match(list, /showAllProjects/);
+  assert.match(list, /conv-projects-toggle/);
 
   assert.equal(zh.conversations.newProject, "新建项目");
   assert.equal(zh.conversations.editProject, "编辑项目");
-  assert.equal(zh.conversations.showMoreProjects.includes("项目"), true);
+  assert.equal(zh.conversations.showMoreProjects.includes("展开"), true);
+  assert.equal(zh.conversations.showFewerProjects.includes("收起"), true);
   assert.equal(en.conversations.addFolder, "Add folder");
   assert.ok(en.conversations.showMoreProjects);
+  assert.ok(en.conversations.showFewerProjects);
   assert.match(css, /\.conv-projects-add\s*\{/);
+  assert.match(css, /\.conv-projects-toggle\s*\{/);
   assert.match(css, /\.conv-projects-error\s*\{/);
   assert.match(css, /\.project-form-modal\s*\{/);
 });

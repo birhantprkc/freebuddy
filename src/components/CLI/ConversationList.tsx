@@ -15,6 +15,8 @@ import type { Conversation, Project } from "@/services/cli/types";
 import i18next from "i18next";
 import { useTranslation } from "react-i18next";
 import {
+  ChevronDown,
+  ChevronUp,
   Folder,
   FolderOpen,
   LoaderCircle,
@@ -852,14 +854,26 @@ export function ConversationList({
           );
         })}
 
-        {hiddenProjectCount > 0 && (
-          <li>
+        {projects.length > PROJECT_LIST_LIMIT && (
+          <li className="conv-projects-footer">
             <button
               type="button"
-              className="conv-project-expand"
-              onClick={() => setShowAllProjects(true)}
+              className={`conv-projects-toggle${showAllProjects ? " expanded" : ""}`}
+              aria-expanded={showAllProjects}
+              onClick={() => setShowAllProjects((open) => !open)}
             >
-              {t("conversations.showMoreProjects", { count: hiddenProjectCount })}
+              {showAllProjects ? (
+                <ChevronUp aria-hidden="true" size={14} strokeWidth={2} />
+              ) : (
+                <ChevronDown aria-hidden="true" size={14} strokeWidth={2} />
+              )}
+              <span>
+                {showAllProjects
+                  ? t("conversations.showFewerProjects")
+                  : t("conversations.showMoreProjects", {
+                      count: hiddenProjectCount
+                    })}
+              </span>
             </button>
           </li>
         )}
