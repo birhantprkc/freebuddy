@@ -2,6 +2,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   SandboxManager,
@@ -110,7 +111,10 @@ function baseConfig(): SandboxRuntimeConfig {
       strictAllowlist: false,
       allowUnixSockets: [],
       allowAllUnixSockets: false,
-      allowLocalBinding: false
+      // Some ACP clients (notably CodeBuddy) start an in-process loopback
+      // service. SRT still blocks LAN/private-address egress; this only permits
+      // bind/connect on 127.0.0.1 and ::1.
+      allowLocalBinding: true
     },
     filesystem: {
       denyRead: [],
@@ -259,10 +263,19 @@ function adapterConfigPaths(adapter: string): string[] {
     paths.push(path.join(home, ".cursor"), path.join(home, ".config", "cursor"));
   }
   if (adapter.includes("opencode")) {
-    paths.push(path.join(home, ".config", "opencode"));
+    paths.push(
+      path.join(home, ".config", "opencode"),
+      path.join(home, ".local", "share", "opencode"),
+      path.join(home, ".local", "state", "opencode"),
+      path.join(home, ".cache", "opencode")
+    );
   }
   if (adapter.includes("kimi")) {
-    paths.push(path.join(home, ".kimi"), path.join(home, ".config", "kimi"));
+    paths.push(
+      path.join(home, ".kimi-code"),
+      path.join(home, ".kimi"),
+      path.join(home, ".config", "kimi")
+    );
   }
   if (adapter.includes("qoder")) {
     paths.push(path.join(home, ".qoder"), path.join(home, ".config", "qoder"));
@@ -270,8 +283,20 @@ function adapterConfigPaths(adapter: string): string[] {
   if (adapter.includes("codebuddy")) {
     paths.push(
       path.join(home, ".codebuddy"),
-      path.join(home, ".config", "codebuddy")
+      path.join(home, ".config", "codebuddy"),
+      path.join(
+        home,
+        "Library",
+        "Application Support",
+        "CodeBuddyExtension",
+        "Data",
+        "Public",
+        "auth"
+      )
     );
+  }
+  if (adapter.includes("grok")) {
+    paths.push(path.join(home, ".grok"), path.join(home, ".config", "grok"));
   }
   return existing(paths);
 }
@@ -282,10 +307,6 @@ function adapterSandboxEnvironment(
   env: Record<string, string>;
   readWritePaths: string[];
 } {
-  if (!adapter.includes("qoder")) {
-    return { env: {}, readWritePaths: [] };
-  }
-
   const userId = getCallerUserId();
   if (!userId) {
     return { env: {}, readWritePaths: [] };
@@ -298,19 +319,41 @@ function adapterSandboxEnvironment(
     "sandbox-home"
   );
   fs.mkdirSync(sandboxHome, { recursive: true, mode: 0o700 });
+  const sandboxTmp = path.join(sandboxHome, "tmp");
+  fs.mkdirSync(sandboxTmp, { recursive: true, mode: 0o700 });
   const qoderConfig = path.join(os.homedir(), ".qoder");
 
   return {
     env: {
+      // Keep agent subprocesses and their shell tools out of the host user's
+      // shared macOS/Linux temporary directory.
+      TMPDIR: sandboxTmp,
+      TMP: sandboxTmp,
+      TEMP: sandboxTmp,
       // Qoder's Bun runtime resolves HOME during startup. Point it at a
       // per-WebUI-user directory instead of exposing the host user's home.
-      HOME: sandboxHome,
+      ...(adapter.includes("qoder") ? { HOME: sandboxHome } : {}),
       // Keep using the installed Qoder account and settings. This is the
       // documented environment equivalent of Qoder's --config-dir option.
-      ...(fs.existsSync(qoderConfig) ? { QODER_CONFIG_DIR: qoderConfig } : {})
+      ...(adapter.includes("qoder") && fs.existsSync(qoderConfig)
+        ? { QODER_CONFIG_DIR: qoderConfig }
+        : {})
     },
     readWritePaths: [sandboxHome]
   };
+}
+
+function applicationRuntimeReadPaths(): string[] {
+  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+  return existing([
+    // ACP skill/context MCP servers run through Electron-as-Node. Grant the
+    // executable bundle and FreeBuddy's compiled MCP scripts, without exposing
+    // the source checkout or any additional host-user directories.
+    process.execPath,
+    path.dirname(process.execPath),
+    path.dirname(path.dirname(process.execPath)),
+    path.resolve(moduleDirectory, "..")
+  ]);
 }
 
 function allAssignedRepositoryRoots(): string[] {
@@ -354,6 +397,7 @@ export async function prepareSandboxedSpawn(input: {
     ...configPaths,
     ...adapterSandbox.readWritePaths,
     ...binaryPaths,
+    ...applicationRuntimeReadPaths(),
     ...(input.extraReadPaths ?? [])
   ]);
   const denyRead = existing([
@@ -365,9 +409,16 @@ export async function prepareSandboxedSpawn(input: {
   // remote callers, while the launcher target itself is explicitly allowed.
   // Keeping the original command name here would make the sandbox shell try
   // PATH lookup after isolation and fail with "command not found".
-  const command = [binary ?? input.bin, ...input.args]
-    .map(quotePosix)
-    .join(" ");
+  // SRT intentionally supplies its own TMPDIR in the outer wrapper. Apply the
+  // per-user adapter environment again on the inner command so Agent tools see
+  // the isolated directory instead of SRT's shared compatibility directory.
+  const commandEnvironment = Object.entries(adapterSandbox.env).map(
+    ([key, value]) => `${key}=${quotePosix(value)}`
+  );
+  const command = [
+    ...commandEnvironment,
+    ...[binary ?? input.bin, ...input.args].map(quotePosix)
+  ].join(" ");
   const wrapped = await SandboxManager.wrapWithSandboxArgv(
     command,
     undefined,

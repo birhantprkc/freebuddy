@@ -134,6 +134,7 @@ export async function runAcpAgent({
   let promptHadContent = false;
   let turnHadLiveAgentChunk = false;
   let mcpServers: AcpStdioMcpServer[] = [];
+  const sandboxedCaller = shouldSandboxCurrentCaller();
   const replayMessageIds = new Set(args.knownStreamMessageIds ?? []);
   const replayContentSignatures = new Set(
     args.knownStreamContentSignatures ?? []
@@ -147,7 +148,7 @@ export async function runAcpAgent({
     (args.knownAgentStreamMessageIds ?? []).length === 0;
   const terminalManager = createAcpTerminalManager({
     defaultCwd: args.cwd,
-    prepareSpawn: shouldSandboxCurrentCaller()
+    prepareSpawn: sandboxedCaller
       ? async (input) => {
           const workspaceRoot = args.cwd;
           if (!workspaceRoot || !isPathWithinRoots(input.cwd, [workspaceRoot])) {
@@ -888,7 +889,11 @@ export async function runAcpAgent({
     agentCaps = init?.agentCapabilities ?? {};
     authMethods = Array.isArray(init?.authMethods) ? init.authMethods : [];
 
-    if (args.conversationId) {
+    // Draft and Browser bridge back into the desktop renderer over localhost
+    // and launch an Electron child process. Remote WebUI callers use the
+    // authenticated HTTP Draft endpoints instead, so do not expose either
+    // desktop-only capability inside their sandbox.
+    if (args.conversationId && !sandboxedCaller) {
       mcpServers.push(
         await registerDraftToolSession({
           taskSessionId: args.sessionId,

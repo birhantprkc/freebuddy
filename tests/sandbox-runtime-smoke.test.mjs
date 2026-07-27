@@ -46,7 +46,8 @@ test("macOS lightweight sandbox writes inside the workspace but not the host hom
   }
 
   const db = new Database(":memory:");
-  const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
+  const { getDataDir, migrate, setDbForTest } =
+    await import("../dist-electron/cli/db.js");
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
@@ -54,15 +55,22 @@ test("macOS lightweight sandbox writes inside the workspace but not the host hom
     await import("../dist-electron/cli/sandboxRuntime.js");
   const { SandboxManager } = await import("@anthropic-ai/sandbox-runtime");
 
+  const userId = `sandbox-write-user-${process.pid}`;
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
   const inside = path.join(workspace, "inside.txt");
   const outside = path.join(
     os.homedir(),
     `.freebuddy-sandbox-denied-${process.pid}-${Date.now()}`
   );
+  const sandboxHome = path.join(
+    getDataDir(),
+    "remote-workspaces",
+    userId,
+    "sandbox-home"
+  );
 
   try {
-    const prepared = await runAsCaller("sandbox-user", () =>
+    const prepared = await runAsCaller(userId, () =>
       prepareSandboxedSpawn({
         adapter: "codex",
         bin: "/bin/sh",
@@ -81,6 +89,10 @@ test("macOS lightweight sandbox writes inside the workspace but not the host hom
     });
     assert.equal(fs.readFileSync(inside, "utf8"), "inside");
     assert.equal(fs.existsSync(outside), false);
+    assert.equal(
+      fs.realpathSync.native(prepared.env.TMPDIR),
+      fs.realpathSync.native(path.join(sandboxHome, "tmp"))
+    );
     assert.notEqual(
       result.status,
       0,
@@ -90,6 +102,7 @@ test("macOS lightweight sandbox writes inside the workspace but not the host hom
     await SandboxManager.reset();
     fs.rmSync(workspace, { recursive: true, force: true });
     fs.rmSync(outside, { force: true });
+    fs.rmSync(path.dirname(sandboxHome), { recursive: true, force: true });
     setDbForTest(null);
     db.close();
   }
@@ -106,7 +119,8 @@ test("macOS lightweight sandbox resolves a user-local launcher before isolation"
   }
 
   const db = new Database(":memory:");
-  const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
+  const { getDataDir, migrate, setDbForTest } =
+    await import("../dist-electron/cli/db.js");
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
@@ -114,7 +128,13 @@ test("macOS lightweight sandbox resolves a user-local launcher before isolation"
     await import("../dist-electron/cli/sandboxRuntime.js");
   const { SandboxManager } = await import("@anthropic-ai/sandbox-runtime");
 
+  const userId = `sandbox-launcher-user-${process.pid}`;
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
+  const sandboxUserRoot = path.join(
+    getDataDir(),
+    "remote-workspaces",
+    userId
+  );
   const executableDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "freebuddy-sandbox-executable-")
   );
@@ -129,7 +149,7 @@ test("macOS lightweight sandbox resolves a user-local launcher before isolation"
   fs.symlinkSync(executable, launcher);
 
   try {
-    const prepared = await runAsCaller("sandbox-user", () =>
+    const prepared = await runAsCaller(userId, () =>
       prepareSandboxedSpawn({
         adapter: "test-agent",
         bin: "agent-cli",
@@ -151,8 +171,79 @@ test("macOS lightweight sandbox resolves a user-local launcher before isolation"
   } finally {
     await SandboxManager.reset();
     fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(sandboxUserRoot, { recursive: true, force: true });
     fs.rmSync(executableDir, { recursive: true, force: true });
     fs.rmSync(userBinDir, { recursive: true, force: true });
+    setDbForTest(null);
+    db.close();
+  }
+});
+
+test("macOS lightweight sandbox permits Agent-internal loopback IPC", async (t) => {
+  if (process.platform !== "darwin") {
+    t.skip("macOS Seatbelt smoke test");
+    return;
+  }
+  if (!bindingAvailable) {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+
+  const db = new Database(":memory:");
+  const { getDataDir, migrate, setDbForTest } =
+    await import("../dist-electron/cli/db.js");
+  migrate(db);
+  setDbForTest(db);
+  const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
+  const { prepareSandboxedSpawn } =
+    await import("../dist-electron/cli/sandboxRuntime.js?loopback-ipc");
+  const { SandboxManager } = await import("@anthropic-ai/sandbox-runtime");
+
+  const userId = `sandbox-loopback-user-${process.pid}`;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
+  const sandboxUserRoot = path.join(
+    getDataDir(),
+    "remote-workspaces",
+    userId
+  );
+  const script = path.join(workspace, "loopback.mjs");
+  fs.writeFileSync(
+    script,
+    [
+      'import net from "node:net";',
+      "const server = net.createServer((socket) => socket.end('ok'));",
+      'server.listen({ host: "127.0.0.1", port: 0 }, () => {',
+      "  const address = server.address();",
+      '  const client = net.connect(address.port, "127.0.0.1");',
+      '  client.setEncoding("utf8");',
+      '  client.on("data", (chunk) => process.stdout.write(chunk));',
+      '  client.on("close", () => server.close());',
+      "});"
+    ].join("\n")
+  );
+
+  try {
+    const prepared = await runAsCaller(userId, () =>
+      prepareSandboxedSpawn({
+        adapter: "codebuddy-acp",
+        bin: process.execPath,
+        args: [script],
+        cwd: workspace,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
+      })
+    );
+    const result = spawnSync(prepared.bin, prepared.args, {
+      cwd: workspace,
+      env: prepared.env,
+      encoding: "utf8",
+      timeout: 5_000
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "ok");
+  } finally {
+    await SandboxManager.reset();
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(sandboxUserRoot, { recursive: true, force: true });
     setDbForTest(null);
     db.close();
   }
@@ -194,7 +285,10 @@ test("Qoder receives a per-user HOME without exposing the host home", async (t) 
       prepareSandboxedSpawn({
         adapter: "qoder-acp",
         bin: "/bin/sh",
-        args: ["-c", 'realpath "$HOME"; printf "%s" "$QODER_CONFIG_DIR"'],
+        args: [
+          "-c",
+          'realpath "$HOME"; printf "%s\\n" "$QODER_CONFIG_DIR"; realpath "$TMPDIR"; printf agent-tmp > "$TMPDIR/qoder-tool.tmp"'
+        ],
         cwd: workspace,
         env: { ...process.env }
       })
@@ -213,6 +307,14 @@ test("Qoder receives a per-user HOME without exposing the host home", async (t) 
     } else {
       assert.equal(prepared.env.QODER_CONFIG_DIR, undefined);
     }
+    assert.equal(
+      outputLines[2],
+      fs.realpathSync.native(path.join(sandboxHome, "tmp"))
+    );
+    assert.equal(
+      fs.readFileSync(path.join(sandboxHome, "tmp", "qoder-tool.tmp"), "utf8"),
+      "agent-tmp"
+    );
     assert.notEqual(prepared.env.HOME, os.homedir());
     const proxyPort = SandboxManager.getProxyPort();
     assert.ok(proxyPort);
