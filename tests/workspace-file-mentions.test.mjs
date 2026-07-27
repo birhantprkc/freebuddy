@@ -145,11 +145,18 @@ test("multi-root search returns absolute paths for insertion and keeps a disambi
   assert.ok(mistaken.absolute.startsWith(primaryRoot));
 
   // Composer insertion uses match.path (absolute), not the UI label.
+  // Mentions always normalize separators to `/` for stable parsing across platforms.
   const draft = "请查看@secondary";
   const active = mentions.findWorkspaceFileMentionDraft(draft, draft.length);
   assert.ok(active);
   const inserted = mentions.insertWorkspaceFileMention(draft, active, withRoots[0].path);
-  assert.match(inserted.value, new RegExp(`@${expectedAbs.replace(/[\\^$*+?.()|[\]{}]/g, "\\$&")}`));
+  assert.equal(
+    inserted.value,
+    `请查看${mentions.formatWorkspaceFileMention(withRoots[0].path)}`
+  );
+  const normalizedAbs = withRoots[0].path.replace(/\\/g, "/");
+  assert.ok(inserted.value.includes(normalizedAbs));
+  assert.ok(!inserted.value.includes("\\"));
 });
 
 test("renderer and Electron bridge wire mentions without changing attachment prompts", () => {
