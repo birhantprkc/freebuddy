@@ -10322,8 +10322,55 @@ button {
   margin-left: auto;
 }
 
-.project-form-delete {
+.project-form-actions button {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.project-form-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.project-form-actions button:not(.primary):not(.danger) {
+  border: 1px solid var(--fb-border-strong);
+  background: var(--fb-panel-soft);
+  color: var(--fb-text-secondary);
+}
+
+.project-form-actions button:not(.primary):not(.danger):hover:not(:disabled) {
+  color: var(--fb-text-primary);
+  background: var(--fb-hover);
+}
+
+.project-form-actions .danger {
   margin-right: auto;
+  border: 1px solid color-mix(in srgb, var(--fb-danger) 30%, var(--fb-border));
+  background: color-mix(in srgb, var(--fb-danger) 8%, var(--fb-panel-bg));
+  color: var(--fb-danger);
+  box-shadow: none;
+}
+
+.project-form-actions .danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--fb-danger) 48%, var(--fb-border));
+  background: color-mix(in srgb, var(--fb-danger) 12%, var(--fb-panel-bg));
+}
+
+.project-form-actions .primary {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .conv-item {
