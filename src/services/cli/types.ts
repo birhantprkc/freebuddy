@@ -134,6 +134,8 @@ export interface CliRunArgs {
   prompt: string;
   promptAttachments?: CliPromptAttachment[];
   cwd?: string;
+  /** Absolute workspace roots for multi-folder projects (Primary stays in cwd). */
+  workspaceRoots?: string[];
   /** Persistence key for tool-session resume. Defaults to cwd when omitted. */
   toolSessionScope?: string;
   /** Concrete CLI session/thread id to resume when available. */
@@ -508,6 +510,21 @@ export interface PrepareAttachmentFilesResult {
 
 export type ConversationTitleSource = "default" | "prompt" | "agent" | "user";
 
+export interface Project {
+  id: string;
+  name: string;
+  folders: string[];
+  primaryPath: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectInput {
+  name: string;
+  folders: string[];
+  primaryPath: string;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -515,6 +532,7 @@ export interface Conversation {
   agentName: string;
   adapter: string;
   cwd?: string;
+  projectId?: string;
   approvalMode?: "auto" | "ask";
   configOptionOverrides?: Record<string, string>;
   skillSnapshot: SkillSnapshot[];
@@ -568,6 +586,7 @@ export interface CreateConversationInput {
   agentName: string;
   adapter: string;
   cwd?: string;
+  projectId?: string;
   approvalMode?: "auto" | "ask";
   configOptionOverrides?: Record<string, string>;
   skillIds?: string[];

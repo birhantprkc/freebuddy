@@ -58,6 +58,14 @@ import {
   type ListConversationsArgs,
   type UpdateMessageInput
 } from "./conversations.js";
+import {
+  createProject,
+  deleteProject,
+  getProject,
+  listProjects,
+  updateProject,
+  type ProjectInput
+} from "./projects.js";
 import { getSetting, setSetting, getLanguage } from "./settings.js";
 import { getCallerUserId } from "./callerContext.js";
 import { recordSessionOwner, clearSessionOwner } from "./sessionOwners.js";
@@ -210,6 +218,37 @@ function nativePluginScope(value: unknown): NativePluginScope | undefined {
 function requiredPluginString(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
   return value.trim();
+}
+
+function requiredProjectId(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("Project id is required");
+  }
+  return value.trim();
+}
+
+function parseProjectInput(input: unknown): ProjectInput {
+  if (!input || typeof input !== "object") {
+    throw new Error("Project input is required");
+  }
+  const raw = input as Record<string, unknown>;
+  if (typeof raw.name !== "string") {
+    throw new Error("Project name is required");
+  }
+  if (typeof raw.primaryPath !== "string") {
+    throw new Error("primaryPath is required");
+  }
+  if (
+    !Array.isArray(raw.folders) ||
+    !raw.folders.every((folder) => typeof folder === "string")
+  ) {
+    throw new Error("folders must be an array of strings");
+  }
+  return {
+    name: raw.name,
+    folders: raw.folders,
+    primaryPath: raw.primaryPath
+  };
 }
 
 const ATTACHMENT_EXTENSIONS = [
@@ -779,6 +818,28 @@ export function registerCliIpc() {
         ? ensureAgentGuides(input)
         : ensureAgentGuides(input?.cwd ?? "", input?.options)
   );
+
+  // ---- Projects ----------------------------------------------------------
+
+  registerHandler("cli:listProjects", () => listProjects());
+  registerHandler("cli:getProject", (_e, id: unknown) =>
+    getProject(requiredProjectId(id))
+  );
+  registerHandler("cli:createProject", (_e, input: unknown) =>
+    createProject(parseProjectInput(input))
+  );
+  registerHandler("cli:updateProject", (_e, args: unknown) => {
+    if (!args || typeof args !== "object") {
+      throw new Error("Project update args are required");
+    }
+    const raw = args as Record<string, unknown>;
+    const id = requiredProjectId(raw.id);
+    return updateProject(id, parseProjectInput(raw));
+  });
+  registerHandler("cli:deleteProject", (_e, id: unknown) => {
+    deleteProject(requiredProjectId(id));
+    return { ok: true as const };
+  });
 
   // ---- Conversations -----------------------------------------------------
 

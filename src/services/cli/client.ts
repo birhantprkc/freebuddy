@@ -30,6 +30,8 @@ import type {
   ListConversationsArgs,
   AppendMessageInput,
   UpdateMessageInput,
+  Project,
+  ProjectInput,
   PreviewHandoffBriefInput,
   PreviewHandoffBriefResult,
   TransferConversationInput,
@@ -197,6 +199,22 @@ export const cliClient = {
     title?: string;
   }): Promise<void> {
     return api().saveToolSession(args);
+  },
+
+  listProjects(): Promise<Project[]> {
+    return api().listProjects();
+  },
+  getProject(id: string): Promise<Project | null> {
+    return api().getProject(id);
+  },
+  createProject(input: ProjectInput): Promise<Project> {
+    return api().createProject(input);
+  },
+  updateProject(input: ProjectInput & { id: string }): Promise<Project> {
+    return api().updateProject(input);
+  },
+  deleteProject(id: string): Promise<{ ok: true }> {
+    return api().deleteProject(id);
   },
 
   listConversations(args?: ListConversationsArgs): Promise<Conversation[]> {

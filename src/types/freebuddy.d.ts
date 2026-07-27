@@ -33,6 +33,8 @@ import type {
   ListConversationsArgs,
   AppendMessageInput,
   UpdateMessageInput,
+  Project,
+  ProjectInput,
   DraftToolEvent,
   DraftToolResolution,
   PreviewHandoffBriefInput,
@@ -183,6 +185,12 @@ declare global {
       sessionId: string;
       title?: string;
     }): Promise<void>;
+
+    listProjects(): Promise<Project[]>;
+    getProject(id: string): Promise<Project | null>;
+    createProject(input: ProjectInput): Promise<Project>;
+    updateProject(input: ProjectInput & { id: string }): Promise<Project>;
+    deleteProject(id: string): Promise<{ ok: true }>;
 
     listConversations(args?: ListConversationsArgs): Promise<Conversation[]>;
     getConversation(id: string): Promise<Conversation | undefined>;

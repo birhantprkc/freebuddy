@@ -118,6 +118,14 @@ const cli = {
   saveToolSession: (args: unknown) =>
     ipcRenderer.invoke("cli:saveToolSession", args),
 
+  listProjects: () => ipcRenderer.invoke("cli:listProjects"),
+  getProject: (id: string) => ipcRenderer.invoke("cli:getProject", id),
+  createProject: (input: unknown) =>
+    ipcRenderer.invoke("cli:createProject", input),
+  updateProject: (input: unknown) =>
+    ipcRenderer.invoke("cli:updateProject", input),
+  deleteProject: (id: string) => ipcRenderer.invoke("cli:deleteProject", id),
+
   listConversations: (args?: unknown) =>
     ipcRenderer.invoke("cli:listConversations", args),
   getConversation: (id: string) => ipcRenderer.invoke("cli:getConversation", id),
