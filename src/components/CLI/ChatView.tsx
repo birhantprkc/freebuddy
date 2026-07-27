@@ -712,27 +712,71 @@ export function ChatView({
     return folders.length > 0 ? folders : undefined;
   }, [conversationProject]);
   const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
+  const [workspacePopoverStyle, setWorkspacePopoverStyle] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const workspaceDetailsRef = useRef<HTMLDivElement>(null);
+  const workspaceSummaryRef = useRef<HTMLButtonElement>(null);
+
+  const closeWorkspaceDetails = useCallback(() => {
+    setWorkspaceDetailsOpen(false);
+    setWorkspacePopoverStyle(null);
+  }, []);
+
+  const toggleWorkspaceDetails = useCallback(() => {
+    setWorkspaceDetailsOpen((open) => {
+      if (open) {
+        setWorkspacePopoverStyle(null);
+        return false;
+      }
+      const anchor = workspaceSummaryRef.current;
+      if (anchor) {
+        const rect = anchor.getBoundingClientRect();
+        const width = Math.min(300, window.innerWidth - 24);
+        const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
+        setWorkspacePopoverStyle({
+          top: Math.max(12, rect.top - 8),
+          left
+        });
+      }
+      return true;
+    });
+  }, []);
+
   useEffect(() => {
     if (!workspaceDetailsOpen) return;
     const onPointerDown = (event: MouseEvent) => {
       if (!workspaceDetailsRef.current?.contains(event.target as Node)) {
-        setWorkspaceDetailsOpen(false);
+        closeWorkspaceDetails();
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setWorkspaceDetailsOpen(false);
+      if (event.key === "Escape") closeWorkspaceDetails();
+    };
+    const onReposition = () => {
+      const anchor = workspaceSummaryRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const width = Math.min(300, window.innerWidth - 24);
+      const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
+      setWorkspacePopoverStyle({
+        top: Math.max(12, rect.top - 8),
+        left
+      });
     };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onReposition);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onReposition);
     };
-  }, [workspaceDetailsOpen]);
+  }, [workspaceDetailsOpen, closeWorkspaceDetails]);
   useEffect(() => {
-    setWorkspaceDetailsOpen(false);
-  }, [conv?.id]);
+    closeWorkspaceDetails();
+  }, [conv?.id, closeWorkspaceDetails]);
   const newTaskMentionRoots = useMemo(() => {
     if (!newTaskProjectId) return undefined;
     const project = projects.find((entry) => entry.id === newTaskProjectId);
@@ -749,21 +793,21 @@ export function ChatView({
   });
   const composerWorkspaceLabel = useMemo(() => {
     const folders = conversationMentionRoots;
-    if (folders && folders.length > 1) {
+    if (folders && folders.length > 0 && conversationProject) {
       const name =
-        conversationProject?.name?.trim() ||
-        folderBaseName(conversationProject?.primaryPath || conv?.cwd || folders[0]);
+        conversationProject.name?.trim() ||
+        folderBaseName(conversationProject.primaryPath || conv?.cwd || folders[0]);
       return `${name} · ${t("chat.folderCount", { count: folders.length })}`;
     }
     return conv?.cwd ? conv.cwd : t("chat.noWorkspace");
   }, [
     conversationMentionRoots,
-    conversationProject?.name,
-    conversationProject?.primaryPath,
+    conversationProject,
     conv?.cwd,
     t
   ]);
-  const composerIsMultiRoot = (conversationMentionRoots?.length ?? 0) > 1;
+  const composerHasProjectWorkspace =
+    (conversationMentionRoots?.length ?? 0) > 0 && !!conversationProject;
 
   const workflowPlan = useMemo<WorkflowPlan | null>(() => {
     if (!activeRun || activeRun.conversationId !== conv?.id) return null;
@@ -1931,14 +1975,15 @@ export function ChatView({
         <div className="composer-context-row">
           <span>{agentDisplayName}</span>
           <div className="composer-workspace-meta" ref={workspaceDetailsRef}>
-            {composerIsMultiRoot ? (
+            {composerHasProjectWorkspace ? (
               <button
+                ref={workspaceSummaryRef}
                 type="button"
                 className={`composer-workspace-summary${workspaceDetailsOpen ? " open" : ""}`}
                 aria-expanded={workspaceDetailsOpen}
                 aria-label={t("chat.workspaceDetails")}
                 title={composerWorkspaceLabel}
-                onClick={() => setWorkspaceDetailsOpen((open) => !open)}
+                onClick={toggleWorkspaceDetails}
               >
                 <Folder aria-hidden="true" size={12} strokeWidth={1.8} />
                 <span>{composerWorkspaceLabel}</span>
@@ -1946,22 +1991,32 @@ export function ChatView({
             ) : (
               <span title={conv.cwd || undefined}>{composerWorkspaceLabel}</span>
             )}
-            {workspaceDetailsOpen && composerIsMultiRoot && conversationProject ? (
-              <div className="composer-workspace-popover" role="dialog">
+            {workspaceDetailsOpen &&
+            composerHasProjectWorkspace &&
+            conversationProject &&
+            workspacePopoverStyle ? (
+              <div
+                className="composer-workspace-popover"
+                role="dialog"
+                style={{
+                  top: workspacePopoverStyle.top,
+                  left: workspacePopoverStyle.left,
+                  transform: "translateY(-100%)"
+                }}
+              >
                 <div className="composer-workspace-popover-title">
                   {conversationProject.name}
                 </div>
                 <ul className="composer-workspace-popover-list">
                   {conversationProject.folders.map((folder) => {
-                    const primary = pathsEqual(
-                      folder,
-                      conversationProject.primaryPath
-                    );
+                    const showPrimary =
+                      conversationProject.folders.length > 1 &&
+                      pathsEqual(folder, conversationProject.primaryPath);
                     return (
                       <li key={folder} title={folder}>
                         <Folder aria-hidden="true" size={13} strokeWidth={1.7} />
                         <span>{formatDisplayPath(folder)}</span>
-                        {primary ? (
+                        {showPrimary ? (
                           <em>{t("chat.primaryBadge")}</em>
                         ) : null}
                       </li>

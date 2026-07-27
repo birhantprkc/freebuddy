@@ -48,7 +48,8 @@ test("composer and workspace panel surface multi-root project mounts", () => {
   assert.match(chat, /chat\.folderCount/);
   assert.match(panel, /workspace\.mountedFolders/);
   assert.match(panel, /workspace-mounted-list/);
-  assert.match(panel, /isMultiRoot/);
+  assert.match(panel, /activeProject && mountedFolders\.length > 0/);
+  assert.match(chat, /composerHasProjectWorkspace/);
   assert.match(styles, /\.composer-workspace-popover\s*\{/);
   assert.match(styles, /\.workspace-mounted-list\s*\{/);
 

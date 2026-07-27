@@ -7178,12 +7178,10 @@ button {
 }
 
 .composer-workspace-popover {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  z-index: 40;
+  position: fixed;
+  z-index: 90;
   display: flex;
-  width: min(300px, 70vw);
+  width: min(300px, calc(100vw - 24px));
   flex-direction: column;
   gap: 6px;
   padding: 10px;

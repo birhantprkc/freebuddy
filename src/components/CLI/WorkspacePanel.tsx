@@ -327,18 +327,12 @@ export function WorkspacePanel({
           </strong>
         </div>
         <dl className="compact-dl">
-          {isMultiRoot ? (
+          {activeProject && mountedFolders.length > 0 ? (
             <>
               <div>
                 <dt>{t("workspace.project")}</dt>
-                <dd title={activeProject?.name}>
-                  {activeProject?.name || folderBaseName(primaryFolder || "")}
-                </dd>
-              </div>
-              <div>
-                <dt>{t("workspace.primaryFolder")}</dt>
-                <dd title={primaryFolder}>
-                  {primaryFolder ? shortPath(primaryFolder) : t("workspace.notSet")}
+                <dd title={activeProject.name}>
+                  {activeProject.name || folderBaseName(primaryFolder || "")}
                 </dd>
               </div>
               <div className="workspace-mounted-row">
@@ -346,12 +340,14 @@ export function WorkspacePanel({
                 <dd>
                   <ul className="workspace-mounted-list">
                     {mountedFolders.map((folder) => {
-                      const primary =
-                        primaryFolder != null && pathsEqual(folder, primaryFolder);
+                      const showPrimary =
+                        isMultiRoot &&
+                        primaryFolder != null &&
+                        pathsEqual(folder, primaryFolder);
                       return (
                         <li key={folder} title={folder}>
                           <span>{formatDisplayPath(folder)}</span>
-                          {primary ? (
+                          {showPrimary ? (
                             <em>{t("workspace.primaryFolder")}</em>
                           ) : null}
                         </li>
