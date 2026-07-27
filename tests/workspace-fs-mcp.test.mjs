@@ -63,7 +63,7 @@ test("workspace FS MCP lists tools and enforces roots", async (t) => {
   const listed = await client.listTools();
   assert.deepEqual(
     listed.tools.map((tool) => tool.name).sort(),
-    ["workspace_list", "workspace_read", "workspace_write"]
+    ["workspace_list", "workspace_read", "workspace_roots", "workspace_write"]
   );
 
   const readOk = await client.callTool({
@@ -127,6 +127,14 @@ test("workspaceFs dispatch read/write within secondary root", async () => {
     listed.entries.some((entry) => entry.name === "note.txt" && entry.type === "file"),
     true
   );
+
+  assert.deepEqual(listed.roots, roots);
+  assert.equal(listed.primary, primary);
+
+  const rootsMeta = await dispatchWorkspaceFs(binding, "roots", {});
+  assert.equal(rootsMeta.ok, true);
+  assert.deepEqual(rootsMeta.roots, roots);
+  assert.equal(rootsMeta.primary, primary);
 
   const outside = await dispatchWorkspaceFs(binding, "read", {
     path: path.join(os.tmpdir(), "fb-ws-not-a-root", "x.txt")

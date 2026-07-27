@@ -43,6 +43,13 @@ test("project form modal and sidebar wiring expose create/edit project UI", () =
   assert.match(app, /projectId:\s*options\?\.projectId/);
   assert.match(app, /onNewTaskInProject=\{\(\{\s*cwd,\s*projectId\s*\}\)/);
 
+  assert.match(list, /conv-project-hover-card/);
+  assert.match(list, /ProjectHoverCard/);
+  assert.match(list, /onMouseEnter/);
+  assert.match(list, /projectConversationCount/);
+  assert.match(css, /\.conv-project-hover-card\s*\{/);
+  assert.match(css, /\.conv-project-hover-folder\s*\{/);
+
   for (const key of [
     "newProject",
     "editProject",
@@ -54,15 +61,23 @@ test("project form modal and sidebar wiring expose create/edit project UI", () =
     "saveProject",
     "projectNameRequired",
     "projectFoldersRequired",
-    "projectsLoadFailed"
+    "projectsLoadFailed",
+    "projectConversationCount"
   ]) {
     assert.ok(en.conversations?.[key], `missing en conversations.${key}`);
     assert.ok(zh.conversations?.[key], `missing zh-CN conversations.${key}`);
   }
 
+  assert.match(list, /PROJECT_LIST_LIMIT/);
+  assert.match(list, /showMoreProjects/);
+  assert.match(list, /visibleProjects/);
+  assert.match(list, /showAllProjects/);
+
   assert.equal(zh.conversations.newProject, "新建项目");
   assert.equal(zh.conversations.editProject, "编辑项目");
+  assert.equal(zh.conversations.showMoreProjects.includes("项目"), true);
   assert.equal(en.conversations.addFolder, "Add folder");
+  assert.ok(en.conversations.showMoreProjects);
   assert.match(css, /\.conv-projects-add\s*\{/);
   assert.match(css, /\.conv-projects-error\s*\{/);
   assert.match(css, /\.project-form-modal\s*\{/);

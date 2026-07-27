@@ -456,6 +456,7 @@
     "recent": "Recent",
     "noTasks": "No tasks",
     "showMore": "Show more · {{count}}",
+    "showMoreProjects": "Show more projects · {{count}}",
     "projectMenu": "Project actions",
     "newInProject": "New task",
     "pinProject": "Pin project",
@@ -488,6 +489,7 @@
     "removeFolder": "Remove folder",
     "setPrimary": "Set as primary",
     "projectsLoadFailed": "Could not load projects. Showing last known list.",
+    "projectConversationCount": "{{count}} conversations",
     "group": {
       "today": "Today",
       "yesterday": "Yesterday",

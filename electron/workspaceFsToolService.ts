@@ -11,11 +11,22 @@ import { resolveWithinRoots } from "./shared/workspacePathGuard.js";
 const WORKSPACE_FS_TOOL_PATH = "/freebuddy/workspace-fs-tool";
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 
-export type WorkspaceFsAction = "list" | "read" | "write";
+export type WorkspaceFsAction = "list" | "read" | "write" | "roots";
 
 export interface WorkspaceFsBinding {
   roots: string[];
   primary: string;
+}
+
+function withRootsMeta(
+  binding: WorkspaceFsBinding,
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    ...payload,
+    primary: binding.primary,
+    roots: binding.roots
+  };
 }
 
 interface WorkspaceFsSessionBinding extends WorkspaceFsBinding {
@@ -30,7 +41,12 @@ function workspaceFsMcpServerPath(): string {
 }
 
 function isWorkspaceFsAction(value: unknown): value is WorkspaceFsAction {
-  return value === "list" || value === "read" || value === "write";
+  return (
+    value === "list" ||
+    value === "read" ||
+    value === "write" ||
+    value === "roots"
+  );
 }
 
 function stringParam(params: Record<string, unknown>, name: string): string {
@@ -46,6 +62,10 @@ export async function dispatchWorkspaceFs(
   action: WorkspaceFsAction,
   params: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
+  if (action === "roots") {
+    return withRootsMeta(binding, { ok: true });
+  }
+
   const inputPath =
     typeof params.path === "string" && params.path.trim()
       ? params.path.trim()
@@ -66,17 +86,25 @@ export async function dispatchWorkspaceFs(
         path: path.join(resolved.absolute, entry.name)
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    return { ok: true, path: resolved.absolute, entries };
+    return withRootsMeta(binding, {
+      ok: true,
+      path: resolved.absolute,
+      entries
+    });
   }
 
   if (action === "read") {
     const content = await fs.readFile(resolved.absolute, "utf8");
-    return { ok: true, path: resolved.absolute, content };
+    return withRootsMeta(binding, {
+      ok: true,
+      path: resolved.absolute,
+      content
+    });
   }
 
   const content = typeof params.content === "string" ? params.content : stringParam(params, "content");
   await fs.writeFile(resolved.absolute, content, "utf8");
-  return { ok: true, path: resolved.absolute };
+  return withRootsMeta(binding, { ok: true, path: resolved.absolute });
 }
 
 export async function registerWorkspaceFsToolSession(input: {

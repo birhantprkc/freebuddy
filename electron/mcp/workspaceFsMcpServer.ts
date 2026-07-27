@@ -5,7 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-type WorkspaceFsAction = "list" | "read" | "write";
+type WorkspaceFsAction = "list" | "read" | "write" | "roots";
 
 interface WorkspaceFsToolResponse {
   ok?: boolean;
@@ -75,11 +75,34 @@ export function createWorkspaceFsMcpServer(): McpServer {
   });
 
   server.registerTool(
+    "workspace_roots",
+    {
+      title: "List Workspace Roots",
+      description:
+        "Return every mounted workspace root and which one is primary. Call this before assuming the project has only one folder — multi-folder projects mount several absolute roots.",
+      inputSchema: {},
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async () => {
+      try {
+        return toolResult(await invokeWorkspaceFsBridge("roots", {}));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
     "workspace_list",
     {
       title: "List Workspace Directory",
       description:
-        "List files and directories inside the multi-folder project workspace. Relative paths resolve against the primary root; absolute paths must stay within configured workspace roots.",
+        "List files and directories inside the multi-folder project workspace. Relative paths resolve against the primary root only — listing \".\" does NOT mean there is only one root. Responses include roots[] and primary; use absolute paths under any root, or call workspace_roots first.",
       inputSchema: {
         path: z
           .string()
@@ -111,7 +134,7 @@ export function createWorkspaceFsMcpServer(): McpServer {
     {
       title: "Read Workspace File",
       description:
-        "Read a UTF-8 text file from the multi-folder project workspace. Relative paths resolve against the primary root; absolute paths must stay within configured workspace roots.",
+        "Read a UTF-8 text file from the multi-folder project workspace. Relative paths resolve against the primary root; absolute paths must stay within configured workspace roots (see workspace_roots / roots[] in responses).",
       inputSchema: {
         path: z
           .string()
@@ -142,7 +165,7 @@ export function createWorkspaceFsMcpServer(): McpServer {
     {
       title: "Write Workspace File",
       description:
-        "Write a UTF-8 text file inside the multi-folder project workspace. Relative paths resolve against the primary root; absolute paths must stay within configured workspace roots.",
+        "Write a UTF-8 text file inside the multi-folder project workspace. Relative paths resolve against the primary root; absolute paths must stay within configured workspace roots (see workspace_roots / roots[] in responses).",
       inputSchema: {
         path: z
           .string()

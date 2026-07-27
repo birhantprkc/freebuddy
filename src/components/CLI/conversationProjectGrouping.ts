@@ -1,6 +1,8 @@
 import type { Conversation, Project } from "@/services/cli/types";
 
 export const PROJECT_PREVIEW_LIMIT = 5;
+/** Max project rows shown in the sidebar before "show more". */
+export const PROJECT_LIST_LIMIT = 6;
 export const RECENT_LIMIT = 8;
 
 export type ConversationProjectGroup = {

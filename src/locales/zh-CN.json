@@ -456,6 +456,7 @@
     "recent": "最近",
     "noTasks": "无任务",
     "showMore": "展开显示 · {{count}}",
+    "showMoreProjects": "展开更多项目 · {{count}}",
     "projectMenu": "项目操作",
     "newInProject": "新建任务",
     "pinProject": "置顶项目",
@@ -488,6 +489,7 @@
     "removeFolder": "移除文件夹",
     "setPrimary": "设为 Primary",
     "projectsLoadFailed": "项目列表加载失败，仍显示上次成功结果。",
+    "projectConversationCount": "{{count}} 个对话",
     "group": {
       "today": "今天",
       "yesterday": "昨天",

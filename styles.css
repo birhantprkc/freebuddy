@@ -9588,7 +9588,8 @@ button {
 }
 
 .conv-project-row-inner:hover,
-.conv-project-row.menu-open .conv-project-row-inner {
+.conv-project-row.menu-open .conv-project-row-inner,
+.conv-project-row.hover-card-open .conv-project-row-inner {
   background: var(--fb-hover);
 }
 
@@ -9820,6 +9821,152 @@ button {
 
 .conv-project-menu-item.danger:hover {
   background: color-mix(in srgb, var(--fb-danger) 10%, transparent);
+}
+
+.conv-project-hover-anchor {
+  position: fixed;
+  z-index: 80;
+}
+
+.conv-project-hover-card {
+  display: flex;
+  width: min(280px, calc(100vw - 280px));
+  flex-direction: column;
+  gap: 0;
+  padding: 10px 0 6px;
+  border: 1px solid var(--fb-border-strong);
+  border-radius: 12px;
+  background: var(--fb-panel-bg);
+  box-shadow: var(--fb-shadow);
+  color: var(--fb-text-primary);
+}
+
+.conv-project-hover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px 8px;
+}
+
+.conv-project-hover-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.conv-project-hover-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv-project-hover-pin {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fb-text-tertiary);
+  cursor: pointer;
+}
+
+.conv-project-hover-pin:hover {
+  background: var(--fb-hover);
+  color: var(--fb-text-primary);
+}
+
+.conv-project-hover-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 10px;
+  color: var(--fb-text-secondary);
+  font-size: 12px;
+}
+
+.conv-project-hover-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 6px;
+  border-top: 1px solid var(--fb-border);
+}
+
+.conv-project-hover-folder {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fb-text-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conv-project-hover-folder:hover:not(:disabled) {
+  background: var(--fb-hover);
+  color: var(--fb-text-primary);
+}
+
+.conv-project-hover-folder:disabled {
+  cursor: default;
+}
+
+.conv-project-hover-folder-path {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv-project-hover-primary {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fb-brand) 16%, transparent);
+  color: var(--fb-brand);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.conv-project-hover-footer {
+  padding: 6px 6px 2px;
+  border-top: 1px solid var(--fb-border);
+}
+
+.conv-project-hover-edit {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fb-text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conv-project-hover-edit:hover {
+  background: var(--fb-hover);
 }
 
 .conv-project-tasks {

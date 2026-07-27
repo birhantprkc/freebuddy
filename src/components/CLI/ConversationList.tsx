@@ -30,6 +30,7 @@ import {
 import { AgentAvatar } from "./AgentAvatar";
 import { ProjectFormModal } from "./ProjectFormModal";
 import {
+  PROJECT_LIST_LIMIT,
   PROJECT_PREVIEW_LIMIT,
   RECENT_LIMIT,
   groupConversationsByProject,
@@ -129,6 +130,140 @@ const ConversationRow = memo(function ConversationRow({
     </li>
   );
 });
+
+function formatProjectPath(raw: string): string {
+  const normalized = raw.replace(/[\\/]+$/, "") || raw;
+  const home =
+    typeof window !== "undefined"
+      ? (window as { freebuddyHome?: string }).freebuddyHome
+      : undefined;
+  // Prefer collapsing known macOS/Linux home prefixes when IPC home is unavailable.
+  const guessedHome =
+    home ||
+    (normalized.match(/^(\/Users\/[^/]+)/)?.[1] ??
+      normalized.match(/^(\/home\/[^/]+)/)?.[1]);
+  if (guessedHome && normalized.startsWith(guessedHome)) {
+    const rest = normalized.slice(guessedHome.length);
+    return rest ? `~${rest}` : "~";
+  }
+  return normalized;
+}
+
+function ProjectHoverCard({
+  label,
+  folders,
+  primaryPath,
+  conversationCount,
+  pinned,
+  canReveal,
+  onTogglePin,
+  onEdit,
+  onReveal
+}: {
+  label: string;
+  folders: string[];
+  primaryPath?: string;
+  conversationCount: number;
+  pinned: boolean;
+  canReveal: boolean;
+  onTogglePin: () => void;
+  onEdit: () => void;
+  onReveal: (folder: string) => void;
+}) {
+  const { t } = useTranslation();
+  const mounted = folders.length
+    ? folders
+    : primaryPath
+      ? [primaryPath]
+      : [];
+
+  return (
+    <div className="conv-project-hover-card" role="dialog" aria-label={label}>
+      <div className="conv-project-hover-header">
+        <div className="conv-project-hover-title">
+          <Folder aria-hidden="true" size={16} strokeWidth={1.7} />
+          <span>{label}</span>
+        </div>
+        <button
+          type="button"
+          className="conv-project-hover-pin"
+          aria-label={
+            pinned ? t("conversations.unpinProject") : t("conversations.pinProject")
+          }
+          title={
+            pinned ? t("conversations.unpinProject") : t("conversations.pinProject")
+          }
+          onClick={(event) => {
+            event.stopPropagation();
+            onTogglePin();
+          }}
+        >
+          {pinned ? (
+            <PinOff aria-hidden="true" size={14} strokeWidth={1.8} />
+          ) : (
+            <Pin aria-hidden="true" size={14} strokeWidth={1.8} />
+          )}
+        </button>
+      </div>
+
+      <div className="conv-project-hover-meta">
+        <MessageSquare aria-hidden="true" size={14} strokeWidth={1.8} />
+        <span>
+          {t("conversations.projectConversationCount", { count: conversationCount })}
+        </span>
+      </div>
+
+      {mounted.length > 0 && (
+        <div className="conv-project-hover-folders">
+          {mounted.map((folder) => {
+            const isPrimary =
+              primaryPath != null &&
+              folder.replace(/[\\/]+$/, "").toLowerCase() ===
+                primaryPath.replace(/[\\/]+$/, "").toLowerCase();
+            return (
+              <button
+                key={folder}
+                type="button"
+                className="conv-project-hover-folder"
+                title={folder}
+                disabled={!canReveal}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (!canReveal) return;
+                  onReveal(folder);
+                }}
+              >
+                <Folder aria-hidden="true" size={14} strokeWidth={1.7} />
+                <span className="conv-project-hover-folder-path">
+                  {formatProjectPath(folder)}
+                </span>
+                {isPrimary && (
+                  <span className="conv-project-hover-primary">
+                    {t("conversations.primary")}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="conv-project-hover-footer">
+        <button
+          type="button"
+          className="conv-project-hover-edit"
+          onClick={(event) => {
+            event.stopPropagation();
+            onEdit();
+          }}
+        >
+          <Pencil aria-hidden="true" size={14} strokeWidth={1.8} />
+          <span>{t("conversations.editProject")}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ProjectOverflowMenu({
   pinned,
@@ -288,10 +423,52 @@ export function ConversationList({
   const { t } = useTranslation();
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => new Set());
   const [expandedFully, setExpandedFully] = useState<Set<string>>(() => new Set());
+  const [showAllProjects, setShowAllProjects] = useState(false);
   const [menuProjectKey, setMenuProjectKey] = useState<string | null>(null);
+  const [hoverProjectKey, setHoverProjectKey] = useState<string | null>(null);
+  const [hoverCardStyle, setHoverCardStyle] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const hoverCloseTimerRef = useRef<number | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+
+  const clearHoverCloseTimer = useCallback(() => {
+    if (hoverCloseTimerRef.current != null) {
+      window.clearTimeout(hoverCloseTimerRef.current);
+      hoverCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const openProjectHover = useCallback(
+    (key: string, anchor?: HTMLElement | null) => {
+      clearHoverCloseTimer();
+      if (anchor) {
+        const rect = anchor.getBoundingClientRect();
+        setHoverCardStyle({
+          top: Math.max(8, rect.top),
+          left: rect.right + 10
+        });
+      }
+      setHoverProjectKey(key);
+    },
+    [clearHoverCloseTimer]
+  );
+
+  const scheduleCloseProjectHover = useCallback(() => {
+    clearHoverCloseTimer();
+    hoverCloseTimerRef.current = window.setTimeout(() => {
+      setHoverProjectKey(null);
+      setHoverCardStyle(null);
+      hoverCloseTimerRef.current = null;
+    }, 140);
+  }, [clearHoverCloseTimer]);
+
+  useEffect(() => {
+    return () => clearHoverCloseTimer();
+  }, [clearHoverCloseTimer]);
 
   const runningSet = new Set(runningSignature ? runningSignature.split("\n") : []);
   const workflowRunningSet = new Set(
@@ -353,32 +530,51 @@ export function ConversationList({
     return active?.projectId?.trim() || undefined;
   }, [activeId, conversations]);
 
+  const visibleProjects = useMemo(() => {
+    if (showAllProjects || projects.length <= PROJECT_LIST_LIMIT) {
+      return projects;
+    }
+    const visibleKeys = new Set<string>();
+    const result: ConversationProjectGroup[] = [];
+    // Always keep pinned projects visible.
+    for (const project of projects) {
+      if (!pinnedKeys.includes(project.key)) continue;
+      result.push(project);
+      visibleKeys.add(project.key);
+    }
+    for (const project of projects) {
+      if (result.length >= PROJECT_LIST_LIMIT) break;
+      if (visibleKeys.has(project.key)) continue;
+      result.push(project);
+      visibleKeys.add(project.key);
+    }
+    // Keep the active project visible even if it would be truncated.
+    if (activeProjectKey && !visibleKeys.has(activeProjectKey)) {
+      const active = projects.find((project) => project.key === activeProjectKey);
+      if (active) result.push(active);
+    }
+    return result;
+  }, [projects, showAllProjects, pinnedKeys, activeProjectKey]);
+
+  const hiddenProjectCount = Math.max(0, projects.length - visibleProjects.length);
+
   useEffect(() => {
     if (!activeProjectKey) return;
-    setExpandedProjects((current) => {
-      if (current.has(activeProjectKey)) return current;
-      const next = new Set(current);
-      next.add(activeProjectKey);
-      return next;
-    });
+    setExpandedProjects(new Set([activeProjectKey]));
   }, [activeProjectKey]);
 
   useEffect(() => {
     if (projects.length === 0) return;
     setExpandedProjects((current) => {
       if (current.size > 0) return current;
-      const next = new Set<string>();
-      next.add(projects[0].key);
-      return next;
+      return new Set([projects[0].key]);
     });
   }, [projects]);
 
   const toggleProject = (key: string) => {
     setExpandedProjects((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
+      if (current.has(key)) return new Set();
+      return new Set([key]);
     });
   };
 
@@ -421,11 +617,7 @@ export function ConversationList({
   };
 
   const handleProjectSaved = async (project: Project) => {
-    setExpandedProjects((current) => {
-      const next = new Set(current);
-      next.add(project.id);
-      return next;
-    });
+    setExpandedProjects(new Set([project.id]));
     await refreshConversations();
   };
 
@@ -472,7 +664,7 @@ export function ConversationList({
           </li>
         ) : null}
 
-        {projects.map((project) => {
+        {visibleProjects.map((project) => {
           const expanded = expandedProjects.has(project.key);
           const showAll = expandedFully.has(project.key);
           const visibleItems = expanded
@@ -486,6 +678,7 @@ export function ConversationList({
           const selected = activeProjectKey === project.key;
           const pinned = pinnedKeys.includes(project.key);
           const menuOpen = menuProjectKey === project.key;
+          const hoverOpen = hoverProjectKey === project.key && !menuOpen;
           const hasRunning = project.items.some(
             (c) => runningSet.has(c.id) || workflowRunningSet.has(c.id)
           );
@@ -493,11 +686,18 @@ export function ConversationList({
           const showRunningIndicator = !expanded && hasRunning;
           const showUnreadIndicator = !expanded && !hasRunning && hasUnread;
           const primaryPath = project.primaryPath ?? project.cwd;
+          const canReveal = Boolean(
+            primaryPath && window.freebuddy?.shell?.showItemInFolder
+          );
 
           return (
             <Fragment key={project.key}>
               <li
-                className={`conv-project-row${selected ? " selected" : ""}${menuOpen ? " menu-open" : ""}${pinned ? " pinned" : ""}${showRunningIndicator ? " running" : ""}${showUnreadIndicator ? " unread" : ""}`}
+                className={`conv-project-row${selected ? " selected" : ""}${menuOpen ? " menu-open" : ""}${hoverOpen ? " hover-card-open" : ""}${pinned ? " pinned" : ""}${showRunningIndicator ? " running" : ""}${showUnreadIndicator ? " unread" : ""}`}
+                onMouseEnter={(event) =>
+                  openProjectHover(project.key, event.currentTarget)
+                }
+                onMouseLeave={scheduleCloseProjectHover}
               >
                 <div className="conv-project-row-inner">
                   <button
@@ -569,11 +769,7 @@ export function ConversationList({
                           if (!primaryPath || !project.projectId || !onNewTaskInProject) {
                             return;
                           }
-                          setExpandedProjects((current) => {
-                            const next = new Set(current);
-                            next.add(project.key);
-                            return next;
-                          });
+                          setExpandedProjects(new Set([project.key]));
                           onNewTaskInProject({
                             cwd: primaryPath,
                             projectId: project.projectId
@@ -585,12 +781,11 @@ export function ConversationList({
                       <ProjectOverflowMenu
                         pinned={pinned}
                         open={menuOpen}
-                        canReveal={Boolean(
-                          primaryPath && window.freebuddy?.shell?.showItemInFolder
-                        )}
-                        onOpenChange={(open) =>
-                          setMenuProjectKey(open ? project.key : null)
-                        }
+                        canReveal={canReveal}
+                        onOpenChange={(open) => {
+                          setMenuProjectKey(open ? project.key : null);
+                          if (open) setHoverProjectKey(null);
+                        }}
                         onEdit={() => openEditModal(project)}
                         onTogglePin={() => togglePin(project.key)}
                         onReveal={() => {
@@ -604,6 +799,32 @@ export function ConversationList({
                     </div>
                   </div>
                 </div>
+                {hoverOpen && hoverCardStyle && (
+                  <div
+                    className="conv-project-hover-anchor"
+                    style={hoverCardStyle}
+                    onMouseEnter={() => openProjectHover(project.key)}
+                    onMouseLeave={scheduleCloseProjectHover}
+                  >
+                    <ProjectHoverCard
+                      label={project.label}
+                      folders={project.folders ?? []}
+                      primaryPath={primaryPath}
+                      conversationCount={project.items.length}
+                      pinned={pinned}
+                      canReveal={canReveal}
+                      onTogglePin={() => togglePin(project.key)}
+                      onEdit={() => {
+                        setHoverProjectKey(null);
+                        setHoverCardStyle(null);
+                        openEditModal(project);
+                      }}
+                      onReveal={(folder) => {
+                        void window.freebuddy?.shell?.showItemInFolder(folder);
+                      }}
+                    />
+                  </div>
+                )}
               </li>
               {expanded && (
                 <li className="conv-project-tasks" aria-label={project.label}>
@@ -630,6 +851,18 @@ export function ConversationList({
             </Fragment>
           );
         })}
+
+        {hiddenProjectCount > 0 && (
+          <li>
+            <button
+              type="button"
+              className="conv-project-expand"
+              onClick={() => setShowAllProjects(true)}
+            >
+              {t("conversations.showMoreProjects", { count: hiddenProjectCount })}
+            </button>
+          </li>
+        )}
 
         {recent.length > 0 && (
           <>
