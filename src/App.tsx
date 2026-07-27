@@ -104,10 +104,15 @@ function App() {
   useEffect(() => {
     const off = window.freebuddy?.cli?.onMessagesChanged?.((conversationId) => {
       const state = useConversationStore.getState();
-      if (state.currentUser?.isOwner !== true) return;
-      if (conversationId !== state.activeId) return;
+      if (conversationId !== state.activeId) {
+        state.markConversationUnread(conversationId);
+        void state.refreshList();
+        return;
+      }
       // Skip conversations this client is already live-streaming (e.g. the
-      // admin's own active run) — live streaming owns their real-time updates.
+      // current user's own active run) — live streaming owns those updates.
+      // Other clients, including the conversation owner while an admin is
+      // contributing, must reload the shared message snapshot.
       const live = state.live[conversationId];
       const isStreaming = !!live && (live.status === "starting" || live.status === "running");
       if (isStreaming) return;
