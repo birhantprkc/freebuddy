@@ -17,6 +17,7 @@ import {
   requireOwnedConversation,
   updateMessage
 } from "./conversations.js";
+import { resolveWorkspaceRootsForConversation } from "./projects.js";
 import type {
   WorkflowAgentRef,
   WorkflowPhase,
@@ -1208,6 +1209,13 @@ export function createCliStepExecutor(
         toolSessionScope: args.toolSessionScope,
         toolSessionId: args.toolSessionId,
         cwd: args.cwd,
+        workspaceRoots: args.conversationId
+          ? resolveWorkspaceRootsForConversation(
+              requireOwnedConversation(args.conversationId) ?? {
+                cwd: args.cwd
+              }
+            )
+          : resolveWorkspaceRootsForConversation({ cwd: args.cwd }),
         approvalMode: "auto",
         resumeToolSession: args.resumeToolSession,
         skills: resolveSkillSnapshots(args.skillIds ?? []),

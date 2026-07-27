@@ -29,6 +29,7 @@ import {
 } from "@/utils/sessionConfigOptions";
 
 import { useCliExecutorStore } from "./cliExecutorStore";
+import { useProjectStore } from "./projectStore";
 import {
   buildOrphanFollowupContext,
   collectStreamMessageIds,
@@ -52,6 +53,18 @@ import {
   persistUnreadConversations,
   type UnreadConversationMap
 } from "./conversationUnread";
+
+function resolveWorkspaceRootsForConversation(conv: Conversation): string[] {
+  if (conv.projectId) {
+    const project = useProjectStore
+      .getState()
+      .projects.find((entry) => entry.id === conv.projectId);
+    if (project?.folders?.length) {
+      return project.folders.map((folder) => folder.trim()).filter(Boolean);
+    }
+  }
+  return conv.cwd ? [conv.cwd] : [];
+}
 
 export interface LiveAssistant {
   messageId: string;
@@ -940,6 +953,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         name: attachment.name
       })),
       cwd: conv.cwd,
+      workspaceRoots: resolveWorkspaceRootsForConversation(conv),
       toolSessionScope,
       toolSessionId: resumedFromSessionId,
       env: { ...(resolved?.env ?? {}), ...(member.cli.env ?? {}) },

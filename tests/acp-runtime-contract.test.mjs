@@ -36,3 +36,10 @@ test("ACP runtime still treats process close as a fallback finish signal", () =>
 test("ACP terminal output uses the stable exitStatus response shape", () => {
   assert.match(acpRuntimeSource, /buildTerminalOutputResponse\(snap\)/);
 });
+
+test("acpRuntime registers workspace FS MCP only for multi-root", () => {
+  assert.match(acpRuntimeSource, /registerWorkspaceFsToolSession/);
+  assert.match(acpRuntimeSource, /unregisterWorkspaceFsToolSession/);
+  assert.match(acpRuntimeSource, /workspaceRoots/);
+  assert.match(acpRuntimeSource, /roots\.length\s*>\s*1/);
+});

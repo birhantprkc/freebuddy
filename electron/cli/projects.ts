@@ -140,6 +140,36 @@ export function getProject(id: string): Project | null {
   return row ? rowToProject(row) : null;
 }
 
+/** Resolve ACP workspace roots from project folders, else `[cwd]`. */
+export function resolveWorkspaceRootsForConversation(conv: {
+  projectId?: string;
+  cwd?: string;
+}): string[] {
+  if (conv.projectId) {
+    const project = getProject(conv.projectId);
+    if (project?.folders?.length) {
+      return project.folders
+        .map((folder) => {
+          const trimmed = folder.trim();
+          if (!trimmed) return "";
+          try {
+            return path.resolve(trimmed);
+          } catch {
+            return "";
+          }
+        })
+        .filter(Boolean);
+    }
+  }
+  const cwd = conv.cwd?.trim();
+  if (!cwd) return [];
+  try {
+    return [path.resolve(cwd)];
+  } catch {
+    return [];
+  }
+}
+
 export function createProject(input: ProjectInput): Project {
   const normalized = normalizeProjectInput(input);
   const id = randomUUID();

@@ -63,6 +63,7 @@ import {
   deleteProject,
   getProject,
   listProjects,
+  resolveWorkspaceRootsForConversation,
   updateProject,
   type ProjectInput
 } from "./projects.js";
@@ -650,12 +651,21 @@ export function registerCliIpc() {
       ...rendererArgs
     } = args;
     let runArgs: CliRunArgs = rendererArgs;
+    const workspaceRoots = conversation
+      ? resolveWorkspaceRootsForConversation(conversation)
+      : resolveWorkspaceRootsForConversation({
+          cwd: rendererArgs.cwd,
+          projectId: undefined
+        });
+    if (workspaceRoots.length) {
+      runArgs = { ...runArgs, workspaceRoots };
+    }
     const contextReferences = args.conversationId
       ? listResolvedConversationContextPayloads(args.conversationId)
       : [];
     if (contextReferences.length > 0) {
       runArgs = {
-        ...rendererArgs,
+        ...runArgs,
         prompt: applyAgentLanguagePreference(
           `${conversationContextPromptPrefix(contextReferences)}` +
             rendererArgs.prompt,
