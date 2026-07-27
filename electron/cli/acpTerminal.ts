@@ -56,6 +56,7 @@ function snapshot(record: TerminalRecord): TerminalSnapshot {
 
 export function createAcpTerminalManager(options: {
   defaultCwd?: string;
+  commandIsShellLine?: boolean;
   onOutput?: (terminalId: string, snap: TerminalSnapshot) => void;
   prepareSpawn?: (input: {
     command: string;
@@ -122,14 +123,27 @@ export function createAcpTerminalManager(options: {
       }
 
       const cwd = params.cwd || options.defaultCwd || process.cwd();
+      const rawArgs = params.args ?? [];
+      const shouldRunShellLine =
+        options.commandIsShellLine && rawArgs.length === 0;
+      const command = shouldRunShellLine
+        ? process.platform === "win32"
+          ? process.env.ComSpec || "cmd.exe"
+          : "/bin/sh"
+        : params.command;
+      const commandArgs = shouldRunShellLine
+        ? process.platform === "win32"
+          ? ["/d", "/s", "/c", params.command]
+          : ["-c", params.command]
+        : rawArgs;
       const prepared = options.prepareSpawn
         ? await options.prepareSpawn({
-            command: params.command,
-            args: params.args ?? [],
+            command,
+            args: commandArgs,
             cwd,
             env
           })
-        : { command: params.command, args: params.args ?? [], env };
+        : { command, args: commandArgs, env };
       const child = spawn(prepared.command, prepared.args, {
         cwd,
         env: prepared.env,

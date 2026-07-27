@@ -148,6 +148,9 @@ export async function runAcpAgent({
     (args.knownAgentStreamMessageIds ?? []).length === 0;
   const terminalManager = createAcpTerminalManager({
     defaultCwd: args.cwd,
+    // Grok ACP currently sends a complete command line in `command` (for
+    // example `/bin/bash -lc pwd`) without a separate `args` array.
+    commandIsShellLine: args.adapter === "grok-acp",
     prepareSpawn: sandboxedCaller
       ? async (input) => {
           const workspaceRoot = args.cwd;

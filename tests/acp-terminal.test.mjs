@@ -70,3 +70,35 @@ test("terminal manager truncates UTF-8 output at character boundaries", async ()
 
   manager.release(terminalId);
 });
+
+test(
+  "terminal manager executes adapter-provided shell command lines",
+  { skip: process.platform === "win32" },
+  async () => {
+    let preparedInput;
+    const manager = createAcpTerminalManager({
+      commandIsShellLine: true,
+      prepareSpawn: async (input) => {
+        preparedInput = input;
+        return input;
+      }
+    });
+    const { terminalId } = await manager.create({
+      sessionId: "sess-shell-line",
+      command: `/bin/bash -lc 'printf "%s" "$PWD"; printf ":%s" "quoted value"'`
+    });
+
+    const exit = await manager.waitForExit(terminalId);
+    const snap = manager.output(terminalId);
+
+    assert.equal(exit.exitCode, 0);
+    assert.equal(preparedInput.command, "/bin/sh");
+    assert.deepEqual(preparedInput.args, [
+      "-c",
+      `/bin/bash -lc 'printf "%s" "$PWD"; printf ":%s" "quoted value"'`
+    ]);
+    assert.match(snap.output, /:quoted value$/);
+
+    manager.release(terminalId);
+  }
+);
