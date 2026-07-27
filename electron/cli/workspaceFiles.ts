@@ -3,11 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 export interface WorkspaceFileMatch {
+  /** Path inserted into the composer: relative for single-root, absolute for multi-root. */
   path: string;
   name: string;
   directory: string;
   /** Absolute workspace root when the match came from a multi-root search. */
   root?: string;
+  /** Disambiguated display path (basename(root)/rel) for multi-root picker UI. */
+  label?: string;
 }
 
 interface WorkspaceFileCacheEntry {
@@ -250,16 +253,22 @@ export async function searchWorkspaceFiles(
     seenAbs.add(entry.absPath);
     const name = path.posix.basename(entry.filePath);
     const directory = path.posix.dirname(entry.filePath);
-    const rootLabel = path.basename(entry.root).replace(/\\/g, "/");
-    const displayPath = multiRoot
-      ? path.posix.join(rootLabel, entry.filePath)
-      : entry.filePath;
-    matches.push({
-      path: displayPath,
-      name,
-      directory: directory === "." ? "" : directory,
-      ...(multiRoot ? { root: entry.root } : {})
-    });
+    if (multiRoot) {
+      const rootLabel = path.basename(entry.root).replace(/\\/g, "/");
+      matches.push({
+        path: entry.absPath,
+        name,
+        directory: directory === "." ? "" : directory,
+        root: entry.root,
+        label: path.posix.join(rootLabel, entry.filePath)
+      });
+    } else {
+      matches.push({
+        path: entry.filePath,
+        name,
+        directory: directory === "." ? "" : directory
+      });
+    }
   }
   return matches;
 }

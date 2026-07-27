@@ -107,11 +107,6 @@ export async function registerWorkspaceFsToolSession(input: {
       },
       { name: "FREEBUDDY_WORKSPACE_FS_TOKEN", value: token },
       {
-        name: "FREEBUDDY_WORKSPACE_ROOTS",
-        value: JSON.stringify(input.roots)
-      },
-      { name: "FREEBUDDY_WORKSPACE_PRIMARY", value: input.primary },
-      {
         name: "FB_APP_VERSION",
         value: process.env.FB_APP_VERSION || "0.1.0"
       }

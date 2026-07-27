@@ -53,14 +53,14 @@ export function WorkspaceFileMentionMenu({
             className={`workspace-file-mention-option${index === selectedIndex ? " active" : ""}`}
             role="option"
             aria-selected={index === selectedIndex}
-            title={match.path}
+            title={match.label ?? match.path}
             onMouseDown={(event) => {
               event.preventDefault();
               onSelect(match);
             }}
           >
             <span className="workspace-file-mention-name">@{match.name}</span>
-            <span className="workspace-file-mention-path">{match.path}</span>
+            <span className="workspace-file-mention-path">{match.label ?? match.path}</span>
           </button>
         </li>
       ))}

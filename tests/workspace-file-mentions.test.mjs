@@ -93,7 +93,7 @@ test("workspace indexing follows git ignore rules and returns relative paths", a
   assert.equal(results[0].directory, "src");
 });
 
-test("multi-root search finds files in secondary roots and prefixes display paths", async (t) => {
+test("multi-root search returns absolute paths for insertion and keeps a disambiguated label", async (t) => {
   const primary = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-multi-primary-"));
   const secondary = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-multi-secondary-"));
   t.after(() => {
@@ -119,11 +119,37 @@ test("multi-root search finds files in secondary roots and prefixes display path
     [primary, secondary]
   );
   assert.equal(withRoots.length, 1);
+  const secondaryRoot = await fs.promises.realpath(secondary);
+  const expectedAbs = path.join(secondaryRoot, "lib", "secondary-only.ts");
   const secondaryLabel = path.basename(secondary);
-  assert.equal(withRoots[0].path, `${secondaryLabel}/lib/secondary-only.ts`);
+  assert.equal(withRoots[0].path, expectedAbs);
+  assert.equal(withRoots[0].label, `${secondaryLabel}/lib/secondary-only.ts`);
   assert.equal(withRoots[0].name, "secondary-only.ts");
   assert.equal(withRoots[0].directory, "lib");
-  assert.equal(withRoots[0].root, await fs.promises.realpath(secondary));
+  assert.equal(withRoots[0].root, secondaryRoot);
+
+  // Absolute insertion paths resolve against multi-root via path guard (basename-prefixed display paths would not).
+  const { resolveWithinRoots } = await import(
+    new URL("../dist-electron/shared/workspacePathGuard.js", import.meta.url)
+  );
+  const primaryRoot = await fs.promises.realpath(primary);
+  const resolved = resolveWithinRoots(withRoots[0].path, [primaryRoot, secondaryRoot], primaryRoot);
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.absolute, path.resolve(expectedAbs));
+
+  const displayStyle = `${secondaryLabel}/lib/secondary-only.ts`;
+  const mistaken = resolveWithinRoots(displayStyle, [primaryRoot, secondaryRoot], primaryRoot);
+  assert.equal(mistaken.ok, true);
+  // Basename-prefixed display paths resolve under Primary, not the secondary file.
+  assert.notEqual(mistaken.absolute, path.resolve(expectedAbs));
+  assert.ok(mistaken.absolute.startsWith(primaryRoot));
+
+  // Composer insertion uses match.path (absolute), not the UI label.
+  const draft = "请查看@secondary";
+  const active = mentions.findWorkspaceFileMentionDraft(draft, draft.length);
+  assert.ok(active);
+  const inserted = mentions.insertWorkspaceFileMention(draft, active, withRoots[0].path);
+  assert.match(inserted.value, new RegExp(`@${expectedAbs.replace(/[\\^$*+?.()|[\]{}]/g, "\\$&")}`));
 });
 
 test("renderer and Electron bridge wire mentions without changing attachment prompts", () => {
@@ -158,7 +184,10 @@ test("renderer and Electron bridge wire mentions without changing attachment pro
   assert.match(files.mentionHook, /searchWorkspaceFiles\(cwd, activeMention\.query, 24, searchRoots\)/);
   assert.match(files.messageBubble, /splitPluginMentions\(content\)/);
   assert.match(files.messageBubble, /splitWorkspaceFileMentions\(segment\.value\)/);
-  assert.match(files.mentionMenu, /workspace-file-mention-path">\{match\.path\}/);
+  assert.match(
+    files.mentionMenu,
+    /workspace-file-mention-path">\{match\.label \?\? match\.path\}/
+  );
   assert.match(files.ipc, /cli:searchWorkspaceFiles/);
   assert.match(files.ipc, /return searchWorkspaceFiles\(cwd, query, limit, roots\)/);
   assert.match(files.preload, /cli:searchWorkspaceFiles/);
