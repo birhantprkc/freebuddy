@@ -3,9 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 export interface WorkspaceFileMatch {
+  /** Path inserted into the composer: relative for single-root, absolute for multi-root. */
   path: string;
   name: string;
   directory: string;
+  /** Absolute workspace root when the match came from a multi-root search. */
+  root?: string;
+  /** Disambiguated display path (basename(root)/rel) for multi-root picker UI. */
+  label?: string;
 }
 
 interface WorkspaceFileCacheEntry {
@@ -196,31 +201,74 @@ async function isExistingWorkspaceFile(root: string, rel: string): Promise<boole
   }
 }
 
+async function resolveSearchRoots(cwd: string, roots?: string[]): Promise<string[]> {
+  const candidates =
+    Array.isArray(roots) && roots.length > 0
+      ? roots.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      : [cwd];
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const root = await resolveWorkspaceRoot(candidate.trim());
+    if (!root || seen.has(root)) continue;
+    seen.add(root);
+    resolved.push(root);
+  }
+  return resolved;
+}
+
 export async function searchWorkspaceFiles(
   cwd: string,
   query: string,
-  requestedLimit = DEFAULT_RESULT_LIMIT
+  requestedLimit = DEFAULT_RESULT_LIMIT,
+  roots?: string[]
 ): Promise<WorkspaceFileMatch[]> {
-  const root = await resolveWorkspaceRoot(cwd);
-  if (!root) return [];
+  const searchRoots = await resolveSearchRoots(cwd, roots);
+  if (searchRoots.length === 0) return [];
   const limit = Math.min(Math.max(Math.trunc(requestedLimit) || DEFAULT_RESULT_LIMIT, 1), MAX_RESULT_LIMIT);
-  const files = await indexWorkspaceFiles(root);
-  const ranked = files
-    .map((filePath) => ({ filePath, score: workspaceFileMatchScore(filePath, query) }))
-    .filter((entry): entry is { filePath: string; score: number } => entry.score != null)
-    .sort((a, b) => a.score - b.score || a.filePath.localeCompare(b.filePath));
+  const multiRoot = searchRoots.length > 1;
+
+  const ranked: Array<{ root: string; filePath: string; absPath: string; score: number }> = [];
+  for (const root of searchRoots) {
+    const files = await indexWorkspaceFiles(root);
+    for (const filePath of files) {
+      const score = workspaceFileMatchScore(filePath, query);
+      if (score == null) continue;
+      ranked.push({
+        root,
+        filePath,
+        absPath: path.resolve(root, filePath),
+        score
+      });
+    }
+  }
+  ranked.sort((a, b) => a.score - b.score || a.filePath.localeCompare(b.filePath) || a.root.localeCompare(b.root));
 
   const matches: WorkspaceFileMatch[] = [];
+  const seenAbs = new Set<string>();
   for (const entry of ranked) {
     if (matches.length >= limit) break;
-    if (!(await isExistingWorkspaceFile(root, entry.filePath))) continue;
+    if (seenAbs.has(entry.absPath)) continue;
+    if (!(await isExistingWorkspaceFile(entry.root, entry.filePath))) continue;
+    seenAbs.add(entry.absPath);
     const name = path.posix.basename(entry.filePath);
     const directory = path.posix.dirname(entry.filePath);
-    matches.push({
-      path: entry.filePath,
-      name,
-      directory: directory === "." ? "" : directory
-    });
+    if (multiRoot) {
+      const rootLabel = path.basename(entry.root).replace(/\\/g, "/");
+      matches.push({
+        path: entry.absPath,
+        name,
+        directory: directory === "." ? "" : directory,
+        root: entry.root,
+        label: path.posix.join(rootLabel, entry.filePath)
+      });
+    } else {
+      matches.push({
+        path: entry.filePath,
+        name,
+        directory: directory === "." ? "" : directory
+      });
+    }
   }
   return matches;
 }

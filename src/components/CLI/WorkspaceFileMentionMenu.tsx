@@ -44,7 +44,7 @@ export function WorkspaceFileMentionMenu({
       aria-label={t("chat.workspaceFilesAria")}
     >
       {matches.map((match, index) => (
-        <li key={match.path} role="presentation">
+        <li key={match.root ? `${match.root}:${match.path}` : match.path} role="presentation">
           <button
             ref={(node) => {
               optionRefs.current[index] = node;
@@ -53,14 +53,14 @@ export function WorkspaceFileMentionMenu({
             className={`workspace-file-mention-option${index === selectedIndex ? " active" : ""}`}
             role="option"
             aria-selected={index === selectedIndex}
-            title={match.path}
+            title={match.label ?? match.path}
             onMouseDown={(event) => {
               event.preventDefault();
               onSelect(match);
             }}
           >
             <span className="workspace-file-mention-name">@{match.name}</span>
-            <span className="workspace-file-mention-path">{match.path}</span>
+            <span className="workspace-file-mention-path">{match.label ?? match.path}</span>
           </button>
         </li>
       ))}

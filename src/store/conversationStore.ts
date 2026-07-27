@@ -29,6 +29,7 @@ import {
 } from "@/utils/sessionConfigOptions";
 
 import { useCliExecutorStore } from "./cliExecutorStore";
+import { useProjectStore } from "./projectStore";
 import {
   buildOrphanFollowupContext,
   collectStreamMessageIds,
@@ -52,6 +53,18 @@ import {
   persistUnreadConversations,
   type UnreadConversationMap
 } from "./conversationUnread";
+
+function resolveWorkspaceRootsForConversation(conv: Conversation): string[] {
+  if (conv.projectId) {
+    const project = useProjectStore
+      .getState()
+      .projects.find((entry) => entry.id === conv.projectId);
+    if (project?.folders?.length) {
+      return project.folders.map((folder) => folder.trim()).filter(Boolean);
+    }
+  }
+  return conv.cwd ? [conv.cwd] : [];
+}
 
 export interface LiveAssistant {
   messageId: string;
@@ -87,6 +100,7 @@ export interface ConversationState {
   newConversation(input: {
     member: CLIMember;
     cwd?: string;
+    projectId?: string;
     title?: string;
     approvalMode?: "auto" | "ask";
     configOptionOverrides?: Record<string, string>;
@@ -571,6 +585,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   async newConversation({
     member,
     cwd,
+    projectId,
     title,
     approvalMode,
     configOptionOverrides,
@@ -584,6 +599,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       agentName: member.name,
       adapter: member.cli.adapter,
       cwd,
+      projectId,
       approvalMode: approvalMode ?? member.cli.approvalMode,
       ...(configOptionOverrides && Object.keys(configOptionOverrides).length > 0
         ? { configOptionOverrides }
@@ -937,6 +953,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         name: attachment.name
       })),
       cwd: conv.cwd,
+      workspaceRoots: resolveWorkspaceRootsForConversation(conv),
       toolSessionScope,
       toolSessionId: resumedFromSessionId,
       env: { ...(resolved?.env ?? {}), ...(member.cli.env ?? {}) },

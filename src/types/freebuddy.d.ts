@@ -33,6 +33,8 @@ import type {
   ListConversationsArgs,
   AppendMessageInput,
   UpdateMessageInput,
+  Project,
+  ProjectInput,
   DraftToolEvent,
   DraftToolResolution,
   PreviewHandoffBriefInput,
@@ -184,6 +186,12 @@ declare global {
       title?: string;
     }): Promise<void>;
 
+    listProjects(): Promise<Project[]>;
+    getProject(id: string): Promise<Project | null>;
+    createProject(input: ProjectInput): Promise<Project>;
+    updateProject(input: ProjectInput & { id: string }): Promise<Project>;
+    deleteProject(id: string): Promise<{ ok: true }>;
+
     listConversations(args?: ListConversationsArgs): Promise<Conversation[]>;
     getConversation(id: string): Promise<Conversation | undefined>;
     createConversation(
@@ -241,7 +249,8 @@ declare global {
     searchWorkspaceFiles(
       cwd: string,
       query: string,
-      limit?: number
+      limit?: number,
+      roots?: string[]
     ): Promise<WorkspaceFileMatch[]>;
     selectAttachments(): Promise<AttachmentCandidate[]>;
   prepareAttachmentFiles(
