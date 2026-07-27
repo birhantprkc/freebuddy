@@ -9537,6 +9537,30 @@ button {
   user-select: none;
 }
 
+.conv-group-header.projects {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.conv-projects-add {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fb-text-tertiary);
+  cursor: pointer;
+}
+
+.conv-projects-add:hover {
+  background: color-mix(in srgb, var(--fb-text-tertiary) 14%, transparent);
+  color: var(--fb-brand);
+}
+
 .conv-group-header.recent {
   margin-top: 8px;
 }
@@ -9829,6 +9853,188 @@ button {
 .conv-project-expand:hover {
   background: var(--fb-hover);
   color: var(--fb-text-secondary);
+}
+
+.project-form-modal {
+  width: min(520px, calc(100vw - 32px));
+  gap: 16px;
+}
+
+.project-form-modal h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--fb-text-primary);
+}
+
+.project-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-form-field > span {
+  color: var(--fb-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.project-form-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--fb-border-strong);
+  border-radius: 10px;
+  background: var(--fb-home-bg-secondary);
+  color: var(--fb-text-secondary);
+}
+
+.project-form-name-row input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fb-text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.project-form-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-form-folders-header {
+  color: var(--fb-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.project-form-folders-empty {
+  margin: 0;
+  font-size: 13px;
+}
+
+.project-form-folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-form-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--fb-border);
+  border-radius: 10px;
+  background: var(--fb-home-bg-secondary);
+}
+
+.project-form-folder-path {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-form-folder-label {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--fb-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-form-folder-full {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--fb-text-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-form-primary-badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fb-brand) 14%, transparent);
+  color: var(--fb-brand);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.project-form-set-primary {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--fb-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.project-form-set-primary:hover {
+  color: var(--fb-brand);
+}
+
+.project-form-remove-folder {
+  flex: 0 0 auto;
+}
+
+.project-form-add-folder {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px dashed var(--fb-border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fb-text-secondary);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.project-form-add-folder:hover {
+  border-color: var(--fb-brand);
+  color: var(--fb-brand);
+}
+
+.project-form-error {
+  color: var(--fb-danger);
+  font-size: 13px;
+}
+
+.project-form-actions {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.project-form-actions-end {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.project-form-delete {
+  margin-right: auto;
 }
 
 .conv-item {

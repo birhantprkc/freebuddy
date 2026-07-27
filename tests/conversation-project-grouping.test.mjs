@@ -103,7 +103,7 @@ test("groupConversationsByProject buckets by cwd basename and sorts by activity"
   );
   assert.deepEqual(
     recent.map((item) => item.id),
-    ["d", "e"]
+    ["d", "b"]
   );
 });
 
@@ -179,7 +179,7 @@ test("remapPinnedCwdKeysToProjectIds remaps single-folder cwd keys", async () =>
   assert.deepEqual(remapped, ["p-single", multiKey, "already-id"]);
 });
 
-test("recentConversations excludes projectId conversations", async () => {
+test("recentConversations excludes projectId conversations but keeps cwd-only", async () => {
   const { recentConversations } = await loadGrouping();
   const recent = recentConversations([
     conversation({
@@ -199,6 +199,6 @@ test("recentConversations excludes projectId conversations", async () => {
   ]);
   assert.deepEqual(
     recent.map((item) => item.id),
-    ["plain"]
+    ["plain", "cwd-only"]
   );
 });

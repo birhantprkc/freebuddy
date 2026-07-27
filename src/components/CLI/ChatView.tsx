@@ -523,6 +523,7 @@ export function ChatView({
   const requestedTeamId = useNewTaskUiStore((s) => s.requestedTeamId);
   const setRequestedTeamId = useNewTaskUiStore((s) => s.setRequestedTeamId);
   const requestedCwd = useNewTaskUiStore((s) => s.requestedCwd);
+  const requestedProjectId = useNewTaskUiStore((s) => s.requestedProjectId);
   const cwdRequestToken = useNewTaskUiStore((s) => s.cwdRequestToken);
   const teamMode = taskMode === "team";
   const workflowMode = false;
@@ -565,6 +566,7 @@ export function ChatView({
   const memberSelectionTouchedRef = useRef(false);
   const [newTaskSkillIds, setNewTaskSkillIds] = useState<string[]>([]);
   const [newTaskCwd, setNewTaskCwd] = useState("");
+  const [newTaskProjectId, setNewTaskProjectId] = useState<string | undefined>();
   const [newTaskConfigOptions, setNewTaskConfigOptions] = useState<
     SessionConfigOption[]
   >([]);
@@ -1018,7 +1020,8 @@ export function ChatView({
     if (activeId) return;
     if (cwdRequestToken === 0) return;
     setNewTaskCwd(requestedCwd ?? "");
-  }, [activeId, cwdRequestToken, requestedCwd]);
+    setNewTaskProjectId(requestedProjectId);
+  }, [activeId, cwdRequestToken, requestedCwd, requestedProjectId]);
 
   useEffect(() => {
     const resolved = conv?.approvalMode ?? member?.cli.approvalMode;
@@ -1361,6 +1364,7 @@ export function ChatView({
         const newConv = await createConversation({
           member: teamMember,
           cwd,
+          projectId: newTaskProjectId,
           title: buildConversationTitle({
             prompt,
             attachmentName: attachmentsToSend[0]?.name,
@@ -1429,6 +1433,7 @@ export function ChatView({
       const newConv = await createConversation({
         member: selectedMember,
         cwd: newTaskCwd.trim() || undefined,
+        projectId: newTaskProjectId,
         title: buildConversationTitle({
           prompt,
           attachmentName: attachmentsToSend[0]?.name,
@@ -1652,6 +1657,7 @@ export function ChatView({
       const newConv = await createConversation({
         member: teamMember,
         cwd,
+        projectId: newTaskProjectId,
         title: buildConversationTitle({
           prompt: pendingTeamPreview.goal,
           fallback: pendingTeamPreview.teamName
@@ -1710,7 +1716,10 @@ export function ChatView({
         onManageAgents={() => onOpenAgentSettings?.()}
         onConfigOptionOverrides={setNewTaskConfigOptionOverrides}
         onSkills={setNewTaskSkillIds}
-        onCwd={setNewTaskCwd}
+        onCwd={(cwd) => {
+          setNewTaskCwd(cwd);
+          setNewTaskProjectId(undefined);
+        }}
         onPermissionMode={setPermissionMode}
         onSelectAttachments={() => void handleSelectAttachments("new")}
         onRemoveAttachment={handleRemoveNewTaskPendingAttachment}

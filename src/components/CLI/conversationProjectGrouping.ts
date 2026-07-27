@@ -138,16 +138,16 @@ export function remapPinnedCwdKeysToProjectIds(
   return out;
 }
 
-/** Flat recent list for conversations without a project. */
+/**
+ * Flat recent list for conversations without a projectId.
+ * Includes cwd-only rows so chats remain visible after deleteProject clears projectId.
+ */
 export function recentConversations(
   items: Conversation[],
   limit = RECENT_LIMIT
 ): Conversation[] {
   return items
-    .filter(
-      (conversation) =>
-        !conversation.projectId?.trim() && !conversation.cwd?.trim()
-    )
+    .filter((conversation) => !conversation.projectId?.trim())
     .sort((a, b) => conversationActivityTime(b) - conversationActivityTime(a))
     .slice(0, limit);
 }

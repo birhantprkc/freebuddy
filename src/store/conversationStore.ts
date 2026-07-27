@@ -87,6 +87,7 @@ export interface ConversationState {
   newConversation(input: {
     member: CLIMember;
     cwd?: string;
+    projectId?: string;
     title?: string;
     approvalMode?: "auto" | "ask";
     configOptionOverrides?: Record<string, string>;
@@ -571,6 +572,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   async newConversation({
     member,
     cwd,
+    projectId,
     title,
     approvalMode,
     configOptionOverrides,
@@ -584,6 +586,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       agentName: member.name,
       adapter: member.cli.adapter,
       cwd,
+      projectId,
       approvalMode: approvalMode ?? member.cli.approvalMode,
       ...(configOptionOverrides && Object.keys(configOptionOverrides).length > 0
         ? { configOptionOverrides }

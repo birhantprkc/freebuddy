@@ -268,11 +268,11 @@ function App() {
   const isNewTask = !activeConversation;
   const setNewTaskMode = useNewTaskUiStore((s) => s.setTaskMode);
   const setRequestedTeamId = useNewTaskUiStore((s) => s.setRequestedTeamId);
-  const requestNewTaskCwd = useNewTaskUiStore((s) => s.requestNewTaskCwd);
-  const startNewTask = (options?: { cwd?: string }) => {
+  const requestNewTask = useNewTaskUiStore((s) => s.requestNewTask);
+  const startNewTask = (options?: { cwd?: string; projectId?: string }) => {
     setRequestedTeamId(undefined);
     setNewTaskMode("normal");
-    requestNewTaskCwd(options?.cwd);
+    requestNewTask({ cwd: options?.cwd, projectId: options?.projectId });
     setSettingsOpen(false);
     setWorkspaceView("chat");
     void setActive(undefined);
@@ -411,7 +411,11 @@ function App() {
               onOpenTeams={() => openWorkflowTeams()}
               onOpenUsage={openUsage}
             />
-            <ConversationList onNewTaskInProject={(cwd) => startNewTask({ cwd })} />
+            <ConversationList
+              onNewTaskInProject={({ cwd, projectId }) =>
+                startNewTask({ cwd, projectId })
+              }
+            />
 
             <div className="sidebar-footer">
               <SidebarUserMenu
