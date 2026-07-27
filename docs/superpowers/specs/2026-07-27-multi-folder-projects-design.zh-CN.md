@@ -15,6 +15,9 @@
 - 不与 `remote.workspaceRoots` 双向同步（远程沙箱白名单与侧栏项目隔离）。
 - 不向 prompt / 系统上下文注入文件夹列表来「告知」Agent。
 - 不按 CLI Adapter 做原生 multi-root 特例配置。
+
+> **修订（2026-07-28）：** OpenCode 例外 — 见 `2026-07-28-opencode-workspace-roots-permission-design.zh-CN.md`。多根项目启动 `opencode-acp` 时通过 `OPENCODE_CONFIG_CONTENT` 注入 `permission.external_directory` allow；其它 adapter 仍仅依赖 MCP。
+
 - 不在第一版改 Draft / Browser 等现有单 cwd MCP 的多根语义。
 
 ## 背景与现状

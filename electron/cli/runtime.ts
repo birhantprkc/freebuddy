@@ -210,7 +210,8 @@ export async function cliRun(
       prompt: effectiveArgs.prompt,
       extraArgs: args.extraArgs,
       cwd: args.cwd,
-      toolSessionId
+      toolSessionId,
+      workspaceRoots: args.workspaceRoots
     });
   } catch (e) {
     const msg = `build command failed: ${(e as Error)?.message || e}`;
