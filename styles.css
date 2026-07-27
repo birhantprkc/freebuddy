@@ -7133,16 +7133,47 @@ button {
   border-bottom: 1px solid var(--fb-border);
 }
 
-.composer-context-row span {
+.composer-context-row > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-context-row span:nth-of-type(2) {
+.composer-context-row > span:nth-of-type(2) {
   flex: 1 1 auto;
   text-align: right;
+}
+
+.composer-workspace-context {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.composer-workspace-context > svg,
+.composer-workspace-badge {
+  flex: 0 0 auto;
+}
+
+.composer-workspace-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fb-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-workspace-badge {
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--fb-brand) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fb-brand) 9%, transparent);
+  color: var(--fb-brand);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
 }
 
 .context-reference-tray {
@@ -17984,6 +18015,4 @@ button.ghost:focus-visible,
   .remote-audit-row { grid-template-columns: 1fr; gap: 2px; }
   .remote-section-head { flex-direction: column; }
 }
-
-
 

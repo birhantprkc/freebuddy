@@ -583,6 +583,8 @@
     "attach": "添加",
     "workspace": "工作目录",
     "noWorkspace": "未选择工作目录",
+    "isolatedWorkspace": "隔离副本",
+    "isolatedWorkspaceTooltip": "源目录：{{source}}\n实际执行目录：{{workspace}}",
     "emptyHeroHeading": "{{name}} 可以做些什么？",
     "emptyHeroBody": "用这个会话来编码、检查项目或聚焦修复问题。",
     "heroSubtitle": "选择一个本地 agent，给它一个工作目录，然后开始编码、检查或改造项目。",

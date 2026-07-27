@@ -69,6 +69,26 @@ export function listRemoteWorkspacePaths(userId: string): string[] {
     });
 }
 
+export function sourcePathForManagedWorkspace(
+  workspacePath: string,
+  workspaces: RemoteWorkspace[]
+): string | undefined {
+  const requested = path.resolve(workspacePath);
+  for (const workspace of workspaces) {
+    const managedRoot = path.resolve(workspace.workspacePath);
+    const relativePath = path.relative(managedRoot, requested);
+    if (
+      relativePath === "" ||
+      (!path.isAbsolute(relativePath) &&
+        !relativePath.startsWith(`..${path.sep}`) &&
+        relativePath !== "..")
+    ) {
+      return path.resolve(workspace.sourcePath, relativePath);
+    }
+  }
+  return undefined;
+}
+
 function realDirectory(target: string): string {
   const real = fs.realpathSync.native(path.resolve(target));
   if (!fs.statSync(real).isDirectory()) {

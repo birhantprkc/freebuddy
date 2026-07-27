@@ -21,6 +21,7 @@ import { AgentAvatar } from "./AgentAvatar";
 import { InfoCardHost } from "../InfoCards/InfoCardHost";
 import { WorkflowRunPanel } from "../Workflows/WorkflowRunPanel";
 import { mergeSessionMetaItems } from "@/store/sessionMetaUtils";
+import { conversationDisplayCwd } from "./conversationProjectGrouping";
 
 type PlanItem = Extract<CliStreamItem, { kind: "plan" }>;
 type PlanEntry = PlanItem["entries"][number];
@@ -305,7 +306,11 @@ export function WorkspacePanel({
         <dl className="compact-dl">
           <div>
             <dt>{t("workspace.workspace")}</dt>
-            <dd>{active?.cwd ? shortPath(active.cwd) : t("workspace.notSet")}</dd>
+            <dd>
+              {active && conversationDisplayCwd(active)
+                ? shortPath(conversationDisplayCwd(active))
+                : t("workspace.notSet")}
+            </dd>
           </div>
           {!isTeamRun && (
             <div>

@@ -38,7 +38,12 @@ test("remote workspaces create and reuse an independent clone per user", async (
   const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
   migrate(db);
   setDbForTest(db);
-  const { ensureRemoteWorkspace, listRemoteWorkspaces, removeRemoteWorkspacesForUser } =
+  const {
+    ensureRemoteWorkspace,
+    listRemoteWorkspaces,
+    removeRemoteWorkspacesForUser,
+    sourcePathForManagedWorkspace
+  } =
     await import("../dist-electron/cli/remoteWorkspaces.js");
 
   const source = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-source-"));
@@ -67,6 +72,24 @@ test("remote workspaces create and reuse an independent clone per user", async (
     assert.notEqual(fs.realpathSync(first), fs.realpathSync(source));
     assert.equal(fs.readFileSync(path.join(first, "README.md"), "utf8"), "source\n");
     assert.equal(listRemoteWorkspaces(userId).length, 1);
+    assert.equal(
+      sourcePathForManagedWorkspace(first, listRemoteWorkspaces(userId)),
+      fs.realpathSync(source)
+    );
+    assert.equal(
+      sourcePathForManagedWorkspace(
+        path.join(first, "src", "feature"),
+        listRemoteWorkspaces(userId)
+      ),
+      path.join(fs.realpathSync(source), "src", "feature")
+    );
+    assert.equal(
+      sourcePathForManagedWorkspace(
+        path.join(path.dirname(first), "other-workspace"),
+        listRemoteWorkspaces(userId)
+      ),
+      undefined
+    );
     assert.equal(
       git(["remote", "get-url", "--push", "origin"], first),
       "disabled://freebuddy-managed-workspace"

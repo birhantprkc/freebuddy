@@ -9,7 +9,7 @@ import {
   type DragEvent
 } from "react";
 import { nanoid } from "nanoid";
-import { ExternalLink, X } from "lucide-react";
+import { ExternalLink, FolderLock, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useConversationStore } from "@/store/conversationStore";
@@ -82,6 +82,10 @@ import {
   unprotectManagedAttachments
 } from "@/utils/managedAttachmentProtection";
 import { WorkspaceFileMentionMenu } from "./WorkspaceFileMentionMenu";
+import {
+  conversationDisplayCwd,
+  projectLabelFromCwd
+} from "./conversationProjectGrouping";
 import {
   agentEntriesNeedingRefresh,
   buildAgentAvailabilityGroups,
@@ -651,6 +655,17 @@ export function ChatView({
     [agentAvailability.available]
   );
   const agentDisplayName = displayAgentName(member?.name ?? conv?.agentName, member?.cli.adapter ?? conv?.adapter);
+  const conversationWorkspacePath = conv ? conversationDisplayCwd(conv) : "";
+  const conversationWorkspaceName = conversationWorkspacePath
+    ? projectLabelFromCwd(conversationWorkspacePath)
+    : t("chat.noWorkspace");
+  const conversationWorkspaceTitle =
+    conv?.sourceCwd && conv.cwd
+      ? t("chat.isolatedWorkspaceTooltip", {
+          source: conv.sourceCwd,
+          workspace: conv.cwd
+        })
+      : conv?.cwd;
   const running =
     live?.status === "running" || live?.status === "starting";
   const sending =
@@ -1855,7 +1870,22 @@ export function ChatView({
         ) : null}
         <div className="composer-context-row">
           <span>{agentDisplayName}</span>
-          <span>{conv.cwd ? conv.cwd : t("chat.noWorkspace")}</span>
+          <span
+            className="composer-workspace-context"
+            title={conversationWorkspaceTitle}
+          >
+            {conv.sourceCwd ? (
+              <FolderLock size={13} strokeWidth={1.8} aria-hidden="true" />
+            ) : null}
+            <span className="composer-workspace-name">
+              {conversationWorkspaceName}
+            </span>
+            {conv.sourceCwd ? (
+              <span className="composer-workspace-badge">
+                {t("chat.isolatedWorkspace")}
+              </span>
+            ) : null}
+          </span>
         </div>
         <AttachmentTray
           attachments={pendingAttachments}

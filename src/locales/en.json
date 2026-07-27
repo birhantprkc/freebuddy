@@ -584,6 +584,8 @@
     "attach": "Attach",
     "workspace": "Workspace",
     "noWorkspace": "No workspace selected",
+    "isolatedWorkspace": "Isolated copy",
+    "isolatedWorkspaceTooltip": "Source: {{source}}\nExecution workspace: {{workspace}}",
     "emptyHeroHeading": "What should {{name}} work on?",
     "emptyHeroBody": "Use this thread for coding tasks, project inspection, and focused fixes.",
     "heroSubtitle": "Pick a local agent, give it a working directory, then start coding, inspecting, or reshaping the project.",
