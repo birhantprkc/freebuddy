@@ -657,9 +657,8 @@ export function registerCliIpc() {
           cwd: rendererArgs.cwd,
           projectId: undefined
         });
-    if (workspaceRoots.length) {
-      runArgs = { ...runArgs, workspaceRoots };
-    }
+    // Authoritative roots always overwrite renderer workspaceRoots (empty clears untrusted roots).
+    runArgs = { ...runArgs, workspaceRoots };
     const contextReferences = args.conversationId
       ? listResolvedConversationContextPayloads(args.conversationId)
       : [];

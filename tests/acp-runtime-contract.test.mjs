@@ -6,6 +6,10 @@ const acpRuntimeSource = fs.readFileSync(
   new URL("../electron/cli/acpRuntime.ts", import.meta.url),
   "utf8"
 );
+const ipcSource = fs.readFileSync(
+  new URL("../electron/cli/ipc.ts", import.meta.url),
+  "utf8"
+);
 
 test("ACP runtime finalizes successful prompt turns without waiting for process exit", () => {
   const promptIndex = acpRuntimeSource.indexOf("await runPromptOnSession();");
@@ -42,4 +46,15 @@ test("acpRuntime registers workspace FS MCP only for multi-root", () => {
   assert.match(acpRuntimeSource, /unregisterWorkspaceFsToolSession/);
   assert.match(acpRuntimeSource, /workspaceRoots/);
   assert.match(acpRuntimeSource, /roots\.length\s*>\s*1/);
+});
+
+test("cli:run always overwrites renderer workspaceRoots with authoritative resolution", () => {
+  assert.match(
+    ipcSource,
+    /runArgs\s*=\s*\{\s*\.\.\.runArgs,\s*workspaceRoots\s*\}/
+  );
+  assert.doesNotMatch(
+    ipcSource,
+    /if\s*\(\s*workspaceRoots\.length\s*\)\s*\{\s*runArgs\s*=\s*\{\s*\.\.\.runArgs,\s*workspaceRoots\s*\}/
+  );
 });
