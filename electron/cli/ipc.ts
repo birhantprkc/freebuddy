@@ -504,12 +504,17 @@ export function registerCliIpc() {
     "cli:searchWorkspaceFiles",
     (
       _event,
-      args: { cwd?: unknown; query?: unknown; limit?: unknown } | undefined
+      args:
+        | { cwd?: unknown; query?: unknown; limit?: unknown; roots?: unknown }
+        | undefined
     ) => {
       const cwd = typeof args?.cwd === "string" ? args.cwd : "";
       const query = typeof args?.query === "string" ? args.query.slice(0, 256) : "";
       const limit = typeof args?.limit === "number" ? args.limit : undefined;
-      return searchWorkspaceFiles(cwd, query, limit);
+      const roots = Array.isArray(args?.roots)
+        ? args.roots.filter((entry): entry is string => typeof entry === "string")
+        : undefined;
+      return searchWorkspaceFiles(cwd, query, limit, roots);
     }
   );
 

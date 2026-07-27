@@ -493,6 +493,8 @@ export interface WorkspaceFileMatch {
   path: string;
   name: string;
   directory: string;
+  /** Absolute workspace root when the match came from a multi-root search. */
+  root?: string;
 }
 
 export type AttachmentPrepareRejectionReason = "unsupported_type" | "file_too_large";

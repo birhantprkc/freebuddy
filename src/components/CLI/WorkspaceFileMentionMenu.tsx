@@ -44,7 +44,7 @@ export function WorkspaceFileMentionMenu({
       aria-label={t("chat.workspaceFilesAria")}
     >
       {matches.map((match, index) => (
-        <li key={match.path} role="presentation">
+        <li key={match.root ? `${match.root}:${match.path}` : match.path} role="presentation">
           <button
             ref={(node) => {
               optionRefs.current[index] = node;

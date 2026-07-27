@@ -249,7 +249,8 @@ declare global {
     searchWorkspaceFiles(
       cwd: string,
       query: string,
-      limit?: number
+      limit?: number,
+      roots?: string[]
     ): Promise<WorkspaceFileMatch[]>;
     selectAttachments(): Promise<AttachmentCandidate[]>;
   prepareAttachmentFiles(

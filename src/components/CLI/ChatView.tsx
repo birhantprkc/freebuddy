@@ -18,6 +18,7 @@ import { useWorkflowStore } from "@/store/workflowStore";
 import { useWorkflowTeamStore } from "@/store/workflowTeamStore";
 import { useNewTaskUiStore } from "@/store/newTaskUiStore";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
+import { useProjectStore } from "@/store/projectStore";
 import { cliClient } from "@/services/cli/client";
 import type {
   AttachmentPrepareRejection,
@@ -693,9 +694,25 @@ export function ChatView({
   const sessionConfigOptions = sessionMeta.configOptions;
 
   const slashDraft = useMemo(() => parseSlashDraft(draft), [draft]);
+  const projects = useProjectStore((s) => s.projects);
+  const conversationMentionRoots = useMemo(() => {
+    if (!conv?.projectId) return undefined;
+    const project = projects.find((entry) => entry.id === conv.projectId);
+    if (!project?.folders?.length) return undefined;
+    const folders = project.folders.map((folder) => folder.trim()).filter(Boolean);
+    return folders.length > 0 ? folders : undefined;
+  }, [conv?.projectId, projects]);
+  const newTaskMentionRoots = useMemo(() => {
+    if (!newTaskProjectId) return undefined;
+    const project = projects.find((entry) => entry.id === newTaskProjectId);
+    if (!project?.folders?.length) return undefined;
+    const folders = project.folders.map((folder) => folder.trim()).filter(Boolean);
+    return folders.length > 0 ? folders : undefined;
+  }, [newTaskProjectId, projects]);
   const chatFileMentions = useWorkspaceFileMentions({
     value: draft,
     cwd: conv?.cwd,
+    roots: conversationMentionRoots,
     onChange: setDraft,
     textareaRef: chatTextareaRef
   });
@@ -1691,6 +1708,7 @@ export function ChatView({
         checkingAgentIds={checkingAgentIds}
         selectedMemberId={selectedMemberId}
         cwd={newTaskCwd}
+        workspaceRoots={newTaskMentionRoots}
         permissionMode={permissionMode}
         pendingAttachments={newTaskPendingAttachments}
         taskMode={taskMode}
@@ -2036,6 +2054,7 @@ function NewTaskHome({
   checkingAgentIds,
   selectedMemberId,
   cwd,
+  workspaceRoots,
   permissionMode,
   pendingAttachments,
   taskMode,
@@ -2075,6 +2094,7 @@ function NewTaskHome({
   checkingAgentIds: Set<string>;
   selectedMemberId: string;
   cwd: string;
+  workspaceRoots?: string[];
   permissionMode: "auto" | "ask";
   pendingAttachments: ChatAttachment[];
   taskMode: "normal" | "team";
@@ -2115,6 +2135,7 @@ function NewTaskHome({
   const fileMentions = useWorkspaceFileMentions({
     value: draft,
     cwd,
+    roots: workspaceRoots,
     onChange: onDraft,
     textareaRef
   });

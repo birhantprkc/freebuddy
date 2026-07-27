@@ -93,6 +93,39 @@ test("workspace indexing follows git ignore rules and returns relative paths", a
   assert.equal(results[0].directory, "src");
 });
 
+test("multi-root search finds files in secondary roots and prefixes display paths", async (t) => {
+  const primary = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-multi-primary-"));
+  const secondary = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-multi-secondary-"));
+  t.after(() => {
+    fs.rmSync(primary, { recursive: true, force: true });
+    fs.rmSync(secondary, { recursive: true, force: true });
+  });
+  fs.mkdirSync(path.join(primary, "src"), { recursive: true });
+  fs.mkdirSync(path.join(secondary, "lib"), { recursive: true });
+  fs.writeFileSync(path.join(primary, "src", "only-primary.ts"), "export {};\n");
+  fs.writeFileSync(path.join(secondary, "lib", "secondary-only.ts"), "export {};\n");
+  execFileSync("git", ["init", "-q"], { cwd: primary });
+  execFileSync("git", ["init", "-q"], { cwd: secondary });
+  execFileSync("git", ["add", "src/only-primary.ts"], { cwd: primary });
+  execFileSync("git", ["add", "lib/secondary-only.ts"], { cwd: secondary });
+
+  const withoutRoots = await workspaceFiles.searchWorkspaceFiles(primary, "secondary-only", 20);
+  assert.deepEqual(withoutRoots, []);
+
+  const withRoots = await workspaceFiles.searchWorkspaceFiles(
+    primary,
+    "secondary-only",
+    20,
+    [primary, secondary]
+  );
+  assert.equal(withRoots.length, 1);
+  const secondaryLabel = path.basename(secondary);
+  assert.equal(withRoots[0].path, `${secondaryLabel}/lib/secondary-only.ts`);
+  assert.equal(withRoots[0].name, "secondary-only.ts");
+  assert.equal(withRoots[0].directory, "lib");
+  assert.equal(withRoots[0].root, await fs.promises.realpath(secondary));
+});
+
 test("renderer and Electron bridge wire mentions without changing attachment prompts", () => {
   const files = {
     chatView: fs.readFileSync(
@@ -107,6 +140,10 @@ test("renderer and Electron bridge wire mentions without changing attachment pro
       new URL("../src/components/CLI/WorkspaceFileMentionMenu.tsx", import.meta.url),
       "utf8"
     ),
+    mentionHook: fs.readFileSync(
+      new URL("../src/hooks/useWorkspaceFileMentions.ts", import.meta.url),
+      "utf8"
+    ),
     ipc: fs.readFileSync(new URL("../electron/cli/ipc.ts", import.meta.url), "utf8"),
     preload: fs.readFileSync(new URL("../electron/preload.ts", import.meta.url), "utf8"),
     store: fs.readFileSync(
@@ -116,11 +153,16 @@ test("renderer and Electron bridge wire mentions without changing attachment pro
     styles: fs.readFileSync(new URL("../styles.css", import.meta.url), "utf8")
   };
   assert.equal((files.chatView.match(/useWorkspaceFileMentions\(\{/g) ?? []).length, 2);
+  assert.match(files.chatView, /roots:\s*conversationMentionRoots/);
+  assert.match(files.chatView, /roots:\s*workspaceRoots/);
+  assert.match(files.mentionHook, /searchWorkspaceFiles\(cwd, activeMention\.query, 24, searchRoots\)/);
   assert.match(files.messageBubble, /splitPluginMentions\(content\)/);
   assert.match(files.messageBubble, /splitWorkspaceFileMentions\(segment\.value\)/);
   assert.match(files.mentionMenu, /workspace-file-mention-path">\{match\.path\}/);
   assert.match(files.ipc, /cli:searchWorkspaceFiles/);
+  assert.match(files.ipc, /return searchWorkspaceFiles\(cwd, query, limit, roots\)/);
   assert.match(files.preload, /cli:searchWorkspaceFiles/);
+  assert.match(files.preload, /\{ cwd, query, limit, roots \}/);
   assert.doesNotMatch(files.store, /WorkspaceFileMention|workspaceFilePaths/);
   assert.match(
     files.styles,

@@ -309,9 +309,10 @@ export const cliClient = {
   searchWorkspaceFiles(
     cwd: string,
     query: string,
-    limit?: number
+    limit?: number,
+    roots?: string[]
   ): Promise<WorkspaceFileMatch[]> {
-    return api().searchWorkspaceFiles(cwd, query, limit);
+    return api().searchWorkspaceFiles(cwd, query, limit, roots);
   },
   selectAttachments(): Promise<AttachmentCandidate[]> {
     return api().selectAttachments();
