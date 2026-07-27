@@ -29,7 +29,8 @@ function conversation(partial) {
     createdAt: partial.createdAt ?? "2026-07-01T00:00:00.000Z",
     updatedAt: partial.updatedAt ?? partial.lastMessageAt ?? "2026-07-01T00:00:00.000Z",
     lastMessageAt: partial.lastMessageAt,
-    cwd: partial.cwd
+    cwd: partial.cwd,
+    projectId: partial.projectId
   };
 }
 
@@ -103,5 +104,101 @@ test("groupConversationsByProject buckets by cwd basename and sorts by activity"
   assert.deepEqual(
     recent.map((item) => item.id),
     ["d", "e"]
+  );
+});
+
+test("groups by projectId and includes empty projects", async () => {
+  const { groupConversationsByProjects } = await loadGrouping();
+  const projects = [
+    {
+      id: "p1",
+      name: "App",
+      folders: ["/a", "/b"],
+      primaryPath: "/a",
+      createdAt: "t",
+      updatedAt: "t"
+    },
+    {
+      id: "p2",
+      name: "Empty",
+      folders: ["/z"],
+      primaryPath: "/z",
+      createdAt: "t",
+      updatedAt: "t"
+    }
+  ];
+  const groups = groupConversationsByProjects(
+    [
+      conversation({
+        id: "c1",
+        projectId: "p1",
+        cwd: "/a",
+        lastMessageAt: "2026-07-22T10:00:00.000Z"
+      })
+    ],
+    projects
+  );
+  assert.equal(groups.length, 2);
+  const app = groups.find((g) => g.key === "p1");
+  const empty = groups.find((g) => g.key === "p2");
+  assert.equal(app?.items.length, 1);
+  assert.equal(app?.projectId, "p1");
+  assert.deepEqual(app?.folders, ["/a", "/b"]);
+  assert.equal(app?.primaryPath, "/a");
+  assert.equal(app?.label, "App");
+  assert.equal(empty?.items.length, 0);
+  assert.equal(empty?.label, "Empty");
+});
+
+test("remapPinnedCwdKeysToProjectIds remaps single-folder cwd keys", async () => {
+  const { remapPinnedCwdKeysToProjectIds, projectKeyFromCwd } = await loadGrouping();
+  const projects = [
+    {
+      id: "p-single",
+      name: "Solo",
+      folders: ["/Users/me/solo"],
+      primaryPath: "/Users/me/solo",
+      createdAt: "t",
+      updatedAt: "t"
+    },
+    {
+      id: "p-multi",
+      name: "Multi",
+      folders: ["/a", "/b"],
+      primaryPath: "/a",
+      createdAt: "t",
+      updatedAt: "t"
+    }
+  ];
+  const cwdKey = projectKeyFromCwd("/Users/me/solo");
+  const multiKey = projectKeyFromCwd("/a");
+  const remapped = remapPinnedCwdKeysToProjectIds(
+    [cwdKey, multiKey, "already-id", cwdKey],
+    projects
+  );
+  assert.deepEqual(remapped, ["p-single", multiKey, "already-id"]);
+});
+
+test("recentConversations excludes projectId conversations", async () => {
+  const { recentConversations } = await loadGrouping();
+  const recent = recentConversations([
+    conversation({
+      id: "with-project",
+      projectId: "p1",
+      lastMessageAt: "2026-07-23T10:00:00.000Z"
+    }),
+    conversation({
+      id: "plain",
+      lastMessageAt: "2026-07-22T10:00:00.000Z"
+    }),
+    conversation({
+      id: "cwd-only",
+      cwd: "/tmp/x",
+      lastMessageAt: "2026-07-21T10:00:00.000Z"
+    })
+  ]);
+  assert.deepEqual(
+    recent.map((item) => item.id),
+    ["plain"]
   );
 });
