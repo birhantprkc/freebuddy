@@ -36,9 +36,9 @@ const PUBLIC_AGENT_DOMAINS = [
 ];
 
 let initialization: Promise<void> | null = null;
-let qoderProxyBridge: net.Server | null = null;
-let qoderProxyBridgePort: number | null = null;
-let qoderProxyBridgeInitialization: Promise<void> | null = null;
+let ipv6ProxyBridge: net.Server | null = null;
+let ipv6ProxyBridgePort: number | null = null;
+let ipv6ProxyBridgeInitialization: Promise<void> | null = null;
 
 export function shouldSandboxCurrentCaller(): boolean {
   return Boolean(getCallerUserId()) && !isCallerAdmin();
@@ -144,11 +144,15 @@ async function ensureInitialized(): Promise<void> {
   await initialization;
 }
 
-// Qoder's Bun HTTP client resolves localhost to ::1 on macOS, while SRT's
-// authenticated filtering proxy listens on 127.0.0.1. Forward the same port
-// between loopback families so Qoder still traverses SRT's auth and policy.
-async function ensureQoderProxyBridge(adapter: string): Promise<boolean> {
-  if (process.platform !== "darwin" || !adapter.includes("qoder")) {
+// Qoder's Bun client resolves localhost to ::1, while Grok's native client
+// cannot resolve SRT's localhost hostname inside Seatbelt. SRT listens on IPv4
+// loopback, so forward the same port from ::1. Both clients still traverse
+// SRT's authentication and network policy.
+async function ensureIpv6ProxyBridge(adapter: string): Promise<boolean> {
+  if (
+    process.platform !== "darwin" ||
+    (!adapter.includes("qoder") && !adapter.includes("grok"))
+  ) {
     return false;
   }
 
@@ -156,21 +160,21 @@ async function ensureQoderProxyBridge(adapter: string): Promise<boolean> {
   if (!proxyPort) {
     return false;
   }
-  if (qoderProxyBridge?.listening && qoderProxyBridgePort === proxyPort) {
+  if (ipv6ProxyBridge?.listening && ipv6ProxyBridgePort === proxyPort) {
     return true;
   }
-  if (qoderProxyBridgeInitialization) {
-    await qoderProxyBridgeInitialization;
-    return qoderProxyBridge?.listening === true;
+  if (ipv6ProxyBridgeInitialization) {
+    await ipv6ProxyBridgeInitialization;
+    return ipv6ProxyBridge?.listening === true;
   }
 
-  qoderProxyBridgeInitialization = (async () => {
-    if (qoderProxyBridge) {
+  ipv6ProxyBridgeInitialization = (async () => {
+    if (ipv6ProxyBridge) {
       await new Promise<void>((resolve) => {
-        qoderProxyBridge?.close(() => resolve());
+        ipv6ProxyBridge?.close(() => resolve());
       });
-      qoderProxyBridge = null;
-      qoderProxyBridgePort = null;
+      ipv6ProxyBridge = null;
+      ipv6ProxyBridgePort = null;
     }
 
     const bridge = net.createServer((client) => {
@@ -184,7 +188,7 @@ async function ensureQoderProxyBridge(adapter: string): Promise<boolean> {
       const onError = (error: Error) => {
         bridge.close();
         reject(
-          new Error(`remote_sandbox_qoder_proxy_unavailable: ${error.message}`)
+          new Error(`remote_sandbox_ipv6_proxy_unavailable: ${error.message}`)
         );
       };
       bridge.once("error", onError);
@@ -197,17 +201,17 @@ async function ensureQoderProxyBridge(adapter: string): Promise<boolean> {
       );
     });
     bridge.on("error", () => {
-      // Connection-level failures are surfaced by Qoder. Keep the host app
+      // Connection-level failures are surfaced by the Agent. Keep the host app
       // alive so a later agent run can report an actionable network error.
     });
     bridge.unref();
-    qoderProxyBridge = bridge;
-    qoderProxyBridgePort = proxyPort;
+    ipv6ProxyBridge = bridge;
+    ipv6ProxyBridgePort = proxyPort;
   })().finally(() => {
-    qoderProxyBridgeInitialization = null;
+    ipv6ProxyBridgeInitialization = null;
   });
 
-  await qoderProxyBridgeInitialization;
+  await ipv6ProxyBridgeInitialization;
   return true;
 }
 
@@ -379,7 +383,7 @@ export async function prepareSandboxedSpawn(input: {
     );
   }
   await ensureInitialized();
-  const useQoderIpv6Proxy = await ensureQoderProxyBridge(input.adapter);
+  const useIpv6Proxy = await ensureIpv6ProxyBridge(input.adapter);
 
   const binary = resolveBinary(input.bin, input.env);
   const workspaceRoot = input.workspaceRoot ?? input.cwd;
@@ -439,16 +443,14 @@ export async function prepareSandboxedSpawn(input: {
     input.cwd
   );
   const wrappedArgv = wrapped.argv.map((entry) => {
-    if (useQoderIpv6Proxy) {
+    if (useIpv6Proxy) {
       return entry.replaceAll("@localhost:", "@[::1]:");
     }
-    // CodeBuddy performs an explicit DNS lookup for the SRT proxy hostname
-    // from inside Seatbelt, where resolving localhost is denied. The proxy
-    // itself listens on IPv4 loopback, so use its numeric address.
-    if (input.adapter.includes("codebuddy")) {
-      return entry.replaceAll("@localhost:", "@127.0.0.1:");
-    }
-    return entry;
+    // Several native Agent HTTP clients (CodeBuddy included) perform an
+    // explicit DNS lookup for the SRT proxy hostname from inside Seatbelt,
+    // where resolving localhost is denied. The proxy itself listens on IPv4
+    // loopback, so other adapters use its numeric address.
+    return entry.replaceAll("@localhost:", "@127.0.0.1:");
   });
   return {
     bin: wrappedArgv[0]!,

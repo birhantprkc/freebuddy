@@ -257,6 +257,60 @@ test("macOS lightweight sandbox permits Agent-internal loopback IPC", async (t) 
   }
 });
 
+test("Grok reaches SRT through the IPv6 loopback bridge", async (t) => {
+  if (process.platform !== "darwin") {
+    t.skip("macOS Seatbelt smoke test");
+    return;
+  }
+  if (!bindingAvailable) {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+
+  const db = new Database(":memory:");
+  const { getDataDir, migrate, setDbForTest } =
+    await import("../dist-electron/cli/db.js");
+  migrate(db);
+  setDbForTest(db);
+  const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
+  const { prepareSandboxedSpawn } =
+    await import("../dist-electron/cli/sandboxRuntime.js?grok-proxy");
+  const { SandboxManager } = await import("@anthropic-ai/sandbox-runtime");
+
+  const userId = `sandbox-grok-user-${process.pid}`;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
+  const sandboxUserRoot = path.join(getDataDir(), "remote-workspaces", userId);
+
+  try {
+    const prepared = await runAsCaller(userId, () =>
+      prepareSandboxedSpawn({
+        adapter: "grok-acp",
+        bin: process.execPath,
+        args: ["--version"],
+        cwd: workspace,
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }
+      })
+    );
+    assert.equal(
+      prepared.args.some((entry) => entry.includes("@localhost:")),
+      false
+    );
+    assert.equal(
+      prepared.args.some((entry) => entry.includes("@[::1]:")),
+      true
+    );
+    const proxyPort = SandboxManager.getProxyPort();
+    assert.ok(proxyPort);
+    await connectToProxy("::1", proxyPort);
+  } finally {
+    await SandboxManager.reset();
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(sandboxUserRoot, { recursive: true, force: true });
+    setDbForTest(null);
+    db.close();
+  }
+});
+
 test("Qoder receives a per-user HOME without exposing the host home", async (t) => {
   if (process.platform !== "darwin") {
     t.skip("macOS Seatbelt smoke test");

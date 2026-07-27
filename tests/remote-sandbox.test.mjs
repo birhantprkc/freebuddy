@@ -48,7 +48,7 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   assert.match(
     sandbox,
     /entry\.replaceAll\("@localhost:",\s*"@127\.0\.0\.1:"\)/,
-    "CodeBuddy must not perform a blocked localhost DNS lookup for the SRT proxy"
+    "native Agents must not perform a blocked localhost DNS lookup for the SRT proxy"
   );
   assert.match(
     acpRuntime,
