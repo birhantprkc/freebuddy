@@ -9,7 +9,7 @@ import {
   type DragEvent
 } from "react";
 import { nanoid } from "nanoid";
-import { ExternalLink, X } from "lucide-react";
+import { ExternalLink, Folder, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useConversationStore } from "@/store/conversationStore";
@@ -19,6 +19,11 @@ import { useWorkflowTeamStore } from "@/store/workflowTeamStore";
 import { useNewTaskUiStore } from "@/store/newTaskUiStore";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
 import { useProjectStore } from "@/store/projectStore";
+import {
+  folderBaseName,
+  formatDisplayPath,
+  pathsEqual
+} from "@/utils/projectPaths";
 import { cliClient } from "@/services/cli/client";
 import type {
   AttachmentPrepareRejection,
@@ -695,13 +700,39 @@ export function ChatView({
 
   const slashDraft = useMemo(() => parseSlashDraft(draft), [draft]);
   const projects = useProjectStore((s) => s.projects);
-  const conversationMentionRoots = useMemo(() => {
+  const conversationProject = useMemo(() => {
     if (!conv?.projectId) return undefined;
-    const project = projects.find((entry) => entry.id === conv.projectId);
-    if (!project?.folders?.length) return undefined;
-    const folders = project.folders.map((folder) => folder.trim()).filter(Boolean);
-    return folders.length > 0 ? folders : undefined;
+    return projects.find((entry) => entry.id === conv.projectId);
   }, [conv?.projectId, projects]);
+  const conversationMentionRoots = useMemo(() => {
+    if (!conversationProject?.folders?.length) return undefined;
+    const folders = conversationProject.folders
+      .map((folder) => folder.trim())
+      .filter(Boolean);
+    return folders.length > 0 ? folders : undefined;
+  }, [conversationProject]);
+  const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
+  const workspaceDetailsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!workspaceDetailsOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!workspaceDetailsRef.current?.contains(event.target as Node)) {
+        setWorkspaceDetailsOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setWorkspaceDetailsOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [workspaceDetailsOpen]);
+  useEffect(() => {
+    setWorkspaceDetailsOpen(false);
+  }, [conv?.id]);
   const newTaskMentionRoots = useMemo(() => {
     if (!newTaskProjectId) return undefined;
     const project = projects.find((entry) => entry.id === newTaskProjectId);
@@ -716,6 +747,23 @@ export function ChatView({
     onChange: setDraft,
     textareaRef: chatTextareaRef
   });
+  const composerWorkspaceLabel = useMemo(() => {
+    const folders = conversationMentionRoots;
+    if (folders && folders.length > 1) {
+      const name =
+        conversationProject?.name?.trim() ||
+        folderBaseName(conversationProject?.primaryPath || conv?.cwd || folders[0]);
+      return `${name} · ${t("chat.folderCount", { count: folders.length })}`;
+    }
+    return conv?.cwd ? conv.cwd : t("chat.noWorkspace");
+  }, [
+    conversationMentionRoots,
+    conversationProject?.name,
+    conversationProject?.primaryPath,
+    conv?.cwd,
+    t
+  ]);
+  const composerIsMultiRoot = (conversationMentionRoots?.length ?? 0) > 1;
 
   const workflowPlan = useMemo<WorkflowPlan | null>(() => {
     if (!activeRun || activeRun.conversationId !== conv?.id) return null;
@@ -1882,7 +1930,47 @@ export function ChatView({
         ) : null}
         <div className="composer-context-row">
           <span>{agentDisplayName}</span>
-          <span>{conv.cwd ? conv.cwd : t("chat.noWorkspace")}</span>
+          <div className="composer-workspace-meta" ref={workspaceDetailsRef}>
+            {composerIsMultiRoot ? (
+              <button
+                type="button"
+                className={`composer-workspace-summary${workspaceDetailsOpen ? " open" : ""}`}
+                aria-expanded={workspaceDetailsOpen}
+                aria-label={t("chat.workspaceDetails")}
+                title={composerWorkspaceLabel}
+                onClick={() => setWorkspaceDetailsOpen((open) => !open)}
+              >
+                <Folder aria-hidden="true" size={12} strokeWidth={1.8} />
+                <span>{composerWorkspaceLabel}</span>
+              </button>
+            ) : (
+              <span title={conv.cwd || undefined}>{composerWorkspaceLabel}</span>
+            )}
+            {workspaceDetailsOpen && composerIsMultiRoot && conversationProject ? (
+              <div className="composer-workspace-popover" role="dialog">
+                <div className="composer-workspace-popover-title">
+                  {conversationProject.name}
+                </div>
+                <ul className="composer-workspace-popover-list">
+                  {conversationProject.folders.map((folder) => {
+                    const primary = pathsEqual(
+                      folder,
+                      conversationProject.primaryPath
+                    );
+                    return (
+                      <li key={folder} title={folder}>
+                        <Folder aria-hidden="true" size={13} strokeWidth={1.7} />
+                        <span>{formatDisplayPath(folder)}</span>
+                        {primary ? (
+                          <em>{t("chat.primaryBadge")}</em>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         </div>
         <AttachmentTray
           attachments={pendingAttachments}
