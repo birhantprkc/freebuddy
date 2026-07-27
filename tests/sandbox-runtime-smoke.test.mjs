@@ -311,7 +311,7 @@ test("Grok reaches SRT through the IPv6 loopback bridge", async (t) => {
   }
 });
 
-test("Qoder receives a per-user HOME without exposing the host home", async (t) => {
+test("Qoder and Claude receive isolated writable temp paths", async (t) => {
   if (process.platform !== "darwin") {
     t.skip("macOS Seatbelt smoke test");
     return;
@@ -341,6 +341,24 @@ test("Qoder receives a per-user HOME without exposing the host home", async (t) 
     userId,
     "sandbox-home"
   );
+  const qoderSharedRoot = path.join(
+    fs.realpathSync.native("/tmp"),
+    `qoder-cli-${process.getuid()}`
+  );
+  const qoderWorkspaceRoot = path.join(
+    qoderSharedRoot,
+    workspace.replace(/[^a-zA-Z0-9]/g, "-")
+  );
+  const qoderOutput = path.join(
+    qoderWorkspaceRoot,
+    "test-session",
+    "tasks",
+    "tool.output"
+  );
+  const forbiddenQoderRoot = path.join(
+    qoderSharedRoot,
+    `forbidden-${userId}`
+  );
 
   try {
     const prepared = await runAsCaller(userId, () =>
@@ -349,10 +367,14 @@ test("Qoder receives a per-user HOME without exposing the host home", async (t) 
         bin: "/bin/sh",
         args: [
           "-c",
-          'realpath "$HOME"; printf "%s\\n" "$QODER_CONFIG_DIR"; realpath "$TMPDIR"; printf agent-tmp > "$TMPDIR/qoder-tool.tmp"'
+          'realpath "$HOME"; printf "%s\\n" "$QODER_CONFIG_DIR"; realpath "$TMPDIR"; printf agent-tmp > "$TMPDIR/qoder-tool.tmp"; mkdir -p "$(dirname "$QODER_OUTPUT_TEST_PATH")"; printf qoder-output > "$QODER_OUTPUT_TEST_PATH"; (mkdir -p "$QODER_FORBIDDEN_TEST_PATH" && printf forbidden > "$QODER_FORBIDDEN_TEST_PATH/output") 2>/dev/null || true'
         ],
         cwd: workspace,
-        env: { ...process.env }
+        env: {
+          ...process.env,
+          QODER_OUTPUT_TEST_PATH: qoderOutput,
+          QODER_FORBIDDEN_TEST_PATH: forbiddenQoderRoot
+        }
       })
     );
     const result = spawnSync(prepared.bin, prepared.args, {
@@ -377,13 +399,48 @@ test("Qoder receives a per-user HOME without exposing the host home", async (t) 
       fs.readFileSync(path.join(sandboxHome, "tmp", "qoder-tool.tmp"), "utf8"),
       "agent-tmp"
     );
+    assert.equal(fs.readFileSync(qoderOutput, "utf8"), "qoder-output");
+    assert.equal(
+      fs.existsSync(forbiddenQoderRoot),
+      false,
+      "Qoder must not write another workspace's fixed temp subtree"
+    );
     assert.notEqual(prepared.env.HOME, os.homedir());
     const proxyPort = SandboxManager.getProxyPort();
     assert.ok(proxyPort);
     await connectToProxy("::1", proxyPort);
+
+    const claudePrepared = await runAsCaller(userId, () =>
+      prepareSandboxedSpawn({
+        adapter: "claude-agent-acp",
+        bin: "/bin/sh",
+        args: [
+          "-c",
+          'printf claude-tmp > "$CLAUDE_CODE_TMPDIR/claude-tool.tmp"'
+        ],
+        cwd: workspace,
+        env: { ...process.env }
+      })
+    );
+    const claudeResult = spawnSync(claudePrepared.bin, claudePrepared.args, {
+      cwd: workspace,
+      env: claudePrepared.env,
+      encoding: "utf8"
+    });
+    assert.equal(claudeResult.status, 0, claudeResult.stderr);
+    assert.equal(
+      fs.realpathSync.native(claudePrepared.env.CLAUDE_CODE_TMPDIR),
+      fs.realpathSync.native(path.join(sandboxHome, "tmp"))
+    );
+    assert.equal(
+      fs.readFileSync(path.join(sandboxHome, "tmp", "claude-tool.tmp"), "utf8"),
+      "claude-tmp"
+    );
   } finally {
     await SandboxManager.reset();
     fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(qoderWorkspaceRoot, { recursive: true, force: true });
+    fs.rmSync(forbiddenQoderRoot, { recursive: true, force: true });
     fs.rmSync(path.dirname(sandboxHome), { recursive: true, force: true });
     setDbForTest(null);
     db.close();

@@ -305,8 +305,69 @@ function adapterConfigPaths(adapter: string): string[] {
   return existing(paths);
 }
 
+function qoderProjectIdentifier(workspaceRoot: string): string {
+  const sanitized = workspaceRoot.replace(/[^a-zA-Z0-9]/g, "-");
+  if (sanitized.length <= 200) return sanitized;
+
+  // Qoder 1.1.x uses this DJB2-style signed 32-bit hash when its sanitized
+  // project path exceeds 200 characters. Mirror it so Seatbelt/bubblewrap can
+  // permit only the current remote workspace's output subtree.
+  let hash = 5381;
+  for (let index = 0; index < workspaceRoot.length; index += 1) {
+    hash = (hash * 33) ^ workspaceRoot.charCodeAt(index);
+  }
+  return `${sanitized.slice(0, 200)}-${Math.abs(hash).toString(36)}`;
+}
+
+function qoderShellOutputPath(
+  adapter: string,
+  workspaceRoot: string
+): string | null {
+  if (!adapter.includes("qoder") || process.platform === "win32") return null;
+
+  // Qoder resolves /tmp directly instead of honoring TMPDIR for persisted Bash
+  // output. Its next path component is derived from the workspace, so grant
+  // only that component rather than the shared qoder-cli-<uid> root.
+  let tempRoot = "/tmp";
+  try {
+    tempRoot = fs.realpathSync.native(tempRoot);
+  } catch {
+    // Match Qoder's fallback when /tmp cannot be resolved.
+  }
+  const uid = typeof process.getuid === "function" ? process.getuid() : 0;
+  const sharedRoot = path.join(tempRoot, `qoder-cli-${uid}`);
+  const isolatedRoot = path.join(
+    sharedRoot,
+    qoderProjectIdentifier(workspaceRoot)
+  );
+
+  fs.mkdirSync(sharedRoot, { recursive: true, mode: 0o700 });
+  const sharedStat = fs.lstatSync(sharedRoot);
+  if (
+    !sharedStat.isDirectory() ||
+    sharedStat.isSymbolicLink() ||
+    (typeof process.getuid === "function" && sharedStat.uid !== process.getuid())
+  ) {
+    throw new Error("remote_sandbox_unsafe_qoder_temp_root");
+  }
+
+  fs.mkdirSync(isolatedRoot, { recursive: true, mode: 0o700 });
+  const isolatedStat = fs.lstatSync(isolatedRoot);
+  if (
+    !isolatedStat.isDirectory() ||
+    isolatedStat.isSymbolicLink() ||
+    (typeof process.getuid === "function" &&
+      isolatedStat.uid !== process.getuid())
+  ) {
+    throw new Error("remote_sandbox_unsafe_qoder_workspace_temp");
+  }
+  fs.chmodSync(isolatedRoot, 0o700);
+  return isolatedRoot;
+}
+
 function adapterSandboxEnvironment(
-  adapter: string
+  adapter: string,
+  workspaceRoot: string
 ): {
   env: Record<string, string>;
   readWritePaths: string[];
@@ -326,6 +387,7 @@ function adapterSandboxEnvironment(
   const sandboxTmp = path.join(sandboxHome, "tmp");
   fs.mkdirSync(sandboxTmp, { recursive: true, mode: 0o700 });
   const qoderConfig = path.join(os.homedir(), ".qoder");
+  const qoderOutput = qoderShellOutputPath(adapter, workspaceRoot);
 
   return {
     env: {
@@ -334,6 +396,11 @@ function adapterSandboxEnvironment(
       TMPDIR: sandboxTmp,
       TMP: sandboxTmp,
       TEMP: sandboxTmp,
+      // Claude's native macOS binary intentionally defaults to /tmp unless
+      // this dedicated override is present.
+      ...(adapter.includes("claude")
+        ? { CLAUDE_CODE_TMPDIR: sandboxTmp }
+        : {}),
       // Qoder's Bun runtime resolves HOME during startup. Point it at a
       // per-WebUI-user directory instead of exposing the host user's home.
       ...(adapter.includes("qoder") ? { HOME: sandboxHome } : {}),
@@ -343,7 +410,7 @@ function adapterSandboxEnvironment(
         ? { QODER_CONFIG_DIR: qoderConfig }
         : {})
     },
-    readWritePaths: [sandboxHome]
+    readWritePaths: [sandboxHome, ...(qoderOutput ? [qoderOutput] : [])]
   };
 }
 
@@ -388,7 +455,7 @@ export async function prepareSandboxedSpawn(input: {
   const binary = resolveBinary(input.bin, input.env);
   const workspaceRoot = input.workspaceRoot ?? input.cwd;
   const configPaths = adapterConfigPaths(input.adapter);
-  const adapterSandbox = adapterSandboxEnvironment(input.adapter);
+  const adapterSandbox = adapterSandboxEnvironment(input.adapter, workspaceRoot);
   const binaryPaths = binary
     ? existing([
         binary,

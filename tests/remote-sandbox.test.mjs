@@ -38,6 +38,10 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   assert.match(sandbox, /\{\s*HOME:\s*sandboxHome\s*\}/);
   assert.match(sandbox, /QODER_CONFIG_DIR:\s*qoderConfig/);
   assert.match(sandbox, /TMPDIR:\s*sandboxTmp/);
+  assert.match(sandbox, /CLAUDE_CODE_TMPDIR:\s*sandboxTmp/);
+  assert.match(sandbox, /qoderProjectIdentifier/);
+  assert.match(sandbox, /qoder-cli-\$\{uid\}/);
+  assert.match(sandbox, /remote_sandbox_unsafe_qoder_workspace_temp/);
   assert.match(sandbox, /\.local",\s*"share",\s*"opencode"/);
   assert.match(sandbox, /\.kimi-code/);
   assert.match(sandbox, /CodeBuddyExtension/);
