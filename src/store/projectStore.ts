@@ -22,14 +22,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   error: undefined,
 
   async refresh() {
-    if (!cliClient.isAvailable()) return;
+    if (!cliClient.isAvailable()) {
+      // Mark hydrated so sidebar does not treat [] as authoritative forever.
+      set({ loaded: true, loading: false });
+      return;
+    }
     set({ loading: true, error: undefined });
     try {
       const projects = await cliClient.listProjects();
       remapPins(projects);
-      set({ projects, loaded: true });
+      set({ projects, loaded: true, error: undefined });
     } catch (error) {
+      // Keep last-good projects; never wipe to [] on failure.
       set({
+        loaded: true,
         error: error instanceof Error ? error.message : String(error)
       });
     } finally {

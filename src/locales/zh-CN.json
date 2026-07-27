@@ -487,6 +487,7 @@
     "projectNamePlaceholder": "项目名称",
     "removeFolder": "移除文件夹",
     "setPrimary": "设为 Primary",
+    "projectsLoadFailed": "项目列表加载失败，仍显示上次成功结果。",
     "group": {
       "today": "今天",
       "yesterday": "昨天",

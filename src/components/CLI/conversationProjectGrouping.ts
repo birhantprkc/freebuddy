@@ -139,15 +139,28 @@ export function remapPinnedCwdKeysToProjectIds(
 }
 
 /**
- * Flat recent list for conversations without a projectId.
+ * Flat recent list for conversations not shown under a known project group.
+ *
+ * - `knownProjectIds === null`: projects not hydrated yet — keep projectId chats
+ *   visible so they do not vanish while `projects === []`.
+ * - `knownProjectIds` is a Set: exclude only chats whose projectId is in that set;
+ *   orphans (missing project) stay in Recent.
+ * - omitted (`undefined`): legacy behavior — exclude every conversation with a projectId.
  * Includes cwd-only rows so chats remain visible after deleteProject clears projectId.
  */
 export function recentConversations(
   items: Conversation[],
-  limit = RECENT_LIMIT
+  limit = RECENT_LIMIT,
+  knownProjectIds?: ReadonlySet<string> | null
 ): Conversation[] {
   return items
-    .filter((conversation) => !conversation.projectId?.trim())
+    .filter((conversation) => {
+      const projectId = conversation.projectId?.trim();
+      if (!projectId) return true;
+      if (knownProjectIds === null) return true;
+      if (knownProjectIds === undefined) return false;
+      return !knownProjectIds.has(projectId);
+    })
     .sort((a, b) => conversationActivityTime(b) - conversationActivityTime(a))
     .slice(0, limit);
 }

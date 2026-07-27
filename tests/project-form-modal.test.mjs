@@ -16,11 +16,14 @@ test("project form modal and sidebar wiring expose create/edit project UI", () =
 
   assert.match(list, /conv-projects-add/);
   assert.match(list, /groupConversationsByProjects/);
+  assert.match(list, /groupConversationsByProject\(/);
+  assert.match(list, /projectsLoaded/);
+  assert.match(list, /knownProjectIds/);
+  assert.match(list, /conversations\.projectsLoadFailed/);
   assert.match(list, /<ProjectFormModal/);
   assert.match(list, /conversations\.editProject/);
   assert.match(list, /conversations\.deleteProject/);
   assert.match(list, /onNewTaskInProject\(\{\s*cwd:\s*primaryPath,\s*projectId:\s*project\.projectId/);
-  assert.doesNotMatch(list, /groupConversationsByProject\(/);
 
   assert.match(modal, /mode:\s*"create"\s*\|\s*"edit"/);
   assert.match(modal, /cliClient\.selectDirectory/);
@@ -32,6 +35,8 @@ test("project form modal and sidebar wiring expose create/edit project UI", () =
   assert.match(store, /cliClient\.listProjects/);
   assert.match(store, /cliClient\.createProject/);
   assert.match(store, /cliClient\.deleteProject/);
+  assert.match(store, /loaded:\s*true/);
+  assert.match(store, /Keep last-good projects/);
 
   assert.match(newTask, /requestedProjectId\?:/);
   assert.match(newTask, /requestNewTask\(options\?:/);
@@ -48,7 +53,8 @@ test("project form modal and sidebar wiring expose create/edit project UI", () =
     "deleteProject",
     "saveProject",
     "projectNameRequired",
-    "projectFoldersRequired"
+    "projectFoldersRequired",
+    "projectsLoadFailed"
   ]) {
     assert.ok(en.conversations?.[key], `missing en conversations.${key}`);
     assert.ok(zh.conversations?.[key], `missing zh-CN conversations.${key}`);
@@ -58,5 +64,6 @@ test("project form modal and sidebar wiring expose create/edit project UI", () =
   assert.equal(zh.conversations.editProject, "编辑项目");
   assert.equal(en.conversations.addFolder, "Add folder");
   assert.match(css, /\.conv-projects-add\s*\{/);
+  assert.match(css, /\.conv-projects-error\s*\{/);
   assert.match(css, /\.project-form-modal\s*\{/);
 });

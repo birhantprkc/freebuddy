@@ -202,3 +202,43 @@ test("recentConversations excludes projectId conversations but keeps cwd-only", 
     ["plain", "cwd-only"]
   );
 });
+
+test("empty projects before load does not drop projectId conversations", async () => {
+  const { groupConversationsByProjects, recentConversations } = await loadGrouping();
+  const items = [
+    conversation({
+      id: "proj-chat",
+      projectId: "p1",
+      cwd: "/a",
+      lastMessageAt: "2026-07-23T10:00:00.000Z"
+    }),
+    conversation({
+      id: "plain",
+      lastMessageAt: "2026-07-22T10:00:00.000Z"
+    })
+  ];
+
+  // Authoritative empty list with no load yet would hide project chats from groups…
+  assert.equal(groupConversationsByProjects(items, []).length, 0);
+
+  // …so until hydrated, Recent must keep projectId chats (knownProjectIds === null).
+  const beforeLoad = recentConversations(items, 8, null);
+  assert.deepEqual(
+    beforeLoad.map((item) => item.id),
+    ["proj-chat", "plain"]
+  );
+
+  // After load with the project present, exclude only known ids.
+  const afterLoad = recentConversations(items, 8, new Set(["p1"]));
+  assert.deepEqual(
+    afterLoad.map((item) => item.id),
+    ["plain"]
+  );
+
+  // After load with empty/missing projects, orphans stay in Recent.
+  const orphaned = recentConversations(items, 8, new Set());
+  assert.deepEqual(
+    orphaned.map((item) => item.id),
+    ["proj-chat", "plain"]
+  );
+});

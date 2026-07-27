@@ -9561,6 +9561,14 @@ button {
   color: var(--fb-brand);
 }
 
+.conv-projects-error {
+  list-style: none;
+  padding: 2px 8px 6px;
+  color: var(--fb-text-tertiary);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .conv-group-header.recent {
   margin-top: 8px;
 }

@@ -31,6 +31,8 @@ import { AgentAvatar } from "./AgentAvatar";
 import { ProjectFormModal } from "./ProjectFormModal";
 import {
   PROJECT_PREVIEW_LIMIT,
+  RECENT_LIMIT,
+  groupConversationsByProject,
   groupConversationsByProjects,
   recentConversations,
   type ConversationProjectGroup
@@ -276,6 +278,8 @@ export function ConversationList({
   const workflowActiveRuns = useWorkflowStore((s) => s.activeRuns);
   const loadWorkflowActiveRuns = useWorkflowStore((s) => s.loadActiveRuns);
   const apiProjects = useProjectStore((s) => s.projects);
+  const projectsLoaded = useProjectStore((s) => s.loaded);
+  const projectsError = useProjectStore((s) => s.error);
   const refreshProjects = useProjectStore((s) => s.refresh);
   const removeProject = useProjectStore((s) => s.remove);
   const pinnedKeys = usePinnedProjectsStore((s) => s.pinnedKeys);
@@ -320,7 +324,11 @@ export function ConversationList({
   }, [refreshProjects]);
 
   const projects = useMemo(() => {
-    const groups = groupConversationsByProjects(conversations, apiProjects);
+    // Until the first refresh finishes, do not treat projects=[] as authoritative —
+    // fall back to cwd grouping so projectId chats with a cwd stay visible.
+    const groups = projectsLoaded
+      ? groupConversationsByProjects(conversations, apiProjects)
+      : groupConversationsByProject(conversations);
     return [...groups].sort((a, b) => {
       const aPin = pinnedKeys.indexOf(a.key);
       const bPin = pinnedKeys.indexOf(b.key);
@@ -330,8 +338,15 @@ export function ConversationList({
       if (aPinned && bPinned && aPin !== bPin) return aPin - bPin;
       return b.latestAt - a.latestAt || a.label.localeCompare(b.label);
     });
-  }, [conversations, apiProjects, pinnedKeys]);
-  const recent = useMemo(() => recentConversations(conversations), [conversations]);
+  }, [conversations, apiProjects, pinnedKeys, projectsLoaded]);
+  const recent = useMemo(() => {
+    // null = not hydrated yet → keep projectId chats in Recent temporarily.
+    // After load, only exclude chats whose project appears in the sidebar.
+    const knownProjectIds = projectsLoaded
+      ? new Set(apiProjects.map((project) => project.id))
+      : null;
+    return recentConversations(conversations, RECENT_LIMIT, knownProjectIds);
+  }, [conversations, apiProjects, projectsLoaded]);
 
   const activeProjectKey = useMemo(() => {
     const active = conversations.find((c) => c.id === activeId);
@@ -451,6 +466,11 @@ export function ConversationList({
             <Plus aria-hidden="true" size={14} strokeWidth={2} />
           </button>
         </li>
+        {projectsError ? (
+          <li className="conv-projects-error" role="status">
+            {t("conversations.projectsLoadFailed")}
+          </li>
+        ) : null}
 
         {projects.map((project) => {
           const expanded = expandedProjects.has(project.key);

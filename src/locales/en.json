@@ -487,6 +487,7 @@
     "projectNamePlaceholder": "Project name",
     "removeFolder": "Remove folder",
     "setPrimary": "Set as primary",
+    "projectsLoadFailed": "Could not load projects. Showing last known list.",
     "group": {
       "today": "Today",
       "yesterday": "Yesterday",
