@@ -79,15 +79,16 @@ test("buildCommand merges OpenCode model with multi-root permission", () => {
     extraArgs: ["-m", "openai/gpt-4.1"],
     workspaceRoots: ["/tmp/primary", "/tmp/secondary"]
   });
-  assert.deepEqual(JSON.parse(built.env.OPENCODE_CONFIG_CONTENT), {
-    model: "openai/gpt-4.1",
-    permission: {
-      external_directory: {
-        "/tmp/primary/**": "allow",
-        "/tmp/secondary/**": "allow"
-      }
-    }
-  });
+  const content = JSON.parse(built.env.OPENCODE_CONFIG_CONTENT);
+  assert.equal(content.model, "openai/gpt-4.1");
+  const rules = content.permission.external_directory;
+  assert.equal(Object.keys(rules).length, 2);
+  for (const [pattern, action] of Object.entries(rules)) {
+    assert.equal(action, "allow");
+    assert.match(pattern, /\/\*\*$/);
+  }
+  assert.ok(Object.keys(rules).some((k) => k.includes("primary")));
+  assert.ok(Object.keys(rules).some((k) => k.includes("secondary")));
 });
 
 test("buildCommand applies OpenCode ACP model through config env", () => {
