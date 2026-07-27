@@ -43,6 +43,53 @@ test("buildCommand starts OpenCode through its ACP server", () => {
   assert.equal(built.protocol, "acp");
 });
 
+test("buildCommand omits OpenCode permission for single workspace root", () => {
+  const built = buildCommand({
+    adapter: "opencode-acp",
+    prompt: "hello",
+    cwd: "/tmp/primary",
+    workspaceRoots: ["/tmp/primary"]
+  });
+  assert.equal(built.env, undefined);
+});
+
+test("buildCommand injects OpenCode external_directory allows for multi-root projects", () => {
+  const built = buildCommand({
+    adapter: "opencode-acp",
+    prompt: "hello",
+    cwd: "/tmp/primary",
+    workspaceRoots: ["/tmp/primary/", "/tmp/secondary", ""]
+  });
+  const content = JSON.parse(built.env.OPENCODE_CONFIG_CONTENT);
+  const rules = content.permission.external_directory;
+  assert.equal(Object.keys(rules).length, 2);
+  for (const [pattern, action] of Object.entries(rules)) {
+    assert.equal(action, "allow");
+    assert.match(pattern, /\/\*\*$/);
+  }
+  assert.ok(Object.keys(rules).some((k) => k.includes("primary")));
+  assert.ok(Object.keys(rules).some((k) => k.includes("secondary")));
+});
+
+test("buildCommand merges OpenCode model with multi-root permission", () => {
+  const built = buildCommand({
+    adapter: "opencode-acp",
+    prompt: "hello",
+    cwd: "/tmp/primary",
+    extraArgs: ["-m", "openai/gpt-4.1"],
+    workspaceRoots: ["/tmp/primary", "/tmp/secondary"]
+  });
+  assert.deepEqual(JSON.parse(built.env.OPENCODE_CONFIG_CONTENT), {
+    model: "openai/gpt-4.1",
+    permission: {
+      external_directory: {
+        "/tmp/primary/**": "allow",
+        "/tmp/secondary/**": "allow"
+      }
+    }
+  });
+});
+
 test("buildCommand applies OpenCode ACP model through config env", () => {
   const built = buildCommand({
     adapter: "opencode-acp",

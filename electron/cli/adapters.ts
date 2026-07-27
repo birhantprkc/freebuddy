@@ -1,3 +1,5 @@
+import path from "node:path";
+
 export type CLIAdapterId =
   | "codex"
   | "codex-acp"
@@ -262,6 +264,8 @@ export interface BuildCommandInput {
   extraArgs?: string[];
   cwd?: string;
   toolSessionId?: string;
+  /** Absolute multi-folder project roots; OpenCode gets external_directory allows when length > 1. */
+  workspaceRoots?: string[];
 }
 
 export interface BuiltCommand {
@@ -392,6 +396,42 @@ function splitModelArg(args: string[]): {
   return { model, args: rest };
 }
 
+/** Build OpenCode OPENCODE_CONFIG_CONTENT object (model + multi-root permission). */
+export function buildOpenCodeConfigContent(input: {
+  model?: string;
+  workspaceRoots?: string[];
+}): Record<string, unknown> | undefined {
+  const content: Record<string, unknown> = {};
+  if (input.model) {
+    content.model = input.model;
+  }
+
+  const roots = (input.workspaceRoots ?? [])
+    .map((raw) => {
+      if (typeof raw !== "string") return "";
+      const trimmed = raw.trim();
+      if (!trimmed) return "";
+      try {
+        return path.resolve(trimmed).replace(/[/\\]+$/, "");
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean);
+
+  const uniqueRoots = [...new Set(roots)];
+  if (uniqueRoots.length > 1) {
+    const externalDirectory: Record<string, "allow"> = {};
+    for (const root of uniqueRoots) {
+      const pattern = `${root.replace(/\\/g, "/")}/**`;
+      externalDirectory[pattern] = "allow";
+    }
+    content.permission = { external_directory: externalDirectory };
+  }
+
+  return Object.keys(content).length > 0 ? content : undefined;
+}
+
 /**
  * Per-adapter command construction. The result is fed straight to spawn().
  * Stream parsing happens in the renderer; here we only assemble argv that
@@ -440,11 +480,15 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
       const args: string[] = ["acp"];
       if (input.cwd) args.push("--cwd", input.cwd);
       args.push(...acpArgs);
+      const configContent = buildOpenCodeConfigContent({
+        model,
+        workspaceRoots: input.workspaceRoots
+      });
       return {
         bin,
         args,
-        ...(model
-          ? { env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ model }) } }
+        ...(configContent
+          ? { env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(configContent) } }
           : {}),
         promptViaStdin: false,
         protocol: "acp"
