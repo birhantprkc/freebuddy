@@ -10,6 +10,7 @@ import {
 } from "./agentBridge.js";
 import { handleDraftToolHttpRequest } from "./draftToolService.js";
 import { handleBrowserToolHttpRequest } from "./browserToolService.js";
+import { handleWorkspaceFsToolHttpRequest } from "./workspaceFsToolService.js";
 
 let previewServer: http.Server | null = null;
 
@@ -31,6 +32,7 @@ export function startPreviewServer(
       void (async () => {
         if (await handleDraftToolHttpRequest(req, res)) return;
         if (await handleBrowserToolHttpRequest(req, res)) return;
+        if (await handleWorkspaceFsToolHttpRequest(req, res)) return;
         const parsed = parseBridgeRequest(req.url || "");
         if (parsed && isKnownBridgeAction(parsed.action)) {
           safeSendToWebContents(getWebContents(), "freebuddy://bridge", parsed);
