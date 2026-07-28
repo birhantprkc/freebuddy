@@ -67,6 +67,10 @@ import {
   registerContextToolSession,
   unregisterContextToolSession
 } from "../contextToolService.js";
+import {
+  registerWorkspaceFsToolSession,
+  unregisterWorkspaceFsToolSession
+} from "../workspaceFsToolService.js";
 import type { AcpStdioMcpServer } from "../shared/draftToolProtocol.js";
 import {
   clearAuthenticationTerminalsForSession,
@@ -221,6 +225,7 @@ export async function runAcpAgent({
     unregisterBrowserToolSession(args.sessionId);
     unregisterSkillToolSession(args.sessionId);
     unregisterContextToolSession(args.sessionId);
+    unregisterWorkspaceFsToolSession(args.sessionId);
     clearAuthenticationTerminalsForSession(args.sessionId);
     clearAuthenticationResolversForSession(args.sessionId);
     clearPermissionResolversForSession(args.sessionId);
@@ -919,6 +924,19 @@ export async function runAcpAgent({
     if (args.contextReferences?.length) {
       mcpServers.push(
         registerContextToolSession(args.sessionId, args.contextReferences)
+      );
+    }
+    const roots = (args.workspaceRoots ?? [])
+      .map((root) => (typeof root === "string" ? root.trim() : ""))
+      .filter(Boolean);
+    if (roots.length > 1) {
+      const primary = args.cwd || roots[0];
+      mcpServers.push(
+        await registerWorkspaceFsToolSession({
+          taskSessionId: args.sessionId,
+          roots,
+          primary
+        })
       );
     }
     if (mcpServers.length) {

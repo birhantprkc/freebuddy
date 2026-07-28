@@ -270,10 +270,20 @@ export function migrate(db: DB) {
       source_agent_name TEXT,
       source_adapter TEXT,
       source_brief_id TEXT,
-      owner_id TEXT
+      owner_id TEXT,
+      project_id TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_conversations_updated
       ON conversations(archived, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      folders TEXT NOT NULL,
+      primary_path TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS conversation_messages (
       id TEXT PRIMARY KEY,
@@ -786,6 +796,9 @@ export function migrate(db: DB) {
   }
   if (!conversationCols.some((c) => c.name === "owner_id")) {
     db.exec("ALTER TABLE conversations ADD COLUMN owner_id TEXT");
+  }
+  if (!conversationCols.some((c) => c.name === "project_id")) {
+    db.exec("ALTER TABLE conversations ADD COLUMN project_id TEXT");
   }
 
   const scheduledTaskOwnerCols = db

@@ -43,6 +43,7 @@ export interface Conversation {
   cwd?: string;
   /** Assigned source path shown to remote users; cwd remains the execution path. */
   sourceCwd?: string;
+  projectId?: string;
   approvalMode?: "auto" | "ask";
   configOptionOverrides?: Record<string, string>;
   skillSnapshot: SkillSnapshot[];
@@ -143,6 +144,7 @@ function rowToConversation(
     adapter: r.adapter,
     cwd,
     sourceCwd,
+    projectId: r.project_id ?? undefined,
     approvalMode:
       r.approval_mode === "ask" || r.approval_mode === "auto"
         ? r.approval_mode
@@ -223,6 +225,7 @@ export interface CreateConversationInput {
   agentName: string;
   adapter: string;
   cwd?: string;
+  projectId?: string;
   approvalMode?: "auto" | "ask";
   configOptionOverrides?: Record<string, string>;
   skillIds?: string[];
@@ -241,12 +244,12 @@ export function createConversation(input: CreateConversationInput): Conversation
   getDb()
     .prepare(
       `INSERT INTO conversations
-         (id, title, agent_id, agent_name, adapter, cwd, approval_mode,
+         (id, title, agent_id, agent_name, adapter, cwd, project_id, approval_mode,
           config_option_overrides, skill_snapshot, title_source, archived,
           source_conversation_id, source_agent_id, source_agent_name,
           source_adapter, source_brief_id, owner_id,
           created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -255,6 +258,7 @@ export function createConversation(input: CreateConversationInput): Conversation
       input.agentName,
       input.adapter,
       input.cwd ?? null,
+      input.projectId ?? null,
       input.approvalMode ?? null,
       input.configOptionOverrides &&
         Object.keys(input.configOptionOverrides).length > 0
@@ -305,6 +309,18 @@ export function setConversationApprovalMode(
       `UPDATE conversations SET approval_mode = ?, updated_at = ? WHERE id = ?`
     )
     .run(approvalMode, now, id);
+}
+
+export function setConversationProjectId(
+  id: string,
+  projectId: string | null
+): void {
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `UPDATE conversations SET project_id = ?, updated_at = ? WHERE id = ?`
+    )
+    .run(projectId, now, id);
 }
 
 export function setConversationConfigOptionOverrides(

@@ -58,6 +58,8 @@ const ALLOW = [
   // Read-only catalogues.
   "cli:listAdapters",
   "cli:listOverrides",
+  "cli:listProjects",
+  "cli:getProject",
   "cli:listRuntimes",
 
   // Attachments and drafts.
@@ -161,6 +163,11 @@ const ADMIN_ONLY = [
   // later run, so it must not be reachable from a member's browser.
   "cli:upsertOverride",
   "cli:resetOverride",
+
+  // Host workspace project mounts affect agent cwd/roots; no remote path guard yet.
+  "cli:createProject",
+  "cli:updateProject",
+  "cli:deleteProject",
 
   // Host-level credentials for the coding CLIs.
   "cli:logout",

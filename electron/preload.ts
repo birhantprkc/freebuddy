@@ -118,6 +118,14 @@ const cli = {
   saveToolSession: (args: unknown) =>
     ipcRenderer.invoke("cli:saveToolSession", args),
 
+  listProjects: () => ipcRenderer.invoke("cli:listProjects"),
+  getProject: (id: string) => ipcRenderer.invoke("cli:getProject", id),
+  createProject: (input: unknown) =>
+    ipcRenderer.invoke("cli:createProject", input),
+  updateProject: (input: unknown) =>
+    ipcRenderer.invoke("cli:updateProject", input),
+  deleteProject: (id: string) => ipcRenderer.invoke("cli:deleteProject", id),
+
   listConversations: (args?: unknown) =>
     ipcRenderer.invoke("cli:listConversations", args),
   getConversation: (id: string) => ipcRenderer.invoke("cli:getConversation", id),
@@ -171,8 +179,8 @@ const cli = {
     ipcRenderer.invoke("cli:updateMessage", input),
 
   selectDirectory: () => ipcRenderer.invoke("cli:selectDirectory"),
-  searchWorkspaceFiles: (cwd: string, query: string, limit?: number) =>
-    ipcRenderer.invoke("cli:searchWorkspaceFiles", { cwd, query, limit }),
+  searchWorkspaceFiles: (cwd: string, query: string, limit?: number, roots?: string[]) =>
+    ipcRenderer.invoke("cli:searchWorkspaceFiles", { cwd, query, limit, roots }),
   selectAttachments: () => ipcRenderer.invoke("cli:selectAttachments"),
   prepareAttachmentFiles: async (files: File[], limit?: number, existingPaths?: string[]) => {
     const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;

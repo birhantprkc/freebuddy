@@ -134,6 +134,8 @@ export interface CliRunArgs {
   prompt: string;
   promptAttachments?: CliPromptAttachment[];
   cwd?: string;
+  /** Absolute workspace roots for multi-folder projects (Primary stays in cwd). */
+  workspaceRoots?: string[];
   /** Persistence key for tool-session resume. Defaults to cwd when omitted. */
   toolSessionScope?: string;
   /** Concrete CLI session/thread id to resume when available. */
@@ -488,9 +490,14 @@ export interface AttachmentCandidate {
 }
 
 export interface WorkspaceFileMatch {
+  /** Path inserted into the composer: relative for single-root, absolute for multi-root. */
   path: string;
   name: string;
   directory: string;
+  /** Absolute workspace root when the match came from a multi-root search. */
+  root?: string;
+  /** Disambiguated display path (basename(root)/rel) for multi-root picker UI. */
+  label?: string;
 }
 
 export type AttachmentPrepareRejectionReason = "unsupported_type" | "file_too_large";
@@ -508,6 +515,21 @@ export interface PrepareAttachmentFilesResult {
 
 export type ConversationTitleSource = "default" | "prompt" | "agent" | "user";
 
+export interface Project {
+  id: string;
+  name: string;
+  folders: string[];
+  primaryPath: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectInput {
+  name: string;
+  folders: string[];
+  primaryPath: string;
+}
+
 export interface Conversation {
   id: string;
   title: string;
@@ -517,6 +539,7 @@ export interface Conversation {
   cwd?: string;
   /** Assigned source path for display; cwd remains the real execution path. */
   sourceCwd?: string;
+  projectId?: string;
   approvalMode?: "auto" | "ask";
   configOptionOverrides?: Record<string, string>;
   skillSnapshot: SkillSnapshot[];
@@ -570,6 +593,7 @@ export interface CreateConversationInput {
   agentName: string;
   adapter: string;
   cwd?: string;
+  projectId?: string;
   approvalMode?: "auto" | "ask";
   configOptionOverrides?: Record<string, string>;
   skillIds?: string[];

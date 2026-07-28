@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { remapPinnedCwdKeysToProjectIds } from "@/components/CLI/conversationProjectGrouping";
+import type { Project } from "@/services/cli/types";
 
 const STORAGE_KEY = "freebuddy.projects.pinned.v1";
 
@@ -20,6 +22,11 @@ function persistPinnedKeys(keys: string[]) {
   } catch {
     // Pin state is progressive enhancement.
   }
+}
+
+function pinnedKeysEqual(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  return a.every((key, index) => key === b[index]);
 }
 
 interface PinnedProjectsState {
@@ -60,3 +67,12 @@ export const usePinnedProjectsStore = create<PinnedProjectsState>((set, get) => 
     else get().pin(key);
   }
 }));
+
+/** Remap cwd-based pin keys to project ids after projects load. No-op if unchanged. */
+export function remapPins(projects: Project[]) {
+  const { pinnedKeys } = usePinnedProjectsStore.getState();
+  const next = remapPinnedCwdKeysToProjectIds(pinnedKeys, projects);
+  if (pinnedKeysEqual(pinnedKeys, next)) return;
+  persistPinnedKeys(next);
+  usePinnedProjectsStore.setState({ pinnedKeys: next });
+}

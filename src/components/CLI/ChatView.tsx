@@ -9,7 +9,7 @@ import {
   type DragEvent
 } from "react";
 import { nanoid } from "nanoid";
-import { ExternalLink, FolderLock, X } from "lucide-react";
+import { ExternalLink, Folder, FolderLock, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useConversationStore } from "@/store/conversationStore";
@@ -18,6 +18,12 @@ import { useWorkflowStore } from "@/store/workflowStore";
 import { useWorkflowTeamStore } from "@/store/workflowTeamStore";
 import { useNewTaskUiStore } from "@/store/newTaskUiStore";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
+import { useProjectStore } from "@/store/projectStore";
+import {
+  folderBaseName,
+  formatDisplayPath,
+  pathsEqual
+} from "@/utils/projectPaths";
 import { cliClient } from "@/services/cli/client";
 import type {
   AttachmentPrepareRejection,
@@ -527,6 +533,7 @@ export function ChatView({
   const requestedTeamId = useNewTaskUiStore((s) => s.requestedTeamId);
   const setRequestedTeamId = useNewTaskUiStore((s) => s.setRequestedTeamId);
   const requestedCwd = useNewTaskUiStore((s) => s.requestedCwd);
+  const requestedProjectId = useNewTaskUiStore((s) => s.requestedProjectId);
   const cwdRequestToken = useNewTaskUiStore((s) => s.cwdRequestToken);
   const teamMode = taskMode === "team";
   const workflowMode = false;
@@ -569,6 +576,7 @@ export function ChatView({
   const memberSelectionTouchedRef = useRef(false);
   const [newTaskSkillIds, setNewTaskSkillIds] = useState<string[]>([]);
   const [newTaskCwd, setNewTaskCwd] = useState("");
+  const [newTaskProjectId, setNewTaskProjectId] = useState<string | undefined>();
   const [newTaskConfigOptions, setNewTaskConfigOptions] = useState<
     SessionConfigOption[]
   >([]);
@@ -706,12 +714,116 @@ export function ChatView({
   const sessionConfigOptions = sessionMeta.configOptions;
 
   const slashDraft = useMemo(() => parseSlashDraft(draft), [draft]);
+  const projects = useProjectStore((s) => s.projects);
+  const conversationProject = useMemo(() => {
+    if (!conv?.projectId) return undefined;
+    return projects.find((entry) => entry.id === conv.projectId);
+  }, [conv?.projectId, projects]);
+  const conversationMentionRoots = useMemo(() => {
+    if (!conversationProject?.folders?.length) return undefined;
+    const folders = conversationProject.folders
+      .map((folder) => folder.trim())
+      .filter(Boolean);
+    return folders.length > 0 ? folders : undefined;
+  }, [conversationProject]);
+  const [workspaceDetailsOpen, setWorkspaceDetailsOpen] = useState(false);
+  const [workspacePopoverStyle, setWorkspacePopoverStyle] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const workspaceDetailsRef = useRef<HTMLDivElement>(null);
+  const workspaceSummaryRef = useRef<HTMLButtonElement>(null);
+
+  const closeWorkspaceDetails = useCallback(() => {
+    setWorkspaceDetailsOpen(false);
+    setWorkspacePopoverStyle(null);
+  }, []);
+
+  const toggleWorkspaceDetails = useCallback(() => {
+    setWorkspaceDetailsOpen((open) => {
+      if (open) {
+        setWorkspacePopoverStyle(null);
+        return false;
+      }
+      const anchor = workspaceSummaryRef.current;
+      if (anchor) {
+        const rect = anchor.getBoundingClientRect();
+        const width = Math.min(300, window.innerWidth - 24);
+        const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
+        setWorkspacePopoverStyle({
+          top: Math.max(12, rect.top - 8),
+          left
+        });
+      }
+      return true;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceDetailsOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!workspaceDetailsRef.current?.contains(event.target as Node)) {
+        closeWorkspaceDetails();
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeWorkspaceDetails();
+    };
+    const onReposition = () => {
+      const anchor = workspaceSummaryRef.current;
+      if (!anchor) return;
+      const rect = anchor.getBoundingClientRect();
+      const width = Math.min(300, window.innerWidth - 24);
+      const left = Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12));
+      setWorkspacePopoverStyle({
+        top: Math.max(12, rect.top - 8),
+        left
+      });
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onReposition);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", onReposition);
+    };
+  }, [workspaceDetailsOpen, closeWorkspaceDetails]);
+  useEffect(() => {
+    closeWorkspaceDetails();
+  }, [conv?.id, closeWorkspaceDetails]);
+  const newTaskMentionRoots = useMemo(() => {
+    if (!newTaskProjectId) return undefined;
+    const project = projects.find((entry) => entry.id === newTaskProjectId);
+    if (!project?.folders?.length) return undefined;
+    const folders = project.folders.map((folder) => folder.trim()).filter(Boolean);
+    return folders.length > 0 ? folders : undefined;
+  }, [newTaskProjectId, projects]);
   const chatFileMentions = useWorkspaceFileMentions({
     value: draft,
     cwd: conv?.cwd,
+    roots: conversationMentionRoots,
     onChange: setDraft,
     textareaRef: chatTextareaRef
   });
+  const composerWorkspaceLabel = useMemo(() => {
+    const folders = conversationMentionRoots;
+    if (folders && folders.length > 0 && conversationProject) {
+      const name =
+        conversationProject.name?.trim() ||
+        folderBaseName(conversationProject.primaryPath || conv?.cwd || folders[0]);
+      return `${name} · ${t("chat.folderCount", { count: folders.length })}`;
+    }
+    return conversationWorkspaceName;
+  }, [
+    conversationMentionRoots,
+    conversationProject,
+    conversationWorkspaceName,
+    conv?.cwd,
+    t
+  ]);
+  const composerHasProjectWorkspace =
+    (conversationMentionRoots?.length ?? 0) > 0 && !!conversationProject;
 
   const workflowPlan = useMemo<WorkflowPlan | null>(() => {
     if (!activeRun || activeRun.conversationId !== conv?.id) return null;
@@ -1033,7 +1145,8 @@ export function ChatView({
     if (activeId) return;
     if (cwdRequestToken === 0) return;
     setNewTaskCwd(requestedCwd ?? "");
-  }, [activeId, cwdRequestToken, requestedCwd]);
+    setNewTaskProjectId(requestedProjectId);
+  }, [activeId, cwdRequestToken, requestedCwd, requestedProjectId]);
 
   useEffect(() => {
     const resolved = conv?.approvalMode ?? member?.cli.approvalMode;
@@ -1376,6 +1489,7 @@ export function ChatView({
         const newConv = await createConversation({
           member: teamMember,
           cwd,
+          projectId: newTaskProjectId,
           title: buildConversationTitle({
             prompt,
             attachmentName: attachmentsToSend[0]?.name,
@@ -1444,6 +1558,7 @@ export function ChatView({
       const newConv = await createConversation({
         member: selectedMember,
         cwd: newTaskCwd.trim() || undefined,
+        projectId: newTaskProjectId,
         title: buildConversationTitle({
           prompt,
           attachmentName: attachmentsToSend[0]?.name,
@@ -1667,6 +1782,7 @@ export function ChatView({
       const newConv = await createConversation({
         member: teamMember,
         cwd,
+        projectId: newTaskProjectId,
         title: buildConversationTitle({
           prompt: pendingTeamPreview.goal,
           fallback: pendingTeamPreview.teamName
@@ -1700,6 +1816,7 @@ export function ChatView({
         checkingAgentIds={checkingAgentIds}
         selectedMemberId={selectedMemberId}
         cwd={newTaskCwd}
+        workspaceRoots={newTaskMentionRoots}
         permissionMode={permissionMode}
         pendingAttachments={newTaskPendingAttachments}
         taskMode={taskMode}
@@ -1725,7 +1842,10 @@ export function ChatView({
         onManageAgents={() => onOpenAgentSettings?.()}
         onConfigOptionOverrides={setNewTaskConfigOptionOverrides}
         onSkills={setNewTaskSkillIds}
-        onCwd={setNewTaskCwd}
+        onCwd={(cwd) => {
+          setNewTaskCwd(cwd);
+          setNewTaskProjectId(undefined);
+        }}
         onPermissionMode={setPermissionMode}
         onSelectAttachments={() => void handleSelectAttachments("new")}
         onRemoveAttachment={handleRemoveNewTaskPendingAttachment}
@@ -1870,22 +1990,78 @@ export function ChatView({
         ) : null}
         <div className="composer-context-row">
           <span>{agentDisplayName}</span>
-          <span
-            className="composer-workspace-context"
+          <div
+            className="composer-workspace-meta"
+            ref={workspaceDetailsRef}
             title={conversationWorkspaceTitle}
           >
-            {conv.sourceCwd ? (
-              <FolderLock size={13} strokeWidth={1.8} aria-hidden="true" />
-            ) : null}
-            <span className="composer-workspace-name">
-              {conversationWorkspaceName}
-            </span>
+            {composerHasProjectWorkspace ? (
+              <button
+                ref={workspaceSummaryRef}
+                type="button"
+                className={`composer-workspace-summary${workspaceDetailsOpen ? " open" : ""}`}
+                aria-expanded={workspaceDetailsOpen}
+                aria-label={t("chat.workspaceDetails")}
+                title={composerWorkspaceLabel}
+                onClick={toggleWorkspaceDetails}
+              >
+                {conv.sourceCwd ? (
+                  <FolderLock aria-hidden="true" size={12} strokeWidth={1.8} />
+                ) : (
+                  <Folder aria-hidden="true" size={12} strokeWidth={1.8} />
+                )}
+                <span>{composerWorkspaceLabel}</span>
+              </button>
+            ) : (
+              <span className="composer-workspace-context">
+                {conv.sourceCwd ? (
+                  <FolderLock size={13} strokeWidth={1.8} aria-hidden="true" />
+                ) : null}
+                <span className="composer-workspace-name">
+                  {composerWorkspaceLabel}
+                </span>
+              </span>
+            )}
             {conv.sourceCwd ? (
               <span className="composer-workspace-badge">
                 {t("chat.isolatedWorkspace")}
               </span>
             ) : null}
-          </span>
+            {workspaceDetailsOpen &&
+            composerHasProjectWorkspace &&
+            conversationProject &&
+            workspacePopoverStyle ? (
+              <div
+                className="composer-workspace-popover"
+                role="dialog"
+                style={{
+                  top: workspacePopoverStyle.top,
+                  left: workspacePopoverStyle.left,
+                  transform: "translateY(-100%)"
+                }}
+              >
+                <div className="composer-workspace-popover-title">
+                  {conversationProject.name}
+                </div>
+                <ul className="composer-workspace-popover-list">
+                  {conversationProject.folders.map((folder) => {
+                    const showPrimary =
+                      conversationProject.folders.length > 1 &&
+                      pathsEqual(folder, conversationProject.primaryPath);
+                    return (
+                      <li key={folder} title={folder}>
+                        <Folder aria-hidden="true" size={13} strokeWidth={1.7} />
+                        <span>{formatDisplayPath(folder)}</span>
+                        {showPrimary ? (
+                          <em>{t("chat.primaryBadge")}</em>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+          </div>
         </div>
         <AttachmentTray
           attachments={pendingAttachments}
@@ -2057,6 +2233,7 @@ function NewTaskHome({
   checkingAgentIds,
   selectedMemberId,
   cwd,
+  workspaceRoots,
   permissionMode,
   pendingAttachments,
   taskMode,
@@ -2096,6 +2273,7 @@ function NewTaskHome({
   checkingAgentIds: Set<string>;
   selectedMemberId: string;
   cwd: string;
+  workspaceRoots?: string[];
   permissionMode: "auto" | "ask";
   pendingAttachments: ChatAttachment[];
   taskMode: "normal" | "team";
@@ -2136,6 +2314,7 @@ function NewTaskHome({
   const fileMentions = useWorkspaceFileMentions({
     value: draft,
     cwd,
+    roots: workspaceRoots,
     onChange: onDraft,
     textareaRef
   });

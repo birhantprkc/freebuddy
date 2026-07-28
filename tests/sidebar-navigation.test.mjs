@@ -85,6 +85,7 @@ test("sidebar search opens a command palette instead of an inline list filter", 
   assert.match(conversations, /showUnreadIndicator/);
   assert.match(conversations, /conv-project-running-slot/);
   assert.match(conversations, /conv-project-unread-slot/);
+  assert.match(conversations, /conv-projects-add/);
   assert.doesNotMatch(conversations, /conv-list-search-toggle/);
   assert.match(css, /\.command-palette\s*\{/);
   assert.match(css, /\.conv-project-toggle\s*\{/);

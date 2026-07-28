@@ -84,6 +84,9 @@ test("channels that spawn or reconfigure the host are not remotely callable", as
     "cli:probeAuthentication",
     "cli:connectCursorUsage",
     "cli:disconnectCursorUsage",
+    "cli:createProject",
+    "cli:updateProject",
+    "cli:deleteProject",
     "skills:setTrusted",
     "skills:delete"
   ]) {
@@ -124,6 +127,8 @@ test("the chat surface the web client depends on stays callable", async () => {
     "cli:appendMessage",
     "cli:listOverrides",
     "cli:listAdapters",
+    "cli:listProjects",
+    "cli:getProject",
     "settings:get",
     "remote:whoami"
   ]) {

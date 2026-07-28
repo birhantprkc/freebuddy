@@ -36,6 +36,8 @@ export interface CliRunArgs {
   prompt: string;
   promptAttachments?: CliPromptAttachment[];
   cwd?: string;
+  /** Absolute workspace roots for multi-folder projects (Primary stays in cwd). */
+  workspaceRoots?: string[];
   /** Persistence key for tool-session resume. Defaults to cwd when omitted. */
   toolSessionScope?: string;
   /** Concrete CLI session/thread id to resume when available. */

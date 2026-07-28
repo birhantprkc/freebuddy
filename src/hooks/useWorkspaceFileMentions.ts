@@ -20,6 +20,8 @@ import {
 interface UseWorkspaceFileMentionsInput {
   value: string;
   cwd?: string;
+  /** When set (e.g. project folders), search across these roots instead of cwd alone. */
+  roots?: string[];
   onChange: (value: string) => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }
@@ -27,6 +29,7 @@ interface UseWorkspaceFileMentionsInput {
 export function useWorkspaceFileMentions({
   value,
   cwd,
+  roots,
   onChange,
   textareaRef
 }: UseWorkspaceFileMentionsInput) {
@@ -36,6 +39,7 @@ export function useWorkspaceFileMentions({
   const [loading, setLoading] = useState(false);
   const requestGenerationRef = useRef(0);
   const dismissedValueRef = useRef<string | null>(null);
+  const rootsKey = roots?.length ? roots.join("\0") : "";
 
   const updateActiveMention = useCallback((nextValue: string, cursor: number) => {
     if (dismissedValueRef.current === nextValue) {
@@ -94,9 +98,10 @@ export function useWorkspaceFileMentions({
 
     setMatches([]);
     setLoading(true);
+    const searchRoots = roots?.length ? roots : undefined;
     const timer = window.setTimeout(() => {
       void cliClient
-        .searchWorkspaceFiles(cwd, activeMention.query, 24)
+        .searchWorkspaceFiles(cwd, activeMention.query, 24, searchRoots)
         .then((nextMatches) => {
           if (requestGenerationRef.current === generation) setMatches(nextMatches);
         })
@@ -109,7 +114,7 @@ export function useWorkspaceFileMentions({
     }, 80);
 
     return () => window.clearTimeout(timer);
-  }, [activeMention, cwd]);
+  }, [activeMention, cwd, rootsKey, roots]);
 
   const selectMatch = useCallback(
     (match: WorkspaceFileMatch) => {

@@ -15,8 +15,15 @@ import type { CliStreamItem } from "@/services/cli/parsers";
 import { useConversationStore } from "@/store/conversationStore";
 import { useReplayStore } from "@/store/replayStore";
 import { useWorkflowStore } from "@/store/workflowStore";
+import { useProjectStore } from "@/store/projectStore";
 import { copyToClipboard } from "@/utils/clipboard";
 import { formatDuration } from "@/utils/duration";
+import {
+  folderBaseName,
+  formatDisplayPath,
+  pathsEqual,
+  shortPath
+} from "@/utils/projectPaths";
 import { AgentAvatar } from "./AgentAvatar";
 import { InfoCardHost } from "../InfoCards/InfoCardHost";
 import { WorkflowRunPanel } from "../Workflows/WorkflowRunPanel";
@@ -38,6 +45,7 @@ export function WorkspacePanel({
   const { t, i18n } = useTranslation();
   const activeId = useConversationStore((s) => s.activeId);
   const conversations = useConversationStore((s) => s.conversations);
+  const projects = useProjectStore((s) => s.projects);
   // Subscribe only to the active conversation's slices so background
   // conversations streaming events don't re-render this panel.
   const messages = useConversationStore((s) =>
@@ -76,6 +84,23 @@ export function WorkspacePanel({
 
   const active = conversations.find((c) => c.id === activeId);
   const activeAgentName = displayAgentName(active?.agentName, active?.adapter);
+  const activeDisplayCwd = active ? conversationDisplayCwd(active) : "";
+  const activeProject = useMemo(() => {
+    const projectId = active?.projectId?.trim();
+    if (!projectId) return undefined;
+    return projects.find((entry) => entry.id === projectId);
+  }, [active?.projectId, projects]);
+  const mountedFolders = useMemo(() => {
+    if (activeProject?.folders?.length) {
+      return activeProject.folders.map((folder) => folder.trim()).filter(Boolean);
+    }
+    return activeDisplayCwd ? [activeDisplayCwd] : [];
+  }, [activeDisplayCwd, activeProject]);
+  const isMultiRoot = mountedFolders.length > 1;
+  const primaryFolder =
+    activeProject?.primaryPath?.trim() ||
+    activeDisplayCwd ||
+    mountedFolders[0];
   const isCodexAgent =
     active?.adapter === "codex-acp" || active?.agentId === "cli-codex-acp";
 
@@ -304,14 +329,46 @@ export function WorkspacePanel({
           </strong>
         </div>
         <dl className="compact-dl">
-          <div>
-            <dt>{t("workspace.workspace")}</dt>
-            <dd>
-              {active && conversationDisplayCwd(active)
-                ? shortPath(conversationDisplayCwd(active))
-                : t("workspace.notSet")}
-            </dd>
-          </div>
+          {activeProject && mountedFolders.length > 0 ? (
+            <>
+              <div>
+                <dt>{t("workspace.project")}</dt>
+                <dd title={activeProject.name}>
+                  {activeProject.name || folderBaseName(primaryFolder || "")}
+                </dd>
+              </div>
+              <div className="workspace-mounted-row">
+                <dt>{t("workspace.mountedFolders")}</dt>
+                <dd>
+                  <ul className="workspace-mounted-list">
+                    {mountedFolders.map((folder) => {
+                      const showPrimary =
+                        isMultiRoot &&
+                        primaryFolder != null &&
+                        pathsEqual(folder, primaryFolder);
+                      return (
+                        <li key={folder} title={folder}>
+                          <span>{formatDisplayPath(folder)}</span>
+                          {showPrimary ? (
+                            <em>{t("workspace.primaryFolder")}</em>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </dd>
+              </div>
+            </>
+          ) : (
+            <div>
+              <dt>{t("workspace.workspace")}</dt>
+              <dd title={activeDisplayCwd || undefined}>
+                {activeDisplayCwd
+                  ? shortPath(activeDisplayCwd)
+                  : t("workspace.notSet")}
+              </dd>
+            </div>
+          )}
           {!isTeamRun && (
             <div>
               <dt>{t("workspace.sessionId")}</dt>
@@ -660,10 +717,6 @@ function isPlanEntry(entry: unknown): entry is PlanEntry {
       candidate.status === "completed" ||
       candidate.status === "cancelled")
   );
-}
-
-function shortPath(path: string) {
-  return path.split(/[/\\]/).filter(Boolean).slice(-2).join("/") || path;
 }
 
 function shortSessionId(id: string) {
