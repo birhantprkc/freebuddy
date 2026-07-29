@@ -968,9 +968,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       knownStreamMessageIds: collectStreamMessageIds(
         get().messages[conversationId] ?? []
       ),
-      knownStreamContentSignatures: collectStreamContentSignatures(
-        get().messages[conversationId] ?? []
-      ),
+      // Content signatures suppress history replay from resumed ACP sessions.
+      // A fresh session cannot replay history, so every live chunk must pass.
+      ...(resumedFromSessionId
+        ? {
+            knownStreamContentSignatures: collectStreamContentSignatures(msgs)
+          }
+        : {}),
       knownAgentStreamMessageIds: collectStreamAgentMessageIds(
         get().messages[conversationId] ?? []
       ),

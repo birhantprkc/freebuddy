@@ -716,6 +716,50 @@ test("collectStreamMessageIds gathers ids from stored assistant snapshots", asyn
   );
 });
 
+test("collectStreamContentSignatures gathers assistant content only", async () => {
+  const { collectStreamContentSignatures } = await loadConversationUtils();
+  const timestamp = "2026-06-23T10:00:00.000Z";
+
+  assert.deepEqual(
+    collectStreamContentSignatures([
+      {
+        id: "user-1",
+        conversationId: "conv-1",
+        role: "user",
+        status: "sent",
+        content: "你好",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      {
+        id: "assistant-1",
+        conversationId: "conv-1",
+        role: "assistant",
+        status: "done",
+        content: JSON.stringify([
+          { kind: "text", role: "assistant", content: "你好" },
+          { kind: "thinking", content: "准备回复" }
+        ]),
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ]),
+    ["你好", "准备回复"]
+  );
+});
+
+test("fresh ACP sessions do not enable content-signature replay suppression", () => {
+  const source = fs.readFileSync(
+    new URL("../src/store/conversationStore.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    source,
+    /resumedFromSessionId\s*\?\s*\{\s*knownStreamContentSignatures:\s*collectStreamContentSignatures\(msgs\)/
+  );
+});
+
 test("collectStreamAgentMessageIds gathers only text/thinking messageIds (excludes tool ids)", async () => {
   const { collectStreamAgentMessageIds } = await loadConversationUtils();
 
