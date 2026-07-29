@@ -261,6 +261,24 @@ export function buildTerminalOutputResponse(snapshot: {
   };
 }
 
+export type AcpSessionStartMode = "new" | "load" | "resume";
+
+export function selectAcpSessionStartMode(
+  toolSessionId: string | undefined,
+  agentCapabilities:
+    | {
+        loadSession?: unknown;
+        sessionCapabilities?: { resume?: unknown };
+      }
+    | undefined
+): AcpSessionStartMode {
+  if (toolSessionId && agentCapabilities?.loadSession) return "load";
+  if (toolSessionId && agentCapabilities?.sessionCapabilities?.resume) {
+    return "resume";
+  }
+  return "new";
+}
+
 export function buildSessionNewRequest(
   id: AcpRequestId,
   cwd?: string,
@@ -1224,6 +1242,7 @@ export function shouldEmitAcpUpdate(
   update: any,
   state: {
     promptStarted: boolean;
+    replaySuppressionEnabled: boolean;
     replayMessageIds?: ReadonlySet<string>;
     replayContentSignatures?: ReadonlySet<string>;
   }
@@ -1234,6 +1253,9 @@ export function shouldEmitAcpUpdate(
   }
   if (!state.promptStarted) {
     return false;
+  }
+  if (!state.replaySuppressionEnabled) {
+    return true;
   }
   const isMessageOrThought =
     type === "agent_message_chunk" || type === "agent_thought_chunk";

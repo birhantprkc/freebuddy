@@ -716,6 +716,67 @@ test("collectStreamMessageIds gathers ids from stored assistant snapshots", asyn
   );
 });
 
+test("collectStreamContentSignatures gathers assistant content only", async () => {
+  const { collectStreamContentSignatures } = await loadConversationUtils();
+  const timestamp = "2026-06-23T10:00:00.000Z";
+
+  assert.deepEqual(
+    collectStreamContentSignatures([
+      {
+        id: "user-1",
+        conversationId: "conv-1",
+        role: "user",
+        status: "sent",
+        content: "你好",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      {
+        id: "assistant-1",
+        conversationId: "conv-1",
+        role: "assistant",
+        status: "done",
+        content: JSON.stringify([
+          { kind: "text", role: "assistant", content: "你好" },
+          { kind: "thinking", content: "准备回复" }
+        ]),
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ]),
+    ["你好", "准备回复"]
+  );
+});
+
+test("fresh ACP turns do not derive replay signatures from the current user prompt", async () => {
+  const { collectStreamContentSignatures } = await loadConversationUtils();
+  const timestamp = "2026-07-29T10:00:00.000Z";
+
+  assert.deepEqual(
+    collectStreamContentSignatures([
+      {
+        id: "user-1",
+        conversationId: "conv-1",
+        role: "user",
+        status: "sent",
+        content: "你好",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      {
+        id: "assistant-1",
+        conversationId: "conv-1",
+        role: "assistant",
+        status: "running",
+        content: "[]",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ]),
+    []
+  );
+});
+
 test("collectStreamAgentMessageIds gathers only text/thinking messageIds (excludes tool ids)", async () => {
   const { collectStreamAgentMessageIds } = await loadConversationUtils();
 
