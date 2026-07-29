@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -5,18 +6,27 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  getWindowsSandboxUserStatusAsync,
+  grantWindowsAcl,
+  resolveSrtWin,
+  revokeWindowsAcl,
   SandboxManager,
+  VENDORED_SRT_WIN_EXE,
+  WindowsSandboxError,
+  type WindowsBinShell,
   type SandboxRuntimeConfig
 } from "@anthropic-ai/sandbox-runtime";
 
 import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 import { getDataDir } from "./db.js";
 import { getUserRoots, listUsers } from "./users.js";
+import { resolveWindowsShellCommand } from "./windowsEnv.js";
 
 export interface SandboxedSpawn {
   bin: string;
   args: string[];
   env: Record<string, string | undefined>;
+  stdinPath?: string;
 }
 
 const PUBLIC_AGENT_DOMAINS = [
@@ -36,9 +46,141 @@ const PUBLIC_AGENT_DOMAINS = [
 ];
 
 let initialization: Promise<void> | null = null;
+let windowsInitializationConfig: SandboxRuntimeConfig | null = null;
+let windowsActiveCommands = 0;
+const windowsBinaryAliasDirectories = new Set<string>();
+const windowsStdinBridgePaths = new Set<string>();
+let windowsHelperAccessGranted = false;
+let windowsHelperSandboxSid: string | null = null;
+let windowsReset: Promise<void> | null = null;
+let windowsPrepareQueue: Promise<void> = Promise.resolve();
 let ipv6ProxyBridge: net.Server | null = null;
 let ipv6ProxyBridgePort: number | null = null;
 let ipv6ProxyBridgeInitialization: Promise<void> | null = null;
+
+async function withWindowsPrepareLock<T>(
+  action: () => Promise<T>
+): Promise<T> {
+  const previous = windowsPrepareQueue;
+  let release!: () => void;
+  windowsPrepareQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await action();
+  } finally {
+    release();
+  }
+}
+
+function asarUnpackedPath(file: string): string {
+  return file.replace(
+    /([/\\])app\.asar([/\\])/,
+    "$1app.asar.unpacked$2"
+  );
+}
+
+function windowsSrtWinPath(): string {
+  return asarUnpackedPath(VENDORED_SRT_WIN_EXE);
+}
+
+async function ensureWindowsHelperAccess(): Promise<void> {
+  if (windowsHelperAccessGranted) return;
+
+  const srtWin = resolveSrtWin({ path: windowsSrtWinPath() });
+  const status = await getWindowsSandboxUserStatusAsync({ srtWin });
+  if (!status.provisioned || !status.sid) {
+    throw new WindowsSandboxError(
+      "not_provisioned",
+      "Windows sandbox user is not provisioned"
+    );
+  }
+
+  grantWindowsAcl({
+    read: [path.dirname(srtWin.exe), srtWin.exe],
+    write: [],
+    sandboxUserSid: status.sid,
+    srtWin
+  });
+  windowsHelperSandboxSid = status.sid;
+  windowsHelperAccessGranted = true;
+}
+
+function revokeWindowsHelperAccess(): void {
+  if (!windowsHelperAccessGranted || !windowsHelperSandboxSid) return;
+
+  const srtWin = resolveSrtWin({ path: windowsSrtWinPath() });
+  try {
+    revokeWindowsAcl({
+      sandboxUserSid: windowsHelperSandboxSid,
+      srtWin
+    });
+  } catch (error) {
+    console.error(
+      `[sandbox] Windows helper ACL cleanup failed: ${
+        (error as Error)?.message || String(error)
+      }`
+    );
+  } finally {
+    windowsHelperAccessGranted = false;
+    windowsHelperSandboxSid = null;
+  }
+}
+
+function startWindowsReset(): Promise<void> {
+  if (windowsReset) return windowsReset;
+
+  windowsReset = SandboxManager.reset()
+    .catch((error) => {
+      console.error(
+        `[sandbox] Windows cleanup failed: ${(error as Error)?.message || String(error)}`
+      );
+    })
+    .finally(() => {
+      cleanupWindowsBinaryAliases();
+      cleanupWindowsStdinBridges();
+      revokeWindowsHelperAccess();
+      initialization = null;
+      windowsInitializationConfig = null;
+      windowsReset = null;
+    });
+  return windowsReset;
+}
+
+function cleanupWindowsStdinBridges(): void {
+  for (const bridgePath of windowsStdinBridgePaths) {
+    try {
+      fs.rmSync(bridgePath, { force: true });
+    } catch (error) {
+      console.error(
+        `[sandbox] Windows stdin bridge cleanup failed: ${(error as Error)?.message || String(error)}`
+      );
+    } finally {
+      windowsStdinBridgePaths.delete(bridgePath);
+    }
+  }
+}
+
+function cleanupWindowsBinaryAliases(): void {
+  for (const aliasDirectory of windowsBinaryAliasDirectories) {
+    try {
+      if (fs.lstatSync(aliasDirectory).isSymbolicLink()) {
+        fs.rmdirSync(aliasDirectory);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.error(
+          `[sandbox] Windows Agent alias cleanup failed: ${
+            (error as Error)?.message || String(error)
+          }`
+        );
+      }
+    } finally {
+      windowsBinaryAliasDirectories.delete(aliasDirectory);
+    }
+  }
+}
 
 export function shouldSandboxCurrentCaller(): boolean {
   return Boolean(getCallerUserId()) && !isCallerAdmin();
@@ -98,7 +240,15 @@ function publicNetworkDestination(host: string): boolean {
   return true;
 }
 
-function baseConfig(): SandboxRuntimeConfig {
+function baseConfig(
+  filesystem: SandboxRuntimeConfig["filesystem"] = {
+    denyRead: [],
+    allowRead: [],
+    allowWrite: [],
+    denyWrite: [],
+    allowGitConfig: false
+  }
+): SandboxRuntimeConfig {
   return {
     network: {
       allowedDomains: PUBLIC_AGENT_DOMAINS,
@@ -116,29 +266,39 @@ function baseConfig(): SandboxRuntimeConfig {
       // bind/connect on 127.0.0.1 and ::1.
       allowLocalBinding: true
     },
-    filesystem: {
-      denyRead: [],
-      allowRead: [],
-      allowWrite: [],
-      denyWrite: [],
-      allowGitConfig: false
-    },
+    filesystem,
+    ...(process.platform === "win32"
+      ? {
+          windows: {
+            srtWin: { path: windowsSrtWinPath() }
+          }
+        }
+      : {}),
     allowAppleEvents: false
   };
 }
 
-async function ensureInitialized(): Promise<void> {
+function sandboxUnavailableMessage(error: unknown): string {
+  if (
+    process.platform === "win32" &&
+    error instanceof WindowsSandboxError &&
+    error.code === "not_provisioned"
+  ) {
+    return "Windows sandbox is not installed. On the FreeBuddy host, run `npx @anthropic-ai/sandbox-runtime windows-install` once and approve the UAC prompt.";
+  }
+  return (error as Error)?.message || String(error);
+}
+
+async function ensureInitialized(
+  config: SandboxRuntimeConfig = baseConfig()
+): Promise<void> {
   if (!initialization) {
     initialization = SandboxManager.initialize(
-      baseConfig(),
+      config,
       async ({ host }) => publicNetworkDestination(host)
     ).catch((error) => {
       initialization = null;
-      throw new Error(
-        `remote_sandbox_unavailable: ${
-          (error as Error)?.message || String(error)
-        }`
-      );
+      throw new Error(`remote_sandbox_unavailable: ${sandboxUnavailableMessage(error)}`);
     });
   }
   await initialization;
@@ -225,13 +385,111 @@ function existing(paths: string[]): string[] {
   });
 }
 
-function resolveBinary(binary: string, env: Record<string, string | undefined>): string | null {
+function isWithinPath(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return (
+    relative === "" ||
+    (relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative))
+  );
+}
+
+interface WindowsBinaryAlias {
+  binary: string;
+  directory: string;
+  readPath: string;
+}
+
+function ensureWindowsBinaryAlias(
+  binary: string,
+  adapter: string
+): WindowsBinaryAlias | null {
+  if (process.platform !== "win32" || !isWithinPath(os.homedir(), binary)) {
+    return null;
+  }
+
+  const targetDirectory = path.dirname(binary);
+  const aliasRoot = path.join(os.homedir(), ".freebuddy-agent-links");
+  fs.mkdirSync(aliasRoot, { recursive: true, mode: 0o700 });
+  const rootStat = fs.lstatSync(aliasRoot);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    throw new Error("remote_sandbox_unsafe_windows_agent_alias_root");
+  }
+
+  const label =
+    adapter.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 40) || "agent";
+  const digest = createHash("sha256")
+    .update(targetDirectory.toLowerCase())
+    .digest("hex")
+    .slice(0, 16);
+  const aliasDirectory = path.join(aliasRoot, `${label}-${digest}`);
+
+  try {
+    const aliasStat = fs.lstatSync(aliasDirectory);
+    if (!aliasStat.isSymbolicLink()) {
+      throw new Error("remote_sandbox_unsafe_windows_agent_alias");
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    fs.symlinkSync(targetDirectory, aliasDirectory, "junction");
+  }
+
+  const resolvedTarget = fs.realpathSync.native(aliasDirectory);
+  if (
+    path.resolve(resolvedTarget).toLowerCase() !==
+    path.resolve(targetDirectory).toLowerCase()
+  ) {
+    throw new Error("remote_sandbox_unsafe_windows_agent_alias");
+  }
+
+  windowsBinaryAliasDirectories.add(aliasDirectory);
+  const aliasedBinary = path.join(aliasDirectory, path.basename(binary));
+  if (!fs.existsSync(aliasedBinary)) {
+    throw new Error("remote_sandbox_missing_windows_agent_alias");
+  }
+  return {
+    binary: aliasedBinary,
+    directory: aliasDirectory,
+    readPath: aliasRoot
+  };
+}
+
+function windowsNodeLauncherEntry(binary: string): string | null {
+  if (![".cmd", ".bat"].includes(path.extname(binary).toLowerCase())) {
+    return null;
+  }
+  let source: string;
+  try {
+    source = fs.readFileSync(binary, "utf8").slice(0, 64 * 1024);
+  } catch {
+    return null;
+  }
+  const match =
+    source.match(/"%dp0%\\([^"\r\n]+)"\s+%\*/i) ??
+    source.match(/"%~dp0([^"\r\n]+)"\s*(?:%\*|$)/im);
+  if (!match?.[1]) return null;
+
+  const entry = path.resolve(path.dirname(binary), match[1]);
+  if (!isWithinPath(path.dirname(binary), entry) || !fs.existsSync(entry)) {
+    return null;
+  }
+  return entry;
+}
+
+async function resolveBinary(
+  binary: string,
+  env: Record<string, string | undefined>
+): Promise<string | null> {
   if (path.isAbsolute(binary)) {
     try {
       return fs.realpathSync.native(binary);
     } catch {
       return binary;
     }
+  }
+  if (process.platform === "win32") {
+    return (await resolveWindowsShellCommand(binary, env)) ?? null;
   }
   const pathValue = env.PATH ?? process.env.PATH ?? "";
   for (const directory of pathValue.split(path.delimiter)) {
@@ -365,6 +623,52 @@ function qoderShellOutputPath(
   return isolatedRoot;
 }
 
+function prepareGrokSandboxHome(
+  adapter: string,
+  sandboxHome: string,
+  hostHome: string
+): string | null {
+  if (process.platform !== "win32" || !adapter.includes("grok")) return null;
+
+  const sourceRoot = path.join(hostHome, ".grok");
+  const destinationRoot = path.join(sandboxHome, ".grok");
+  fs.mkdirSync(destinationRoot, { recursive: true, mode: 0o700 });
+  const destinationRootStat = fs.lstatSync(destinationRoot);
+  if (
+    !destinationRootStat.isDirectory() ||
+    destinationRootStat.isSymbolicLink()
+  ) {
+    throw new Error("remote_sandbox_unsafe_grok_home");
+  }
+
+  for (const name of ["auth.json", "agent_id", "config.toml", "models_cache.json"]) {
+    const source = path.join(sourceRoot, name);
+    const destination = path.join(destinationRoot, name);
+    let sourceStat: fs.Stats;
+    try {
+      sourceStat = fs.lstatSync(source);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) continue;
+
+    try {
+      const destinationStat = fs.lstatSync(destination);
+      if (!destinationStat.isFile() || destinationStat.isSymbolicLink()) {
+        throw new Error("remote_sandbox_unsafe_grok_config");
+      }
+      continue;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
+    fs.chmodSync(destination, 0o600);
+  }
+
+  return destinationRoot;
+}
+
 function adapterSandboxEnvironment(
   adapter: string,
   workspaceRoot: string
@@ -386,7 +690,9 @@ function adapterSandboxEnvironment(
   fs.mkdirSync(sandboxHome, { recursive: true, mode: 0o700 });
   const sandboxTmp = path.join(sandboxHome, "tmp");
   fs.mkdirSync(sandboxTmp, { recursive: true, mode: 0o700 });
-  const qoderConfig = path.join(os.homedir(), ".qoder");
+  const hostHome = os.homedir();
+  const qoderConfig = path.join(hostHome, ".qoder");
+  const grokHome = prepareGrokSandboxHome(adapter, sandboxHome, hostHome);
   const qoderOutput = qoderShellOutputPath(adapter, workspaceRoot);
 
   return {
@@ -401,6 +707,18 @@ function adapterSandboxEnvironment(
       ...(adapter.includes("claude")
         ? { CLAUDE_CODE_TMPDIR: sandboxTmp }
         : {}),
+      // srt-win runs under a dedicated local account. Point agents at the
+      // host profile so their existing authentication/config discovery still
+      // works; NTFS grants below expose only the adapter-specific paths.
+      ...(process.platform === "win32" && !adapter.includes("qoder")
+        ? {
+            HOME: hostHome,
+            USERPROFILE: hostHome,
+            ...(adapter.includes("codex")
+              ? { CODEX_HOME: path.join(hostHome, ".codex") }
+              : {})
+          }
+        : {}),
       // Qoder's Bun runtime resolves HOME during startup. Point it at a
       // per-WebUI-user directory instead of exposing the host user's home.
       ...(adapter.includes("qoder") ? { HOME: sandboxHome } : {}),
@@ -408,7 +726,10 @@ function adapterSandboxEnvironment(
       // documented environment equivalent of Qoder's --config-dir option.
       ...(adapter.includes("qoder") && fs.existsSync(qoderConfig)
         ? { QODER_CONFIG_DIR: qoderConfig }
-        : {})
+        : {}),
+      // Grok takes an exclusive lock while loading and refreshing auth. Give
+      // each WebUI user a writable copy instead of exposing host config writes.
+      ...(grokHome ? { GROK_HOME: grokHome } : {})
     },
     readWritePaths: [sandboxHome, ...(qoderOutput ? [qoderOutput] : [])]
   };
@@ -435,6 +756,115 @@ function quotePosix(value: string): string {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
+function quotePowerShell(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+
+const WINDOWS_NODE_RUNNER = [
+  "const p=JSON.parse(Buffer.from(process.argv[1],'base64url'))",
+  "Object.assign(process.env,p.env)",
+  "const fs=(await import('node:fs')).default",
+  "const path=(await import('node:path')).default",
+  "const{PassThrough}=await import('node:stream')",
+  "const bridgedStdin=new PassThrough()",
+  "Object.defineProperty(process,'stdin',{value:bridgedStdin})",
+  "let stdinOffset=0",
+  "const pumpStdin=()=>{try{const data=fs.readFileSync(p.stdin);if(data.length<stdinOffset)stdinOffset=0;if(data.length>stdinOffset){bridgedStdin.write(data.subarray(stdinOffset));stdinOffset=data.length}}catch{}}",
+  "pumpStdin()",
+  "setInterval(pumpStdin,10).unref()",
+  "const root=path.resolve(p.workspace)",
+  "const original=fs.realpathSync",
+  "const originalNative=fs.realpathSync.native",
+  "const preserve=(candidate,options,realpath)=>typeof candidate==='string'&&(path.resolve(candidate).toLowerCase()===root.toLowerCase()||path.resolve(candidate).toLowerCase().startsWith(root.toLowerCase()+path.sep))?(options==='buffer'||options?.encoding==='buffer'?Buffer.from(path.resolve(candidate)):path.resolve(candidate)):realpath(candidate,options)",
+  "fs.realpathSync=(candidate,options)=>preserve(candidate,options,original)",
+  "fs.realpathSync.native=(candidate,options)=>preserve(candidate,options,originalNative)",
+  "const{syncBuiltinESMExports}=await import('node:module')",
+  "syncBuiltinESMExports()",
+  "if(p.entry){",
+  "process.argv=[process.execPath,p.entry,...p.args]",
+  "const{pathToFileURL}=await import('node:url')",
+  "await import(pathToFileURL(p.entry).href)",
+  "}else{",
+  "const{spawn}=await import('node:child_process')",
+  "const child=spawn(p.bin,p.args,{stdio:['pipe','inherit','inherit'],env:process.env})",
+  "bridgedStdin.pipe(child.stdin)",
+  "child.stdin.on('error',()=>{})",
+  "const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',resolve)})",
+  "process.exitCode=code??1",
+  "}"
+].join(";");
+
+
+function windowsPowerShell(env: Record<string, string | undefined>): string {
+  const systemRoot = env.SystemRoot || env.SYSTEMROOT || "C:\\Windows";
+  return path.win32.join(
+    systemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe"
+  );
+}
+
+const WINDOWS_SANDBOX_PROXY_ENV = new Set([
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "CURL_CA_BUNDLE",
+  "GIT_SSL_CAINFO",
+  "CARGO_HTTP_CAINFO"
+]);
+
+function windowsCommandEnvironment(
+  env: Record<string, string | undefined>,
+  adapterEnv: Record<string, string>
+): Record<string, string> {
+  const forwarded: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value == null || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    const upper = key.toUpperCase();
+    if (WINDOWS_SANDBOX_PROXY_ENV.has(upper)) continue;
+    if (
+      value !== process.env[key] ||
+      /(API_KEY|TOKEN|SECRET|_MODEL|BASE_URL|CONFIG)/i.test(key)
+    ) {
+      forwarded[key] = value;
+    }
+  }
+  return { ...forwarded, ...adapterEnv };
+}
+
+function windowsNodeOptions(current: string | undefined): string {
+  const options =
+    current
+      ?.split(/\s+/)
+      .filter(Boolean) ?? [];
+  for (const required of ["--preserve-symlinks", "--preserve-symlinks-main"]) {
+    if (!options.includes(required)) options.push(required);
+  }
+  return options.join(" ");
+}
+
+function windowsConfigCovers(
+  current: SandboxRuntimeConfig,
+  required: SandboxRuntimeConfig
+): boolean {
+  const includesAll = (available: string[], needed: string[]) => {
+    const keys = new Set(available.map((entry) => path.resolve(entry).toLowerCase()));
+    return needed.every((entry) => keys.has(path.resolve(entry).toLowerCase()));
+  };
+  return (
+    includesAll(current.filesystem.allowRead ?? [], required.filesystem.allowRead ?? []) &&
+    includesAll(current.filesystem.allowWrite, required.filesystem.allowWrite) &&
+    includesAll(current.filesystem.denyRead, required.filesystem.denyRead) &&
+    includesAll(current.filesystem.denyWrite, required.filesystem.denyWrite)
+  );
+}
+
 export async function prepareSandboxedSpawn(input: {
   adapter: string;
   bin: string;
@@ -444,37 +874,195 @@ export async function prepareSandboxedSpawn(input: {
   env: Record<string, string | undefined>;
   extraReadPaths?: string[];
 }): Promise<SandboxedSpawn> {
-  if (process.platform === "win32") {
-    throw new Error(
-      "remote_sandbox_unavailable: Windows lightweight sandbox setup is not included in this first version"
-    );
-  }
-  await ensureInitialized();
-  const useIpv6Proxy = await ensureIpv6ProxyBridge(input.adapter);
-
-  const binary = resolveBinary(input.bin, input.env);
+  const binary = await resolveBinary(input.bin, input.env);
+  const binaryAlias = binary
+    ? ensureWindowsBinaryAlias(binary, input.adapter)
+    : null;
+  const nodeLauncherEntry = binary
+    ? windowsNodeLauncherEntry(binary)
+    : null;
+  const nodeLauncherBinary = nodeLauncherEntry
+    ? await resolveBinary("node", input.env)
+    : null;
+  const aliasedNodeEntry =
+    nodeLauncherEntry && binaryAlias
+      ? path.join(
+          binaryAlias.directory,
+          path.relative(path.dirname(binary!), nodeLauncherEntry)
+        )
+      : null;
+  const windowsLaunchBinary =
+    aliasedNodeEntry && nodeLauncherBinary
+      ? nodeLauncherBinary
+      : binaryAlias?.binary ?? binary ?? input.bin;
+  const windowsLaunchArgs =
+    aliasedNodeEntry && nodeLauncherBinary
+      ? [aliasedNodeEntry, ...input.args]
+      : input.args;
+  const windowsBridgeNodeBinary =
+    process.platform === "win32" && input.adapter.includes("acp")
+      ? nodeLauncherBinary ?? await resolveBinary("node", input.env)
+      : null;
   const workspaceRoot = input.workspaceRoot ?? input.cwd;
   const configPaths = adapterConfigPaths(input.adapter);
   const adapterSandbox = adapterSandboxEnvironment(input.adapter, workspaceRoot);
+  const windowsStdinPath =
+    process.platform === "win32" && windowsBridgeNodeBinary
+      ? path.join(
+          adapterSandbox.readWritePaths[0]!,
+          `.stdin-${randomUUID()}.jsonl`
+        )
+      : null;
+  if (windowsStdinPath) fs.writeFileSync(windowsStdinPath, "", { mode: 0o600 });
+  if (windowsStdinPath) windowsStdinBridgePaths.add(windowsStdinPath);
   const binaryPaths = binary
-    ? existing([
-        binary,
-        path.dirname(binary),
-        path.dirname(path.dirname(binary))
-      ])
+    ? existing(
+        process.platform === "win32"
+          ? isWithinPath(os.homedir(), binary)
+            ? [binary, path.dirname(binary)]
+            : []
+          : [
+              binary,
+              path.dirname(binary),
+              path.dirname(path.dirname(binary))
+            ]
+      )
     : [];
   const allowedRead = existing([
     workspaceRoot,
     ...configPaths,
     ...adapterSandbox.readWritePaths,
     ...binaryPaths,
-    ...applicationRuntimeReadPaths(),
+    ...(binaryAlias ? [binaryAlias.readPath] : []),
+    ...(process.platform === "win32" ? [] : applicationRuntimeReadPaths()),
     ...(input.extraReadPaths ?? [])
   ]);
   const denyRead = existing([
     process.platform === "darwin" ? "/Users" : "/home",
     ...allAssignedRepositoryRoots()
   ]);
+  const allowWrite = existing([
+    workspaceRoot,
+    ...configPaths,
+    ...adapterSandbox.readWritePaths
+  ]);
+
+  if (process.platform === "win32") {
+    const requiredConfig = baseConfig({
+      denyRead,
+      allowRead: allowedRead,
+      allowWrite,
+      denyWrite: [],
+      allowGitConfig: false
+    });
+    return withWindowsPrepareLock(async () => {
+      if (windowsReset) await windowsReset;
+      if (!initialization) {
+        try {
+          await ensureWindowsHelperAccess();
+          await ensureInitialized(requiredConfig);
+          windowsInitializationConfig = requiredConfig;
+        } catch (error) {
+          cleanupWindowsBinaryAliases();
+          revokeWindowsHelperAccess();
+          cleanupWindowsStdinBridges();
+          if ((error as Error)?.message?.startsWith("remote_sandbox_")) {
+            throw error;
+          }
+          throw new Error(
+            `remote_sandbox_unavailable: ${sandboxUnavailableMessage(error)}`
+          );
+        }
+      } else if (
+        !windowsInitializationConfig ||
+        !windowsConfigCovers(windowsInitializationConfig, requiredConfig)
+      ) {
+        throw new Error(
+          "remote_sandbox_busy: another Windows WebUI agent is using a different isolated workspace; wait for it to finish and retry"
+        );
+      }
+
+      const environment = windowsCommandEnvironment(
+        input.env,
+        adapterSandbox.env
+      );
+      if (binaryAlias) {
+        environment.NODE_OPTIONS = windowsNodeOptions(input.env.NODE_OPTIONS);
+      }
+      let command: string;
+      let shell: WindowsBinShell;
+      if (windowsStdinPath && windowsBridgeNodeBinary) {
+        const runnerPayload = Buffer.from(
+          JSON.stringify({
+            ...(aliasedNodeEntry
+              ? { entry: aliasedNodeEntry }
+              : { bin: binaryAlias?.binary ?? binary ?? input.bin }),
+            args: input.args,
+            env: environment,
+            workspace: workspaceRoot,
+            stdin: windowsStdinPath
+          })
+        ).toString("base64url");
+        command = runnerPayload;
+        shell = {
+          exe: windowsBridgeNodeBinary,
+          args: [
+            "--preserve-symlinks",
+            "--preserve-symlinks-main",
+            "--input-type=module",
+            "-e",
+            WINDOWS_NODE_RUNNER
+          ]
+        };
+      } else {
+        const environmentStatements = Object.entries(environment).map(
+          ([key, value]) =>
+            `[Environment]::SetEnvironmentVariable(${quotePowerShell(key)}, ${quotePowerShell(value)}, 'Process')`
+        );
+        command = [
+          ...environmentStatements,
+          `& ${[
+            windowsLaunchBinary,
+            ...windowsLaunchArgs
+          ].map(quotePowerShell).join(" ")}`,
+          "exit $LASTEXITCODE"
+        ].join("; ");
+        shell = {
+          exe: windowsPowerShell(input.env),
+          args: [
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command"
+          ]
+        };
+      }
+      try {
+        const wrapped = await SandboxManager.wrapWithSandboxArgv(
+          command,
+          shell,
+          { git: { safeDirectories: [workspaceRoot] } },
+          undefined,
+          input.cwd
+        );
+        windowsActiveCommands += 1;
+        return {
+          bin: wrapped.argv[0]!,
+          args: wrapped.argv.slice(1),
+          env: { ...input.env, ...wrapped.env, ...adapterSandbox.env },
+          ...(windowsStdinPath ? { stdinPath: windowsStdinPath } : {})
+        };
+      } catch (error) {
+        if (windowsActiveCommands === 0) await startWindowsReset();
+        throw error;
+      }
+    });
+  }
+
+  await ensureInitialized();
+  const useIpv6Proxy = await ensureIpv6ProxyBridge(input.adapter);
   // Resolve PATH-based launchers before entering the sandbox. User-local bin
   // directories (for example ~/.local/bin) are intentionally hidden from
   // remote callers, while the launcher target itself is explicitly allowed.
@@ -497,11 +1085,7 @@ export async function prepareSandboxedSpawn(input: {
       filesystem: {
         denyRead,
         allowRead: allowedRead,
-        allowWrite: existing([
-          workspaceRoot,
-          ...configPaths,
-          ...adapterSandbox.readWritePaths
-        ]),
+        allowWrite,
         denyWrite: []
       },
       git: { safeDirectories: [workspaceRoot] }
@@ -531,4 +1115,9 @@ export async function prepareSandboxedSpawn(input: {
 
 export function cleanupSandboxCommand(): void {
   SandboxManager.cleanupAfterCommand();
+  if (process.platform !== "win32" || windowsActiveCommands <= 0) return;
+  windowsActiveCommands -= 1;
+  if (windowsActiveCommands > 0 || windowsReset) return;
+
+  void startWindowsReset();
 }

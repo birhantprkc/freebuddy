@@ -37,7 +37,8 @@ import {
   cleanupSandboxCommand,
   prepareSandboxedSpawn,
   sandboxWorkingDirectory,
-  shouldSandboxCurrentCaller
+  shouldSandboxCurrentCaller,
+  type SandboxedSpawn
 } from "./sandboxRuntime.js";
 import { isolateRemoteCwdForCaller } from "./remoteWorkspaceAccess.js";
 import { clearSessionOwner } from "./sessionOwners.js";
@@ -261,7 +262,7 @@ export async function cliRun(
     )
   );
 
-  let spawnCommand = {
+  let spawnCommand: SandboxedSpawn = {
     bin: built.bin,
     args: built.args,
     env
@@ -301,7 +302,19 @@ export async function cliRun(
     env: spawnCommand.env,
     stdio: ["pipe", "pipe", "pipe"]
   }) as ChildProcessByStdio<Writable, Readable, Readable>;
-  if (sandboxed) child.once("close", cleanupSandboxCommand);
+  const attachSandboxStdin = (
+    target: ChildProcessByStdio<Writable, Readable, Readable>,
+    reset = false
+  ) => {
+    if (!spawnCommand.stdinPath) return;
+    if (reset) fs.writeFileSync(spawnCommand.stdinPath, "");
+    const stdin = fs.createWriteStream(spawnCommand.stdinPath, { flags: "a" });
+    Object.defineProperty(target, "stdin", { value: stdin });
+    target.once("close", () => stdin.end());
+  };
+
+  attachSandboxStdin(child);
+
 
   let resolved = false;
   await new Promise<void>((resolve) => {
@@ -326,51 +339,59 @@ export async function cliRun(
   });
 
   const pid = child.pid ?? 0;
-  if (!pid) return;
+  if (!pid) {
+    if (sandboxed) cleanupSandboxCommand();
+    return;
+  }
   setTaskPid(args.sessionId, pid);
   emit({ type: "started", pid });
 
   if (built.protocol === "acp") {
-    await runAcpAgent({
-      child,
-      webContents,
-      args: executionArgs,
-      pid,
-      logStream,
-      toolSessionId,
-      toolSessionScope,
-      running,
-      capturedSessions,
-      emit,
-      agentCommand: {
-        bin: spawnCommand.bin,
-        args: spawnCommand.args,
-        cwd: executionArgs.cwd,
-        env: spawnCommand.env
-      },
-      restartAgent: async () => {
-        const restarted = spawn(spawnCommand.bin, spawnCommand.args, {
+    try {
+      await runAcpAgent({
+        child,
+        webContents,
+        args: executionArgs,
+        pid,
+        logStream,
+        toolSessionId,
+        toolSessionScope,
+        running,
+        capturedSessions,
+        emit,
+        agentCommand: {
+          bin: spawnCommand.bin,
+          args: spawnCommand.args,
           cwd: executionArgs.cwd,
-          env: spawnCommand.env,
-          stdio: ["pipe", "pipe", "pipe"]
-        }) as ChildProcessByStdio<Writable, Readable, Readable>;
-        if (sandboxed) restarted.once("close", cleanupSandboxCommand);
-        await new Promise<void>((resolve, reject) => {
-          restarted.once("spawn", resolve);
-          restarted.once("error", reject);
-        });
-        const restartedPid = restarted.pid ?? 0;
-        if (!restartedPid) {
-          throw new Error("Restarted ACP agent did not report a process id.");
+          env: spawnCommand.env
+        },
+        restartAgent: async () => {
+          const restarted = spawn(spawnCommand.bin, spawnCommand.args, {
+            cwd: executionArgs.cwd,
+            env: spawnCommand.env,
+            stdio: ["pipe", "pipe", "pipe"]
+          }) as ChildProcessByStdio<Writable, Readable, Readable>;
+          attachSandboxStdin(restarted, true);
+          await new Promise<void>((resolve, reject) => {
+            restarted.once("spawn", resolve);
+            restarted.once("error", reject);
+          });
+          const restartedPid = restarted.pid ?? 0;
+          if (!restartedPid) {
+            throw new Error("Restarted ACP agent did not report a process id.");
+          }
+          setTaskPid(args.sessionId, restartedPid);
+          emit({ type: "started", pid: restartedPid });
+          return { child: restarted, pid: restartedPid };
         }
-        setTaskPid(args.sessionId, restartedPid);
-        emit({ type: "started", pid: restartedPid });
-        return { child: restarted, pid: restartedPid };
-      }
-    });
+      });
+    } finally {
+      if (sandboxed) cleanupSandboxCommand();
+    }
     return;
   }
 
+  if (sandboxed) child.once("close", cleanupSandboxCommand);
   runLegacyCliAgent({
     child,
     args: executionArgs,

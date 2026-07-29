@@ -30,6 +30,31 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   assert.match(sandbox, /allowUnixSockets:\s*\[\]/);
   assert.match(sandbox, /allowLocalBinding:\s*true/);
   assert.match(sandbox, /remote_sandbox_unavailable/);
+  assert.doesNotMatch(
+    sandbox,
+    /Windows lightweight sandbox setup is not included/,
+    "Windows WebUI runs must use srt-win instead of a hard-coded rejection"
+  );
+  assert.match(sandbox, /VENDORED_SRT_WIN_EXE/);
+  assert.match(sandbox, /grantWindowsAcl/);
+  assert.match(sandbox, /revokeWindowsHelperAccess/);
+  assert.match(sandbox, /\.freebuddy-agent-links/);
+  assert.match(sandbox, /--preserve-symlinks-main/);
+  assert.match(sandbox, /windowsNodeLauncherEntry/);
+  assert.match(sandbox, /windowsStdinPath/);
+  assert.match(sandbox, /Object\.defineProperty\(process,'stdin'/);
+  assert.match(sandbox, /input\.adapter\.includes\("acp"\)/);
+  assert.match(sandbox, /spawn\(p\.bin,p\.args/);
+  assert.match(sandbox, /prepareGrokSandboxHome/);
+  assert.match(sandbox, /GROK_HOME:\s*grokHome/);
+  assert.match(sandbox, /cleanupWindowsBinaryAliases/);
+  assert.match(runtime, /attachSandboxStdin/);
+  assert.match(sandbox, /remote_sandbox_busy/);
+  assert.match(
+    sandbox,
+    /process\.platform === "win32" \? \[\] : applicationRuntimeReadPaths\(\)/,
+    "Windows must not attempt to rewrite ACLs on protected system runtime paths"
+  );
   assert.match(
     sandbox,
     /env:\s*\{\s*\.\.\.input\.env,\s*\.\.\.wrapped\.env,\s*\.\.\.adapterSandbox\.env\s*\}/,
@@ -58,6 +83,17 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
     acpRuntime,
     /if \(args\.conversationId && !sandboxedCaller\)/,
     "remote WebUI sessions must not receive desktop-only Draft/Browser MCP servers"
+  );
+
+  const acpBranch = runtime.slice(
+    runtime.indexOf('if (built.protocol === "acp")'),
+    runtime.indexOf("runLegacyCliAgent({")
+  );
+  assert.match(acpBranch, /finally\s*{\s*if \(sandboxed\) cleanupSandboxCommand\(\)/);
+  assert.doesNotMatch(acpBranch, /restarted\.once\("close", cleanupSandboxCommand\)/);
+  assert.match(
+    acpRuntime,
+    /sandboxedCaller && args\.adapter\.includes\("grok"\)/
   );
 });
 

@@ -52,12 +52,36 @@ automatically refreshed when the assigned source directory changes in this
 first version.
 
 Browser-started agents also run inside a lightweight OS process sandbox. On
-macOS this uses Seatbelt; on Linux the sandbox runtime uses bubblewrap. The
-sandbox grants read/write access to the user's managed clone and required agent
+macOS this uses Seatbelt; on Linux the sandbox runtime uses bubblewrap; on
+Windows it uses the bundled `srt-win` helper, a dedicated local account, and
+Windows Filtering Platform network rules. The sandbox grants read/write access
+to the user's managed clone and required agent
 configuration, denies the rest of the host user directories, and proxies
 outbound network access. Private, loopback, and local network destinations are
 denied; normal public package registries, source hosts, and agent APIs remain
 available. Desktop-started agents keep the existing unrestricted local behavior.
+
+Windows hosts require one administrator-approved setup before the first WebUI
+agent run:
+
+```powershell
+npx @anthropic-ai/sandbox-runtime windows-install
+```
+
+Approve the UAC prompt and keep the Windows **Secondary Logon** (`seclogon`)
+service available. Agent commands themselves continue to run as the dedicated
+non-administrator sandbox account. FreeBuddy grants and revokes only the helper,
+managed workspace, and selected Agent configuration ACLs for each active
+session. Node-based Agents installed under the host profile are launched through
+a verified, read-only junction under `~/.freebuddy-agent-links`; this lets Node
+resolve the entry point without granting the sandbox access to the AppData
+parent directories. The junction is removed when the sandbox session ends.
+Long-lived ACP input uses a per-command bridge file inside that WebUI user's
+isolated `sandbox-home`, because the Windows helper does not forward streaming
+stdin. The bridge is removed with the rest of the sandbox session state.
+Grok also receives an isolated writable `GROK_HOME` seeded from the desktop
+login, so its authentication lock and token refresh never require write access
+to the host profile.
 
 ## Environment variables
 

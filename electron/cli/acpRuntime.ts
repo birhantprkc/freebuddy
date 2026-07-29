@@ -864,6 +864,9 @@ export async function runAcpAgent({
       await request(buildAuthenticateRequest(nextId(), method.id));
       return true;
     }
+    if (sandboxedCaller && args.adapter.includes("grok")) {
+      throw authRequiredError(methods);
+    }
     await request(buildAuthenticateRequest(nextId(), method.id));
     return false;
   };
