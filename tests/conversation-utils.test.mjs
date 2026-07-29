@@ -748,15 +748,32 @@ test("collectStreamContentSignatures gathers assistant content only", async () =
   );
 });
 
-test("fresh ACP sessions do not enable content-signature replay suppression", () => {
-  const source = fs.readFileSync(
-    new URL("../src/store/conversationStore.ts", import.meta.url),
-    "utf8"
-  );
+test("fresh ACP turns do not derive replay signatures from the current user prompt", async () => {
+  const { collectStreamContentSignatures } = await loadConversationUtils();
+  const timestamp = "2026-07-29T10:00:00.000Z";
 
-  assert.match(
-    source,
-    /resumedFromSessionId\s*\?\s*\{\s*knownStreamContentSignatures:\s*collectStreamContentSignatures\(msgs\)/
+  assert.deepEqual(
+    collectStreamContentSignatures([
+      {
+        id: "user-1",
+        conversationId: "conv-1",
+        role: "user",
+        status: "sent",
+        content: "你好",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      },
+      {
+        id: "assistant-1",
+        conversationId: "conv-1",
+        role: "assistant",
+        status: "running",
+        content: "[]",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }
+    ]),
+    []
   );
 });
 
