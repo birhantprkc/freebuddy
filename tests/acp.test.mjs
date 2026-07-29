@@ -20,6 +20,7 @@ import {
   contentBlockToItems,
   parseAcpLine,
   selectAcpAuthMethod,
+  selectAcpSessionStartMode,
   shouldEmitAcpUpdate,
   shouldSkipUserMessageChunk,
   shouldDropReplayPhaseAgentChunk
@@ -1040,7 +1041,7 @@ test("shouldEmitAcpUpdate suppresses replay updates before the current prompt st
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: "previous answer" }
       },
-      { promptStarted: false }
+      { promptStarted: false, replaySuppressionEnabled: false }
     ),
     false
   );
@@ -1050,7 +1051,7 @@ test("shouldEmitAcpUpdate suppresses replay updates before the current prompt st
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: "current answer" }
       },
-      { promptStarted: true }
+      { promptStarted: true, replaySuppressionEnabled: false }
     ),
     true
   );
@@ -1063,7 +1064,7 @@ test("shouldEmitAcpUpdate always emits session metadata updates", () => {
         sessionUpdate: "session_info_update",
         title: "Renamed session"
       },
-      { promptStarted: false }
+      { promptStarted: false, replaySuppressionEnabled: false }
     ),
     true
   );
@@ -1073,7 +1074,30 @@ test("shouldEmitAcpUpdate always emits session metadata updates", () => {
         sessionUpdate: "config_option_update",
         configOptions: [{ id: "model", name: "Model", type: "select" }]
       },
-      { promptStarted: false }
+      { promptStarted: false, replaySuppressionEnabled: false }
+    ),
+    true
+  );
+});
+
+test("saved ACP sessions that fall back to session/new keep matching live chunks", () => {
+  const sessionStartMode = selectAcpSessionStartMode("saved-session", {
+    sessionCapabilities: {}
+  });
+  const replayContentSignatures = new Set(["same as a previous answer"]);
+
+  assert.equal(sessionStartMode, "new");
+  assert.equal(
+    shouldEmitAcpUpdate(
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "same as a previous answer" }
+      },
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: sessionStartMode !== "new",
+        replayContentSignatures
+      }
     ),
     true
   );
@@ -1088,7 +1112,11 @@ test("shouldEmitAcpUpdate suppresses persisted messageId replay after prompt sta
         messageId: "msg-old-1",
         content: { type: "text", text: "previous answer" }
       },
-      { promptStarted: true, replayMessageIds }
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true,
+        replayMessageIds
+      }
     ),
     false
   );
@@ -1099,7 +1127,11 @@ test("shouldEmitAcpUpdate suppresses persisted messageId replay after prompt sta
         messageId: "msg-new-1",
         content: { type: "text", text: "fresh answer" }
       },
-      { promptStarted: true, replayMessageIds }
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true,
+        replayMessageIds
+      }
     ),
     true
   );
@@ -1110,21 +1142,33 @@ test("shouldEmitAcpUpdate suppresses replayed tool calls by toolCallId", () => {
   assert.equal(
     shouldEmitAcpUpdate(
       { sessionUpdate: "tool_call", toolCallId: "tool-old-1", title: "Read" },
-      { promptStarted: true, replayMessageIds }
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true,
+        replayMessageIds
+      }
     ),
     false
   );
   assert.equal(
     shouldEmitAcpUpdate(
       { sessionUpdate: "tool_call_update", toolCallId: "tool-old-1", status: "completed" },
-      { promptStarted: true, replayMessageIds }
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true,
+        replayMessageIds
+      }
     ),
     false
   );
   assert.equal(
     shouldEmitAcpUpdate(
       { sessionUpdate: "tool_call", toolCallId: "tool-new-1", title: "Read" },
-      { promptStarted: true, replayMessageIds }
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true,
+        replayMessageIds
+      }
     ),
     true
   );
@@ -1139,7 +1183,11 @@ test("shouldEmitAcpUpdate suppresses replayed chunks by content signature", () =
         messageId: "fresh-id-never-persisted",
         content: { type: "text", text: "  你好！我是 Qoder  " }
       },
-      { promptStarted: true, replayContentSignatures }
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true,
+        replayContentSignatures
+      }
     ),
     false
   );
@@ -1149,7 +1197,11 @@ test("shouldEmitAcpUpdate suppresses replayed chunks by content signature", () =
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: "抱歉，" }
       },
-      { promptStarted: true, replayContentSignatures }
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true,
+        replayContentSignatures
+      }
     ),
     true
   );

@@ -21,6 +21,7 @@ import {
   buildSessionSetConfigOptionRequest,
   buildTerminalOutputResponse,
   parseAcpLine,
+  selectAcpSessionStartMode,
   selectAcpAuthMethod,
   shouldDropReplayPhaseAgentChunk,
   shouldEmitAcpUpdate,
@@ -129,6 +130,7 @@ export async function runAcpAgent({
   let promptStarted = false;
   let promptHadContent = false;
   let turnHadLiveAgentChunk = false;
+  let sessionWasResumed = false;
   let mcpServers: AcpStdioMcpServer[] = [];
   const replayMessageIds = new Set(args.knownStreamMessageIds ?? []);
   const replayContentSignatures = new Set(
@@ -138,8 +140,8 @@ export async function runAcpAgent({
   // attach messageIds when replaying history on resume. When resuming such an
   // adapter (prior turns persisted zero agent messageIds), drop messageId-
   // carrying chunks until the first live chunk signals real generation.
-  const suppressReplayByPhase =
-    Boolean(toolSessionId) &&
+  const suppressReplayByPhase = () =>
+    sessionWasResumed &&
     (args.knownAgentStreamMessageIds ?? []).length === 0;
   const terminalManager = createAcpTerminalManager({
     defaultCwd: args.cwd,
@@ -278,10 +280,11 @@ export async function runAcpAgent({
       const isAgentChunkForPhase =
         updateType === "agent_message_chunk" ||
         updateType === "agent_thought_chunk";
-      if (isAgentChunkForPhase && suppressReplayByPhase) {
+      const replayPhaseSuppressionEnabled = suppressReplayByPhase();
+      if (isAgentChunkForPhase && replayPhaseSuppressionEnabled) {
         if (
           shouldDropReplayPhaseAgentChunk(msg.params?.update, {
-            suppressReplayByPhase,
+            suppressReplayByPhase: replayPhaseSuppressionEnabled,
             turnHadLiveAgentChunk
           })
         ) {
@@ -297,6 +300,7 @@ export async function runAcpAgent({
       if (
         !shouldEmitAcpUpdate(msg.params?.update, {
           promptStarted,
+          replaySuppressionEnabled: sessionWasResumed,
           replayMessageIds,
           replayContentSignatures
         })
@@ -657,6 +661,7 @@ export async function runAcpAgent({
     promptStarted = false;
     promptHadContent = false;
     turnHadLiveAgentChunk = false;
+    sessionWasResumed = false;
     updateRunningProcess();
     attachConnection();
     const init = await request(buildInitializeRequest(nextId()));
@@ -688,17 +693,21 @@ export async function runAcpAgent({
       if (items.length) emit({ type: "items", items });
     };
 
-    if (toolSessionId && agentCaps?.loadSession) {
+    sessionWasResumed = false;
+    const sessionStartMode = selectAcpSessionStartMode(toolSessionId, agentCaps);
+    if (sessionStartMode === "load") {
       const loaded = await request(
-        buildSessionLoadRequest(nextId(), toolSessionId, args.cwd, mcpServers)
+        buildSessionLoadRequest(nextId(), toolSessionId!, args.cwd, mcpServers)
       );
-      activeAcpSessionId = toolSessionId;
+      activeAcpSessionId = toolSessionId!;
+      sessionWasResumed = true;
       emitSetupItems(loaded);
-    } else if (toolSessionId && agentCaps?.sessionCapabilities?.resume) {
+    } else if (sessionStartMode === "resume") {
       const resumed = await request(
-        buildSessionResumeRequest(nextId(), toolSessionId, args.cwd, mcpServers)
+        buildSessionResumeRequest(nextId(), toolSessionId!, args.cwd, mcpServers)
       );
-      activeAcpSessionId = toolSessionId;
+      activeAcpSessionId = toolSessionId!;
+      sessionWasResumed = true;
       emitSetupItems(resumed);
     } else {
       const created = await request(
