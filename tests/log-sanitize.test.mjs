@@ -169,20 +169,23 @@ test("sanitizeLogData recurses into nested objects and arrays", async () => {
   assert.ok(!JSON.stringify(out).includes(nested));
 });
 
-test("appendLog redacts secrets before writing session log lines", async () => {
+// appendLog 位于文件尾部且只用到 fs 类型；抽出函数体连同依赖常量一起编译
+async function loadAppendLog() {
   const sanitizeSource = fs.readFileSync(
     new URL("../electron/shared/logSanitize.ts", import.meta.url), "utf8"
   );
   const sharedSource = fs.readFileSync(
     new URL("../electron/cli/runtimeShared.ts", import.meta.url), "utf8"
   );
-  // appendLog 位于文件尾部且只用到 fs 类型；抽出函数体连同依赖常量一起编译
   const fnMatch = sharedSource.match(
     /const MAX_LOG_LINE_CHARS[\s\S]*?^export function appendLog[\s\S]*?\n}/m
   );
-  assert.ok(fnMatch, "appendLog source found");
+  assert.ok(
+    fnMatch,
+    "appendLog extraction regex no longer matches runtimeShared.ts — update the regex in this test"
+  );
   const combined = `${sanitizeSource}\n${fnMatch[0]
-    .replace(/import[^\n]*\n/g, "")
+    .replace(/^import[^\n]*\n/gm, "")
     .replace("export function appendLog", "function appendLog")
     .replace("fs.WriteStream | null", "unknown")}\nexport { appendLog };`;
   const output = ts.transpileModule(combined, {
@@ -191,9 +194,30 @@ test("appendLog redacts secrets before writing session log lines", async () => {
   const { appendLog } = await import(
     `data:text/javascript;base64,${Buffer.from(output).toString("base64")}`
   );
+  const maxMatch = sharedSource.match(/const MAX_LOG_LINE_CHARS = ([\d_]+)/);
+  assert.ok(maxMatch, "MAX_LOG_LINE_CHARS constant found");
+  return { appendLog, maxLogLineChars: Number(maxMatch[1].replace(/_/g, "")) };
+}
+
+function fakeStream(writes) {
+  return { writableEnded: false, destroyed: false, write: (s) => writes.push(s) };
+}
+
+test("appendLog redacts secrets before writing session log lines", async () => {
+  const { appendLog } = await loadAppendLog();
   const writes = [];
-  const fakeStream = { writableEnded: false, destroyed: false, write: (s) => writes.push(s) };
-  appendLog(fakeStream, "stderr", "auth failed for sk-ant-abc123def456");
+  appendLog(fakeStream(writes), "stderr", "auth failed for sk-ant-abc123def456");
   const line = JSON.parse(writes[0]);
   assert.equal(line.content, "auth failed for sk-ant…<redacted>");
+});
+
+test("appendLog redacts keys straddling the truncation boundary", async () => {
+  const { appendLog, maxLogLineChars } = await loadAppendLog();
+  const writes = [];
+  // Key starts before the MAX_LOG_LINE_CHARS cut and extends past it.
+  const content = "x".repeat(maxLogLineChars - 10) + "sk-ant-abc123def456";
+  appendLog(fakeStream(writes), "stderr", content);
+  const line = JSON.parse(writes[0]);
+  assert.ok(!line.content.includes("abc123def456"), "key fragment must not leak");
+  assert.ok(line.content.endsWith("… [log truncated]"), "truncation marker kept");
 });
