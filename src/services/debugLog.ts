@@ -18,6 +18,23 @@ const FLUSH_INTERVAL_MS = 500;
 const MAX_BATCH = 100;
 const MAX_MSG_CHARS = 4000;
 
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+/** ISO 8601 timestamp in the local timezone, e.g. 2026-07-31T07:18:13.481+08:00. */
+function formatLocalTimestamp(date: Date): string {
+  const offsetMin = -date.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const tz = `${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
+  return (
+    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` +
+    `T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}` +
+    `.${String(date.getMilliseconds()).padStart(3, "0")}${tz}`
+  );
+}
+
 let queue: Entry[] = [];
 let timer: number | null = null;
 
@@ -32,7 +49,7 @@ function cloneData(data: unknown): unknown {
 
 function enqueue(level: Level, scope: string, msg: string, data?: unknown): void {
   queue.push({
-    ts: new Date().toISOString(),
+    ts: formatLocalTimestamp(new Date()),
     level,
     scope: scope.slice(0, 40),
     msg: String(msg).slice(0, MAX_MSG_CHARS),

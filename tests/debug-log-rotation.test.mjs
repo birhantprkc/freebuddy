@@ -28,7 +28,13 @@ function tmpDir() {
 test("writes JSONL lines named by source and day, secrets redacted at write time", async () => {
   const { createDebugLogger } = await load();
   const dir = tmpDir();
-  const log = createDebugLogger({ dir, source: "main", now: () => new Date("2026-07-30T10:00:00Z") });
+  const utc = (d) => d.toISOString();
+  const log = createDebugLogger({
+    dir,
+    source: "main",
+    now: () => new Date("2026-07-30T10:00:00Z"),
+    formatTimestamp: utc
+  });
   log.info("acp", "started with sk-ant-abc123def456", { adapter: "codex" });
   const file = path.join(dir, "main-2026-07-30.log");
   const line = JSON.parse(fs.readFileSync(file, "utf8").trim());
@@ -43,7 +49,8 @@ test("rotates a full file to .1 then shifts .1 to .2", async () => {
   const { createDebugLogger } = await load();
   const dir = tmpDir();
   const now = () => new Date("2026-07-30T10:00:00Z");
-  const log = createDebugLogger({ dir, source: "main", maxFileBytes: 120, now });
+  const utc = (d) => d.toISOString();
+  const log = createDebugLogger({ dir, source: "main", maxFileBytes: 120, now, formatTimestamp: utc });
   for (let i = 0; i < 12; i += 1) log.info("s", `line-${i}-padding-padding-padding`);
   assert.ok(fs.existsSync(path.join(dir, "main-2026-07-30.log")));
   assert.ok(fs.existsSync(path.join(dir, "main-2026-07-30.log.1")));

@@ -13,6 +13,23 @@ export const LOG_RETENTION_DAYS = 7;
 export const MAX_LOG_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_ROTATIONS = 2; // base file + .1 + .2 = 同日最多 3 份
 
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+/** ISO 8601 timestamp in the local timezone, e.g. 2026-07-31T07:18:13.481+08:00. */
+export function formatLocalTimestamp(date: Date): string {
+  const offsetMin = -date.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const tz = `${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
+  return (
+    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` +
+    `T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}` +
+    `.${String(date.getMilliseconds()).padStart(3, "0")}${tz}`
+  );
+}
+
 export interface DebugLogger {
   write(level: DebugLogLevel, scope: string, msg: string, data?: unknown, ts?: string): void;
   info(scope: string, msg: string, data?: unknown): void;
@@ -48,8 +65,8 @@ export function pruneOldLogs(dir: string, retentionDays: number, now = new Date(
   return removed;
 }
 
-function dayStamp(date: Date): string {
-  return date.toISOString().slice(0, 10);
+function dayStamp(date: Date, formatTimestamp: (d: Date) => string): string {
+  return formatTimestamp(date).slice(0, 10);
 }
 
 function rotateIfFull(file: string, maxFileBytes: number): void {
@@ -72,9 +89,11 @@ export function createDebugLogger(opts: {
   source: string;
   maxFileBytes?: number;
   now?: () => Date;
+  formatTimestamp?: (date: Date) => string;
 }): DebugLogger {
   const maxFileBytes = opts.maxFileBytes ?? MAX_LOG_FILE_BYTES;
   const now = opts.now ?? (() => new Date());
+  const formatTimestamp = opts.formatTimestamp ?? formatLocalTimestamp;
   let droppedLines = 0;
   try {
     fs.mkdirSync(opts.dir, { recursive: true });
@@ -85,15 +104,16 @@ export function createDebugLogger(opts: {
 
   const write = (level: DebugLogLevel, scope: string, msg: string, data?: unknown, ts?: string): void => {
     try {
+      const nowDate = now();
       const entry: Record<string, unknown> = {
-        ts: typeof ts === "string" && ts.length > 0 ? ts : now().toISOString(),
+        ts: typeof ts === "string" && ts.length > 0 ? ts : formatTimestamp(nowDate),
         level,
         scope,
         msg
       };
       if (data !== undefined) entry.data = data;
       const line = redactsecrets(JSON.stringify(entry));
-      const file = path.join(opts.dir, `${opts.source}-${dayStamp(now())}.log`);
+      const file = path.join(opts.dir, `${opts.source}-${dayStamp(nowDate, formatTimestamp)}.log`);
       rotateIfFull(file, maxFileBytes);
       fs.appendFileSync(file, line + "\n");
     } catch {
