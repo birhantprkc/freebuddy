@@ -279,6 +279,11 @@ declare global {
     ): () => void;
     onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
+    notifyTask(payload: {
+      kind: "success" | "failure";
+      title: string;
+      body?: string;
+    }): Promise<void>;
   }
 
   interface FreebuddySession {
