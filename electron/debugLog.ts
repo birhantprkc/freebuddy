@@ -112,11 +112,13 @@ export function appendRendererLogEntries(entries: unknown): void {
     const e = raw as Record<string, unknown>;
     if (typeof e.msg !== "string" || typeof e.scope !== "string") continue;
     const level = LEVELS.has(e.level as string) ? (e.level as DebugLogLevel) : "info";
+    const ts = typeof e.ts === "string" && !Number.isNaN(Date.parse(e.ts)) ? e.ts : undefined;
     logger.write(
       level,
       e.scope.slice(0, 40),
       e.msg.slice(0, MAX_RENDERER_MSG_CHARS),
-      capRendererData(e.data)
+      capRendererData(e.data),
+      ts
     );
   }
 }

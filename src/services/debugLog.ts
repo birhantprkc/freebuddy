@@ -80,8 +80,12 @@ export function installDebugLogClient(): void {
     });
   });
   window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
     enqueue("error", "renderer", "unhandled rejection", {
-      reason: String(event.reason).slice(0, 1000)
+      reason: (reason instanceof Error
+        ? (reason.stack ?? reason.message)
+        : String(reason)
+      ).slice(0, 1000)
     });
   });
   window.addEventListener("pagehide", flush);

@@ -14,7 +14,7 @@ export const MAX_LOG_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_ROTATIONS = 2; // base file + .1 + .2 = 同日最多 3 份
 
 export interface DebugLogger {
-  write(level: DebugLogLevel, scope: string, msg: string, data?: unknown): void;
+  write(level: DebugLogLevel, scope: string, msg: string, data?: unknown, ts?: string): void;
   info(scope: string, msg: string, data?: unknown): void;
   warn(scope: string, msg: string, data?: unknown): void;
   error(scope: string, msg: string, data?: unknown): void;
@@ -83,10 +83,10 @@ export function createDebugLogger(opts: {
     /* logging must never take the app down */
   }
 
-  const write = (level: DebugLogLevel, scope: string, msg: string, data?: unknown): void => {
+  const write = (level: DebugLogLevel, scope: string, msg: string, data?: unknown, ts?: string): void => {
     try {
       const entry: Record<string, unknown> = {
-        ts: now().toISOString(),
+        ts: typeof ts === "string" && ts.length > 0 ? ts : now().toISOString(),
         level,
         scope,
         msg
