@@ -218,9 +218,10 @@ export async function exportDebugLogs(
   });
   if (result.canceled || !result.filePath) return { canceled: true };
 
+  let zip: AdmZip;
   try {
     const { environment, appLogs, sessionLogs } = collectBundle(mode, exportedAt);
-    const zip = new AdmZip();
+    zip = new AdmZip();
     zip.addFile("environment.json", Buffer.from(JSON.stringify(environment, null, 2)));
     zip.addFile("README.txt", Buffer.from(readmeText(mode, exportedAt)));
     for (const f of appLogs) {
@@ -229,15 +230,24 @@ export async function exportDebugLogs(
     for (const f of sessionLogs) {
       zip.addFile(`sessions/${f.name}`, Buffer.from(f.lines.join("\n") + "\n"));
     }
+  } catch (err) {
+    // Bundle assembly failed before we touched the target path — surface a
+    // readable cause but do NOT delete anything at result.filePath: the user
+    // may have picked a pre-existing file we never wrote to.
+    const message = (err as Error)?.message ?? String(err);
+    throw new Error(`Export failed: ${message}`, { cause: err });
+  }
+  try {
     zip.writeZip(result.filePath);
   } catch (err) {
-    // best-effort cleanup of the partial zip, then surface a readable cause
+    // best-effort cleanup of the partial zip we created, then surface a readable cause
     try {
       fs.rmSync(result.filePath, { force: true });
     } catch {
       /* cleanup failed — leave the partial file */
     }
-    throw new Error(`Export failed: ${(err as Error)?.message ?? String(err)}`);
+    const message = (err as Error)?.message ?? String(err);
+    throw new Error(`Export failed: ${message}`, { cause: err });
   }
   return { path: result.filePath };
 }

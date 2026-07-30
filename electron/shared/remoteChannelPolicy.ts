@@ -183,6 +183,11 @@ const ADMIN_ONLY = [
 ] as const;
 
 const DENY = [
+  // Debug log export is desktop-only (privacy).
+  "debugLog:write",
+  "debugLogs:preview",
+  "debugLogs:export",
+
   // Native dialogs and shell integration have no meaning off-device.
   "cli:selectAttachments",
   "cli:selectDirectory",

@@ -583,7 +583,7 @@ export function registerCliIpc() {
     buildDebugLogPreview(mode === "full" ? "full" : "standard")
   );
   registerHandler("debugLogs:export", (event, mode: unknown) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
+    const win = event.sender ? BrowserWindow.fromWebContents(event.sender) : null;
     if (!win) throw new Error("no window");
     return exportDebugLogs(win, mode === "full" ? "full" : "standard");
   });
