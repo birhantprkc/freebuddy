@@ -61,7 +61,11 @@ function gatherPathMasks(): PathMask[] {
   });
 }
 
-function gatherEnvironment(mode: ExportMode, exportedAt: string): Record<string, unknown> {
+function gatherEnvironment(
+  mode: ExportMode,
+  exportedAt: string,
+  scope: "conversation" | "all"
+): Record<string, unknown> {
   let conversationCount = 0;
   try {
     conversationCount = (
@@ -92,7 +96,8 @@ function gatherEnvironment(mode: ExportMode, exportedAt: string): Record<string,
     conversationCount,
     droppedLines: mainLogDroppedLines(),
     exportedAt,
-    exportMode: mode
+    exportMode: mode,
+    exportScope: scope
   });
 }
 
@@ -120,13 +125,40 @@ function readAppLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name: str
   return out;
 }
 
-function readSessionLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name: string; lines: string[] }> {
+// On failure returns an empty set so a broken scope filter can never leak
+// other conversations' sessions into a conversation-scoped export.
+function sessionIdsForConversation(conversationId: string): Set<string> {
+  const ids = new Set<string>();
+  try {
+    const rows = getDb()
+      .prepare(
+        "SELECT DISTINCT task_id FROM conversation_messages WHERE conversation_id = ? AND task_id IS NOT NULL"
+      )
+      .all(conversationId) as Array<{ task_id: string }>;
+    for (const row of rows) {
+      if (row.task_id) ids.add(row.task_id);
+    }
+  } catch {
+    /* keep empty */
+  }
+  return ids;
+}
+
+function readSessionLogFiles(
+  mode: ExportMode,
+  masks: PathMask[],
+  conversationId?: string
+): Array<{ name: string; lines: string[] }> {
   const out: Array<{ name: string; lines: string[] }> = [];
   let names: string[] = [];
   try {
     names = fs.readdirSync(getLogDir()).filter((n) => n.endsWith(".jsonl"));
   } catch {
     return out;
+  }
+  if (conversationId) {
+    const allowed = sessionIdsForConversation(conversationId);
+    names = names.filter((n) => allowed.has(n.replace(/\.jsonl$/, "")));
   }
   const stat: Array<{ name: string; mtimeMs: number }> = [];
   const recencyCutoff = Date.now() - LOG_RETENTION_DAYS * 86_400_000; // sessions are "近 7 天"
@@ -175,17 +207,24 @@ function readSessionLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name:
   return out;
 }
 
-function collectBundle(mode: ExportMode, exportedAt: string) {
+function collectBundle(mode: ExportMode, exportedAt: string, conversationId?: string) {
   const masks = gatherPathMasks();
   return {
-    environment: gatherEnvironment(mode, exportedAt),
+    environment: gatherEnvironment(mode, exportedAt, conversationId ? "conversation" : "all"),
     appLogs: readAppLogFiles(mode, masks),
-    sessionLogs: readSessionLogFiles(mode, masks)
+    sessionLogs: readSessionLogFiles(mode, masks, conversationId)
   };
 }
 
-export async function buildDebugLogPreview(mode: ExportMode): Promise<DebugLogPreview> {
-  const { environment, appLogs, sessionLogs } = collectBundle(mode, new Date().toISOString());
+export async function buildDebugLogPreview(
+  mode: ExportMode,
+  conversationId?: string
+): Promise<DebugLogPreview> {
+  const { environment, appLogs, sessionLogs } = collectBundle(
+    mode,
+    new Date().toISOString(),
+    conversationId
+  );
   const files: DebugLogPreviewFile[] = [...appLogs, ...sessionLogs].map((f) => ({
     name: f.name,
     totalLines: f.lines.length,
@@ -195,11 +234,12 @@ export async function buildDebugLogPreview(mode: ExportMode): Promise<DebugLogPr
   return { environment, files };
 }
 
-function readmeText(mode: ExportMode, exportedAt: string): string {
+function readmeText(mode: ExportMode, exportedAt: string, scope: "conversation" | "all"): string {
   return [
     "FreeBuddy debug log bundle",
     `Exported at: ${exportedAt}`,
     `Mode: ${mode}${mode === "standard" ? " (message content and paths redacted)" : " (FULL — contains conversation content)"}`,
+    `Scope: ${scope === "conversation" ? "current conversation only (sessions/)" : "all recent sessions"}`,
     "",
     "logs/       app logs (JSONL: {ts, level, scope, msg, data?})",
     "sessions/   agent session transcripts (JSONL: {ts, type, content})",
@@ -211,7 +251,8 @@ function readmeText(mode: ExportMode, exportedAt: string): string {
 
 export async function exportDebugLogs(
   parent: BrowserWindow,
-  mode: ExportMode
+  mode: ExportMode,
+  conversationId?: string
 ): Promise<{ path?: string; canceled?: boolean }> {
   const exportedAt = new Date().toISOString();
   const stamp = exportedAt.replace(/[:.]/g, "-");
@@ -224,10 +265,13 @@ export async function exportDebugLogs(
 
   let zip: AdmZip;
   try {
-    const { environment, appLogs, sessionLogs } = collectBundle(mode, exportedAt);
+    const { environment, appLogs, sessionLogs } = collectBundle(mode, exportedAt, conversationId);
     zip = new AdmZip();
     zip.addFile("environment.json", Buffer.from(JSON.stringify(environment, null, 2)));
-    zip.addFile("README.txt", Buffer.from(readmeText(mode, exportedAt)));
+    zip.addFile(
+      "README.txt",
+      Buffer.from(readmeText(mode, exportedAt, conversationId ? "conversation" : "all"))
+    );
     for (const f of appLogs) {
       zip.addFile(`logs/${f.name}`, Buffer.from(f.lines.join("\n") + "\n"));
     }

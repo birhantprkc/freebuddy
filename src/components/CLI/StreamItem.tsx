@@ -991,7 +991,11 @@ export function StreamItem({ item }: { item: CliStreamItem }) {
           <button
             type="button"
             className="link-btn stream-error-export-logs"
-            onClick={() => useDebugLogsDialogStore.getState().setOpen(true)}
+            onClick={() =>
+              useDebugLogsDialogStore
+                .getState()
+                .setOpen(true, useConversationStore.getState().activeId ?? undefined)
+            }
           >
             {t("debugLogs.exportLink")}
           </button>

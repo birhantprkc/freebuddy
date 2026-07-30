@@ -478,10 +478,10 @@ const shellApi = {
 
 const debugLogs = {
   write: (entries: unknown[]) => ipcRenderer.invoke("debugLog:write", entries),
-  preview: (mode: "standard" | "full") =>
-    ipcRenderer.invoke("debugLogs:preview", mode),
-  export: (mode: "standard" | "full") =>
-    ipcRenderer.invoke("debugLogs:export", mode) as Promise<{
+  preview: (mode: "standard" | "full", opts?: { conversationId?: string }) =>
+    ipcRenderer.invoke("debugLogs:preview", mode, opts?.conversationId),
+  export: (mode: "standard" | "full", opts?: { conversationId?: string }) =>
+    ipcRenderer.invoke("debugLogs:export", mode, opts?.conversationId) as Promise<{
       path?: string;
       canceled?: boolean;
     }>

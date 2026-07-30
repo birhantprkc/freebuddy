@@ -585,13 +585,20 @@ export function registerCliIpc() {
   registerHandler("debugLog:write", (_event, entries: unknown) => {
     appendRendererLogEntries(entries);
   });
-  registerHandler("debugLogs:preview", (_event, mode: unknown) =>
-    buildDebugLogPreview(mode === "full" ? "full" : "standard")
+  registerHandler("debugLogs:preview", (_event, mode: unknown, conversationId: unknown) =>
+    buildDebugLogPreview(
+      mode === "full" ? "full" : "standard",
+      typeof conversationId === "string" ? conversationId : undefined
+    )
   );
-  registerHandler("debugLogs:export", (event, mode: unknown) => {
+  registerHandler("debugLogs:export", (event, mode: unknown, conversationId: unknown) => {
     const win = event.sender ? BrowserWindow.fromWebContents(event.sender) : null;
     if (!win) throw new Error("no window");
-    return exportDebugLogs(win, mode === "full" ? "full" : "standard");
+    return exportDebugLogs(
+      win,
+      mode === "full" ? "full" : "standard",
+      typeof conversationId === "string" ? conversationId : undefined
+    );
   });
   registerHandler("cli:usageSummary", (_event, rawPeriod: unknown) => {
     const period = normalizeAgentUsagePeriod(rawPeriod);

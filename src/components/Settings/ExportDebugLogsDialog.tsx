@@ -23,6 +23,7 @@ export function ExportDebugLogsDialog() {
   const { t } = useTranslation();
   const open = useDebugLogsDialogStore((s) => s.open);
   const setOpen = useDebugLogsDialogStore((s) => s.setOpen);
+  const conversationId = useDebugLogsDialogStore((s) => s.conversationId);
   const notify = useAgentBridgeStore((s) => s.notify);
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -59,7 +60,7 @@ export function ExportDebugLogsDialog() {
       return;
     }
     api
-      .preview(mode)
+      .preview(mode, conversationId ? { conversationId } : undefined)
       .then((p) => {
         if (!cancelled) setPreview(p as Preview);
       })
@@ -72,7 +73,7 @@ export function ExportDebugLogsDialog() {
     return () => {
       cancelled = true;
     };
-  }, [open, mode]);
+  }, [open, mode, conversationId]);
 
   if (!open) return null;
 
@@ -83,7 +84,10 @@ export function ExportDebugLogsDialog() {
   const doExport = async () => {
     setBusy(true);
     try {
-      const result = await window.freebuddy?.debugLogs?.export(mode);
+      const result = await window.freebuddy?.debugLogs?.export(
+        mode,
+        conversationId ? { conversationId } : undefined
+      );
       if (result?.path) {
         notify(t("debugLogs.success", { path: result.path }));
         setOpen(false);
@@ -136,6 +140,10 @@ export function ExportDebugLogsDialog() {
         onKeyDown={handleKeyDown}
       >
         <h3 id={titleId}>{t("debugLogs.dialogTitle")}</h3>
+
+        {conversationId && (
+          <p className="muted debug-logs-scope">{t("debugLogs.scopeConversation")}</p>
+        )}
 
         <div className="debug-logs-modes">
           <label className="debug-logs-mode">

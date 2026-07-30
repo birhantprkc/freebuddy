@@ -56,6 +56,28 @@ test("export bundle filters by mode and includes sessions", () => {
   assert.match(exporter, /dialog\.showSaveDialog/);
 });
 
+test("conversation-scoped export filters sessions by conversation_messages.task_id", () => {
+  assert.match(exporter, /function sessionIdsForConversation/);
+  assert.match(
+    exporter,
+    /SELECT DISTINCT task_id FROM conversation_messages WHERE conversation_id = \? AND task_id IS NOT NULL/
+  );
+  assert.match(exporter, /allowed\.has\(n\.replace\(\/\\\.jsonl\$\/, ""\)\)/);
+  assert.match(exporter, /exportScope: scope/);
+  // IPC + preload thread the optional conversationId through to the exporter.
+  assert.match(ipc, /"debugLogs:preview", \(_event, mode: unknown, conversationId: unknown\)/);
+  assert.match(ipc, /"debugLogs:export", \(event, mode: unknown, conversationId: unknown\)/);
+  assert.match(preload, /invoke\("debugLogs:preview", mode, opts\?\.conversationId\)/);
+  assert.match(preload, /invoke\("debugLogs:export", mode, opts\?\.conversationId\)/);
+});
+
+test("chat entry points scope the export to the active conversation; About does not", () => {
+  assert.match(streamItem, /setOpen\(true, useConversationStore\.getState\(\)\.activeId \?\? undefined\)/);
+  assert.match(replayBar, /setOpen\(true, activeId \?\? undefined\)/);
+  assert.match(aboutTab, /setDebugLogsOpen\(true\)/);
+  assert.doesNotMatch(aboutTab, /setDebugLogsOpen\(true, /);
+});
+
 test("session logs are secret-redacted at write time and pruned", () => {
   assert.match(runtimeShared, /redactsecrets/);
   assert.match(db, /pruneOldLogs/);

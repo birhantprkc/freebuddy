@@ -1428,6 +1428,7 @@
     "aboutSectionHint": "导出诊断日志包，帮助开发者定位你遇到的问题。",
     "openButton": "导出调试日志…",
     "dialogTitle": "导出调试日志",
+    "scopeConversation": "仅包含当前会话的 agent 会话日志。",
     "modeStandard": "标准模式（推荐）",
     "modeStandardHint": "已脱敏：不含消息内容、真实路径和密钥。",
     "modeFull": "完整模式",

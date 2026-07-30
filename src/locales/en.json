@@ -1443,6 +1443,7 @@
     "aboutSectionHint": "Export a diagnostic bundle to help the developers troubleshoot issues.",
     "openButton": "Export debug logs…",
     "dialogTitle": "Export debug logs",
+    "scopeConversation": "Only includes agent session logs from this conversation.",
     "modeStandard": "Standard (recommended)",
     "modeStandardHint": "Message content, paths and API keys are redacted.",
     "modeFull": "Full",

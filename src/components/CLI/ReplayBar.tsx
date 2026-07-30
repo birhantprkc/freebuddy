@@ -369,7 +369,7 @@ export function TitlebarOverflowMenu() {
             aria-label={t("debugLogs.title")}
             title={t("debugLogs.title")}
             onClick={() => {
-              useDebugLogsDialogStore.getState().setOpen(true);
+              useDebugLogsDialogStore.getState().setOpen(true, activeId ?? undefined);
               setOpen(false);
             }}
           >

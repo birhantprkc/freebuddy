@@ -13,6 +13,7 @@ export interface EnvironmentInfoInput {
   droppedLines: number;
   exportedAt: string;
   exportMode: "standard" | "full";
+  exportScope: "conversation" | "all";
 }
 
 export function buildEnvironmentInfo(
@@ -36,6 +37,7 @@ export function buildEnvironmentInfo(
     counts: { conversations: input.conversationCount },
     logHealth: { droppedLines: input.droppedLines },
     exportedAt: input.exportedAt,
-    exportMode: input.exportMode
+    exportMode: input.exportMode,
+    exportScope: input.exportScope
   };
 }

@@ -27,7 +27,8 @@ test("buildEnvironmentInfo shapes the environment.json snapshot", async () => {
     conversationCount: 12,
     droppedLines: 0,
     exportedAt: "2026-07-30T01:02:03.000Z",
-    exportMode: "standard"
+    exportMode: "standard",
+    exportScope: "all"
   });
   assert.equal(info.app.version, "0.6.8");
   assert.equal(info.app.platform, "win32");
@@ -46,6 +47,7 @@ test("buildEnvironmentInfo shapes the environment.json snapshot", async () => {
   assert.equal(info.logHealth.droppedLines, 0);
   assert.equal(info.exportedAt, "2026-07-30T01:02:03.000Z");
   assert.equal(info.exportMode, "standard");
+  assert.equal(info.exportScope, "all");
 });
 
 test("buildEnvironmentInfo defaults missing runtime versions to empty strings", async () => {
@@ -62,7 +64,8 @@ test("buildEnvironmentInfo defaults missing runtime versions to empty strings", 
     conversationCount: 0,
     droppedLines: 0,
     exportedAt: "2026-07-30T01:02:03.000Z",
-    exportMode: "standard"
+    exportMode: "standard",
+    exportScope: "conversation"
   });
   assert.equal(info.runtime.electron, "");
   assert.equal(info.runtime.chrome, "");
@@ -75,7 +78,7 @@ test("environment info never includes paths, usernames or message content", asyn
     appVersion: "0.6.8", platform: "darwin", arch: "arm64", osRelease: "24.5.0",
     locale: "en", versions: {}, telemetryEnabled: false,
     adapters: [], conversationCount: 0, droppedLines: 0,
-    exportedAt: "t", exportMode: "full"
+    exportedAt: "t", exportMode: "full", exportScope: "all"
   }));
   assert.doesNotMatch(serialized, /workspacePath|cwd|home|message/i);
 });

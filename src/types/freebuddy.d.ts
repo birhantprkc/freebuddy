@@ -506,7 +506,10 @@ declare global {
 
   interface FreebuddyDebugLogs {
     write: (entries: unknown[]) => Promise<unknown>;
-    preview: (mode: "standard" | "full") => Promise<{
+    preview: (
+      mode: "standard" | "full",
+      opts?: { conversationId?: string }
+    ) => Promise<{
       environment: Record<string, unknown>;
       files: Array<{
         name: string;
@@ -515,7 +518,10 @@ declare global {
         truncated: boolean;
       }>;
     }>;
-    export: (mode: "standard" | "full") => Promise<{ path?: string; canceled?: boolean }>;
+    export: (
+      mode: "standard" | "full",
+      opts?: { conversationId?: string }
+    ) => Promise<{ path?: string; canceled?: boolean }>;
   }
 
   type RemoteBindMode = "local" | "lan";
