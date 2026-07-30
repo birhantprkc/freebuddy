@@ -77,6 +77,7 @@ import {
   clearAuthenticationTerminalsForSession,
   runAuthenticationTerminal
 } from "./acpAuthTerminal.js";
+import { logMain } from "../debugLog.js";
 
 function writeAcp(
   child: ChildProcessByStdio<Writable, Readable, Readable>,
@@ -197,6 +198,12 @@ export async function runAcpAgent({
     clearAuthenticationTerminalsForSession(args.sessionId);
     clearAuthenticationResolversForSession(args.sessionId);
     clearPermissionResolversForSession(args.sessionId);
+    logMain()[status === "failed" ? "error" : "info"]("acp", `agent run ${status}`, {
+      adapter: args.adapter,
+      sessionId: args.sessionId,
+      exitCode,
+      ...(errorMessage ? { errorMessage } : {})
+    });
     if (errorMessage) emit({ type: "error", message: errorMessage });
     emit({ type: "done", exitCode });
     updateTaskStatus(args.sessionId, status, exitCode, errorMessage);
