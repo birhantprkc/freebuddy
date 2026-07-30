@@ -164,6 +164,15 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const off = window.freebuddy?.window?.onOpenConversation?.((conversationId) => {
+      void useConversationStore.getState().setActive(conversationId);
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
       if (event.key.toLowerCase() !== "k") return;

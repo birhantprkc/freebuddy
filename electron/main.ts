@@ -301,6 +301,7 @@ type TaskNotificationPayload = {
   kind: "success" | "failure";
   title: string;
   body?: string;
+  conversationId?: string;
 };
 
 function registerTaskNotificationIpc(): void {
@@ -325,7 +326,15 @@ function registerTaskNotificationIpc(): void {
       notification.on("click", () => {
         if (win && !win.isDestroyed()) {
           if (win.isMinimized()) win.restore();
+          win.show();
           win.focus();
+          if (payload.conversationId) {
+            safeSendToWebContents(
+              win.webContents,
+              "window:open-conversation",
+              payload.conversationId
+            );
+          }
         }
       });
       notification.show();

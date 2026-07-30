@@ -343,14 +343,16 @@ export function handleStreamEvent(
         notifyTaskFinished(
           "success",
           i18next.t("notifications.taskSucceededTitle"),
-          i18next.t("notifications.taskSucceededBody", { title: conversationTitle })
+          i18next.t("notifications.taskSucceededBody", { title: conversationTitle }),
+          conversationId
         );
       } else {
         playTaskFailure(true);
         notifyTaskFinished(
           "failure",
           i18next.t("notifications.taskFailedTitle"),
-          i18next.t("notifications.taskFailedBody", { title: conversationTitle })
+          i18next.t("notifications.taskFailedBody", { title: conversationTitle }),
+          conversationId
         );
       }
     }

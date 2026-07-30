@@ -56,8 +56,11 @@ export function playTaskFailure(backgroundOnly = true): void {
 export function notifyTaskFinished(
   kind: "success" | "failure",
   title: string,
-  body?: string
+  body?: string,
+  conversationId?: string
 ): void {
   if (!isAppInBackground()) return;
-  window.freebuddy?.window?.notifyTask?.({ kind, title, body })?.catch(() => {});
+  window.freebuddy?.window?.notifyTask
+    ?.({ kind, title, body, conversationId })
+    ?.catch(() => {});
 }
