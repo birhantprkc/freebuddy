@@ -504,6 +504,26 @@ declare global {
     showItemInFolder(targetPath: string): Promise<boolean>;
   }
 
+  interface FreebuddyDebugLogs {
+    write: (entries: unknown[]) => Promise<unknown>;
+    preview: (
+      mode: "standard" | "full",
+      opts?: { conversationId?: string }
+    ) => Promise<{
+      environment: Record<string, unknown>;
+      files: Array<{
+        name: string;
+        totalLines: number;
+        lines: string[];
+        truncated: boolean;
+      }>;
+    }>;
+    export: (
+      mode: "standard" | "full",
+      opts?: { conversationId?: string }
+    ) => Promise<{ path?: string; canceled?: boolean }>;
+  }
+
   type RemoteBindMode = "local" | "lan";
 
   interface RemoteStatus {
@@ -630,6 +650,7 @@ declare global {
     window: FreebuddyWindow;
     session?: FreebuddySession;
     updater: FreebuddyUpdater;
+    debugLogs: FreebuddyDebugLogs;
     shell: FreebuddyShell;
     remote: FreebuddyRemote;
   }

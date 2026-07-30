@@ -3,6 +3,7 @@ import { app } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { cleanupOrphanHandoffTranscriptSnapshots } from "../shared/handoffTranscript.js";
+import { pruneOldLogs, LOG_RETENTION_DAYS } from "../shared/debugLogCore.js";
 
 let dbInstance: DB | null = null;
 
@@ -33,6 +34,11 @@ export function getDb(): DB {
     dir,
     transcriptRows.map((row) => row.transcript_path)
   );
+  try {
+    pruneOldLogs(getLogDir(), LOG_RETENTION_DAYS);
+  } catch {
+    /* best-effort: log cleanup must never block startup */
+  }
   dbInstance = db;
   return db;
 }

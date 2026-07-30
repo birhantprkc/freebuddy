@@ -15,6 +15,7 @@ import {
 import { ImageLightboxProvider } from "./components/CLI/ImageLightbox";
 import { PermissionDialog } from "./components/CLI/PermissionDialog";
 import { AuthenticationDialog } from "./components/CLI/AuthenticationDialog";
+import { ExportDebugLogsDialog } from "./components/Settings/ExportDebugLogsDialog";
 import { DetailColumn } from "./components/CLI/DetailColumn";
 import { AgentBridgeListener } from "./components/AgentBridge/AgentBridgeListener";
 import { AgentBridgeToasts } from "./components/AgentBridge/AgentBridgeToasts";
@@ -571,6 +572,7 @@ function App() {
 
       <CliInstallPanelHost />
       <PermissionDialog />
+      <ExportDebugLogsDialog />
       <AuthenticationDialog />
       <ConversationCommandPalette
         open={commandPaletteOpen}

@@ -22,6 +22,7 @@ import type {
 } from "@/services/workflows/types";
 import { workflowFollowupAgentId } from "@/services/workflows/types";
 import { workflowClient } from "@/services/workflows/client";
+import { debugLogClient } from "@/services/debugLog";
 import { composeMessageWithAttachments } from "@/utils/chatAttachments";
 import {
   filterSessionConfigPickerOptions,
@@ -1061,6 +1062,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       await cliClient.run(runArgs);
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
+      debugLogClient.error("chat", "agent run failed", { errorMessage: msg });
       set((s) => {
         const live = s.live[conversationId];
         if (!live) return s;

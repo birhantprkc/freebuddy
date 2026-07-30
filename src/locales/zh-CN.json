@@ -1422,6 +1422,28 @@
       "error": "检查更新失败。"
     }
   },
+  "debugLogs": {
+    "title": "导出调试日志",
+    "aboutSectionTitle": "诊断",
+    "aboutSectionHint": "导出诊断日志包，帮助开发者定位你遇到的问题。",
+    "openButton": "导出调试日志…",
+    "dialogTitle": "导出调试日志",
+    "scopeConversation": "仅包含当前会话的 agent 会话日志。",
+    "modeStandard": "标准模式（推荐）",
+    "modeStandardHint": "已脱敏：不含消息内容、真实路径和密钥。",
+    "modeFull": "完整模式",
+    "modeFullWarning": "包含对话内容和真实路径，仅供私下发送给你信任的开发者。",
+    "previewLoading": "正在加载预览…",
+    "previewError": "加载预览失败。",
+    "previewEmpty": "还没有日志文件。",
+    "previewTruncated": "显示最后 {{shown}} 行，共 {{total}} 行。",
+    "export": "导出…",
+    "exporting": "导出中…",
+    "cancel": "取消",
+    "success": "调试日志已保存到 {{path}}。",
+    "error": "导出调试日志失败：{{message}}",
+    "exportLink": "导出调试日志"
+  },
   "infoCards": {
     "settingsTitle": "信息卡片",
     "settingsDescription": "配置第三列中的 RSS、Ashare A 股行情和体育赛事卡片。",

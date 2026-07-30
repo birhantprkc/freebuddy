@@ -116,6 +116,12 @@ async function loadConversationStoreHarness() {
     export const latestSessionInfoFromMessages = () => undefined;
     export const loadUnreadConversations = () => ({});
     export const persistUnreadConversations = () => undefined;
+    export const debugLogClient = {
+      info: () => undefined,
+      warn: () => undefined,
+      error: () => undefined,
+      debug: () => undefined
+    };
   `;
   const mockUrl = toDataUrl(mockSource);
   const conversationUtilsSource = fs.readFileSync(

@@ -33,6 +33,7 @@ import {
   buildSkillAnnouncement,
   reconcileNativeSkillLinks
 } from "./skillRuntime.js";
+import { logMain } from "../debugLog.js";
 import {
   cleanupSandboxCommand,
   isRemoteIsolatedCaller,
@@ -199,6 +200,10 @@ export async function cliRun(
   }
 
   insertTask(args, logFile, toolSessionId);
+  logMain().info("runtime", "agent run start", {
+    adapter: args.adapter,
+    sessionId: args.sessionId
+  });
   appendLog(
     logStream,
     "system",

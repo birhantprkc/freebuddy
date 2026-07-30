@@ -69,6 +69,7 @@
   --fb-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
   --fb-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
   --fb-danger: #fb7185;
+  --fb-warning: #fbbf24;
   --fb-link: #34d399;
   --surface: var(--fb-panel-bg);
   --surface-alt: var(--fb-panel-soft);
@@ -7063,6 +7064,11 @@ button {
   color: var(--fb-danger);
   border-left: 3px solid var(--fb-danger);
   font-size: 13px;
+}
+
+.stream-error .stream-error-export-logs {
+  margin-top: 8px;
+  color: var(--fb-danger);
 }
 
 .chat-composer {
@@ -18626,3 +18632,49 @@ button.ghost:focus-visible,
   .remote-section-head { flex-direction: column; }
 }
 
+.debug-logs-dialog {
+  max-width: 640px;
+  width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.debug-logs-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.debug-logs-mode {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.debug-logs-mode small {
+  display: block;
+  opacity: 0.7;
+}
+.debug-logs-mode-warning {
+  color: var(--fb-warning);
+}
+.debug-logs-preview {
+  flex: 1;
+  min-height: 120px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--fb-border);
+  border-radius: 6px;
+  padding: 8px;
+}
+.debug-logs-preview-file pre {
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 180px;
+  overflow: auto;
+}
+.debug-logs-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
