@@ -9,7 +9,7 @@ import {
   type DragEvent
 } from "react";
 import { nanoid } from "nanoid";
-import { ExternalLink, Folder, X } from "lucide-react";
+import { ExternalLink, Folder, FolderLock, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useConversationStore } from "@/store/conversationStore";
@@ -88,6 +88,10 @@ import {
   unprotectManagedAttachments
 } from "@/utils/managedAttachmentProtection";
 import { WorkspaceFileMentionMenu } from "./WorkspaceFileMentionMenu";
+import {
+  conversationDisplayCwd,
+  projectLabelFromCwd
+} from "./conversationProjectGrouping";
 import {
   agentEntriesNeedingRefresh,
   buildAgentAvailabilityGroups,
@@ -659,6 +663,17 @@ export function ChatView({
     [agentAvailability.available]
   );
   const agentDisplayName = displayAgentName(member?.name ?? conv?.agentName, member?.cli.adapter ?? conv?.adapter);
+  const conversationWorkspacePath = conv ? conversationDisplayCwd(conv) : "";
+  const conversationWorkspaceName = conversationWorkspacePath
+    ? projectLabelFromCwd(conversationWorkspacePath)
+    : t("chat.noWorkspace");
+  const conversationWorkspaceTitle =
+    conv?.sourceCwd && conv.cwd
+      ? t("chat.isolatedWorkspaceTooltip", {
+          source: conv.sourceCwd,
+          workspace: conv.cwd
+        })
+      : conv?.cwd;
   const running =
     live?.status === "running" || live?.status === "starting";
   const sending =
@@ -799,10 +814,11 @@ export function ChatView({
         folderBaseName(conversationProject.primaryPath || conv?.cwd || folders[0]);
       return `${name} · ${t("chat.folderCount", { count: folders.length })}`;
     }
-    return conv?.cwd ? conv.cwd : t("chat.noWorkspace");
+    return conversationWorkspaceName;
   }, [
     conversationMentionRoots,
     conversationProject,
+    conversationWorkspaceName,
     conv?.cwd,
     t
   ]);
@@ -861,9 +877,11 @@ export function ChatView({
     }
   }, [activeRun?.id, approvedWorkflowGate, gatingPhaseId]);
 
+  const currentUser = useConversationStore((s) => s.currentUser);
   const previewMessages = useMemo<ConversationMessage[]>(() => {
     if (!conv || submitPreview?.conversationId !== conv.id) return [];
     const existing = new Set(messages.map((m) => m.id));
+    const previewMember = member;
     const preview: ConversationMessage[] = [
       {
         id: submitPreview.userMessageId,
@@ -872,6 +890,7 @@ export function ChatView({
         status: "sent",
         content: submitPreview.prompt,
         attachments: submitPreview.attachments,
+        authorUsername: currentUser?.username ?? null,
         createdAt: submitPreview.createdAt,
         updatedAt: submitPreview.createdAt
       },
@@ -879,8 +898,11 @@ export function ChatView({
         id: submitPreview.assistantMessageId,
         conversationId: conv.id,
         role: "assistant",
-        status: "starting",
+        status: "running",
         content: "[]",
+        agentId: previewMember?.id ?? conv.agentId,
+        agentName: previewMember?.name ?? conv.agentName,
+        adapter: previewMember?.cli.adapter ?? conv.adapter,
         createdAt: submitPreview.createdAt,
         updatedAt: submitPreview.createdAt
       }
@@ -888,7 +910,7 @@ export function ChatView({
     // Once the real (same-id) message is in the store, drop the preview copy so
     // the same React element (stable key) takes over without a remount/flash.
     return preview.filter((m) => !existing.has(m.id));
-  }, [conv, submitPreview, messages]);
+  }, [conv, submitPreview, messages, member, currentUser?.username]);
 
   const storeFrames = useReplayStore((s) => s.frames);
   const replayFrame =
@@ -1974,7 +1996,11 @@ export function ChatView({
         ) : null}
         <div className="composer-context-row">
           <span>{agentDisplayName}</span>
-          <div className="composer-workspace-meta" ref={workspaceDetailsRef}>
+          <div
+            className="composer-workspace-meta"
+            ref={workspaceDetailsRef}
+            title={conversationWorkspaceTitle}
+          >
             {composerHasProjectWorkspace ? (
               <button
                 ref={workspaceSummaryRef}
@@ -1985,12 +2011,28 @@ export function ChatView({
                 title={composerWorkspaceLabel}
                 onClick={toggleWorkspaceDetails}
               >
-                <Folder aria-hidden="true" size={12} strokeWidth={1.8} />
+                {conv.sourceCwd ? (
+                  <FolderLock aria-hidden="true" size={12} strokeWidth={1.8} />
+                ) : (
+                  <Folder aria-hidden="true" size={12} strokeWidth={1.8} />
+                )}
                 <span>{composerWorkspaceLabel}</span>
               </button>
             ) : (
-              <span title={conv.cwd || undefined}>{composerWorkspaceLabel}</span>
+              <span className="composer-workspace-context">
+                {conv.sourceCwd ? (
+                  <FolderLock size={13} strokeWidth={1.8} aria-hidden="true" />
+                ) : null}
+                <span className="composer-workspace-name">
+                  {composerWorkspaceLabel}
+                </span>
+              </span>
             )}
+            {conv.sourceCwd ? (
+              <span className="composer-workspace-badge">
+                {t("chat.isolatedWorkspace")}
+              </span>
+            ) : null}
             {workspaceDetailsOpen &&
             composerHasProjectWorkspace &&
             conversationProject &&

@@ -537,6 +537,8 @@ export interface Conversation {
   agentName: string;
   adapter: string;
   cwd?: string;
+  /** Assigned source path for display; cwd remains the real execution path. */
+  sourceCwd?: string;
   projectId?: string;
   approvalMode?: "auto" | "ask";
   configOptionOverrides?: Record<string, string>;

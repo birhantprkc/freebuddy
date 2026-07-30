@@ -495,12 +495,17 @@ const remote = {
     ipcRenderer.invoke("remote:setServerConfig", input),
   setEnabled: (enabled: boolean) => ipcRenderer.invoke("remote:setEnabled", enabled),
   listUsers: () => ipcRenderer.invoke("remote:listUsers"),
-  createUser: (input: { username: string; password?: string }) =>
-    ipcRenderer.invoke("remote:createUser", input),
+  createUser: (input: {
+    username: string;
+    password?: string;
+    strictIsolation?: boolean;
+  }) => ipcRenderer.invoke("remote:createUser", input),
   renameUser: (input: { id: string; username: string }) =>
     ipcRenderer.invoke("remote:renameUser", input),
   setUserDisabled: (input: { id: string; disabled: boolean }) =>
     ipcRenderer.invoke("remote:setUserDisabled", input),
+  setUserStrictIsolation: (input: { id: string; strictIsolation: boolean }) =>
+    ipcRenderer.invoke("remote:setUserStrictIsolation", input),
   resetUserPassword: (id: string) => ipcRenderer.invoke("remote:resetUserPassword", id),
   setUserPassword: (input: { id: string; password: string }) =>
     ipcRenderer.invoke("remote:setUserPassword", input),

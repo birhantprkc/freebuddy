@@ -539,6 +539,7 @@ declare global {
     isOwner: boolean;
     createdAt: number;
     disabled: boolean;
+    strictIsolation: boolean;
   }
 
   interface RemoteServerConfig {
@@ -589,7 +590,11 @@ declare global {
       enabled: boolean
     ): Promise<{ status: RemoteStatus | null; initialPassword: string | null }>;
     listUsers(): Promise<RemoteUser[]>;
-    createUser(input: { username: string; password?: string }): Promise<{
+    createUser(input: {
+      username: string;
+      password?: string;
+      strictIsolation?: boolean;
+    }): Promise<{
       user: RemoteUser;
       password: string;
     }>;
@@ -597,6 +602,10 @@ declare global {
     setUserDisabled(input: {
       id: string;
       disabled: boolean;
+    }): Promise<RemoteUser | null>;
+    setUserStrictIsolation(input: {
+      id: string;
+      strictIsolation: boolean;
     }): Promise<RemoteUser | null>;
     resetUserPassword(id: string): Promise<{ user: RemoteUser; password: string } | null>;
     setUserPassword(input: { id: string; password: string }): Promise<boolean>;

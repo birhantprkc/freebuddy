@@ -127,6 +127,7 @@ export function migrate(db: DB) {
       log_path TEXT,
       started_at TEXT,
       ended_at TEXT,
+      owner_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -251,6 +252,7 @@ export function migrate(db: DB) {
       adapter TEXT NOT NULL,
       session_id TEXT NOT NULL,
       title TEXT,
+      owner_id TEXT,
       updated_at TEXT NOT NULL
     );
 
@@ -531,7 +533,8 @@ export function migrate(db: DB) {
       password_hash TEXT NOT NULL,
       is_owner     INTEGER NOT NULL DEFAULT 0,
       created_at   INTEGER NOT NULL,
-      disabled     INTEGER NOT NULL DEFAULT 0
+      disabled     INTEGER NOT NULL DEFAULT 0,
+      strict_isolation INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS remote_user_roots (
@@ -539,6 +542,18 @@ export function migrate(db: DB) {
       root_path  TEXT NOT NULL,
       PRIMARY KEY (user_id, root_path)
     );
+
+    CREATE TABLE IF NOT EXISTS remote_workspaces (
+      id             TEXT PRIMARY KEY,
+      owner_id       TEXT NOT NULL,
+      source_path    TEXT NOT NULL,
+      workspace_path TEXT NOT NULL UNIQUE,
+      created_at     TEXT NOT NULL,
+      updated_at     TEXT NOT NULL,
+      UNIQUE (owner_id, source_path)
+    );
+    CREATE INDEX IF NOT EXISTS idx_remote_workspaces_owner
+      ON remote_workspaces(owner_id, created_at);
 
     CREATE TABLE IF NOT EXISTS remote_sessions (
       token_hash TEXT PRIMARY KEY,
@@ -568,6 +583,11 @@ export function migrate(db: DB) {
   if (!remoteUserCols.some((c) => c.name === "disabled")) {
     db.exec(
       "ALTER TABLE remote_users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0"
+    );
+  }
+  if (!remoteUserCols.some((c) => c.name === "strict_isolation")) {
+    db.exec(
+      "ALTER TABLE remote_users ADD COLUMN strict_isolation INTEGER NOT NULL DEFAULT 0"
     );
   }
 
@@ -708,6 +728,20 @@ export function migrate(db: DB) {
   }
   if (!runtimeCols.some((c) => c.name === "last_update_error")) {
     db.exec("ALTER TABLE cli_runtimes ADD COLUMN last_update_error TEXT");
+  }
+
+  const taskCols = db
+    .prepare("PRAGMA table_info(cli_tasks)")
+    .all() as Array<{ name: string }>;
+  if (!taskCols.some((c) => c.name === "owner_id")) {
+    db.exec("ALTER TABLE cli_tasks ADD COLUMN owner_id TEXT");
+  }
+
+  const toolSessionCols = db
+    .prepare("PRAGMA table_info(cli_tool_sessions)")
+    .all() as Array<{ name: string }>;
+  if (!toolSessionCols.some((c) => c.name === "owner_id")) {
+    db.exec("ALTER TABLE cli_tool_sessions ADD COLUMN owner_id TEXT");
   }
 
   const messageCols = db

@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CLIAdapterId } from "./adapters.js";
+import { buildCodexAppServerWrapperContent } from "./codexByokWrapper.js";
 import { getDataDir, getDb } from "./db.js";
+import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 
 export interface CLICodexByokConfig {
   enabled?: boolean;
@@ -246,8 +248,48 @@ function createCodexByokModelCatalog(
   return file;
 }
 
-function shellSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+function isExecutableFile(candidate: string): boolean {
+  try {
+    const stat = fs.statSync(candidate);
+    if (!stat.isFile()) return false;
+    if (process.platform === "win32") return true;
+    return (stat.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort sync lookup for the real Codex CLI (not the BYOK wrapper). */
+function resolveCodexBinaryHint(): string | undefined {
+  const fromEnv = process.env.FREEBUDDY_CODEX_BIN?.trim();
+  if (fromEnv && isExecutableFile(fromEnv)) return fromEnv;
+
+  if (process.platform === "win32") {
+    const candidates: string[] = [];
+    if (process.env.APPDATA) {
+      candidates.push(path.join(process.env.APPDATA, "npm", "codex.cmd"));
+      candidates.push(path.join(process.env.APPDATA, "npm", "codex.exe"));
+    }
+    if (process.env.LOCALAPPDATA) {
+      candidates.push(
+        path.join(process.env.LOCALAPPDATA, "Yarn", "bin", "codex.cmd")
+      );
+    }
+    for (const candidate of candidates) {
+      if (isExecutableFile(candidate)) return candidate;
+    }
+    return undefined;
+  }
+
+  for (const candidate of [
+    "/opt/homebrew/bin/codex",
+    "/usr/local/bin/codex",
+    path.join(os.homedir(), ".local", "bin", "codex"),
+    path.join(os.homedir(), ".npm-global", "bin", "codex")
+  ]) {
+    if (isExecutableFile(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 function createCodexAppServerWrapper(
@@ -255,20 +297,16 @@ function createCodexAppServerWrapper(
 ): string | undefined {
   const dir = path.join(getDataDir(), "codex-wrappers");
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${safeCatalogFilePart(modelCatalogPath)}.sh`);
-  const catalogArg = `model_catalog_json=${JSON.stringify(modelCatalogPath)}`;
-  const script = `#!/bin/sh
-catalog_arg=${shellSingleQuote(catalogArg)}
-for candidate in "$FREEBUDDY_CODEX_BIN" "$(command -v codex 2>/dev/null)" "/opt/homebrew/bin/codex" "/usr/local/bin/codex"; do
-  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-    exec "$candidate" "$@" -c "$catalog_arg"
-  fi
-done
-echo "FreeBuddy Codex BYOK wrapper could not find the codex binary." >&2
-exit 127
-`;
+  const { extension, script } =
+    buildCodexAppServerWrapperContent(modelCatalogPath);
+  const file = path.join(
+    dir,
+    `${safeCatalogFilePart(modelCatalogPath)}${extension}`
+  );
   fs.writeFileSync(file, script, { encoding: "utf8", mode: 0o755 });
-  fs.chmodSync(file, 0o755);
+  if (process.platform !== "win32") {
+    fs.chmodSync(file, 0o755);
+  }
   return file;
 }
 
@@ -487,6 +525,8 @@ export function resolveCodexByokEnv(
     MODEL_PROVIDER: providerId
   };
   if (codexPath) env.CODEX_PATH = codexPath;
+  const codexBin = resolveCodexBinaryHint();
+  if (codexBin) env.FREEBUDDY_CODEX_BIN = codexBin;
   if (apiKey) env[envKey] = apiKey;
   return env;
 }
@@ -616,26 +656,32 @@ export interface ToolSessionRecord {
   adapter: string;
   sessionId: string;
   title?: string;
+  ownerId?: string | null;
   updatedAt: string;
 }
 
 export function toolSessionKey(
   agentId: string,
-  workspacePath: string
+  workspacePath: string,
+  ownerId: string | null = getCallerUserId()
 ): string {
-  return `${agentId}::${workspacePath}`;
+  return ownerId
+    ? `${ownerId}::${agentId}::${workspacePath}`
+    : `${agentId}::${workspacePath}`;
 }
 
 export function getToolSession(
   agentId: string,
   workspacePath: string
 ): ToolSessionRecord | undefined {
-  const row = getDb()
+  const ownerId = getCallerUserId();
+  let row = getDb()
     .prepare(
-      `SELECT key, agent_id, workspace_path, adapter, session_id, title, updated_at
+      `SELECT key, agent_id, workspace_path, adapter, session_id, title,
+              owner_id, updated_at
        FROM cli_tool_sessions WHERE key = ?`
     )
-    .get(toolSessionKey(agentId, workspacePath)) as
+    .get(toolSessionKey(agentId, workspacePath, ownerId)) as
     | {
         key: string;
         agent_id: string;
@@ -643,9 +689,19 @@ export function getToolSession(
         adapter: string;
         session_id: string;
         title: string | null;
+        owner_id: string | null;
         updated_at: string;
       }
     | undefined;
+  if (!row && (isCallerAdmin() || ownerId === null)) {
+    row = getDb()
+      .prepare(
+        `SELECT key, agent_id, workspace_path, adapter, session_id, title,
+                owner_id, updated_at
+         FROM cli_tool_sessions WHERE key = ?`
+      )
+      .get(toolSessionKey(agentId, workspacePath, null)) as typeof row;
+  }
   if (!row) return undefined;
   return {
     key: row.key,
@@ -654,6 +710,7 @@ export function getToolSession(
     adapter: row.adapter,
     sessionId: row.session_id,
     title: row.title ?? undefined,
+    ownerId: row.owner_id ?? null,
     updatedAt: row.updated_at
   };
 }
@@ -666,24 +723,28 @@ export function saveToolSession(
   title?: string
 ): void {
   const now = new Date().toISOString();
+  const ownerId = getCallerUserId();
   getDb()
     .prepare(
       `INSERT INTO cli_tool_sessions
-         (key, agent_id, workspace_path, adapter, session_id, title, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+         (key, agent_id, workspace_path, adapter, session_id, title, owner_id,
+          updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET
          adapter=excluded.adapter,
          session_id=excluded.session_id,
          title=COALESCE(excluded.title, cli_tool_sessions.title),
+         owner_id=excluded.owner_id,
          updated_at=excluded.updated_at`
     )
     .run(
-      toolSessionKey(agentId, workspacePath),
+      toolSessionKey(agentId, workspacePath, ownerId),
       agentId,
       workspacePath,
       adapter,
       sessionId,
       title ?? null,
+      ownerId,
       now
     );
 }

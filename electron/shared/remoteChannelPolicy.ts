@@ -221,6 +221,7 @@ const DENY = [
   "remote:deleteUser",
   "remote:renameUser",
   "remote:setUserDisabled",
+  "remote:setUserStrictIsolation",
   "remote:listUsers",
   "remote:listUserRoots",
   "remote:setUserRoots",
