@@ -309,6 +309,13 @@ const window = {
   },
   resolveDraftTool(resolution: DraftToolResolution): Promise<boolean> {
     return ipcRenderer.invoke("draft-tool:resolve", resolution);
+  },
+  notifyTask(payload: {
+    kind: "success" | "failure";
+    title: string;
+    body?: string;
+  }): Promise<void> {
+    return ipcRenderer.invoke("window:notify", payload);
   }
 };
 

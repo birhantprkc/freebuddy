@@ -38,3 +38,12 @@ export function playTaskFailure(backgroundOnly = true): void {
   audio.currentTime = 0;
   void audio.play().catch(() => {});
 }
+
+export function notifyTaskFinished(
+  kind: "success" | "failure",
+  title: string,
+  body?: string
+): void {
+  if (!isAppInBackground()) return;
+  window.freebuddy?.window?.notifyTask?.({ kind, title, body })?.catch(() => {});
+}

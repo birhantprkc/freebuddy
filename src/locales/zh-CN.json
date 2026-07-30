@@ -460,6 +460,7 @@
   },
   "conversations": {
     "title": "对话",
+    "untitled": "未命名会话",
     "projects": "项目",
     "recent": "最近",
     "noTasks": "无任务",
@@ -840,6 +841,12 @@
     "rawLogCollapsed": "已收起原始 CLI 日志，方便排查。",
     "cliNoStructured": "CLI 没有返回可解析的结构化内容。",
     "unknown": "未知错误"
+  },
+  "notifications": {
+    "taskSucceededTitle": "任务完成",
+    "taskSucceededBody": "“{{title}}” 已运行完成",
+    "taskFailedTitle": "任务失败",
+    "taskFailedBody": "“{{title}}” 运行失败"
   },
   "attachments": {
     "review": "请查看这些附件。",

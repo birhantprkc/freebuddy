@@ -7,6 +7,7 @@ import type {
 import { getParser } from "@/services/cli/parsers";
 import { cliClient } from "@/services/cli/client";
 import {
+  notifyTaskFinished,
   playTaskFailure,
   playTaskSuccess
 } from "@/utils/soundEffects";
@@ -334,10 +335,23 @@ export function handleStreamEvent(
     }
     if (reason !== "killed") {
       const success = (e.exitCode ?? 0) === 0;
+      const conversationTitle =
+        get().conversations.find((c) => c.id === conversationId)?.title ??
+        i18next.t("conversations.untitled");
       if (success) {
         playTaskSuccess(true);
+        notifyTaskFinished(
+          "success",
+          i18next.t("notifications.taskSucceededTitle"),
+          i18next.t("notifications.taskSucceededBody", { title: conversationTitle })
+        );
       } else {
         playTaskFailure(true);
+        notifyTaskFinished(
+          "failure",
+          i18next.t("notifications.taskFailedTitle"),
+          i18next.t("notifications.taskFailedBody", { title: conversationTitle })
+        );
       }
     }
     void finalizeRun(set, get, conversationId, reason);

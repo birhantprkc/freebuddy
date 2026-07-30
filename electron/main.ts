@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeImage, protocol, shell } from "electron";
+import { app, BrowserWindow, ipcMain, nativeImage, Notification, protocol, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,6 +39,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
 app.setName(APP_NAME);
+app.setAppUserModelId("dev.freebuddy.app");
 process.env.FB_APP_VERSION = APP_VERSION;
 app.setAboutPanelOptions({
   applicationName: APP_NAME,
@@ -262,6 +263,15 @@ function createWindow() {
   mainWindow.on("maximize", sendChromeVisible);
   mainWindow.on("unmaximize", sendChromeVisible);
 
+  mainWindow.on("focus", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.flashFrame(false);
+    }
+    if (process.platform === "darwin" && app.dock) {
+      app.dock.setBadge("");
+    }
+  });
+
   // The app menu is hidden (Menu.setApplicationMenu(null)) and we use
   // titleBarStyle: "hiddenInset", so macOS' default Esc-to-leave-fullscreen
   // shortcut has no menu item to bind to. Restore it manually.
@@ -285,6 +295,44 @@ function createWindow() {
   } else {
     void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+}
+
+type TaskNotificationPayload = {
+  kind: "success" | "failure";
+  title: string;
+  body?: string;
+};
+
+function registerTaskNotificationIpc(): void {
+  ipcMain.handle("window:notify", (_event, payload: TaskNotificationPayload) => {
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) return;
+
+    if (process.platform === "win32") {
+      win.flashFrame(true);
+    }
+    if (process.platform === "darwin" && app.dock) {
+      app.dock.bounce("informational");
+    }
+
+    try {
+      const notification = new Notification({
+        title: payload.title,
+        body: payload.body ?? "",
+        silent: true,
+        icon: loadAppIcon()
+      });
+      notification.on("click", () => {
+        if (win && !win.isDestroyed()) {
+          if (win.isMinimized()) win.restore();
+          win.focus();
+        }
+      });
+      notification.show();
+    } catch {
+      // Notifications are best-effort; ignore failures.
+    }
+  });
 }
 
 app.whenReady().then(async () => {
@@ -344,6 +392,7 @@ app.whenReady().then(async () => {
   seedBuiltinSkills();
   seedBuiltinWorkflowTeams();
   registerCliIpc();
+  registerTaskNotificationIpc();
   bindConversationNotifier((conversationId) => {
     for (const win of BrowserWindow.getAllWindows()) {
       safeSendToWebContents(win.webContents, "messages://changed", { conversationId });

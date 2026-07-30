@@ -460,6 +460,7 @@
   },
   "conversations": {
     "title": "Conversations",
+    "untitled": "Untitled conversation",
     "projects": "Projects",
     "recent": "Recent",
     "noTasks": "No tasks",
@@ -852,6 +853,12 @@
     "rawLogCollapsed": "Raw CLI log collapsed for easier debugging.",
     "cliNoStructured": "The CLI returned no parseable structured content.",
     "unknown": "Unknown error"
+  },
+  "notifications": {
+    "taskSucceededTitle": "Task complete",
+    "taskSucceededBody": "\"{{title}}\" finished running",
+    "taskFailedTitle": "Task failed",
+    "taskFailedBody": "\"{{title}}\" failed"
   },
   "attachments": {
     "review": "Please review these attachments.",
