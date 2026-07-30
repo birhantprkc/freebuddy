@@ -75,7 +75,9 @@ function bindAutoUpdater() {
     broadcast({ type: "update-downloaded", version: info.version ?? "" });
   });
   autoUpdater.on("error", (_err, message) => {
-    logMain().error("updater", "update error", { message });
+    logMain().error("updater", "update error", {
+      message: message || _err?.message || String(_err)
+    });
     broadcast({ type: "error", message: message || _err?.message || String(_err) });
   });
 }

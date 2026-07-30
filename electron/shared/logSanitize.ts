@@ -68,7 +68,7 @@ export function maskPaths(text: string, masks: PathMask[]): string {
  * and arrays are recursed into. Depth is capped to bound circular/deep
  * structures — beyond the cap values pass through unchanged.
  */
-const MAX_SANITIZE_DEPTH = 5;
+const MAX_SANITIZE_DEPTH = 6;
 
 export function sanitizeLogData(data: unknown, masks: PathMask[]): unknown {
   return sanitizeValue(data, masks, 0);

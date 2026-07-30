@@ -235,7 +235,7 @@ export async function exportDebugLogs(
     // readable cause but do NOT delete anything at result.filePath: the user
     // may have picked a pre-existing file we never wrote to.
     const message = (err as Error)?.message ?? String(err);
-    throw new Error(`Export failed: ${message}`, { cause: err });
+    throw new Error(message, { cause: err });
   }
   try {
     zip.writeZip(result.filePath);
@@ -247,7 +247,7 @@ export async function exportDebugLogs(
       /* cleanup failed — leave the partial file */
     }
     const message = (err as Error)?.message ?? String(err);
-    throw new Error(`Export failed: ${message}`, { cause: err });
+    throw new Error(message, { cause: err });
   }
   return { path: result.filePath };
 }

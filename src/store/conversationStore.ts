@@ -22,7 +22,7 @@ import type {
 } from "@/services/workflows/types";
 import { workflowFollowupAgentId } from "@/services/workflows/types";
 import { workflowClient } from "@/services/workflows/client";
-import { debugLogClient } from "../services/debugLog";
+import { debugLogClient } from "@/services/debugLog";
 import { composeMessageWithAttachments } from "@/utils/chatAttachments";
 import {
   filterSessionConfigPickerOptions,

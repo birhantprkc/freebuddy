@@ -7066,6 +7066,11 @@ button {
   font-size: 13px;
 }
 
+.stream-error .stream-error-export-logs {
+  margin-top: 8px;
+  color: var(--fb-danger);
+}
+
 .chat-composer {
   position: fixed;
   grid-row: 2;
