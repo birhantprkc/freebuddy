@@ -6,6 +6,10 @@ import type {
 } from "@/services/cli/parsers";
 import { getParser } from "@/services/cli/parsers";
 import { cliClient } from "@/services/cli/client";
+import {
+  playTaskFailure,
+  playTaskSuccess
+} from "@/utils/soundEffects";
 
 import type { ConversationState } from "./conversationStore";
 import { runCtxMap } from "./conversationStore";
@@ -327,6 +331,14 @@ export function handleStreamEvent(
     const reason = live?.status === "killed" ? "killed" : "done";
     if (reason === "done" && get().activeId !== conversationId) {
       get().markConversationUnread(conversationId);
+    }
+    if (reason !== "killed") {
+      const success = (e.exitCode ?? 0) === 0;
+      if (success) {
+        playTaskSuccess(true);
+      } else {
+        playTaskFailure(true);
+      }
     }
     void finalizeRun(set, get, conversationId, reason);
   }

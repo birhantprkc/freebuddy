@@ -35,6 +35,10 @@ import { useUpdaterStore } from "./store/updaterStore";
 import { useDetailLayoutStore, selectDetailWidth, DETAIL_MIN_WIDTH } from "./store/detailLayoutStore";
 import { useNewTaskUiStore } from "./store/newTaskUiStore";
 import { useWorkflowStore } from "./store/workflowStore";
+import {
+  playTaskFailure,
+  playTaskSuccess
+} from "./utils/soundEffects";
 import i18next from "i18next";
 import { useTranslation } from "react-i18next";
 
@@ -86,9 +90,22 @@ function App() {
   }, [loadExecutors, loadConversations]);
 
   useEffect(() => {
+    const lastStatusMap = new Map<string, string | undefined>();
     const off = window.freebuddy?.scheduledTasks?.onChanged?.((task) => {
       if (!task || task.lastStatus === "completed" || task.lastStatus === "failed") {
         void refreshConversationList();
+      }
+      if (task?.id) {
+        const prev = lastStatusMap.get(task.id);
+        const next = task.lastStatus;
+        lastStatusMap.set(task.id, next);
+        if (prev !== next) {
+          if (next === "completed") {
+            playTaskSuccess(true);
+          } else if (next === "failed") {
+            playTaskFailure(true);
+          }
+        }
       }
     });
     return () => off?.();
