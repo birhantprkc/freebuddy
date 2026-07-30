@@ -124,19 +124,21 @@ function readAppLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name: str
 
 function readSessionLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name: string; lines: string[] }> {
   const out: Array<{ name: string; lines: string[] }> = [];
-  let stat: Array<{ name: string; mtimeMs: number }> = [];
+  let names: string[] = [];
   try {
-    stat = fs
-      .readdirSync(getLogDir())
-      .filter((n) => n.endsWith(".jsonl"))
-      .map((name) => ({
-        name,
-        mtimeMs: fs.statSync(path.join(getLogDir(), name)).mtimeMs
-      }))
-      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+    names = fs.readdirSync(getLogDir()).filter((n) => n.endsWith(".jsonl"));
   } catch {
     return out;
   }
+  const stat: Array<{ name: string; mtimeMs: number }> = [];
+  for (const name of names) {
+    try {
+      stat.push({ name, mtimeMs: fs.statSync(path.join(getLogDir(), name)).mtimeMs });
+    } catch {
+      /* file deleted or unreadable mid-scan — skip it, keep the rest */
+    }
+  }
+  stat.sort((a, b) => b.mtimeMs - a.mtimeMs);
   for (const { name } of stat.slice(0, MAX_SESSION_FILES)) {
     const file = path.join(getLogDir(), name);
     try {
@@ -145,10 +147,13 @@ function readSessionLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name:
       let truncated = false;
       if (size > SESSION_TAIL_BYTES) {
         const fd = fs.openSync(file, "r");
-        const buf = Buffer.alloc(SESSION_TAIL_BYTES);
-        fs.readSync(fd, buf, 0, SESSION_TAIL_BYTES, size - SESSION_TAIL_BYTES);
-        fs.closeSync(fd);
-        text = buf.toString("utf8");
+        try {
+          const buf = Buffer.alloc(SESSION_TAIL_BYTES);
+          const bytesRead = fs.readSync(fd, buf, 0, SESSION_TAIL_BYTES, size - SESSION_TAIL_BYTES);
+          text = buf.subarray(0, bytesRead).toString("utf8");
+        } finally {
+          fs.closeSync(fd);
+        }
         text = text.slice(text.indexOf("\n") + 1); // drop partial first line
         truncated = true;
       } else {
