@@ -2136,6 +2136,12 @@ git commit -m "test: add debug log export contract tests"
 
 ---
 
+## 实施修订记录（执行中评审产生，以此为准）
+
+- **T1（commit 805929f）**：`filterSessionLogLine` 的 system/stderr 分支改为显式构造 `{ts, type, content}`（不 spread 未知字段）；`sanitizeLogData` 改为递归（深度上限 5，数组逐元素处理）；新增 Authorization/access_token/refresh_token/嵌套字段测试（共 14 个用例）。**已接受的残余风险**：standard 模式保留的 agent 错误消息文本理论上可能引用用户内容，当前按长度自然截断（64KB/行）+ 路径/密钥掩码处理，不做内容剥离——已记录于设计文档
+- **T2（commit 92135d6）**：轮转测试的打码期望值为 `"sk-ant…<redacted>"`（T1 加固后 slice(0,6)，计划原文的 `"sk-ant-…"` 已过期）
+- **T3（commit 1cce885）**：`appendRendererLogEntries` 的 `e.data` 经 `capRendererData` 上限 4000 序列化字符（小对象保留形状，超限转为截断字符串）；`uncaughtException` 打点同步写盘后 `process.exit(1)`（不再吞掉崩溃）；`safeStringify` 修正 undefined 返回；补拦截 `console.debug`。计划 T3 代码片段以上述提交为准
+
 ## Self-Review 记录
 
 - Spec 覆盖：三层脱敏（T1/T4/T6）、JSONL logger + 轮转保留（T2/T3/T4）、三入口 + 对话框 + 预览含 environment.json（T9/T10/T11）、environment.json（T5/T6）、打点含更新器事件（T3/T12）、错误处理原则（T2 droppedLines、T8 drop-on-fail）、测试方案（T1/T2/T5/T13）✅

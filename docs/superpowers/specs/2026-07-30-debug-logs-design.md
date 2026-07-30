@@ -110,7 +110,7 @@ agent stderr 在 standard 模式下**保留**（仅做路径掩码）：它是 C
 **会话日志（cli-logs `<sessionId>.jsonl`）的过滤规则**：每行 `{ts, type, content}`。standard 模式下——
 - `type=system`（start/exit 等）：整行保留（含 adapter、cwd——cwd 做路径掩码）
 - `type=stderr`：保留，路径掩码
-- `type=stdin/stdout`（协议载荷，含 prompt 与消息正文）：尝试解析 content JSON，**仅保留结构性字段**（事件类型、方法名、错误码与错误消息文本、数值型元数据如 token 用量/耗时——不敏感，且是目标场景 1「用量增长曲线」的依据）+ 原行长度标记 `<redacted: N chars>`；解析失败则整行替换为长度标记。错误消息文本保留的理由：`Compacting failed: aborted`、`Prompt is too long` 这类字符串正是定位目标场景 2 的关键
+- `type=stdin/stdout`（协议载荷，含 prompt 与消息正文）：尝试解析 content JSON，**仅保留结构性字段**（事件类型、方法名、错误码与错误消息文本、数值型元数据如 token 用量/耗时——不敏感，且是目标场景 1「用量增长曲线」的依据）+ 原行长度标记 `<redacted: N chars>`；解析失败则整行替换为长度标记。错误消息文本保留的理由：`Compacting failed: aborted`、`Prompt is too long` 这类字符串正是定位目标场景 2 的关键。**已接受的残余风险**：保留的错误消息文本理论上可能引用用户内容片段（如 `Compacting failed for prompt "..."`），由单行 64KB 截断 + 路径/密钥掩码缓解，不做内容剥离
 - full 模式：内容原样，但**导出时对每行补做密钥正则打码**（历史 cli-logs 写入时未打码，可能含密钥明文；新文件经 `appendLog` 打码后此处为幂等操作）
 
 ### 第 3 层 · environment.json
