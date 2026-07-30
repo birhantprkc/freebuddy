@@ -28,6 +28,7 @@ import { AgentAvatar } from "./AgentAvatar";
 import { InfoCardHost } from "../InfoCards/InfoCardHost";
 import { WorkflowRunPanel } from "../Workflows/WorkflowRunPanel";
 import { mergeSessionMetaItems } from "@/store/sessionMetaUtils";
+import { conversationDisplayCwd } from "./conversationProjectGrouping";
 
 type PlanItem = Extract<CliStreamItem, { kind: "plan" }>;
 type PlanEntry = PlanItem["entries"][number];
@@ -83,6 +84,7 @@ export function WorkspacePanel({
 
   const active = conversations.find((c) => c.id === activeId);
   const activeAgentName = displayAgentName(active?.agentName, active?.adapter);
+  const activeDisplayCwd = active ? conversationDisplayCwd(active) : "";
   const activeProject = useMemo(() => {
     const projectId = active?.projectId?.trim();
     if (!projectId) return undefined;
@@ -92,12 +94,12 @@ export function WorkspacePanel({
     if (activeProject?.folders?.length) {
       return activeProject.folders.map((folder) => folder.trim()).filter(Boolean);
     }
-    return active?.cwd?.trim() ? [active.cwd.trim()] : [];
-  }, [active?.cwd, activeProject]);
+    return activeDisplayCwd ? [activeDisplayCwd] : [];
+  }, [activeDisplayCwd, activeProject]);
   const isMultiRoot = mountedFolders.length > 1;
   const primaryFolder =
     activeProject?.primaryPath?.trim() ||
-    active?.cwd?.trim() ||
+    activeDisplayCwd ||
     mountedFolders[0];
   const isCodexAgent =
     active?.adapter === "codex-acp" || active?.agentId === "cli-codex-acp";
@@ -360,8 +362,10 @@ export function WorkspacePanel({
           ) : (
             <div>
               <dt>{t("workspace.workspace")}</dt>
-              <dd title={active?.cwd}>
-                {active?.cwd ? shortPath(active.cwd) : t("workspace.notSet")}
+              <dd title={activeDisplayCwd || undefined}>
+                {activeDisplayCwd
+                  ? shortPath(activeDisplayCwd)
+                  : t("workspace.notSet")}
               </dd>
             </div>
           )}

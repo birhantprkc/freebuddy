@@ -33,6 +33,7 @@ import { initializeScheduledTaskScheduler } from "./cli/scheduledTasks.js";
 import { initializeTelemetry, shutdownTelemetry } from "./telemetry.js";
 import { getFreshWindowsEnvironment } from "./cli/windowsEnv.js";
 import { initializeAgentUsageReconciler } from "./cli/usageReconciler.js";
+import { initDebugLog, logMain } from "./debugLog.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -232,6 +233,14 @@ function createWindow() {
     }
   });
 
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    logMain().error("crash", "render process gone", {
+      reason: details.reason,
+      exitCode: details.exitCode
+    });
+  });
+  logMain().info("window", "main window created");
+
   initApplicationMenu();
   setupContextMenu(mainWindow, isDev);
 
@@ -279,6 +288,13 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  initDebugLog();
+  logMain().info("main", "app ready", {
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    platform: process.platform,
+    arch: process.arch
+  });
   await injectShellPath();
   registerLocalFileProtocol();
   registerDraftProtocol();
