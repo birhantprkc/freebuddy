@@ -28,6 +28,7 @@ test("debug log IPC channels are registered and exposed via preload", () => {
   assert.match(preload, /ipcRenderer\.invoke\("debugLog:write"/);
   assert.match(preload, /ipcRenderer\.invoke\("debugLogs:preview"/);
   assert.match(preload, /ipcRenderer\.invoke\("debugLogs:export"/);
+  assert.match(preload, /^\s+debugLogs,$/m);
   assert.match(types, /FreebuddyDebugLogs/);
 });
 
@@ -65,6 +66,9 @@ test("three entry points mount the export dialog", () => {
   assert.match(aboutTab, /debugLogs\.aboutSectionTitle/);
   assert.match(streamItem, /debugLogs\.exportLink/);
   assert.match(replayBar, /debugLogs\.title/);
+  assert.match(aboutTab, /useDebugLogsDialogStore/);
+  assert.match(streamItem, /useDebugLogsDialogStore/);
+  assert.match(replayBar, /useDebugLogsDialogStore/);
 });
 
 test("renderer logger installs global hooks and instruments run failures", () => {
