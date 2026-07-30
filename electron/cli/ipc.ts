@@ -1,5 +1,7 @@
 import { ipcMain, BrowserWindow, dialog, shell, type IpcMainInvokeEvent } from "electron";
 import { registerHandler } from "../invokeRegistry.js";
+import { appendRendererLogEntries } from "../debugLog.js";
+import { buildDebugLogPreview, exportDebugLogs } from "../debugLogExport.js";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -574,6 +576,17 @@ export function registerCliIpc() {
   });
 
   registerHandler("cli:listAdapters", () => cliAdapterDefinitions);
+  registerHandler("debugLog:write", (_event, entries: unknown) => {
+    appendRendererLogEntries(entries);
+  });
+  registerHandler("debugLogs:preview", (_event, mode: unknown) =>
+    buildDebugLogPreview(mode === "full" ? "full" : "standard")
+  );
+  registerHandler("debugLogs:export", (event, mode: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error("no window");
+    return exportDebugLogs(win, mode === "full" ? "full" : "standard");
+  });
   registerHandler("cli:usageSummary", (_event, rawPeriod: unknown) => {
     const period = normalizeAgentUsagePeriod(rawPeriod);
     return getAgentUsageSummary(period);

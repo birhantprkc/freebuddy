@@ -476,6 +476,17 @@ const shellApi = {
     ipcRenderer.invoke("shell:showItemInFolder", targetPath) as Promise<boolean>
 };
 
+const debugLogs = {
+  write: (entries: unknown[]) => ipcRenderer.invoke("debugLog:write", entries),
+  preview: (mode: "standard" | "full") =>
+    ipcRenderer.invoke("debugLogs:preview", mode),
+  export: (mode: "standard" | "full") =>
+    ipcRenderer.invoke("debugLogs:export", mode) as Promise<{
+      path?: string;
+      canceled?: boolean;
+    }>
+};
+
 const remote = {
   whoami: () => ipcRenderer.invoke("remote:whoami"),
   getStatus: () => ipcRenderer.invoke("remote:getStatus"),
@@ -530,6 +541,7 @@ contextBridge.exposeInMainWorld("freebuddy", {
   infoCards,
   window,
   updater,
+  debugLogs,
   shell: shellApi,
   remote
 });
