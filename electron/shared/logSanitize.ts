@@ -62,18 +62,29 @@ export function maskPaths(text: string, masks: PathMask[]): string {
   return out;
 }
 
-/** Standard-mode filtering for our own log lines' `data` payloads (shallow). */
+/**
+ * Recursive standard-mode filtering for our own log lines' `data` payloads.
+ * CONTENT_KEYS are stripped at every depth; strings are masked; plain objects
+ * and arrays are recursed into. Depth is capped to bound circular/deep
+ * structures — beyond the cap values pass through unchanged.
+ */
+const MAX_SANITIZE_DEPTH = 5;
+
 export function sanitizeLogData(data: unknown, masks: PathMask[]): unknown {
-  if (typeof data === "string") return maskPaths(redactsecrets(data), masks);
-  if (data === null || typeof data !== "object" || Array.isArray(data)) return data;
+  return sanitizeValue(data, masks, 0);
+}
+
+function sanitizeValue(value: unknown, masks: PathMask[], depth: number): unknown {
+  if (typeof value === "string") return maskPaths(redactsecrets(value), masks);
+  if (value === null || typeof value !== "object") return value;
+  if (depth >= MAX_SANITIZE_DEPTH) return value;
+  if (Array.isArray(value)) return value.map((item) => sanitizeValue(item, masks, depth + 1));
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-    if (CONTENT_KEYS.has(key) && typeof value === "string") {
-      out[key] = redactedLengthMarker(value.length);
-    } else if (typeof value === "string") {
-      out[key] = maskPaths(redactsecrets(value), masks);
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (CONTENT_KEYS.has(key) && typeof v === "string") {
+      out[key] = redactedLengthMarker(v.length);
     } else {
-      out[key] = value;
+      out[key] = sanitizeValue(v, masks, depth + 1);
     }
   }
   return out;
@@ -119,8 +130,10 @@ export function filterSessionLogLine(
   const type = typeof obj.type === "string" ? obj.type : "unknown";
   const content = typeof obj.content === "string" ? obj.content : "";
   if (type === "system" || type === "stderr") {
+    // Explicit field list: unknown extra fields must not leak through.
     return JSON.stringify({
-      ...obj,
+      ts: obj.ts ?? null,
+      type,
       content: maskPaths(redactsecrets(content), masks)
     });
   }

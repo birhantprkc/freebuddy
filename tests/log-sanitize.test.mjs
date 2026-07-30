@@ -118,3 +118,53 @@ test("filterOwnLogLine standard sanitizes data and msg, full keeps content", asy
   const full = JSON.parse(filterOwnLogLine(line, "full", masks));
   assert.equal(full.data.content, "secret text");
 });
+
+test("redactsecrets masks Authorization headers including Bearer values", async () => {
+  const { redactsecrets } = await load();
+  assert.equal(
+    redactsecrets("Authorization: abcdef1234567890"),
+    "Authorization: <redacted>"
+  );
+  const out = redactsecrets("Authorization: Bearer abcdef1234567890");
+  assert.ok(!out.includes("abcdef1234567890"));
+});
+
+test("redactsecrets masks access_token and refresh_token assignments", async () => {
+  const { redactsecrets } = await load();
+  assert.equal(
+    redactsecrets("access_token: tok_abc123456"),
+    "access_token: <redacted>"
+  );
+  assert.equal(
+    redactsecrets("refresh_token=ref_abc123456"),
+    "refresh_token=<redacted>"
+  );
+});
+
+test("filterSessionLogLine standard drops unknown extra fields on system lines", async () => {
+  const { filterSessionLogLine } = await load();
+  const line = JSON.stringify({
+    ts: "t",
+    type: "system",
+    content: "ok",
+    command: "rm -rf /Users/alice/x"
+  });
+  const out = filterSessionLogLine(line, "standard", []);
+  const parsed = JSON.parse(out);
+  assert.deepEqual(Object.keys(parsed).sort(), ["content", "ts", "type"]);
+  assert.ok(!("command" in parsed));
+  assert.ok(!out.includes("rm -rf"));
+});
+
+test("sanitizeLogData recurses into nested objects and arrays", async () => {
+  const { sanitizeLogData, buildPathMasks } = await load();
+  const masks = buildPathMasks({ home: "/h", userData: "/h/app", workspaces: [] });
+  const nested = "nested secret";
+  const out = sanitizeLogData(
+    { details: { content: nested }, list: ["path /h/w"] },
+    masks
+  );
+  assert.equal(out.details.content, `<redacted: ${nested.length} chars>`);
+  assert.equal(out.list[0], "path <home>/w");
+  assert.ok(!JSON.stringify(out).includes(nested));
+});
