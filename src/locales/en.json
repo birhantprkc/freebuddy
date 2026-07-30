@@ -1439,12 +1439,12 @@
     "modeFullWarning": "Includes conversation content and real paths. Only share privately with developers you trust.",
     "previewLoading": "Loading preview…",
     "previewEmpty": "No log files yet.",
-    "previewTruncated": "Showing last {shown} of {total} lines",
+    "previewTruncated": "Showing last {{shown}} of {{total}} lines",
     "export": "Export…",
     "exporting": "Exporting…",
     "cancel": "Cancel",
-    "success": "Debug logs saved to {path}",
-    "error": "Failed to export debug logs: {message}",
+    "success": "Debug logs saved to {{path}}",
+    "error": "Failed to export debug logs: {{message}}",
     "exportLink": "Export debug logs"
   },
   "infoCards": {

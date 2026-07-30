@@ -1424,12 +1424,12 @@
     "modeFullWarning": "包含对话内容和真实路径，仅供私下发送给你信任的开发者。",
     "previewLoading": "正在加载预览…",
     "previewEmpty": "还没有日志文件。",
-    "previewTruncated": "显示最后 {shown} 行，共 {total} 行",
+    "previewTruncated": "显示最后 {{shown}} 行，共 {{total}} 行",
     "export": "导出…",
     "exporting": "导出中…",
     "cancel": "取消",
-    "success": "调试日志已保存到 {path}",
-    "error": "导出调试日志失败：{message}",
+    "success": "调试日志已保存到 {{path}}",
+    "error": "导出调试日志失败：{{message}}",
     "exportLink": "导出调试日志"
   },
   "infoCards": {
