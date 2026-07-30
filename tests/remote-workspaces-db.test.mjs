@@ -6,6 +6,14 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
+// Isolate git from user/system config (e.g. core.autocrlf=true on Windows
+// would check clones out with CRLF and break byte-exact assertions). The
+// product code spawns git with inherited env, so this covers it too.
+const gitConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-gitcfg-"));
+process.env.GIT_CONFIG_GLOBAL = path.join(gitConfigDir, "gitconfig");
+process.env.GIT_CONFIG_NOSYSTEM = "1";
+fs.writeFileSync(process.env.GIT_CONFIG_GLOBAL, "");
+
 let Database;
 let bindingAvailable = true;
 try {
@@ -145,10 +153,18 @@ test("ordinary and empty directories become isolated Git-backed snapshots", asyn
   fs.mkdirSync(path.join(source, "node_modules"));
   fs.writeFileSync(path.join(source, "node_modules", "skip.js"), "skip\n");
   fs.writeFileSync(path.join(outside, "secret.txt"), "outside\n");
-  fs.symlinkSync(
-    path.relative(source, outside),
-    path.join(source, "outside-link")
-  );
+  let symlinkCreated = true;
+  try {
+    fs.symlinkSync(
+      path.relative(source, outside),
+      path.join(source, "outside-link")
+    );
+  } catch (error) {
+    // Windows requires admin/Developer Mode for symlinks; skip that
+    // assertion locally instead of failing the whole test.
+    if (error.code !== "EPERM") throw error;
+    symlinkCreated = false;
+  }
 
   try {
     const aliceWorkspace = await ensureRemoteWorkspace(alice, source, [source]);
@@ -160,7 +176,9 @@ test("ordinary and empty directories become isolated Git-backed snapshots", asyn
       "ordinary source\n"
     );
     assert.equal(fs.existsSync(path.join(aliceWorkspace, "node_modules")), false);
-    assert.equal(fs.existsSync(path.join(aliceWorkspace, "outside-link")), false);
+    if (symlinkCreated) {
+      assert.equal(fs.existsSync(path.join(aliceWorkspace, "outside-link")), false);
+    }
     assert.equal(git(["status", "--short"], aliceWorkspace), "");
     assert.equal(
       git(["log", "-1", "--format=%s"], aliceWorkspace),

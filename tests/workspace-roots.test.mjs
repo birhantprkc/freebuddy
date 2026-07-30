@@ -74,14 +74,23 @@ test("parentWithinRoots clamps at the root boundary", async () => {
   assert.equal(parentWithinRoots(path.join(ROOT_X, "y"), [ROOT_AB]), null, "outside roots");
 });
 
-test("isPathWithinRoots resolves symlinks before checking containment", async () => {
+test("isPathWithinRoots resolves symlinks before checking containment", async (t) => {
   const { isPathWithinRoots } = await loadWorkspaceRoots();
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-roots-"));
   const root = path.join(temp, "root");
   const outside = path.join(temp, "outside");
   fs.mkdirSync(root);
   fs.mkdirSync(outside);
-  fs.symlinkSync(outside, path.join(root, "escape"));
+  try {
+    fs.symlinkSync(outside, path.join(root, "escape"));
+  } catch (error) {
+    if (error.code === "EPERM") {
+      fs.rmSync(temp, { recursive: true, force: true });
+      t.skip("symlinks require admin/Developer Mode on Windows");
+      return;
+    }
+    throw error;
+  }
   try {
     assert.equal(
       isPathWithinRoots(path.join(root, "escape", "secret.txt"), [root]),
