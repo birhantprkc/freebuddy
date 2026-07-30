@@ -18605,14 +18605,14 @@ button.ghost:focus-visible,
   opacity: 0.7;
 }
 .debug-logs-mode-warning {
-  color: var(--warning-color, #d97706);
+  color: var(--fb-warning);
 }
 .debug-logs-preview {
   flex: 1;
   min-height: 120px;
   max-height: 320px;
   overflow: auto;
-  border: 1px solid var(--border-color, #333);
+  border: 1px solid var(--fb-border);
   border-radius: 6px;
   padding: 8px;
 }

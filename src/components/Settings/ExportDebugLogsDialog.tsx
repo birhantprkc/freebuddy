@@ -20,11 +20,20 @@ export function ExportDebugLogsDialog() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (open) setMode("standard");
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setPreview(null);
-    window.freebuddy?.debugLogs
-      ?.preview(mode)
+    const api = window.freebuddy?.debugLogs;
+    if (!api) {
+      setPreview({ environment: {}, files: [] });
+      return;
+    }
+    api
+      .preview(mode)
       .then((p) => {
         if (!cancelled) setPreview(p as Preview);
       })
@@ -61,7 +70,7 @@ export function ExportDebugLogsDialog() {
 
   return (
     <div
-      className="modal-backdrop debug-logs-backdrop"
+      className="modal-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) close();
       }}
@@ -84,6 +93,7 @@ export function ExportDebugLogsDialog() {
               type="radio"
               name="debug-logs-mode"
               checked={mode === "standard"}
+              disabled={busy}
               onChange={() => setMode("standard")}
             />
             <span>
@@ -96,6 +106,7 @@ export function ExportDebugLogsDialog() {
               type="radio"
               name="debug-logs-mode"
               checked={mode === "full"}
+              disabled={busy}
               onChange={() => setMode("full")}
             />
             <span>
