@@ -168,3 +168,32 @@ test("sanitizeLogData recurses into nested objects and arrays", async () => {
   assert.equal(out.list[0], "path <home>/w");
   assert.ok(!JSON.stringify(out).includes(nested));
 });
+
+test("appendLog redacts secrets before writing session log lines", async () => {
+  const sanitizeSource = fs.readFileSync(
+    new URL("../electron/shared/logSanitize.ts", import.meta.url), "utf8"
+  );
+  const sharedSource = fs.readFileSync(
+    new URL("../electron/cli/runtimeShared.ts", import.meta.url), "utf8"
+  );
+  // appendLog 位于文件尾部且只用到 fs 类型；抽出函数体连同依赖常量一起编译
+  const fnMatch = sharedSource.match(
+    /const MAX_LOG_LINE_CHARS[\s\S]*?^export function appendLog[\s\S]*?\n}/m
+  );
+  assert.ok(fnMatch, "appendLog source found");
+  const combined = `${sanitizeSource}\n${fnMatch[0]
+    .replace(/import[^\n]*\n/g, "")
+    .replace("export function appendLog", "function appendLog")
+    .replace("fs.WriteStream | null", "unknown")}\nexport { appendLog };`;
+  const output = ts.transpileModule(combined, {
+    compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 }
+  }).outputText;
+  const { appendLog } = await import(
+    `data:text/javascript;base64,${Buffer.from(output).toString("base64")}`
+  );
+  const writes = [];
+  const fakeStream = { writableEnded: false, destroyed: false, write: (s) => writes.push(s) };
+  appendLog(fakeStream, "stderr", "auth failed for sk-ant-abc123def456");
+  const line = JSON.parse(writes[0]);
+  assert.equal(line.content, "auth failed for sk-ant…<redacted>");
+});

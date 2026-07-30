@@ -15,6 +15,7 @@ import {
 } from "../telemetryPrivacy.js";
 import { scheduleAgentUsageReconciliation } from "./usageReconciler.js";
 import { linkAgentUsageSessionForTask } from "./usageStore.js";
+import { redactsecrets } from "../shared/logSanitize.js";
 
 export interface CliPromptAttachment {
   path: string;
@@ -261,10 +262,11 @@ export function appendLog(
   content: string
 ) {
   if (!file || file.writableEnded || file.destroyed) return;
-  const safeContent =
+  const safeContent = redactsecrets(
     content.length > MAX_LOG_LINE_CHARS
       ? `${content.slice(0, MAX_LOG_LINE_CHARS)}\n… [log truncated]`
-      : content;
+      : content
+  );
   const entry = JSON.stringify({
     ts: new Date().toISOString(),
     type: kind,
