@@ -87,10 +87,7 @@ function gatherEnvironment(mode: ExportMode, exportedAt: string): Record<string,
       node: process.versions.node
     },
     telemetryEnabled: getSetting("telemetry.enabled") !== "0",
-    adapters: cliAdapterDefinitions.map((d) => ({
-      id: d.id,
-      label: (d as { label?: string }).label ?? d.id
-    })),
+    adapters: cliAdapterDefinitions.map((d) => ({ id: d.id, label: d.label })),
     conversationCount,
     droppedLines: mainLogDroppedLines(),
     exportedAt,
@@ -154,7 +151,8 @@ function readSessionLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name:
         } finally {
           fs.closeSync(fd);
         }
-        text = text.slice(text.indexOf("\n") + 1); // drop partial first line
+        const idx = text.indexOf("\n");
+        if (idx >= 0) text = text.slice(idx + 1); // drop partial first line
         truncated = true;
       } else {
         text = fs.readFileSync(file, "utf8");
@@ -230,6 +228,16 @@ export async function exportDebugLogs(
   for (const f of sessionLogs) {
     zip.addFile(`sessions/${f.name}`, Buffer.from(f.lines.join("\n") + "\n"));
   }
-  zip.writeZip(result.filePath);
+  try {
+    zip.writeZip(result.filePath);
+  } catch (err) {
+    // best-effort cleanup of the partial zip, then surface the original error
+    try {
+      fs.rmSync(result.filePath, { force: true });
+    } catch {
+      /* cleanup failed — leave the partial file */
+    }
+    throw err;
+  }
   return { path: result.filePath };
 }
