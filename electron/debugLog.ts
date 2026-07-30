@@ -55,14 +55,25 @@ function interceptConsole(logger: DebugLogger): void {
   console.info = wrap("info", console.info.bind(console));
   console.warn = wrap("warn", console.warn.bind(console));
   console.error = wrap("error", console.error.bind(console));
+  console.debug = wrap("debug", console.debug.bind(console));
 }
 
 function safeStringify(value: unknown): string {
   try {
-    return JSON.stringify(value);
+    const serialized = JSON.stringify(value);
+    return serialized === undefined ? String(value) : serialized;
   } catch {
     return String(value);
   }
+}
+
+/** Small objects keep their shape; oversized ones become a truncated string. */
+function capRendererData(data: unknown): unknown {
+  if (data === undefined) return undefined;
+  const serialized = safeStringify(data);
+  return serialized.length <= MAX_RENDERER_MSG_CHARS
+    ? data
+    : `${serialized.slice(0, MAX_RENDERER_MSG_CHARS)}… [truncated]`;
 }
 
 export function initDebugLog(): void {
@@ -77,10 +88,13 @@ export function initDebugLog(): void {
         message: err.message,
         stack: err.stack?.slice(0, 4000)
       });
+      // The write above is synchronous (appendFileSync); exit so the app
+      // doesn't keep running in a corrupted state.
+      process.exit(1);
     });
     process.on("unhandledRejection", (reason) => {
       logMain().error("crash", "unhandledRejection", {
-        reason: safeStringify(reason)?.slice(0, 2000)
+        reason: safeStringify(reason).slice(0, 2000)
       });
     });
     logMain().info("main", "debug log initialized", { dir });
@@ -98,6 +112,11 @@ export function appendRendererLogEntries(entries: unknown): void {
     const e = raw as Record<string, unknown>;
     if (typeof e.msg !== "string" || typeof e.scope !== "string") continue;
     const level = LEVELS.has(e.level as string) ? (e.level as DebugLogLevel) : "info";
-    logger.write(level, e.scope.slice(0, 40), e.msg.slice(0, MAX_RENDERER_MSG_CHARS), e.data);
+    logger.write(
+      level,
+      e.scope.slice(0, 40),
+      e.msg.slice(0, MAX_RENDERER_MSG_CHARS),
+      capRendererData(e.data)
+    );
   }
 }
