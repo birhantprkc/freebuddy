@@ -71,6 +71,10 @@ export function ExportDebugLogsDialog() {
         role="dialog"
         aria-modal="true"
         aria-label={t("debugLogs.dialogTitle")}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") close();
+        }}
       >
         <h3>{t("debugLogs.dialogTitle")}</h3>
 
