@@ -77,6 +77,15 @@ import {
   clearAuthenticationTerminalsForSession,
   runAuthenticationTerminal
 } from "./acpAuthTerminal.js";
+import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
+import {
+  cleanupSandboxCommand,
+  isRemoteIsolatedCaller,
+  prepareSandboxedSpawn,
+  shouldSandboxCurrentCaller
+} from "./sandboxRuntime.js";
+import { isPathWithinRoots } from "../shared/workspaceRoots.js";
+import { clearSessionOwner } from "./sessionOwners.js";
 
 function writeAcp(
   child: ChildProcessByStdio<Writable, Readable, Readable>,
@@ -132,6 +141,8 @@ export async function runAcpAgent({
   let turnHadLiveAgentChunk = false;
   let sessionWasResumed = false;
   let mcpServers: AcpStdioMcpServer[] = [];
+  const remoteIsolated = isRemoteIsolatedCaller();
+  const processSandboxed = shouldSandboxCurrentCaller();
   const replayMessageIds = new Set(args.knownStreamMessageIds ?? []);
   const replayContentSignatures = new Set(
     args.knownStreamContentSignatures ?? []
@@ -145,6 +156,31 @@ export async function runAcpAgent({
     (args.knownAgentStreamMessageIds ?? []).length === 0;
   const terminalManager = createAcpTerminalManager({
     defaultCwd: args.cwd,
+    // Grok ACP currently sends a complete command line in `command` (for
+    // example `/bin/bash -lc pwd`) without a separate `args` array.
+    commandIsShellLine: args.adapter === "grok-acp",
+    prepareSpawn: processSandboxed
+      ? async (input) => {
+          const workspaceRoot = args.cwd;
+          if (!workspaceRoot || !isPathWithinRoots(input.cwd, [workspaceRoot])) {
+            throw new Error("forbidden_path: terminal cwd");
+          }
+          const prepared = await prepareSandboxedSpawn({
+            adapter: args.adapter,
+            bin: input.command,
+            args: input.args,
+            cwd: input.cwd,
+            workspaceRoot,
+            env: input.env
+          });
+          return {
+            command: prepared.bin,
+            args: prepared.args,
+            env: prepared.env
+          };
+        }
+      : undefined,
+    onPreparedSpawnExit: cleanupSandboxCommand,
     onOutput: (terminalId, snap) => {
       emit({
         type: "terminal-update",
@@ -199,6 +235,10 @@ export async function runAcpAgent({
     clearPermissionResolversForSession(args.sessionId);
     if (errorMessage) emit({ type: "error", message: errorMessage });
     emit({ type: "done", exitCode });
+    // WebUI session events are routed through the in-memory owner mapping.
+    // Keep it alive until the terminal events have been broadcast, otherwise
+    // remote clients see streamed content but never receive done/error.
+    clearSessionOwner(args.sessionId);
     updateTaskStatus(args.sessionId, status, exitCode, errorMessage);
     updateRuntimeRun(args.adapter, status === "failed" ? errorMessage : undefined);
     if (activeAcpSessionId && toolSessionScope) {
@@ -524,7 +564,7 @@ export async function runAcpAgent({
                     entry != null
                 )
             : undefined;
-          const created = terminalManager.create({
+          const created = await terminalManager.create({
             sessionId,
             command,
             args: argsList,
@@ -818,6 +858,11 @@ export async function runAcpAgent({
       `authenticating with ACP method ${method.id}`
     );
     if (method.type === "terminal") {
+      if (getCallerUserId() && !isCallerAdmin()) {
+        throw new Error(
+          "Remote interactive agent login is disabled. Configure the agent on the FreeBuddy desktop first."
+        );
+      }
       await stopAcpConnectionForAuthentication();
       await runAuthenticationTerminal({
         sessionId: args.sessionId,
@@ -829,6 +874,9 @@ export async function runAcpAgent({
       await restartAndInitialize();
       await request(buildAuthenticateRequest(nextId(), method.id));
       return true;
+    }
+    if (remoteIsolated && args.adapter.includes("grok")) {
+      throw authRequiredError(methods);
     }
     await request(buildAuthenticateRequest(nextId(), method.id));
     return false;
@@ -866,7 +914,11 @@ export async function runAcpAgent({
     agentCaps = init?.agentCapabilities ?? {};
     authMethods = Array.isArray(init?.authMethods) ? init.authMethods : [];
 
-    if (args.conversationId) {
+    // Draft and Browser bridge back into the desktop renderer over localhost
+    // and launch an Electron child process. Remote WebUI callers use the
+    // authenticated HTTP Draft endpoints instead, so do not expose either
+    // desktop-only capability to isolated remote users.
+    if (args.conversationId && !remoteIsolated) {
       mcpServers.push(
         await registerDraftToolSession({
           taskSessionId: args.sessionId,

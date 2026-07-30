@@ -616,8 +616,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     ensureWorkflowMessageSubscription(conv.id, async (cid, messageIds) => {
       await get().loadMessages(cid, messageIds);
     });
-    if (cwd) {
-      void cliClient.ensureAgentGuides(cwd, {
+    if (conv.cwd) {
+      void cliClient.ensureAgentGuides(conv.cwd, {
         nativeDraftTools:
           useCliExecutorStore.getState().resolve(conv.adapter)?.protocol === "acp"
       }).catch((err) => {
@@ -805,7 +805,38 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!member) throw new Error(`Member ${conv.agentId} not found`);
 
     const userMsgId = userMessageId ?? nanoid();
+    const assistantMsgId = assistantMessageId ?? nanoid();
     const now = new Date().toISOString();
+    const taskSessionId = nanoid();
+
+    // Claim the live stream before any appendMessage broadcasts. WebUI
+    // onMessagesChanged otherwise reloads the transcript while live is still
+    // empty, remounting avatar bubbles (flash/jump) on every send.
+    set((s) => ({
+      live: {
+        ...s.live,
+        [conversationId]: {
+          messageId: assistantMsgId,
+          taskSessionId,
+          items: [],
+          status: "starting",
+          preserveConversationTitle
+        }
+      }
+    }));
+
+    const releaseClaimedLive = () => {
+      set((s) => {
+        const live = s.live[conversationId];
+        if (!live || live.taskSessionId !== taskSessionId) return s;
+        if (live.status !== "starting") return s;
+        const next = { ...s.live };
+        delete next[conversationId];
+        return { live: next };
+      });
+    };
+
+    try {
     if (!internalPrompt) {
       const userMsg: ConversationMessage = {
         id: userMsgId,
@@ -850,7 +881,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       }));
     }
 
-    const assistantMsgId = assistantMessageId ?? nanoid();
     const assistantMsg: ConversationMessage = {
       id: assistantMsgId,
       conversationId,
@@ -883,7 +913,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       adapter: member.cli.adapter
     });
 
-    const taskSessionId = nanoid();
     const wantFresh = get().pendingFreshContext[conversationId] === true;
     const resolved = useCliExecutorStore
       .getState()
@@ -1053,6 +1082,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
       runCtxMap.get(taskSessionId)?.unsubscribe();
       runCtxMap.delete(taskSessionId);
+    }
+    } catch (err) {
+      releaseClaimedLive();
+      throw err;
     }
   },
 

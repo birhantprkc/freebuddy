@@ -7133,7 +7133,7 @@ button {
   border-bottom: 1px solid var(--fb-border);
 }
 
-.composer-context-row span {
+.composer-context-row > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7146,6 +7146,8 @@ button {
   min-width: 0;
   max-width: 70%;
   flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
   justify-content: flex-end;
 }
 
@@ -7236,6 +7238,37 @@ button {
   font-style: normal;
   font-weight: 600;
   line-height: 1.4;
+}
+
+.composer-workspace-context {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.composer-workspace-context > svg,
+.composer-workspace-badge {
+  flex: 0 0 auto;
+}
+
+.composer-workspace-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fb-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-workspace-badge {
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--fb-brand) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fb-brand) 9%, transparent);
+  color: var(--fb-brand);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
 }
 
 .context-reference-tray {
@@ -18147,6 +18180,20 @@ button.ghost:focus-visible,
   gap: 6px;
   margin: 8px 0 0;
 }
+.remote-strict-isolation {
+  align-items: flex-start;
+  margin-top: 10px;
+}
+.remote-strict-isolation input {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+.remote-strict-isolation > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 
 .remote-credential {
   margin-top: 12px;
@@ -18578,6 +18625,4 @@ button.ghost:focus-visible,
   .remote-audit-row { grid-template-columns: 1fr; gap: 2px; }
   .remote-section-head { flex-direction: column; }
 }
-
-
 
