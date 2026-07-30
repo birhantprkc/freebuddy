@@ -37,6 +37,16 @@ function insertUser(db, id, username) {
   ).run(id, username, Date.now());
 }
 
+function mkdtemp(prefix) {
+  // GitHub Actions Windows runners expose TEMP as an 8.3 short name
+  // (C:\Users\RUNNER~1\...). fs.mkdtempSync keeps that short parent, but the
+  // product code canonicalizes via fs.realpathSync.native (long form), so raw
+  // tmpdir paths never equal their real form. Resolve once at creation.
+  return fs.realpathSync.native(
+    fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  );
+}
+
 test("remote workspaces create and reuse an independent clone per user", async (t) => {
   if (!bindingAvailable) {
     t.skip("better-sqlite3 native binding unavailable");
@@ -54,7 +64,7 @@ test("remote workspaces create and reuse an independent clone per user", async (
   } =
     await import("../dist-electron/cli/remoteWorkspaces.js");
 
-  const source = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-source-"));
+  const source = mkdtemp("freebuddy-source-");
   const userId = `workspace-test-${process.pid}`;
   insertUser(db, userId, "git-alice");
   git(["init"], source);
@@ -137,11 +147,9 @@ test("ordinary and empty directories become isolated Git-backed snapshots", asyn
     removeRemoteWorkspacesForUser
   } = await import("../dist-electron/cli/remoteWorkspaces.js");
 
-  const source = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-folder-source-"));
-  const emptySource = fs.mkdtempSync(
-    path.join(os.tmpdir(), "freebuddy-empty-source-")
-  );
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-outside-"));
+  const source = mkdtemp("freebuddy-folder-source-");
+  const emptySource = mkdtemp("freebuddy-empty-source-");
+  const outside = mkdtemp("freebuddy-outside-");
   const alice = `folder-alice-${process.pid}`;
   const bob = `folder-bob-${process.pid}`;
   const emptyUser = `folder-empty-${process.pid}`;
