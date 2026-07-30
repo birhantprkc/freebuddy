@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CLIAdapterId } from "./adapters.js";
+import { buildCodexAppServerWrapperContent } from "./codexByokWrapper.js";
 import { getDataDir, getDb } from "./db.js";
 
 export interface CLICodexByokConfig {
@@ -246,8 +247,48 @@ function createCodexByokModelCatalog(
   return file;
 }
 
-function shellSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+function isExecutableFile(candidate: string): boolean {
+  try {
+    const stat = fs.statSync(candidate);
+    if (!stat.isFile()) return false;
+    if (process.platform === "win32") return true;
+    return (stat.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort sync lookup for the real Codex CLI (not the BYOK wrapper). */
+function resolveCodexBinaryHint(): string | undefined {
+  const fromEnv = process.env.FREEBUDDY_CODEX_BIN?.trim();
+  if (fromEnv && isExecutableFile(fromEnv)) return fromEnv;
+
+  if (process.platform === "win32") {
+    const candidates: string[] = [];
+    if (process.env.APPDATA) {
+      candidates.push(path.join(process.env.APPDATA, "npm", "codex.cmd"));
+      candidates.push(path.join(process.env.APPDATA, "npm", "codex.exe"));
+    }
+    if (process.env.LOCALAPPDATA) {
+      candidates.push(
+        path.join(process.env.LOCALAPPDATA, "Yarn", "bin", "codex.cmd")
+      );
+    }
+    for (const candidate of candidates) {
+      if (isExecutableFile(candidate)) return candidate;
+    }
+    return undefined;
+  }
+
+  for (const candidate of [
+    "/opt/homebrew/bin/codex",
+    "/usr/local/bin/codex",
+    path.join(os.homedir(), ".local", "bin", "codex"),
+    path.join(os.homedir(), ".npm-global", "bin", "codex")
+  ]) {
+    if (isExecutableFile(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 function createCodexAppServerWrapper(
@@ -255,20 +296,16 @@ function createCodexAppServerWrapper(
 ): string | undefined {
   const dir = path.join(getDataDir(), "codex-wrappers");
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${safeCatalogFilePart(modelCatalogPath)}.sh`);
-  const catalogArg = `model_catalog_json=${JSON.stringify(modelCatalogPath)}`;
-  const script = `#!/bin/sh
-catalog_arg=${shellSingleQuote(catalogArg)}
-for candidate in "$FREEBUDDY_CODEX_BIN" "$(command -v codex 2>/dev/null)" "/opt/homebrew/bin/codex" "/usr/local/bin/codex"; do
-  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-    exec "$candidate" "$@" -c "$catalog_arg"
-  fi
-done
-echo "FreeBuddy Codex BYOK wrapper could not find the codex binary." >&2
-exit 127
-`;
+  const { extension, script } =
+    buildCodexAppServerWrapperContent(modelCatalogPath);
+  const file = path.join(
+    dir,
+    `${safeCatalogFilePart(modelCatalogPath)}${extension}`
+  );
   fs.writeFileSync(file, script, { encoding: "utf8", mode: 0o755 });
-  fs.chmodSync(file, 0o755);
+  if (process.platform !== "win32") {
+    fs.chmodSync(file, 0o755);
+  }
   return file;
 }
 
@@ -487,6 +524,8 @@ export function resolveCodexByokEnv(
     MODEL_PROVIDER: providerId
   };
   if (codexPath) env.CODEX_PATH = codexPath;
+  const codexBin = resolveCodexBinaryHint();
+  if (codexBin) env.FREEBUDDY_CODEX_BIN = codexBin;
   if (apiKey) env[envKey] = apiKey;
   return env;
 }

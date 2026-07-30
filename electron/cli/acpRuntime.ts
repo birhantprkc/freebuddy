@@ -748,7 +748,7 @@ export async function runAcpAgent({
   };
 
   const authRequiredError = (methods: AcpAuthMethod[]) => {
-    const selected = selectAcpAuthMethod(methods);
+    const selected = selectAcpAuthMethod(methods, agentCommand.env);
     const method = selected ?? methods[0];
     const label = method?.name ? ` (${method.name})` : "";
     const unsupportedType =
@@ -763,7 +763,7 @@ export async function runAcpAgent({
   const chooseAuthMethod = async (
     methods: AcpAuthMethod[]
   ): Promise<AcpAuthMethod> => {
-    const automatic = selectAcpAuthMethod(methods);
+    const automatic = selectAcpAuthMethod(methods, agentCommand.env);
     if (automatic) return automatic;
 
     const supported = methods.filter(
