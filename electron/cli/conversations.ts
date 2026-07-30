@@ -7,6 +7,7 @@ import { resolveSkillSnapshots } from "./skills.js";
 import type { SkillSnapshot } from "./skillTypes.js";
 import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 import { getUserById } from "./users.js";
+import { findProjectByCwd } from "./projects.js";
 
 let notifyMessagesChangedHandler: ((conversationId: string) => void) | null = null;
 
@@ -219,6 +220,11 @@ export interface CreateConversationInput {
 export function createConversation(input: CreateConversationInput): Conversation {
   const now = new Date().toISOString();
   const ownerId = input.ownerId ?? getCallerUserId() ?? null;
+  let projectId = input.projectId;
+  if (!projectId && input.cwd) {
+    const matched = findProjectByCwd(input.cwd);
+    if (matched) projectId = matched.id;
+  }
   getDb()
     .prepare(
       `INSERT INTO conversations
@@ -236,7 +242,7 @@ export function createConversation(input: CreateConversationInput): Conversation
       input.agentName,
       input.adapter,
       input.cwd ?? null,
-      input.projectId ?? null,
+      projectId ?? null,
       input.approvalMode ?? null,
       input.configOptionOverrides &&
         Object.keys(input.configOptionOverrides).length > 0
