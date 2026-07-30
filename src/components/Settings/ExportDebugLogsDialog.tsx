@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useDebugLogsDialogStore } from "@/store/debugLogsDialogStore";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
@@ -10,23 +10,49 @@ interface Preview {
   files: Array<{ name: string; totalLines: number; lines: string[]; truncated: boolean }>;
 }
 
+// Electron wraps ipcRenderer.invoke rejections, e.g.
+// "Error invoking remote method 'debugLogs:export': Error: Export failed: <cause>".
+// Strip the wrapper so toasts don't leak the IPC channel name (see
+// skillMarketStore.parseMarketConfirmationMessage for the same pattern).
+function unwrapInvokeError(err: unknown): string {
+  const message = (err as Error)?.message ?? String(err);
+  return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+}
+
 export function ExportDebugLogsDialog() {
   const { t } = useTranslation();
   const open = useDebugLogsDialogStore((s) => s.open);
   const setOpen = useDebugLogsDialogStore((s) => s.setOpen);
   const notify = useAgentBridgeStore((s) => s.notify);
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
   const [mode, setMode] = useState<Mode>("standard");
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewError, setPreviewError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  // Reset to the privacy-safe mode whenever the dialog is (re)opened. Done
+  // during render so the preview effect below fires exactly once per open,
+  // already with the "standard" mode.
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setMode("standard");
+  }
 
   useEffect(() => {
-    if (open) setMode("standard");
+    if (!open) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => previousFocusRef.current?.focus();
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setPreview(null);
+    setPreviewError(false);
     const api = window.freebuddy?.debugLogs;
     if (!api) {
       setPreview({ environment: {}, files: [] });
@@ -38,7 +64,10 @@ export function ExportDebugLogsDialog() {
         if (!cancelled) setPreview(p as Preview);
       })
       .catch(() => {
-        if (!cancelled) setPreview({ environment: {}, files: [] });
+        if (!cancelled) {
+          setPreview(null);
+          setPreviewError(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -60,11 +89,33 @@ export function ExportDebugLogsDialog() {
         setOpen(false);
       }
     } catch (err) {
-      notify(
-        t("debugLogs.error", { message: (err as Error)?.message ?? String(err) })
-      );
+      notify(t("debugLogs.error", { message: unwrapInvokeError(err) }));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])'
+      ) ?? []
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
     }
   };
 
@@ -76,18 +127,17 @@ export function ExportDebugLogsDialog() {
       }}
     >
       <div
+        ref={dialogRef}
         className="modal debug-logs-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={t("debugLogs.dialogTitle")}
+        aria-labelledby={titleId}
         tabIndex={-1}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") close();
-        }}
+        onKeyDown={handleKeyDown}
       >
-        <h3>{t("debugLogs.dialogTitle")}</h3>
+        <h3 id={titleId}>{t("debugLogs.dialogTitle")}</h3>
 
-        <div className="debug-logs-modes" role="radiogroup">
+        <div className="debug-logs-modes">
           <label className="debug-logs-mode">
             <input
               type="radio"
@@ -119,7 +169,12 @@ export function ExportDebugLogsDialog() {
         </div>
 
         <div className="debug-logs-preview">
-          {!preview && <p className="muted">{t("debugLogs.previewLoading")}</p>}
+          {previewError && (
+            <p className="muted">{t("debugLogs.previewError")}</p>
+          )}
+          {!previewError && !preview && (
+            <p className="muted">{t("debugLogs.previewLoading")}</p>
+          )}
           {preview && (
             <details className="debug-logs-preview-file">
               <summary>environment.json</summary>

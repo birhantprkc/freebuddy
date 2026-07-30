@@ -1438,6 +1438,7 @@
     "modeFull": "Full",
     "modeFullWarning": "Includes conversation content and real paths. Only share privately with developers you trust.",
     "previewLoading": "Loading preview…",
+    "previewError": "Failed to load preview.",
     "previewEmpty": "No log files yet.",
     "previewTruncated": "Showing last {{shown}} of {{total}} lines.",
     "export": "Export…",

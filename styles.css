@@ -69,6 +69,7 @@
   --fb-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
   --fb-shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
   --fb-danger: #fb7185;
+  --fb-warning: #fbbf24;
   --fb-link: #34d399;
   --surface: var(--fb-panel-bg);
   --surface-alt: var(--fb-panel-soft);
