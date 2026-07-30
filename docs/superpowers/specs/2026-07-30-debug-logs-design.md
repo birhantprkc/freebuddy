@@ -122,14 +122,14 @@ agent stderr 在 standard 模式下**保留**（仅做路径掩码）：它是 C
   "app": {"version": "0.6.8", "platform": "darwin", "arch": "arm64", "osRelease": "...", "locale": "zh-CN"},
   "runtime": {"electron": "...", "chrome": "...", "node": "..."},
   "telemetry": {"enabled": true},
-  "adapters": [{"id": "codex", "available": true, "version": "..."}],
+  "adapters": [{"id": "codex", "label": "Codex"}],
   "counts": {"conversations": 12},
   "logHealth": {"droppedLines": 0},
   "exportedAt": "...", "exportMode": "standard"
 }
 ```
 
-不含 workspace 路径、用户名、消息内容。适配器可用性列表是远程定位适配问题的第一入口。
+不含 workspace 路径、用户名、消息内容。适配器列表来自静态定义（id/label），可用性探测不在本期范围（YAGNI），adapter 运行状况从会话日志的启动/退出记录推断。
 
 ## 导出物结构
 

@@ -11,6 +11,7 @@ import { debugLogDir, mainLogDroppedLines } from "./debugLog.js";
 import { getDb, getLogDir } from "./cli/db.js";
 import { getSetting } from "./cli/settings.js";
 import { cliAdapterDefinitions } from "./cli/adapters.js";
+import { LOG_RETENTION_DAYS } from "./shared/debugLogCore.js";
 import { buildEnvironmentInfo } from "./shared/environmentInfo.js";
 import {
   buildPathMasks,
@@ -128,9 +129,12 @@ function readSessionLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name:
     return out;
   }
   const stat: Array<{ name: string; mtimeMs: number }> = [];
+  const recencyCutoff = Date.now() - LOG_RETENTION_DAYS * 86_400_000; // sessions are "近 7 天"
   for (const name of names) {
     try {
-      stat.push({ name, mtimeMs: fs.statSync(path.join(getLogDir(), name)).mtimeMs });
+      const mtimeMs = fs.statSync(path.join(getLogDir(), name)).mtimeMs;
+      if (mtimeMs < recencyCutoff) continue;
+      stat.push({ name, mtimeMs });
     } catch {
       /* file deleted or unreadable mid-scan — skip it, keep the rest */
     }
@@ -237,14 +241,19 @@ export async function exportDebugLogs(
     const message = (err as Error)?.message ?? String(err);
     throw new Error(message, { cause: err });
   }
+  const preExisted = fs.existsSync(result.filePath);
   try {
     zip.writeZip(result.filePath);
   } catch (err) {
-    // best-effort cleanup of the partial zip we created, then surface a readable cause
-    try {
-      fs.rmSync(result.filePath, { force: true });
-    } catch {
-      /* cleanup failed — leave the partial file */
+    // best-effort cleanup of the partial zip we created, then surface a readable
+    // cause — but only if the target didn't pre-exist: if writeZip failed on a
+    // pre-existing user file before truncating it, don't delete their file
+    if (!preExisted) {
+      try {
+        fs.rmSync(result.filePath, { force: true });
+      } catch {
+        /* cleanup failed — leave the partial file */
+      }
     }
     const message = (err as Error)?.message ?? String(err);
     throw new Error(message, { cause: err });
