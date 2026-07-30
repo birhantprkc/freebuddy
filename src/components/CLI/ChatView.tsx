@@ -877,9 +877,11 @@ export function ChatView({
     }
   }, [activeRun?.id, approvedWorkflowGate, gatingPhaseId]);
 
+  const currentUser = useConversationStore((s) => s.currentUser);
   const previewMessages = useMemo<ConversationMessage[]>(() => {
     if (!conv || submitPreview?.conversationId !== conv.id) return [];
     const existing = new Set(messages.map((m) => m.id));
+    const previewMember = member;
     const preview: ConversationMessage[] = [
       {
         id: submitPreview.userMessageId,
@@ -888,6 +890,7 @@ export function ChatView({
         status: "sent",
         content: submitPreview.prompt,
         attachments: submitPreview.attachments,
+        authorUsername: currentUser?.username ?? null,
         createdAt: submitPreview.createdAt,
         updatedAt: submitPreview.createdAt
       },
@@ -895,8 +898,11 @@ export function ChatView({
         id: submitPreview.assistantMessageId,
         conversationId: conv.id,
         role: "assistant",
-        status: "starting",
+        status: "running",
         content: "[]",
+        agentId: previewMember?.id ?? conv.agentId,
+        agentName: previewMember?.name ?? conv.agentName,
+        adapter: previewMember?.cli.adapter ?? conv.adapter,
         createdAt: submitPreview.createdAt,
         updatedAt: submitPreview.createdAt
       }
@@ -904,7 +910,7 @@ export function ChatView({
     // Once the real (same-id) message is in the store, drop the preview copy so
     // the same React element (stable key) takes over without a remount/flash.
     return preview.filter((m) => !existing.has(m.id));
-  }, [conv, submitPreview, messages]);
+  }, [conv, submitPreview, messages, member, currentUser?.username]);
 
   const storeFrames = useReplayStore((s) => s.frames);
   const replayFrame =

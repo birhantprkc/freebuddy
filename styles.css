@@ -18180,6 +18180,20 @@ button.ghost:focus-visible,
   gap: 6px;
   margin: 8px 0 0;
 }
+.remote-strict-isolation {
+  align-items: flex-start;
+  margin-top: 10px;
+}
+.remote-strict-isolation input {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+.remote-strict-isolation > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 
 .remote-credential {
   margin-top: 12px;

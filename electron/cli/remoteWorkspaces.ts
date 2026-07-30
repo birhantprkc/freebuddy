@@ -4,9 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-import { getDataDir, getDb } from "./db.js";
+import { getDb } from "./db.js";
 import { getUserById } from "./users.js";
 import { isPathWithinRoots } from "../shared/workspaceRoots.js";
+import { getRemoteWorkspacesRoot } from "./windowsSandboxPaths.js";
 
 export interface RemoteWorkspace {
   id: string;
@@ -97,6 +98,27 @@ function realDirectory(target: string): string {
   return real;
 }
 
+function isHostAppDataPath(candidate: string): boolean {
+  if (process.platform !== "win32") return false;
+  const resolved = path.resolve(candidate).toLowerCase();
+  for (const root of [
+    process.env.APPDATA,
+    process.env.LOCALAPPDATA,
+    path.join(os.homedir(), "AppData", "Roaming"),
+    path.join(os.homedir(), "AppData", "Local")
+  ]) {
+    if (!root) continue;
+    const normalized = path.resolve(root).toLowerCase();
+    if (
+      resolved === normalized ||
+      resolved.startsWith(`${normalized}${path.sep}`)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function existingWorkspacePath(userId: string, requestedPath: string): string | null {
   let requestedReal: string;
   try {
@@ -104,6 +126,9 @@ function existingWorkspacePath(userId: string, requestedPath: string): string | 
   } catch {
     return null;
   }
+  // Legacy Windows clones lived under %APPDATA%; Bun Agents lstat that parent
+  // and fail closed. Force rematerialization into ProgramData instead.
+  if (isHostAppDataPath(requestedReal)) return null;
   for (const workspace of listRemoteWorkspaces(userId)) {
     let workspaceReal: string;
     try {
@@ -111,6 +136,7 @@ function existingWorkspacePath(userId: string, requestedPath: string): string | 
     } catch {
       continue;
     }
+    if (isHostAppDataPath(workspaceReal)) continue;
     if (isPathWithinRoots(requestedReal, [workspaceReal])) return requestedReal;
   }
   return null;
@@ -218,7 +244,7 @@ async function cloneWorkspace(
   sourcePath: string,
   workspacePath: string
 ): Promise<void> {
-  const ownerDir = path.join(getDataDir(), "remote-workspaces", userId);
+  const ownerDir = path.join(getRemoteWorkspacesRoot(), userId);
   fs.mkdirSync(ownerDir, { recursive: true, mode: 0o700 });
   const temporaryPath = path.join(
     ownerDir,
@@ -285,7 +311,7 @@ async function snapshotWorkspace(
   sourcePath: string,
   workspacePath: string
 ): Promise<void> {
-  const ownerDir = path.join(getDataDir(), "remote-workspaces", userId);
+  const ownerDir = path.join(getRemoteWorkspacesRoot(), userId);
   fs.mkdirSync(ownerDir, { recursive: true, mode: 0o700 });
   const temporaryPath = path.join(
     ownerDir,
@@ -355,14 +381,19 @@ async function materialize(
        WHERE owner_id = ? AND source_path = ?`
     )
     .get(userId, sourcePath) as any;
+  const preferredWorkspacePath = path.join(
+    getRemoteWorkspacesRoot(),
+    userId,
+    safeWorkspaceName(sourcePath)
+  );
+  const legacyWorkspacePath =
+    existing?.workspace_path && isHostAppDataPath(existing.workspace_path)
+      ? existing.workspace_path
+      : null;
   const workspacePath =
-    existing?.workspace_path ??
-    path.join(
-      getDataDir(),
-      "remote-workspaces",
-      userId,
-      safeWorkspaceName(sourcePath)
-    );
+    legacyWorkspacePath == null && existing?.workspace_path
+      ? existing.workspace_path
+      : preferredWorkspacePath;
 
   const needsMaterialization = !fs.existsSync(workspacePath);
   if (needsMaterialization) {
@@ -381,8 +412,12 @@ async function materialize(
   const now = new Date().toISOString();
   if (existing) {
     getDb()
-      .prepare("UPDATE remote_workspaces SET updated_at = ? WHERE id = ?")
-      .run(now, existing.id);
+      .prepare(
+        `UPDATE remote_workspaces
+         SET workspace_path = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(workspacePath, now, existing.id);
   } else {
     getDb()
       .prepare(
@@ -431,8 +466,8 @@ export function ensureRemoteWorkspace(
 
 export function removeRemoteWorkspacesForUser(userId: string): number {
   const workspaces = listRemoteWorkspaces(userId);
-  const managedRoot = path.join(getDataDir(), "remote-workspaces", userId);
-  const remoteWorkspaceRoot = path.join(getDataDir(), "remote-workspaces");
+  const managedRoot = path.join(getRemoteWorkspacesRoot(), userId);
+  const remoteWorkspaceRoot = getRemoteWorkspacesRoot();
   if (isPathWithinRoots(managedRoot, [remoteWorkspaceRoot])) {
     fs.rmSync(managedRoot, { recursive: true, force: true });
   }

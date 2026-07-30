@@ -18,9 +18,13 @@ import {
 } from "@anthropic-ai/sandbox-runtime";
 
 import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
-import { getDataDir } from "./db.js";
-import { getUserRoots, listUsers } from "./users.js";
+import { getUserById, getUserRoots, listUsers } from "./users.js";
 import { resolveWindowsShellCommand } from "./windowsEnv.js";
+import {
+  getRemoteWorkspacesRoot,
+  getWindowsAgentLinksRoot,
+  getWindowsManagedRoot
+} from "./windowsSandboxPaths.js";
 
 export interface SandboxedSpawn {
   bin: string;
@@ -42,8 +46,19 @@ const PUBLIC_AGENT_DOMAINS = [
   "pypi.org",
   "*.pypi.org",
   "crates.io",
-  "*.crates.io"
+  "*.crates.io",
+  // OpenCode ACP + provider catalog / Zen + common Zhipu coding-plan hosts.
+  "models.dev",
+  "*.models.dev",
+  "opencode.ai",
+  "*.opencode.ai",
+  "bigmodel.cn",
+  "*.bigmodel.cn",
+  "z.ai",
+  "*.z.ai"
 ];
+
+const LOCALHOST_NO_PROXY_HOSTS = ["127.0.0.1", "localhost", "::1"];
 
 let initialization: Promise<void> | null = null;
 let windowsInitializationConfig: SandboxRuntimeConfig | null = null;
@@ -182,15 +197,27 @@ function cleanupWindowsBinaryAliases(): void {
   }
 }
 
-export function shouldSandboxCurrentCaller(): boolean {
+/** Remote non-admin callers always get managed workspace / session isolation. */
+export function isRemoteIsolatedCaller(): boolean {
   return Boolean(getCallerUserId()) && !isCallerAdmin();
+}
+
+/**
+ * OS process sandbox (srt-win / Seatbelt / bwrap). Only when the shared user
+ * has strict isolation enabled.
+ */
+export function shouldSandboxCurrentCaller(): boolean {
+  if (!isRemoteIsolatedCaller()) return false;
+  const userId = getCallerUserId();
+  if (!userId) return false;
+  return getUserById(userId)?.strictIsolation === true;
 }
 
 export function sandboxWorkingDirectory(cwd: string | undefined): string {
   if (cwd) return cwd;
   const userId = getCallerUserId();
   if (!userId) throw new Error("remote_sandbox_missing_owner");
-  const scratch = path.join(getDataDir(), "remote-workspaces", userId, "scratch");
+  const scratch = path.join(getRemoteWorkspacesRoot(), userId, "scratch");
   fs.mkdirSync(scratch, { recursive: true, mode: 0o700 });
   return scratch;
 }
@@ -410,12 +437,7 @@ function ensureWindowsBinaryAlias(
   }
 
   const targetDirectory = path.dirname(binary);
-  const aliasRoot = path.join(os.homedir(), ".freebuddy-agent-links");
-  fs.mkdirSync(aliasRoot, { recursive: true, mode: 0o700 });
-  const rootStat = fs.lstatSync(aliasRoot);
-  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
-    throw new Error("remote_sandbox_unsafe_windows_agent_alias_root");
-  }
+  const aliasRoot = getWindowsAgentLinksRoot();
 
   const label =
     adapter.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 40) || "agent";
@@ -455,7 +477,7 @@ function ensureWindowsBinaryAlias(
   };
 }
 
-function windowsNodeLauncherEntry(binary: string): string | null {
+function windowsCmdShimTarget(binary: string): string | null {
   if (![".cmd", ".bat"].includes(path.extname(binary).toLowerCase())) {
     return null;
   }
@@ -466,15 +488,70 @@ function windowsNodeLauncherEntry(binary: string): string | null {
     return null;
   }
   const match =
-    source.match(/"%dp0%\\([^"\r\n]+)"\s+%\*/i) ??
+    source.match(/"%dp0%\\([^"\r\n]+)"\s*%\*/i) ??
     source.match(/"%~dp0([^"\r\n]+)"\s*(?:%\*|$)/im);
   if (!match?.[1]) return null;
 
-  const entry = path.resolve(path.dirname(binary), match[1]);
-  if (!isWithinPath(path.dirname(binary), entry) || !fs.existsSync(entry)) {
+  const target = path.resolve(path.dirname(binary), match[1]);
+  if (!isWithinPath(path.dirname(binary), target) || !fs.existsSync(target)) {
     return null;
   }
-  return entry;
+  return target;
+}
+
+function windowsNodeLauncherEntry(binary: string): string | null {
+  const target = windowsCmdShimTarget(binary);
+  // The Windows ACP stdin bridge imports Node entry points via ESM. Native
+  // shims such as OpenCode's opencode.exe must be spawned instead.
+  if (!target || !/\.(cjs|mjs|js)$/i.test(target)) {
+    return null;
+  }
+  return target;
+}
+
+function windowsNativeLauncherBinary(binary: string): string | null {
+  const target = windowsCmdShimTarget(binary);
+  if (!target || /\.(cjs|mjs|js)$/i.test(target)) {
+    return null;
+  }
+  return target;
+}
+
+function ensureWindowsNativeBinaryStage(
+  nativeBinary: string,
+  adapter: string
+): string {
+  // Native CLIs installed under AppData (OpenCode, etc.) resolve their final
+  // path back into AppData and then lstat parent directories the sandbox user
+  // must not read. Stage a cached copy under %ProgramData%\FreeBuddy\agent-links
+  // so the process image path never enters AppData.
+  const aliasRoot = getWindowsAgentLinksRoot();
+  const label =
+    adapter.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 40) || "agent";
+  const digest = createHash("sha256")
+    .update(path.resolve(nativeBinary).toLowerCase())
+    .digest("hex")
+    .slice(0, 16);
+  const stageDirectory = path.join(aliasRoot, `native-${label}-${digest}`);
+  fs.mkdirSync(stageDirectory, { recursive: true, mode: 0o700 });
+  const stagedBinary = path.join(stageDirectory, path.basename(nativeBinary));
+  const sourceStat = fs.statSync(nativeBinary);
+  try {
+    const stagedStat = fs.statSync(stagedBinary);
+    if (
+      stagedStat.isFile() &&
+      stagedStat.size === sourceStat.size &&
+      stagedStat.mtimeMs >= sourceStat.mtimeMs
+    ) {
+      return stagedBinary;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const temporary = `${stagedBinary}.${process.pid}.tmp`;
+  fs.copyFileSync(nativeBinary, temporary);
+  fs.renameSync(temporary, stagedBinary);
+  return stagedBinary;
 }
 
 async function resolveBinary(
@@ -669,6 +746,67 @@ function prepareGrokSandboxHome(
   return destinationRoot;
 }
 
+// OpenCode ACP talks to its in-process HTTP server on 127.0.0.1. SRT injects
+// HTTP(S)_PROXY for egress filtering; without a localhost NO_PROXY bypass the
+// SDK calls are proxied and fail as "OpenCode service failure" (service: directory).
+function withLocalhostNoProxy(
+  env: Record<string, string>
+): Record<string, string> {
+  const current = env.NO_PROXY || env.no_proxy || "";
+  const parts = new Set(
+    current
+      .split(/[\s,;]+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+  );
+  for (const host of LOCALHOST_NO_PROXY_HOSTS) parts.add(host);
+  const merged = [...parts].join(",");
+  return { ...env, NO_PROXY: merged, no_proxy: merged };
+}
+
+function prepareOpencodeSandboxHome(
+  adapter: string,
+  sandboxHome: string,
+  hostHome: string
+): void {
+  if (process.platform !== "win32" || !adapter.includes("opencode")) return;
+
+  const destinationRoot = path.join(sandboxHome, ".local", "share", "opencode");
+  fs.mkdirSync(destinationRoot, { recursive: true, mode: 0o700 });
+  const destinationRootStat = fs.lstatSync(destinationRoot);
+  if (
+    !destinationRootStat.isDirectory() ||
+    destinationRootStat.isSymbolicLink()
+  ) {
+    throw new Error("remote_sandbox_unsafe_opencode_home");
+  }
+
+  // Seed credentials only. The host opencode.db can be huge and is recreated
+  // under the sandbox data home on first ACP session.
+  const source = path.join(hostHome, ".local", "share", "opencode", "auth.json");
+  const destination = path.join(destinationRoot, "auth.json");
+  let sourceStat: fs.Stats;
+  try {
+    sourceStat = fs.lstatSync(source);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) return;
+
+  try {
+    const destinationStat = fs.lstatSync(destination);
+    if (!destinationStat.isFile() || destinationStat.isSymbolicLink()) {
+      throw new Error("remote_sandbox_unsafe_opencode_auth");
+    }
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  fs.copyFileSync(source, destination, fs.constants.COPYFILE_EXCL);
+  fs.chmodSync(destination, 0o600);
+}
+
 function adapterSandboxEnvironment(
   adapter: string,
   workspaceRoot: string
@@ -682,8 +820,7 @@ function adapterSandboxEnvironment(
   }
 
   const sandboxHome = path.join(
-    getDataDir(),
-    "remote-workspaces",
+    getRemoteWorkspacesRoot(),
     userId,
     "sandbox-home"
   );
@@ -693,45 +830,104 @@ function adapterSandboxEnvironment(
   const hostHome = os.homedir();
   const qoderConfig = path.join(hostHome, ".qoder");
   const grokHome = prepareGrokSandboxHome(adapter, sandboxHome, hostHome);
+  prepareOpencodeSandboxHome(adapter, sandboxHome, hostHome);
   const qoderOutput = qoderShellOutputPath(adapter, workspaceRoot);
+  const opencodeWindowsHome =
+    process.platform === "win32" && adapter.includes("opencode");
+  const sandboxHomeDrive = opencodeWindowsHome
+    ? windowsHomeDrivePath(sandboxHome)
+    : null;
+  if (opencodeWindowsHome) {
+    // OpenCode/Bun probes %USERPROFILE%\AppData and also %HOMEDRIVE%%HOMEPATH%.
+    // Keep that tree inside the per-WebUI sandbox home instead of the host profile.
+    for (const directory of [
+      path.join(sandboxHome, "AppData", "Roaming"),
+      path.join(sandboxHome, "AppData", "Local"),
+      path.join(sandboxHome, ".local", "share"),
+      path.join(sandboxHome, ".local", "state"),
+      path.join(sandboxHome, ".cache")
+    ]) {
+      fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+    }
+  }
+
+  const env: Record<string, string> = {
+    // Keep agent subprocesses and their shell tools out of the host user's
+    // shared macOS/Linux temporary directory.
+    TMPDIR: sandboxTmp,
+    TMP: sandboxTmp,
+    TEMP: sandboxTmp,
+    // Claude's native macOS binary intentionally defaults to /tmp unless
+    // this dedicated override is present.
+    ...(adapter.includes("claude")
+      ? { CLAUDE_CODE_TMPDIR: sandboxTmp }
+      : {}),
+    // srt-win runs under a dedicated local account. Point agents at the
+    // host profile so their existing authentication/config discovery still
+    // works; NTFS grants below expose only the adapter-specific paths.
+    ...(process.platform === "win32" &&
+    !adapter.includes("qoder") &&
+    !opencodeWindowsHome
+      ? {
+          HOME: hostHome,
+          USERPROFILE: hostHome,
+          ...(adapter.includes("codex")
+            ? { CODEX_HOME: path.join(hostHome, ".codex") }
+            : {})
+        }
+      : {}),
+    // Qoder's Bun runtime resolves HOME during startup. Point it at a
+    // per-WebUI-user directory instead of exposing the host user's home.
+    ...(adapter.includes("qoder") ? { HOME: sandboxHome } : {}),
+    // Keep using the installed Qoder account and settings. This is the
+    // documented environment equivalent of Qoder's --config-dir option.
+    ...(adapter.includes("qoder") && fs.existsSync(qoderConfig)
+      ? { QODER_CONFIG_DIR: qoderConfig }
+      : {}),
+    // OpenCode on Windows must not inherit the host USERPROFILE/AppData paths.
+    // Bun resolves the profile via HOMEDRIVE+HOMEPATH even when USERPROFILE is
+    // overridden, which previously produced EPERM on the host AppData path.
+    // Keep reading the real host config via XDG_CONFIG_HOME.
+    ...(opencodeWindowsHome && sandboxHomeDrive
+      ? {
+          HOME: sandboxHome,
+          USERPROFILE: sandboxHome,
+          HOMEDRIVE: sandboxHomeDrive.HOMEDRIVE,
+          HOMEPATH: sandboxHomeDrive.HOMEPATH,
+          APPDATA: path.join(sandboxHome, "AppData", "Roaming"),
+          LOCALAPPDATA: path.join(sandboxHome, "AppData", "Local"),
+          XDG_CONFIG_HOME: path.join(hostHome, ".config"),
+          XDG_DATA_HOME: path.join(sandboxHome, ".local", "share"),
+          XDG_STATE_HOME: path.join(sandboxHome, ".local", "state"),
+          XDG_CACHE_HOME: path.join(sandboxHome, ".cache")
+        }
+      : {}),
+    // Grok takes an exclusive lock while loading and refreshing auth. Give
+    // each WebUI user a writable copy instead of exposing host config writes.
+    ...(grokHome ? { GROK_HOME: grokHome } : {})
+  };
 
   return {
-    env: {
-      // Keep agent subprocesses and their shell tools out of the host user's
-      // shared macOS/Linux temporary directory.
-      TMPDIR: sandboxTmp,
-      TMP: sandboxTmp,
-      TEMP: sandboxTmp,
-      // Claude's native macOS binary intentionally defaults to /tmp unless
-      // this dedicated override is present.
-      ...(adapter.includes("claude")
-        ? { CLAUDE_CODE_TMPDIR: sandboxTmp }
-        : {}),
-      // srt-win runs under a dedicated local account. Point agents at the
-      // host profile so their existing authentication/config discovery still
-      // works; NTFS grants below expose only the adapter-specific paths.
-      ...(process.platform === "win32" && !adapter.includes("qoder")
-        ? {
-            HOME: hostHome,
-            USERPROFILE: hostHome,
-            ...(adapter.includes("codex")
-              ? { CODEX_HOME: path.join(hostHome, ".codex") }
-              : {})
-          }
-        : {}),
-      // Qoder's Bun runtime resolves HOME during startup. Point it at a
-      // per-WebUI-user directory instead of exposing the host user's home.
-      ...(adapter.includes("qoder") ? { HOME: sandboxHome } : {}),
-      // Keep using the installed Qoder account and settings. This is the
-      // documented environment equivalent of Qoder's --config-dir option.
-      ...(adapter.includes("qoder") && fs.existsSync(qoderConfig)
-        ? { QODER_CONFIG_DIR: qoderConfig }
-        : {}),
-      // Grok takes an exclusive lock while loading and refreshing auth. Give
-      // each WebUI user a writable copy instead of exposing host config writes.
-      ...(grokHome ? { GROK_HOME: grokHome } : {})
-    },
+    // OpenCode ACP (and any future loopback SDK client) must bypass SRT's
+    // HTTP proxy for 127.0.0.1 / localhost / ::1.
+    env: adapter.includes("opencode") ? withLocalhostNoProxy(env) : env,
     readWritePaths: [sandboxHome, ...(qoderOutput ? [qoderOutput] : [])]
+  };
+}
+
+function windowsHomeDrivePath(absolutePath: string): {
+  HOMEDRIVE: string;
+  HOMEPATH: string;
+} {
+  const resolved = path.resolve(absolutePath);
+  const match = /^([A-Za-z]:)(.*)$/.exec(resolved);
+  if (!match) {
+    return { HOMEDRIVE: "C:", HOMEPATH: `\\${resolved.replace(/^\\/, "")}` };
+  }
+  const rest = match[2] || "\\";
+  return {
+    HOMEDRIVE: match[1]!,
+    HOMEPATH: rest.startsWith("\\") ? rest : `\\${rest}`
   };
 }
 
@@ -819,6 +1015,28 @@ const WINDOWS_SANDBOX_PROXY_ENV = new Set([
   "CARGO_HTTP_CAINFO"
 ]);
 
+// Applied inside the sandboxed agent only. Must NOT reach the outer srt-win
+// broker process — it reads the host credential DB from %LOCALAPPDATA%.
+const WINDOWS_INNER_ONLY_ENV = new Set([
+  "HOME",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "TMP",
+  "TEMP",
+  "TMPDIR",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_STATE_HOME",
+  "XDG_CACHE_HOME",
+  "QODER_CONFIG_DIR",
+  "GROK_HOME",
+  "CODEX_HOME",
+  "CLAUDE_CODE_TMPDIR"
+]);
+
 function windowsCommandEnvironment(
   env: Record<string, string | undefined>,
   adapterEnv: Record<string, string>
@@ -836,6 +1054,25 @@ function windowsCommandEnvironment(
     }
   }
   return { ...forwarded, ...adapterEnv };
+}
+
+function windowsOuterSpawnEnvironment(
+  inputEnv: Record<string, string | undefined>,
+  wrappedEnv: Record<string, string | undefined>,
+  adapterEnv: Record<string, string>
+): Record<string, string | undefined> {
+  const merged: Record<string, string | undefined> = {
+    ...inputEnv,
+    ...wrappedEnv,
+    ...adapterEnv
+  };
+  for (const key of WINDOWS_INNER_ONLY_ENV) {
+    if (!(key in adapterEnv)) continue;
+    const hostValue = inputEnv[key] ?? process.env[key];
+    if (hostValue === undefined) delete merged[key];
+    else merged[key] = hostValue;
+  }
+  return merged;
 }
 
 function windowsNodeOptions(current: string | undefined): string {
@@ -875,30 +1112,15 @@ export async function prepareSandboxedSpawn(input: {
   extraReadPaths?: string[];
 }): Promise<SandboxedSpawn> {
   const binary = await resolveBinary(input.bin, input.env);
-  const binaryAlias = binary
-    ? ensureWindowsBinaryAlias(binary, input.adapter)
-    : null;
   const nodeLauncherEntry = binary
     ? windowsNodeLauncherEntry(binary)
+    : null;
+  const nativeLauncherBinary = binary
+    ? windowsNativeLauncherBinary(binary)
     : null;
   const nodeLauncherBinary = nodeLauncherEntry
     ? await resolveBinary("node", input.env)
     : null;
-  const aliasedNodeEntry =
-    nodeLauncherEntry && binaryAlias
-      ? path.join(
-          binaryAlias.directory,
-          path.relative(path.dirname(binary!), nodeLauncherEntry)
-        )
-      : null;
-  const windowsLaunchBinary =
-    aliasedNodeEntry && nodeLauncherBinary
-      ? nodeLauncherBinary
-      : binaryAlias?.binary ?? binary ?? input.bin;
-  const windowsLaunchArgs =
-    aliasedNodeEntry && nodeLauncherBinary
-      ? [aliasedNodeEntry, ...input.args]
-      : input.args;
   const windowsBridgeNodeBinary =
     process.platform === "win32" && input.adapter.includes("acp")
       ? nodeLauncherBinary ?? await resolveBinary("node", input.env)
@@ -906,15 +1128,6 @@ export async function prepareSandboxedSpawn(input: {
   const workspaceRoot = input.workspaceRoot ?? input.cwd;
   const configPaths = adapterConfigPaths(input.adapter);
   const adapterSandbox = adapterSandboxEnvironment(input.adapter, workspaceRoot);
-  const windowsStdinPath =
-    process.platform === "win32" && windowsBridgeNodeBinary
-      ? path.join(
-          adapterSandbox.readWritePaths[0]!,
-          `.stdin-${randomUUID()}.jsonl`
-        )
-      : null;
-  if (windowsStdinPath) fs.writeFileSync(windowsStdinPath, "", { mode: 0o600 });
-  if (windowsStdinPath) windowsStdinBridgePaths.add(windowsStdinPath);
   const binaryPaths = binary
     ? existing(
         process.platform === "win32"
@@ -928,15 +1141,6 @@ export async function prepareSandboxedSpawn(input: {
             ]
       )
     : [];
-  const allowedRead = existing([
-    workspaceRoot,
-    ...configPaths,
-    ...adapterSandbox.readWritePaths,
-    ...binaryPaths,
-    ...(binaryAlias ? [binaryAlias.readPath] : []),
-    ...(process.platform === "win32" ? [] : applicationRuntimeReadPaths()),
-    ...(input.extraReadPaths ?? [])
-  ]);
   const denyRead = existing([
     process.platform === "darwin" ? "/Users" : "/home",
     ...allAssignedRepositoryRoots()
@@ -948,16 +1152,103 @@ export async function prepareSandboxedSpawn(input: {
   ]);
 
   if (process.platform === "win32") {
-    const requiredConfig = baseConfig({
-      denyRead,
-      allowRead: allowedRead,
-      allowWrite,
-      denyWrite: [],
-      allowGitConfig: false
-    });
+    // Create junctions/stdin bridges only after any in-flight Windows reset
+    // finishes. Reset's finally deletes every tracked alias/bridge; doing that
+    // work beforehand races and leaves Node importing a missing junction path
+    // (ERR_MODULE_NOT_FOUND for AppData-installed CLIs such as qodercli).
     return withWindowsPrepareLock(async () => {
       if (windowsReset) await windowsReset;
-      if (!initialization) {
+
+      const materializeWindowsLaunch = () => {
+        const binaryAlias = binary
+          ? ensureWindowsBinaryAlias(binary, input.adapter)
+          : null;
+        const aliasedNodeEntry =
+          nodeLauncherEntry && binaryAlias
+            ? path.join(
+                binaryAlias.directory,
+                path.relative(path.dirname(binary!), nodeLauncherEntry)
+              )
+            : null;
+        const stagedNativeBinary = nativeLauncherBinary
+          ? ensureWindowsNativeBinaryStage(
+              nativeLauncherBinary,
+              input.adapter
+            )
+          : null;
+        if (aliasedNodeEntry && !fs.existsSync(aliasedNodeEntry)) {
+          cleanupWindowsBinaryAliases();
+          throw new Error("remote_sandbox_missing_windows_agent_alias");
+        }
+        if (stagedNativeBinary && !fs.existsSync(stagedNativeBinary)) {
+          cleanupWindowsBinaryAliases();
+          throw new Error("remote_sandbox_missing_windows_agent_alias");
+        }
+        const launchBinary =
+          stagedNativeBinary ?? binaryAlias?.binary ?? binary ?? input.bin;
+        const windowsStdinPath = windowsBridgeNodeBinary
+          ? path.join(
+              adapterSandbox.readWritePaths[0]!,
+              `.stdin-${randomUUID()}.jsonl`
+            )
+          : null;
+        if (windowsStdinPath) {
+          fs.writeFileSync(windowsStdinPath, "", { mode: 0o600 });
+          windowsStdinBridgePaths.add(windowsStdinPath);
+        }
+        const allowedRead = existing([
+          workspaceRoot,
+          ...configPaths,
+          ...adapterSandbox.readWritePaths,
+          ...binaryPaths,
+          ...(nodeLauncherEntry ? [nodeLauncherEntry] : []),
+          ...(stagedNativeBinary
+            ? [stagedNativeBinary, path.dirname(stagedNativeBinary)]
+            : []),
+          ...(binaryAlias
+            ? [binaryAlias.readPath, binaryAlias.directory]
+            : stagedNativeBinary
+              ? [getWindowsAgentLinksRoot()]
+              : []),
+          ...(process.platform === "win32" ? [getWindowsManagedRoot()] : []),
+          ...(input.extraReadPaths ?? [])
+        ]);
+        return {
+          binaryAlias,
+          aliasedNodeEntry,
+          launchBinary,
+          windowsLaunchBinary:
+            aliasedNodeEntry && nodeLauncherBinary
+              ? nodeLauncherBinary
+              : launchBinary,
+          windowsLaunchArgs:
+            aliasedNodeEntry && nodeLauncherBinary
+              ? [aliasedNodeEntry, ...input.args]
+              : input.args,
+          windowsStdinPath,
+          requiredConfig: baseConfig({
+            denyRead,
+            allowRead: allowedRead,
+            allowWrite,
+            denyWrite: [],
+            allowGitConfig: false
+          })
+        };
+      };
+
+      const discardWindowsStdin = (stdinPath: string | null) => {
+        if (!stdinPath) return;
+        try {
+          fs.rmSync(stdinPath, { force: true });
+        } catch {
+          /* best-effort */
+        }
+        windowsStdinBridgePaths.delete(stdinPath);
+      };
+
+      const initializeWindowsSandbox = async (
+        requiredConfig: SandboxRuntimeConfig
+      ) => {
         try {
           await ensureWindowsHelperAccess();
           await ensureInitialized(requiredConfig);
@@ -973,20 +1264,45 @@ export async function prepareSandboxedSpawn(input: {
             `remote_sandbox_unavailable: ${sandboxUnavailableMessage(error)}`
           );
         }
+      };
+
+      let launch = materializeWindowsLaunch();
+
+      if (!initialization) {
+        await initializeWindowsSandbox(launch.requiredConfig);
       } else if (
         !windowsInitializationConfig ||
-        !windowsConfigCovers(windowsInitializationConfig, requiredConfig)
+        !windowsConfigCovers(windowsInitializationConfig, launch.requiredConfig)
       ) {
-        throw new Error(
-          "remote_sandbox_busy: another Windows WebUI agent is using a different isolated workspace; wait for it to finish and retry"
-        );
+        // Only block when another sandboxed command still holds the session.
+        // Idle leftovers from a previous agent (or a slow reset) should recycle
+        // instead of forcing the WebUI user to retry manually.
+        if (windowsActiveCommands > 0) {
+          discardWindowsStdin(launch.windowsStdinPath);
+          throw new Error(
+            "remote_sandbox_busy: another Windows WebUI agent is using a different isolated workspace; wait for it to finish and retry"
+          );
+        }
+        discardWindowsStdin(launch.windowsStdinPath);
+        await startWindowsReset();
+        launch = materializeWindowsLaunch();
+        await initializeWindowsSandbox(launch.requiredConfig);
       }
+
+      const {
+        binaryAlias,
+        aliasedNodeEntry,
+        launchBinary,
+        windowsLaunchBinary,
+        windowsLaunchArgs,
+        windowsStdinPath
+      } = launch;
 
       const environment = windowsCommandEnvironment(
         input.env,
         adapterSandbox.env
       );
-      if (binaryAlias) {
+      if (binaryAlias && aliasedNodeEntry) {
         environment.NODE_OPTIONS = windowsNodeOptions(input.env.NODE_OPTIONS);
       }
       let command: string;
@@ -996,7 +1312,7 @@ export async function prepareSandboxedSpawn(input: {
           JSON.stringify({
             ...(aliasedNodeEntry
               ? { entry: aliasedNodeEntry }
-              : { bin: binaryAlias?.binary ?? binary ?? input.bin }),
+              : { bin: launchBinary }),
             args: input.args,
             env: environment,
             workspace: workspaceRoot,
@@ -1051,15 +1367,32 @@ export async function prepareSandboxedSpawn(input: {
         return {
           bin: wrapped.argv[0]!,
           args: wrapped.argv.slice(1),
-          env: { ...input.env, ...wrapped.env, ...adapterSandbox.env },
+          env: windowsOuterSpawnEnvironment(
+            input.env,
+            wrapped.env,
+            adapterSandbox.env
+          ),
           ...(windowsStdinPath ? { stdinPath: windowsStdinPath } : {})
         };
       } catch (error) {
-        if (windowsActiveCommands === 0) await startWindowsReset();
+        if (windowsActiveCommands === 0) {
+          await startWindowsReset();
+        } else {
+          discardWindowsStdin(windowsStdinPath);
+        }
         throw error;
       }
     });
   }
+
+  const allowedRead = existing([
+    workspaceRoot,
+    ...configPaths,
+    ...adapterSandbox.readWritePaths,
+    ...binaryPaths,
+    ...applicationRuntimeReadPaths(),
+    ...(input.extraReadPaths ?? [])
+  ]);
 
   await ensureInitialized();
   const useIpv6Proxy = await ensureIpv6ProxyBridge(input.adapter);

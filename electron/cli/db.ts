@@ -527,7 +527,8 @@ export function migrate(db: DB) {
       password_hash TEXT NOT NULL,
       is_owner     INTEGER NOT NULL DEFAULT 0,
       created_at   INTEGER NOT NULL,
-      disabled     INTEGER NOT NULL DEFAULT 0
+      disabled     INTEGER NOT NULL DEFAULT 0,
+      strict_isolation INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS remote_user_roots (
@@ -576,6 +577,11 @@ export function migrate(db: DB) {
   if (!remoteUserCols.some((c) => c.name === "disabled")) {
     db.exec(
       "ALTER TABLE remote_users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0"
+    );
+  }
+  if (!remoteUserCols.some((c) => c.name === "strict_isolation")) {
+    db.exec(
+      "ALTER TABLE remote_users ADD COLUMN strict_isolation INTEGER NOT NULL DEFAULT 0"
     );
   }
 

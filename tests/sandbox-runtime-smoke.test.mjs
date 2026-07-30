@@ -138,8 +138,10 @@ test("macOS lightweight sandbox writes inside the workspace but not the host hom
   }
 
   const db = new Database(":memory:");
-  const { getDataDir, migrate, setDbForTest } =
+  const { migrate, setDbForTest } =
     await import("../dist-electron/cli/db.js");
+  const { getRemoteWorkspacesRoot } =
+    await import("../dist-electron/cli/windowsSandboxPaths.js");
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
@@ -155,8 +157,7 @@ test("macOS lightweight sandbox writes inside the workspace but not the host hom
     `.freebuddy-sandbox-denied-${process.pid}-${Date.now()}`
   );
   const sandboxHome = path.join(
-    getDataDir(),
-    "remote-workspaces",
+    getRemoteWorkspacesRoot(),
     userId,
     "sandbox-home"
   );
@@ -211,8 +212,10 @@ test("macOS lightweight sandbox resolves a user-local launcher before isolation"
   }
 
   const db = new Database(":memory:");
-  const { getDataDir, migrate, setDbForTest } =
+  const { migrate, setDbForTest } =
     await import("../dist-electron/cli/db.js");
+  const { getRemoteWorkspacesRoot } =
+    await import("../dist-electron/cli/windowsSandboxPaths.js");
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
@@ -222,11 +225,7 @@ test("macOS lightweight sandbox resolves a user-local launcher before isolation"
 
   const userId = `sandbox-launcher-user-${process.pid}`;
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
-  const sandboxUserRoot = path.join(
-    getDataDir(),
-    "remote-workspaces",
-    userId
-  );
+  const sandboxUserRoot = path.join(getRemoteWorkspacesRoot(), userId);
   const executableDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "freebuddy-sandbox-executable-")
   );
@@ -282,8 +281,10 @@ test("macOS lightweight sandbox permits Agent-internal loopback IPC", async (t) 
   }
 
   const db = new Database(":memory:");
-  const { getDataDir, migrate, setDbForTest } =
+  const { migrate, setDbForTest } =
     await import("../dist-electron/cli/db.js");
+  const { getRemoteWorkspacesRoot } =
+    await import("../dist-electron/cli/windowsSandboxPaths.js");
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
@@ -293,11 +294,7 @@ test("macOS lightweight sandbox permits Agent-internal loopback IPC", async (t) 
 
   const userId = `sandbox-loopback-user-${process.pid}`;
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
-  const sandboxUserRoot = path.join(
-    getDataDir(),
-    "remote-workspaces",
-    userId
-  );
+  const sandboxUserRoot = path.join(getRemoteWorkspacesRoot(), userId);
   const script = path.join(workspace, "loopback.mjs");
   fs.writeFileSync(
     script,
@@ -360,8 +357,10 @@ test("Grok reaches SRT through the IPv6 loopback bridge", async (t) => {
   }
 
   const db = new Database(":memory:");
-  const { getDataDir, migrate, setDbForTest } =
+  const { migrate, setDbForTest } =
     await import("../dist-electron/cli/db.js");
+  const { getRemoteWorkspacesRoot } =
+    await import("../dist-electron/cli/windowsSandboxPaths.js");
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
@@ -371,7 +370,7 @@ test("Grok reaches SRT through the IPv6 loopback bridge", async (t) => {
 
   const userId = `sandbox-grok-user-${process.pid}`;
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
-  const sandboxUserRoot = path.join(getDataDir(), "remote-workspaces", userId);
+  const sandboxUserRoot = path.join(getRemoteWorkspacesRoot(), userId);
 
   try {
     const prepared = await runAsCaller(userId, () =>
@@ -414,8 +413,10 @@ test("Qoder and Claude receive isolated writable temp paths", async (t) => {
   }
 
   const db = new Database(":memory:");
-  const { getDataDir, migrate, setDbForTest } =
+  const { migrate, setDbForTest } =
     await import("../dist-electron/cli/db.js");
+  const { getRemoteWorkspacesRoot } =
+    await import("../dist-electron/cli/windowsSandboxPaths.js");
   migrate(db);
   setDbForTest(db);
   const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
@@ -428,8 +429,7 @@ test("Qoder and Claude receive isolated writable temp paths", async (t) => {
   const userId = `sandbox-qoder-user-${process.pid}`;
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-sandbox-"));
   const sandboxHome = path.join(
-    getDataDir(),
-    "remote-workspaces",
+    getRemoteWorkspacesRoot(),
     userId,
     "sandbox-home"
   );

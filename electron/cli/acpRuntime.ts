@@ -79,6 +79,7 @@ import {
 import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 import {
   cleanupSandboxCommand,
+  isRemoteIsolatedCaller,
   prepareSandboxedSpawn,
   shouldSandboxCurrentCaller
 } from "./sandboxRuntime.js";
@@ -138,7 +139,8 @@ export async function runAcpAgent({
   let promptHadContent = false;
   let turnHadLiveAgentChunk = false;
   let mcpServers: AcpStdioMcpServer[] = [];
-  const sandboxedCaller = shouldSandboxCurrentCaller();
+  const remoteIsolated = isRemoteIsolatedCaller();
+  const processSandboxed = shouldSandboxCurrentCaller();
   const replayMessageIds = new Set(args.knownStreamMessageIds ?? []);
   const replayContentSignatures = new Set(
     args.knownStreamContentSignatures ?? []
@@ -155,7 +157,7 @@ export async function runAcpAgent({
     // Grok ACP currently sends a complete command line in `command` (for
     // example `/bin/bash -lc pwd`) without a separate `args` array.
     commandIsShellLine: args.adapter === "grok-acp",
-    prepareSpawn: sandboxedCaller
+    prepareSpawn: processSandboxed
       ? async (input) => {
           const workspaceRoot = args.cwd;
           if (!workspaceRoot || !isPathWithinRoots(input.cwd, [workspaceRoot])) {
@@ -864,7 +866,7 @@ export async function runAcpAgent({
       await request(buildAuthenticateRequest(nextId(), method.id));
       return true;
     }
-    if (sandboxedCaller && args.adapter.includes("grok")) {
+    if (remoteIsolated && args.adapter.includes("grok")) {
       throw authRequiredError(methods);
     }
     await request(buildAuthenticateRequest(nextId(), method.id));
@@ -906,8 +908,8 @@ export async function runAcpAgent({
     // Draft and Browser bridge back into the desktop renderer over localhost
     // and launch an Electron child process. Remote WebUI callers use the
     // authenticated HTTP Draft endpoints instead, so do not expose either
-    // desktop-only capability inside their sandbox.
-    if (args.conversationId && !sandboxedCaller) {
+    // desktop-only capability to isolated remote users.
+    if (args.conversationId && !remoteIsolated) {
       mcpServers.push(
         await registerDraftToolSession({
           taskSessionId: args.sessionId,

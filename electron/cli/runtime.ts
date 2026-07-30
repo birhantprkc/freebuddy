@@ -35,6 +35,7 @@ import {
 } from "./skillRuntime.js";
 import {
   cleanupSandboxCommand,
+  isRemoteIsolatedCaller,
   prepareSandboxedSpawn,
   sandboxWorkingDirectory,
   shouldSandboxCurrentCaller,
@@ -168,7 +169,8 @@ export async function cliRun(
     /* best-effort */
   }
 
-  const sandboxed = shouldSandboxCurrentCaller();
+  const remoteIsolated = isRemoteIsolatedCaller();
+  const processSandboxed = shouldSandboxCurrentCaller();
   let toolSessionId: string | undefined;
   const toolSessionScope = args.toolSessionScope || args.cwd;
   const definition = getAdapterDefinition(args.adapter);
@@ -181,7 +183,7 @@ export async function cliRun(
     const prev = toolSessionScope
       ? getToolSession(args.agentId, toolSessionScope)
       : undefined;
-    if (sandboxed) {
+    if (remoteIsolated) {
       // Renderer history can contain a desktop-owned ACP session id. Remote
       // callers may resume only the owner-scoped session stored server-side;
       // trusting a renderer-supplied id can load another user's cwd/config.
@@ -220,10 +222,10 @@ export async function cliRun(
     args.announceSkills && args.skills?.length
       ? { ...args, prompt: buildSkillAnnouncement(args.prompt, args.skills) }
       : args;
-  const isolatedCwd = sandboxed
+  const isolatedCwd = remoteIsolated
     ? await isolateRemoteCwdForCaller(effectiveArgs.cwd)
     : effectiveArgs.cwd;
-  const executionArgs: CliRunArgs = sandboxed
+  const executionArgs: CliRunArgs = remoteIsolated
     ? { ...effectiveArgs, cwd: sandboxWorkingDirectory(isolatedCwd) }
     : effectiveArgs;
 
@@ -267,7 +269,7 @@ export async function cliRun(
     args: built.args,
     env
   };
-  if (sandboxed) {
+  if (processSandboxed) {
     try {
       spawnCommand = await prepareSandboxedSpawn({
         adapter: executionArgs.adapter,
@@ -340,7 +342,7 @@ export async function cliRun(
 
   const pid = child.pid ?? 0;
   if (!pid) {
-    if (sandboxed) cleanupSandboxCommand();
+    if (processSandboxed) cleanupSandboxCommand();
     return;
   }
   setTaskPid(args.sessionId, pid);
@@ -386,12 +388,12 @@ export async function cliRun(
         }
       });
     } finally {
-      if (sandboxed) cleanupSandboxCommand();
+      if (processSandboxed) cleanupSandboxCommand();
     }
     return;
   }
 
-  if (sandboxed) child.once("close", cleanupSandboxCommand);
+  if (processSandboxed) child.once("close", cleanupSandboxCommand);
   runLegacyCliAgent({
     child,
     args: executionArgs,

@@ -54,18 +54,17 @@ import {
   type PrepareAttachmentPayload
 } from "./cli/attachments.js";
 import { handleDraftRequest, parseDraftUrl } from "./draftProtocol.js";
+import {
+  WEBUI_DEFAULT_PORT,
+  normalizeWebUIPort
+} from "./webUIConstants.js";
 
-export const WEBUI_DEFAULT_PORT = 18080;
-export const WEBUI_MIN_PORT = 1024;
-export const WEBUI_MAX_PORT = 65535;
-
-export function normalizeWebUIPort(value: unknown): number {
-  const port = typeof value === "string" ? Number.parseInt(value, 10) : Number(value);
-  if (!Number.isInteger(port) || port < WEBUI_MIN_PORT || port > WEBUI_MAX_PORT) {
-    return WEBUI_DEFAULT_PORT;
-  }
-  return port;
-}
+export {
+  WEBUI_DEFAULT_PORT,
+  WEBUI_MIN_PORT,
+  WEBUI_MAX_PORT,
+  normalizeWebUIPort
+} from "./webUIConstants.js";
 
 let webuiServer: http.Server | null = null;
 let wss: WebSocketServer | null = null;
