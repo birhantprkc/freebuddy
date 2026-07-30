@@ -52,7 +52,11 @@ test("rotates a full file to .1 then shifts .1 to .2", async () => {
 
 test("disk failures drop lines and count them instead of throwing", async () => {
   const { createDebugLogger } = await load();
-  const log = createDebugLogger({ dir: "/nonexistent/readonly-dir/x", source: "main" });
+  // A path nested under a regular file cannot be created on any platform,
+  // unlike "/nonexistent/..." which mkdirSync can create on Windows drives.
+  const blocker = path.join(tmpDir(), "blocker-file");
+  fs.writeFileSync(blocker, "x");
+  const log = createDebugLogger({ dir: path.join(blocker, "nested"), source: "main" });
   log.info("s", "dropped");
   assert.equal(log.droppedLines, 1);
 });
