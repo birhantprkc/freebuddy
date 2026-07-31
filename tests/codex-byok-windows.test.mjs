@@ -32,6 +32,16 @@ test("resolveCodexByokEnv sets FREEBUDDY_CODEX_BIN for the wrapper", () => {
     /env\.FREEBUDDY_CODEX_BIN\s*=/,
     "BYOK env must set FREEBUDDY_CODEX_BIN so the wrapper can find the real binary"
   );
+  assert.match(
+    storeSource,
+    /from ["']\.\/codexBinaryHint/,
+    "binary hint resolution lives in codexBinaryHint"
+  );
+  assert.match(
+    storeSource,
+    /env\.FREEBUDDY_NODE_BIN\s*=/,
+    "BYOK env should pass FREEBUDDY_NODE_BIN so the wrapper can run bundled codex.js"
+  );
 });
 
 test("ACP auth selection uses the agent child env so BYOK keys win over ChatGPT login", () => {
@@ -76,7 +86,13 @@ test("buildCodexAppServerWrapperContent emits Windows cmd and Unix sh scripts", 
   assert.match(win.script, /%\*/);
   assert.match(win.script, /-c /);
   assert.match(win.script, /FREEBUDDY_CODEX_BIN/);
+  assert.match(win.script, /FREEBUDDY_NODE_BIN/);
   assert.match(win.script, /codex\.cmd/);
+  assert.match(
+    win.script,
+    /FREEBUDDY_CODEX_BIN:~-3%"=="\.js"/,
+    "Windows wrapper must detect bundled codex.js and run it via node"
+  );
   assert.match(
     win.script,
     /set "FREEBUDDY_CATALOG_PATH=C:\\Users\\demo\\/,
@@ -89,4 +105,10 @@ test("buildCodexAppServerWrapperContent emits Windows cmd and Unix sh scripts", 
   assert.match(unix.script, /^#!\/bin\/sh/);
   assert.match(unix.script, /command -v codex/);
   assert.match(unix.script, /\/opt\/homebrew\/bin\/codex/);
+  assert.match(
+    unix.script,
+    /\*\.js\)/,
+    "Unix wrapper must run bundled codex.js via node"
+  );
+  assert.match(unix.script, /FREEBUDDY_NODE_BIN/);
 });

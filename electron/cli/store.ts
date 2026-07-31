@@ -3,6 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CLIAdapterId } from "./adapters.js";
+import {
+  resolveCodexBinaryHint,
+  resolveNodeBinaryHint
+} from "./codexBinaryHint.js";
 import { buildCodexAppServerWrapperContent } from "./codexByokWrapper.js";
 import { getDataDir, getDb } from "./db.js";
 import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
@@ -248,48 +252,12 @@ function createCodexByokModelCatalog(
   return file;
 }
 
-function isExecutableFile(candidate: string): boolean {
-  try {
-    const stat = fs.statSync(candidate);
-    if (!stat.isFile()) return false;
-    if (process.platform === "win32") return true;
-    return (stat.mode & 0o111) !== 0;
-  } catch {
-    return false;
-  }
-}
-
-/** Best-effort sync lookup for the real Codex CLI (not the BYOK wrapper). */
-function resolveCodexBinaryHint(): string | undefined {
-  const fromEnv = process.env.FREEBUDDY_CODEX_BIN?.trim();
-  if (fromEnv && isExecutableFile(fromEnv)) return fromEnv;
-
-  if (process.platform === "win32") {
-    const candidates: string[] = [];
-    if (process.env.APPDATA) {
-      candidates.push(path.join(process.env.APPDATA, "npm", "codex.cmd"));
-      candidates.push(path.join(process.env.APPDATA, "npm", "codex.exe"));
-    }
-    if (process.env.LOCALAPPDATA) {
-      candidates.push(
-        path.join(process.env.LOCALAPPDATA, "Yarn", "bin", "codex.cmd")
-      );
-    }
-    for (const candidate of candidates) {
-      if (isExecutableFile(candidate)) return candidate;
-    }
-    return undefined;
-  }
-
-  for (const candidate of [
-    "/opt/homebrew/bin/codex",
-    "/usr/local/bin/codex",
-    path.join(os.homedir(), ".local", "bin", "codex"),
-    path.join(os.homedir(), ".npm-global", "bin", "codex")
-  ]) {
-    if (isExecutableFile(candidate)) return candidate;
-  }
-  return undefined;
+function readOverrideBinary(id: string): string | undefined {
+  const row = getDb()
+    .prepare(`SELECT binary FROM cli_executor_overrides WHERE id = ?`)
+    .get(id) as { binary: string | null } | undefined;
+  const binary = row?.binary?.trim();
+  return binary || undefined;
 }
 
 function createCodexAppServerWrapper(
@@ -532,8 +500,12 @@ export function resolveCodexByokEnv(
     MODEL_PROVIDER: providerId
   };
   if (codexPath) env.CODEX_PATH = codexPath;
-  const codexBin = resolveCodexBinaryHint();
+  const codexBin = resolveCodexBinaryHint({
+    acpBinaryHint: readOverrideBinary(overrideId)
+  });
   if (codexBin) env.FREEBUDDY_CODEX_BIN = codexBin;
+  const nodeBin = resolveNodeBinaryHint();
+  if (nodeBin) env.FREEBUDDY_NODE_BIN = nodeBin;
   if (apiKey) env[envKey] = apiKey;
   return env;
 }
