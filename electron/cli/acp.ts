@@ -496,7 +496,7 @@ function toolOutputText(value: unknown): string {
   return stringifyValue(value);
 }
 
-function textFromContent(content: any): string {
+export function textFromContent(content: any): string {
   if (typeof content === "string") return content;
   if (content?.type === "text" && typeof content.text === "string") {
     return content.text;

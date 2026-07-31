@@ -26,6 +26,7 @@ import {
   shouldDropReplayPhaseAgentChunk,
   shouldEmitAcpUpdate,
   shouldSkipUserMessageChunk,
+  textFromContent,
   type AcpAuthMethod,
   type AcpMessage,
   type AcpRequestId
@@ -238,7 +239,9 @@ export async function runAcpAgent({
       adapter: args.adapter,
       sessionId: args.sessionId,
       exitCode,
-      ...(errorMessage ? { errorMessage } : {})
+      ...(errorMessage ? { errorMessage } : {}),
+      ...(agentInfo?.name ? { agentName: agentInfo.name } : {}),
+      ...(agentInfo?.version ? { agentVersion: agentInfo.version } : {})
     });
     if (errorMessage) emit({ type: "error", message: errorMessage });
     emit({ type: "done", exitCode });
@@ -308,6 +311,21 @@ export async function runAcpAgent({
         capturedSessions.set(args.sessionId, sessionId);
       }
       const updateType = String(msg.params?.update?.sessionUpdate ?? "");
+      if (updateType === "agent_message_chunk" || updateType === "agent_thought_chunk") {
+        const chunkText = textFromContent(msg.params?.update?.content);
+        if (chunkText) {
+          lastAgentText = (lastAgentText + chunkText).slice(-2000);
+        }
+      } else if (updateType === "tool_call") {
+        const rawCmd = msg.params?.update?.rawInput?.command;
+        const cmd =
+          typeof rawCmd === "string"
+            ? rawCmd
+            : typeof msg.params?.update?.title === "string"
+              ? msg.params.update.title
+              : "";
+        if (cmd) lastToolCommand = cmd;
+      }
       if (
         promptStarted &&
         /^(agent_message_chunk|agent_thought_chunk|tool_call|tool_call_update|plan)$/.test(
@@ -643,9 +661,15 @@ export async function runAcpAgent({
   let connectionEpoch = 0;
   let rlOut: readline.Interface | undefined;
   let rlErr: readline.Interface | undefined;
+  let recentStderr: string[] = [];
+  let lastAgentText = "";
+  let lastToolCommand = "";
 
   const attachConnection = () => {
     const epoch = ++connectionEpoch;
+    recentStderr = [];
+    lastAgentText = "";
+    lastToolCommand = "";
     rlOut = readline.createInterface({ input: child.stdout });
     rlOut.on("line", (line) => {
       if (epoch === connectionEpoch) handleAcpLine(line);
@@ -654,6 +678,8 @@ export async function runAcpAgent({
     rlErr.on("line", (line) => {
       if (epoch !== connectionEpoch) return;
       appendLog(logStream, "stderr", line);
+      recentStderr.push(line);
+      if (recentStderr.length > 50) recentStderr.shift();
       if (args.showStderr !== false) emit({ type: "stderr", content: line });
     });
     child.on("close", (code) => {
@@ -665,7 +691,18 @@ export async function runAcpAgent({
       pending.clear();
       if (finished) return;
       appendLog(logStream, "system", `exit code=${exitCode}`);
-      finish(exitCode === 0 ? "done" : "failed", exitCode);
+      const status = exitCode === 0 ? "done" : "failed";
+      const stderrTail = recentStderr.slice(-10).join("\n").trim();
+      const commandTail = lastToolCommand.slice(-500).trim();
+      const agentTail = lastAgentText.slice(-800).trim();
+      const crashMessage =
+        status === "failed"
+          ? stderrTail ||
+            (commandTail ? `Last command before exit: ${commandTail}` : "") ||
+            (agentTail ? `Agent output before exit: ${agentTail}` : "") ||
+            `ACP agent exited with code ${exitCode}`
+          : undefined;
+      finish(status, exitCode, crashMessage);
     });
   };
   attachConnection();
@@ -673,6 +710,23 @@ export async function runAcpAgent({
   let agentCaps: any = {};
   let authMethods: AcpAuthMethod[] = [];
   let authenticationAttempted = false;
+  let agentInfo: { name?: string; version?: string } | undefined;
+
+  const applyInitialize = (init: any) => {
+    agentCaps = init?.agentCapabilities ?? {};
+    authMethods = Array.isArray(init?.authMethods) ? init.authMethods : [];
+    const info = init?.agentInfo;
+    const agentName = typeof info?.name === "string" ? info.name : undefined;
+    const agentVersion = typeof info?.version === "string" ? info.version : undefined;
+    agentInfo =
+      agentName || agentVersion ? { name: agentName, version: agentVersion } : undefined;
+    logMain().info("acp", "agent initialized", {
+      adapter: args.adapter,
+      sessionId: args.sessionId,
+      ...(agentName ? { agentName } : {}),
+      ...(agentVersion ? { agentVersion } : {})
+    });
+  };
 
   const stopAcpConnectionForAuthentication = async () => {
     const stoppingChild = child;
@@ -717,8 +771,7 @@ export async function runAcpAgent({
         `Unsupported ACP protocol version ${String(init?.protocolVersion ?? "missing")}; FreeBuddy supports version 1.`
       );
     }
-    agentCaps = init?.agentCapabilities ?? {};
-    authMethods = Array.isArray(init?.authMethods) ? init.authMethods : [];
+    applyInitialize(init);
   };
 
   const establishSession = async () => {
@@ -918,8 +971,7 @@ export async function runAcpAgent({
         `Unsupported ACP protocol version ${String(init?.protocolVersion ?? "missing")}; FreeBuddy supports version 1.`
       );
     }
-    agentCaps = init?.agentCapabilities ?? {};
-    authMethods = Array.isArray(init?.authMethods) ? init.authMethods : [];
+    applyInitialize(init);
 
     // Draft and Browser bridge back into the desktop renderer over localhost
     // and launch an Electron child process. Remote WebUI callers use the
