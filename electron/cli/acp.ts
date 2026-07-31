@@ -350,6 +350,10 @@ function readImageBase64(filePath: string): string | undefined {
   }
 }
 
+function normalizeResourceLinkMime(mimeType: string): string {
+  return mimeType === "application/json" ? "text/plain" : mimeType;
+}
+
 function resourceLinkBlock(attachment: AcpPromptAttachment) {
   const uri = attachment.path.startsWith("file:")
     ? attachment.path
@@ -358,7 +362,9 @@ function resourceLinkBlock(attachment: AcpPromptAttachment) {
     type: "resource_link",
     uri,
     ...(attachment.name ? { name: attachment.name } : {}),
-    ...(attachment.mimeType ? { mimeType: attachment.mimeType } : {})
+    ...(attachment.mimeType
+      ? { mimeType: normalizeResourceLinkMime(attachment.mimeType) }
+      : {})
   };
 }
 

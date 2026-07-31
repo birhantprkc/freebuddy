@@ -173,6 +173,29 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const off = window.freebuddy?.workflow?.onRunFinished?.((event) => {
+      const success = event.status === "completed" || event.status === "partial";
+      if (success) playTaskSuccess(true);
+      else playTaskFailure(true);
+      if (event.conversationId) {
+        notifyTaskFinished(
+          success ? "success" : "failure",
+          success
+            ? i18next.t("notifications.taskSucceededTitle")
+            : i18next.t("notifications.taskFailedTitle"),
+          success
+            ? i18next.t("notifications.taskSucceededBody", { title: event.name })
+            : i18next.t("notifications.taskFailedBody", { title: event.name }),
+          event.conversationId
+        );
+      }
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
       if (event.key.toLowerCase() !== "k") return;

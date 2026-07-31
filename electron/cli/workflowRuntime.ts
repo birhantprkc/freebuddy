@@ -1150,6 +1150,16 @@ export class WorkflowRuntime {
       max_loops: run.maxLoops,
       has_workspace: Boolean(run.cwd)
     });
+    // Surface a task notification when a workflow run finishes, mirroring the
+    // single-agent path. "killed" is a user-initiated stop, so skip it.
+    if (status !== "killed") {
+      safeSendToWebContents(this.deps.webContents, "workflow://finished", {
+        runId,
+        conversationId: run.conversationId,
+        status,
+        name: run.name
+      });
+    }
   }
 
   private composeSummary(

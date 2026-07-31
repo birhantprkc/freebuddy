@@ -400,6 +400,20 @@ const workflow = {
       cb(payload as any);
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.off(channel, handler);
+  },
+  onRunFinished(
+    cb: (event: {
+      runId: string;
+      conversationId?: string;
+      status: string;
+      name: string;
+    }) => void
+  ): () => void {
+    const channel = "workflow://finished";
+    const handler = (_e: IpcRendererEvent, payload: unknown) =>
+      cb(payload as any);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
   }
 };
 
