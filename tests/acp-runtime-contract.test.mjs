@@ -35,10 +35,8 @@ test("ACP runtime finalizes successful prompt turns without waiting for process 
 
 test("ACP runtime still treats process close as a fallback finish signal", () => {
   assert.match(acpRuntimeSource, /child\.on\("close"/);
-  assert.match(
-    acpRuntimeSource,
-    /finish\(exitCode === 0 \? "done" : "failed", exitCode\)/
-  );
+  assert.match(acpRuntimeSource, /exitCode === 0 \? "done" : "failed"/);
+  assert.match(acpRuntimeSource, /finish\(status, exitCode, crashMessage\)/);
 });
 
 test("ACP terminal output uses the stable exitStatus response shape", () => {
