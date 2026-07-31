@@ -324,10 +324,22 @@ function registerTaskNotificationIpc(): void {
         icon: loadAppIcon()
       });
       notification.on("click", () => {
-        if (win && !win.isDestroyed()) {
+        if (!win || win.isDestroyed()) return;
+        try {
+          // Restore from minimized/occluded state and raise to the foreground.
+          // On Windows the notification click grants a brief SetForegroundWindow
+          // permission to the app; claim it synchronously before focus() loses it.
           if (win.isMinimized()) win.restore();
           win.show();
+          win.moveTop();
           win.focus();
+          if (process.platform === "win32") win.flashFrame(false);
+          logMain().info("window", "notification clicked", {
+            visible: win.isVisible(),
+            minimized: win.isMinimized(),
+            focused: win.isFocused(),
+            conversationId: payload.conversationId
+          });
           if (payload.conversationId) {
             safeSendToWebContents(
               win.webContents,
@@ -335,7 +347,14 @@ function registerTaskNotificationIpc(): void {
               payload.conversationId
             );
           }
+        } catch (err) {
+          logMain().error("window", "notification click handler failed", {
+            message: (err as Error)?.message
+          });
         }
+      });
+      notification.on("failed", (_e, error) => {
+        logMain().error("window", "notification failed", { message: error });
       });
       notification.show();
     } catch {
