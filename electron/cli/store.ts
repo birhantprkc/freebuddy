@@ -344,6 +344,13 @@ function readClaudeByokPrivate(id: string): CLIClaudeByokConfig | undefined {
   return readPrivateByok<CLIClaudeByokConfig>(id, "claude_byok");
 }
 
+// codex >= 0.146 removed `wire_api = "chat"` support, so "responses" is the only
+// valid wire protocol. Coerce legacy/stale values (e.g. old DeepSeek BYOK configs
+// persisted as "chat") so they keep working instead of crashing codex at startup.
+function normalizeWireApi(value: CLICodexByokConfig["wireApi"]): "responses" {
+  return value === "chat" || !value ? "responses" : value;
+}
+
 function normalizeByokForStorage(
   id: string,
   input: CLICodexByokConfig | undefined
@@ -363,7 +370,7 @@ function normalizeByokForStorage(
     providerName: input.providerName?.trim() || "BYOK provider",
     baseUrl: input.baseUrl?.trim(),
     envKey: input.envKey?.trim() || "OPENAI_API_KEY",
-    wireApi: input.wireApi || "responses",
+    wireApi: normalizeWireApi(input.wireApi),
     models: normalizeByokModels(input.models),
     apiKeyPreview,
     apiKeyEncrypted
@@ -515,7 +522,7 @@ export function resolveCodexByokEnv(
         name: byok.providerName?.trim() || "BYOK provider",
         base_url: byok.baseUrl?.trim(),
         env_key: envKey,
-        wire_api: byok.wireApi || "responses"
+        wire_api: normalizeWireApi(byok.wireApi)
       }
     },
     ...(modelCatalogPath ? { model_catalog_json: modelCatalogPath } : {})

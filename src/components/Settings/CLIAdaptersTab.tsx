@@ -716,7 +716,13 @@ function EditOverridePanel({
   );
   const [codexWireApi, setCodexWireApi] = useState<
     NonNullable<NonNullable<CLIExecutorOverride["codexByok"]>["wireApi"]>
-  >(savedCodexByok?.wireApi ?? "responses");
+  >(
+    // codex >= 0.146 dropped `wire_api = "chat"`; coerce stale saved values so the
+    // <select> (which only offers "responses") never sits in an invalid state.
+    savedCodexByok?.wireApi === "chat"
+      ? "responses"
+      : savedCodexByok?.wireApi ?? "responses"
+  );
   const [codexApiKey, setCodexApiKey] = useState("");
   const [byokModels, setByokModels] = useState(
     savedByok?.models?.length
