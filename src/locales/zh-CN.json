@@ -293,6 +293,7 @@
     "primaryNavigation": "工作区导航",
     "newConversation": "新会话",
     "scheduledTasks": "定时任务",
+    "importCodexSession": "导入 Codex 会话",
     "teams": "团队",
     "usage": "用量",
     "allTeams": "全部团队"
@@ -551,6 +552,18 @@
     "transferFailed": "转接失败",
     "briefExtractionFailed": "转接完成但未携带上下文，请手动告知新 agent。",
     "autoStartFailed": "新会话已创建，但自动启动失败：{{error}}"
+  },
+  "importCodex": {
+    "dialogTitle": "导入 Codex 会话",
+    "dialogSubtitle": "将 Codex rollout 文件还原为可阅读、可续接的会话。",
+    "sessionId": "Codex 会话 ID",
+    "sessionIdPlaceholder": "例如 019fad1f-5cd4-7f30-b89e-0b218d89c886",
+    "cancel": "取消",
+    "import": "导入",
+    "importing": "导入中…",
+    "imported": "已导入 {{messages}} 条消息，共 {{turns}} 轮。",
+    "alreadyImported": "该 Codex 会话已导入过。",
+    "resumeNotLinked": "已导入，但未能关联用于续接的会话（缺少工作区）。"
   },
   "contextShare": {
     "shareAction": "分享当前会话",

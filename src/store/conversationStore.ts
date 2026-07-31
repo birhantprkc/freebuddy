@@ -115,6 +115,13 @@ export interface ConversationState {
     warning?: "brief_extraction_failed";
     startError?: string;
   }>;
+  importCodexSession(sessionId: string): Promise<{
+    conversation: Conversation;
+    created: boolean;
+    turns: number;
+    messages: number;
+    warning?: "resume_session_not_linked";
+  }>;
   renameConversation(id: string, title: string): Promise<void>;
   deleteConversation(id: string): Promise<void>;
   archiveConversation(id: string, archived: boolean): Promise<void>;
@@ -679,6 +686,27 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } finally {
       transferInFlight = false;
     }
+  },
+
+  async importCodexSession(sessionId) {
+    const result = await cliClient.importCodexSession(sessionId);
+    set((s) => ({
+      conversations: [
+        result.conversation,
+        ...s.conversations.filter((c) => c.id !== result.conversation.id)
+      ],
+      activeId: result.conversation.id,
+      messages: { ...s.messages, [result.conversation.id]: [] },
+      pendingFreshContext: {
+        ...s.pendingFreshContext,
+        [result.conversation.id]: true
+      }
+    }));
+    ensureWorkflowMessageSubscription(result.conversation.id, async (cid, messageIds) => {
+      await get().loadMessages(cid, messageIds);
+    });
+    await get().loadMessages(result.conversation.id);
+    return result;
   },
 
   async renameConversation(id, title) {

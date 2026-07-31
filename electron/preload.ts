@@ -131,6 +131,8 @@ const cli = {
   getConversation: (id: string) => ipcRenderer.invoke("cli:getConversation", id),
   createConversation: (input: unknown) =>
     ipcRenderer.invoke("cli:createConversation", input),
+  importCodexSession: (sessionId: string) =>
+    ipcRenderer.invoke("cli:importCodexSession", sessionId),
   previewHandoffBrief: (input: unknown) =>
     ipcRenderer.invoke("cli:previewHandoffBrief", input),
   transferConversation: (input: unknown) =>

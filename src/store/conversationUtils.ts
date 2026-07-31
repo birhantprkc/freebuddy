@@ -700,6 +700,7 @@ export function mergeConversationMessages(
     }
     const attachments = mergeMessageAttachments(message, previous);
     if (
+      previous.createdAt === message.createdAt &&
       previous.status === message.status &&
       previous.content === message.content &&
       previous.updatedAt === message.updatedAt &&

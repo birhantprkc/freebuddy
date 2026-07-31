@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { shellEnv } from "shell-env";
 
 import { registerCliIpc } from "./cli/ipc.js";
-import { startCodexToolchainAutoUpdate } from "./cli/check.js";
+import { logAllCliRuntimes, startCodexToolchainAutoUpdate } from "./cli/check.js";
 import { safeSendToWebContents } from "./cli/ipcSend.js";
 import { handleFreebuddyFileRequest } from "./freebuddyFileProtocol.js";
 import { handleDraftRequest } from "./draftProtocol.js";
@@ -381,6 +381,7 @@ app.whenReady().then(async () => {
     mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null
   );
   getDb();
+  logAllCliRuntimes();
   const existingOwner = getOwnerUser();
   if (existingOwner) {
     applyOwnerBackfill(existingOwner.id);

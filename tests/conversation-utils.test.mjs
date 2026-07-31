@@ -545,6 +545,64 @@ test("mergeConversationMessages preserves in-memory attachments", async () => {
   assert.deepEqual(upserted[0].attachments, [attachment]);
 });
 
+test("mergeConversationMessages keeps DB createdAt authoritative (no user/assistant flip)", async () => {
+  const { mergeConversationMessages } = await loadConversationUtils();
+
+  // Optimistic in-memory state: user + assistant share a placeholder createdAt
+  // (`now`) captured before the DB append, so it predates the DB created_at.
+  const now = "2026-07-31T11:17:27.000Z";
+  const existing = [
+    {
+      id: "user-1",
+      conversationId: "conv-1",
+      role: "user",
+      status: "sent",
+      content: "你好",
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "assistant-1",
+      conversationId: "conv-1",
+      role: "assistant",
+      status: "done",
+      content: '[{"kind":"text","content":"你好！"}]',
+      createdAt: now,
+      updatedAt: "2026-07-31T11:17:27.700Z"
+    }
+  ];
+
+  // DB rows: distinct created_at, both later than the in-memory placeholder.
+  // The assistant's updated_at equals the in-memory mirror time, so without
+  // reconciling createdAt it would short-circuit and keep the stale `now`.
+  const loaded = [
+    {
+      id: "user-1",
+      conversationId: "conv-1",
+      role: "user",
+      status: "sent",
+      content: "你好",
+      createdAt: "2026-07-31T11:17:27.605Z",
+      updatedAt: "2026-07-31T11:17:27.605Z"
+    },
+    {
+      id: "assistant-1",
+      conversationId: "conv-1",
+      role: "assistant",
+      status: "done",
+      content: '[{"kind":"text","content":"你好！"}]',
+      createdAt: "2026-07-31T11:17:27.623Z",
+      updatedAt: "2026-07-31T11:17:27.700Z"
+    }
+  ];
+
+  const merged = mergeConversationMessages(existing, loaded);
+  assert.equal(merged[0].id, "user-1");
+  assert.equal(merged[1].id, "assistant-1");
+  assert.equal(merged[0].createdAt, "2026-07-31T11:17:27.605Z");
+  assert.equal(merged[1].createdAt, "2026-07-31T11:17:27.623Z");
+});
+
 test("appendItems upserts available-commands and config-options metadata", async () => {
   const { appendItems } = await loadConversationUtils();
 

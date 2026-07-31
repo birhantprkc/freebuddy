@@ -689,6 +689,15 @@ export interface TransferConversationResult {
   warning?: "brief_extraction_failed";
 }
 
+export interface ImportCodexSessionResult {
+  conversation: Conversation;
+  created: boolean;
+  rolloutPath: string;
+  turns: number;
+  messages: number;
+  warning?: "resume_session_not_linked";
+}
+
 export type ConversationContextReferenceType = "transfer" | "share";
 
 export interface ConversationContextReference {

@@ -34,6 +34,7 @@ export function ConversationCommandPalette({
   onNewTask,
   onOpenScheduledTasks,
   onOpenSettings,
+  onImportCodexSession,
   onSelectConversation
 }: {
   open: boolean;
@@ -41,6 +42,7 @@ export function ConversationCommandPalette({
   onNewTask: (options?: { cwd?: string }) => void;
   onOpenScheduledTasks: () => void;
   onOpenSettings: () => void;
+  onImportCodexSession: () => void;
   onSelectConversation?: () => void;
 }) {
   const { t } = useTranslation();
@@ -93,6 +95,14 @@ export function ConversationCommandPalette({
         }
       },
       {
+        id: "import-codex-session",
+        label: t("sidebar.importCodexSession"),
+        run: () => {
+          onImportCodexSession();
+          onClose();
+        }
+      },
+      {
         id: "settings",
         label: t("common.settings"),
         shortcut: "⌘,",
@@ -109,6 +119,7 @@ export function ConversationCommandPalette({
     onNewTask,
     onOpenScheduledTasks,
     onOpenSettings,
+    onImportCodexSession,
     t
   ]);
 

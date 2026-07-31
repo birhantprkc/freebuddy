@@ -78,6 +78,7 @@ import {
   clearSessionOwner
 } from "./sessionOwners.js";
 import { isolateRemoteCwdForCaller } from "./remoteWorkspaceAccess.js";
+import { importCodexSession } from "./codexRolloutImport.js";
 import { safeSendToWebContents } from "./ipcSend.js";
 import { setTelemetryEnabled, trackTelemetryEvent } from "../telemetry.js";
 import { normalizeTelemetryAdapter } from "../telemetryPrivacy.js";
@@ -935,6 +936,19 @@ export function registerCliIpc() {
       });
       notifyConversationsChanged();
       return conversation;
+    }
+  );
+  registerHandler(
+    "cli:importCodexSession",
+    async (_e, sessionId: string) => {
+      const result = importCodexSession(sessionId);
+      trackTelemetryEvent("codex_session_imported", {
+        created: result.created,
+        turns: result.turns,
+        messages: result.messages
+      });
+      if (result.created) notifyConversationsChanged();
+      return result;
     }
   );
   registerHandler(
