@@ -715,9 +715,23 @@ export async function runAcpAgent({
   const applyInitialize = (init: any) => {
     agentCaps = init?.agentCapabilities ?? {};
     authMethods = Array.isArray(init?.authMethods) ? init.authMethods : [];
+    // ACP-compliant adapters (codex-acp, ...) expose { name, version } under
+    // agentInfo. Others (grok-acp, ...) omit agentInfo and stash the version in
+    // _meta.agentVersion instead; fall back to both so every adapter is logged.
     const info = init?.agentInfo;
-    const agentName = typeof info?.name === "string" ? info.name : undefined;
-    const agentVersion = typeof info?.version === "string" ? info.version : undefined;
+    const meta = init?._meta;
+    const agentName =
+      typeof info?.name === "string"
+        ? info.name
+        : typeof info?.title === "string"
+          ? info.title
+          : undefined;
+    const agentVersion =
+      typeof info?.version === "string"
+        ? info.version
+        : typeof meta?.agentVersion === "string"
+          ? meta.agentVersion
+          : undefined;
     agentInfo =
       agentName || agentVersion ? { name: agentName, version: agentVersion } : undefined;
     logMain().info("acp", "agent initialized", {
@@ -837,6 +851,10 @@ export async function runAcpAgent({
     promptStarted = true;
     promptHadContent = false;
     turnHadLiveAgentChunk = false;
+    // Live generation begins here. Replay suppression (sessionWasResumed) must
+    // be confined to the pre-prompt replay phase; keeping it enabled would drop
+    // live agent chunks whose text matches a persisted history signature.
+    sessionWasResumed = false;
     await request(
       buildSessionPromptRequest(
         nextId(),
