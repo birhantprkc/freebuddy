@@ -1,6 +1,10 @@
+import { debugLogClient } from "@/services/debugLog";
+
+const baseUrl = import.meta.env?.BASE_URL ?? "./";
+
 const SOUNDS = {
-  success: "/sounds/finish.mp3",
-  failure: "/sounds/failed.mp3"
+  success: `${baseUrl}sounds/finish.mp3`,
+  failure: `${baseUrl}sounds/failed.mp3`
 } as const;
 
 let audioCache: Partial<Record<keyof typeof SOUNDS, HTMLAudioElement>> = {};
@@ -28,7 +32,12 @@ export function playTaskSuccess(backgroundOnly = true): void {
   const audio = getAudio("success");
   if (!audio) return;
   audio.currentTime = 0;
-  void audio.play().catch(() => {});
+  void audio.play().catch((err: unknown) => {
+    debugLogClient.error("sound", "success sound failed", {
+      src: audio.currentSrc,
+      message: err instanceof Error ? err.message : String(err)
+    });
+  });
 }
 
 export function playTaskFailure(backgroundOnly = true): void {
@@ -36,14 +45,22 @@ export function playTaskFailure(backgroundOnly = true): void {
   const audio = getAudio("failure");
   if (!audio) return;
   audio.currentTime = 0;
-  void audio.play().catch(() => {});
+  void audio.play().catch((err: unknown) => {
+    debugLogClient.error("sound", "failure sound failed", {
+      src: audio.currentSrc,
+      message: err instanceof Error ? err.message : String(err)
+    });
+  });
 }
 
 export function notifyTaskFinished(
   kind: "success" | "failure",
   title: string,
-  body?: string
+  body?: string,
+  conversationId?: string
 ): void {
   if (!isAppInBackground()) return;
-  window.freebuddy?.window?.notifyTask?.({ kind, title, body })?.catch(() => {});
+  window.freebuddy?.window?.notifyTask
+    ?.({ kind, title, body, conversationId })
+    ?.catch(() => {});
 }

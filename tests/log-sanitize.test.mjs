@@ -184,7 +184,7 @@ async function loadAppendLog() {
     fnMatch,
     "appendLog extraction regex no longer matches runtimeShared.ts — update the regex in this test"
   );
-  const combined = `${sanitizeSource}\n${fnMatch[0]
+  const combined = `function formatLocalTimestamp(d){return d.toISOString()}\n${sanitizeSource}\n${fnMatch[0]
     .replace(/^import[^\n]*\n/gm, "")
     .replace("export function appendLog", "function appendLog")
     .replace("fs.WriteStream | null", "unknown")}\nexport { appendLog };`;

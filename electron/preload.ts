@@ -310,10 +310,16 @@ const window = {
   resolveDraftTool(resolution: DraftToolResolution): Promise<boolean> {
     return ipcRenderer.invoke("draft-tool:resolve", resolution);
   },
+  onOpenConversation(cb: (conversationId: string) => void): () => void {
+    const handler = (_e: IpcRendererEvent, conversationId: string) => cb(conversationId);
+    ipcRenderer.on("window:open-conversation", handler);
+    return () => ipcRenderer.off("window:open-conversation", handler);
+  },
   notifyTask(payload: {
     kind: "success" | "failure";
     title: string;
     body?: string;
+    conversationId?: string;
   }): Promise<void> {
     return ipcRenderer.invoke("window:notify", payload);
   }

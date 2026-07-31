@@ -17,6 +17,7 @@ import {
 import { scheduleAgentUsageReconciliation } from "./usageReconciler.js";
 import { linkAgentUsageSessionForTask } from "./usageStore.js";
 import { redactsecrets } from "../shared/logSanitize.js";
+import { formatLocalTimestamp } from "../shared/debugLogCore.js";
 
 export interface CliPromptAttachment {
   path: string;
@@ -275,7 +276,7 @@ export function appendLog(
     safeContent = `${safeContent.slice(0, MAX_LOG_LINE_CHARS)}\n… [log truncated]`;
   }
   const entry = JSON.stringify({
-    ts: new Date().toISOString(),
+    ts: formatLocalTimestamp(new Date()),
     type: kind,
     content: safeContent
   });

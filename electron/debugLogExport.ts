@@ -25,6 +25,32 @@ const SESSION_TAIL_BYTES = 2 * 1024 * 1024;
 const MAX_SESSION_FILES = 20;
 const PREVIEW_LINES = 200;
 
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+/** ISO 8601 timestamp in the machine's local timezone, e.g. 2026-07-31T07:18:13.481+08:00. */
+function formatLocalTimestamp(date: Date): string {
+  const offsetMin = -date.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offsetMin);
+  const tz = `${sign}${pad2(Math.floor(abs / 60))}:${pad2(abs % 60)}`;
+  return (
+    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` +
+    `T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}` +
+    `.${String(date.getMilliseconds()).padStart(3, "0")}${tz}`
+  );
+}
+
+/** Filesystem-safe local stamp for the bundle name, e.g. 2026-07-31T07-18-13-481. */
+function localFileStamp(date: Date): string {
+  return (
+    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` +
+    `T${pad2(date.getHours())}-${pad2(date.getMinutes())}-${pad2(date.getSeconds())}` +
+    `-${String(date.getMilliseconds()).padStart(3, "0")}`
+  );
+}
+
 export interface DebugLogPreviewFile {
   name: string;
   totalLines: number;
@@ -222,7 +248,7 @@ export async function buildDebugLogPreview(
 ): Promise<DebugLogPreview> {
   const { environment, appLogs, sessionLogs } = collectBundle(
     mode,
-    new Date().toISOString(),
+    formatLocalTimestamp(new Date()),
     conversationId
   );
   const files: DebugLogPreviewFile[] = [...appLogs, ...sessionLogs].map((f) => ({
@@ -254,8 +280,9 @@ export async function exportDebugLogs(
   mode: ExportMode,
   conversationId?: string
 ): Promise<{ path?: string; canceled?: boolean }> {
-  const exportedAt = new Date().toISOString();
-  const stamp = exportedAt.replace(/[:.]/g, "-");
+  const now = new Date();
+  const exportedAt = formatLocalTimestamp(now);
+  const stamp = localFileStamp(now);
   const result = await dialog.showSaveDialog(parent, {
     title: "Export debug logs",
     defaultPath: path.join(app.getPath("downloads"), `freebuddy-debug-${stamp}.zip`),

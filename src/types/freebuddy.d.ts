@@ -279,10 +279,12 @@ declare global {
     ): () => void;
     onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
+    onOpenConversation(cb: (conversationId: string) => void): () => void;
     notifyTask(payload: {
       kind: "success" | "failure";
       title: string;
       body?: string;
+      conversationId?: string;
     }): Promise<void>;
   }
 
