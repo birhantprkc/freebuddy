@@ -425,6 +425,14 @@ declare global {
         messageId: string;
       }) => void
     ): () => void;
+    onRunFinished(
+      cb: (event: {
+        runId: string;
+        conversationId?: string;
+        status: string;
+        name: string;
+      }) => void
+    ): () => void;
   }
 
   interface FreebuddyWorkflowTeams {
