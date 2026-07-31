@@ -1387,6 +1387,27 @@ button {
   box-shadow: none;
 }
 
+.transfer-dialog-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--fb-border);
+  border-radius: var(--fb-radius, 8px);
+  background: var(--fb-panel-bg);
+  color: var(--fb-text-primary);
+  font-family: var(--fb-font);
+  font-size: 13px;
+}
+
+.transfer-dialog-input:focus {
+  border-color: var(--fb-border-strong);
+  outline: none;
+}
+
+.transfer-dialog-input:disabled {
+  opacity: 0.6;
+}
+
 .transfer-dialog-preview-toggle {
   display: flex;
   justify-content: flex-start;

@@ -41,6 +41,7 @@ import type {
   PreviewHandoffBriefResult,
   TransferConversationInput,
   TransferConversationResult,
+  ImportCodexSessionResult,
   CreateConversationShareInput,
   CreateConversationShareResult,
   AttachConversationSharesInput,
@@ -203,6 +204,9 @@ declare global {
     transferConversation(
       input: TransferConversationInput
     ): Promise<TransferConversationResult>;
+    importCodexSession(
+      sessionId: string
+    ): Promise<ImportCodexSessionResult>;
     createConversationShare(
       input: CreateConversationShareInput
     ): Promise<CreateConversationShareResult>;

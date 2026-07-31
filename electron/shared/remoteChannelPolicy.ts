@@ -194,6 +194,8 @@ const DENY = [
   "cli:openDraftExternal",
   "cli:openCursorUsageSettings",
   "cli:prepareAttachmentFiles",
+  // Importing a Codex rollout reads the host's ~/.codex filesystem.
+  "cli:importCodexSession",
   "shell:showItemInFolder",
   "skills:selectArchive",
   "skills:selectDirectory",

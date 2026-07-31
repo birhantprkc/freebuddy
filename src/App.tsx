@@ -8,6 +8,7 @@ import { TitlebarOverflowMenu } from "./components/CLI/ReplayBar";
 import { ConversationList } from "./components/CLI/ConversationList";
 import { ConversationCommandPalette } from "./components/CLI/ConversationCommandPalette";
 import { ConversationContextDialog } from "./components/CLI/ConversationContextDialog";
+import { ImportCodexSessionDialog } from "./components/CLI/ImportCodexSessionDialog";
 import {
   SidebarNavigation,
   type WorkspaceView
@@ -71,6 +72,7 @@ function App() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("chat");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [contextSourceId, setContextSourceId] = useState<string>();
+  const [codexImportOpen, setCodexImportOpen] = useState(false);
   const [teamPageRequest, setTeamPageRequest] = useState<{
     key: number;
     teamId?: string;
@@ -644,6 +646,10 @@ function App() {
         onNewTask={startNewTask}
         onOpenScheduledTasks={openScheduledTasks}
         onOpenSettings={() => openSettings("cli")}
+        onImportCodexSession={() => {
+          setCommandPaletteOpen(false);
+          setCodexImportOpen(true);
+        }}
         onSelectConversation={() => {
           setSettingsOpen(false);
           setWorkspaceView("chat");
@@ -655,6 +661,9 @@ function App() {
           members={members}
           onClose={() => setContextSourceId(undefined)}
         />
+      )}
+      {codexImportOpen && (
+        <ImportCodexSessionDialog onClose={() => setCodexImportOpen(false)} />
       )}
       <AgentBridgeListener />
       <AgentBridgeToasts />

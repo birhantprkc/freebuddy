@@ -293,6 +293,7 @@
     "primaryNavigation": "Workspace navigation",
     "newConversation": "New conversation",
     "scheduledTasks": "Scheduled tasks",
+    "importCodexSession": "Import Codex session",
     "teams": "Teams",
     "usage": "Usage",
     "allTeams": "All teams"
@@ -552,6 +553,18 @@
     "transferFailed": "Transfer failed",
     "briefExtractionFailed": "Transfer completed but no context was carried over. Tell the new agent manually.",
     "autoStartFailed": "The new conversation was created, but automatic startup failed: {{error}}"
+  },
+  "importCodex": {
+    "dialogTitle": "Import Codex session",
+    "dialogSubtitle": "Reconstruct a Codex rollout file into a readable, resumable conversation.",
+    "sessionId": "Codex session id",
+    "sessionIdPlaceholder": "e.g. 019fad1f-5cd4-7f30-b89e-0b218d89c886",
+    "cancel": "Cancel",
+    "import": "Import",
+    "importing": "Importing…",
+    "imported": "Imported {{messages}} messages across {{turns}} turns.",
+    "alreadyImported": "This Codex session was already imported.",
+    "resumeNotLinked": "Imported, but the session could not be linked for resume (no workspace)."
   },
   "contextShare": {
     "shareAction": "Share this conversation",
