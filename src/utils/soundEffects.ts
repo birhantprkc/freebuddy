@@ -22,9 +22,19 @@ function getAudio(kind: keyof typeof SOUNDS): HTMLAudioElement | undefined {
   }
 }
 
+let windowBlurred = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("blur", () => {
+    windowBlurred = true;
+  });
+  window.addEventListener("focus", () => {
+    windowBlurred = false;
+  });
+}
+
 export function isAppInBackground(): boolean {
   if (typeof document === "undefined") return false;
-  return document.hidden;
+  return document.hidden || windowBlurred;
 }
 
 export function playTaskSuccess(backgroundOnly = true): void {
@@ -59,7 +69,17 @@ export function notifyTaskFinished(
   body?: string,
   conversationId?: string
 ): void {
-  if (!isAppInBackground()) return;
+  const documentHidden = typeof document !== "undefined" ? document.hidden : false;
+  const background = isAppInBackground();
+  debugLogClient.info("notification", "notifyTaskFinished evaluated", {
+    kind,
+    documentHidden,
+    windowBlurred,
+    isAppInBackground: background,
+    willNotify: background,
+    conversationId
+  });
+  if (!background) return;
   window.freebuddy?.window?.notifyTask
     ?.({ kind, title, body, conversationId })
     ?.catch(() => {});
