@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid";
-import { Plus, Trash2 } from "lucide-react";
+import { Info, Plus, Trash2 } from "lucide-react";
 
 import { useCliExecutorStore, type ResolvedExecutor } from "@/store/cliExecutorStore";
 import { useConversationStore } from "@/store/conversationStore";
@@ -1103,6 +1103,96 @@ function EditOverridePanel({
                   </span>
                 </div>
 
+                <div className="byok-context-section">
+                  <div className="byok-context-section-heading">
+                    <span className="byok-context-section-title">
+                      {t("settings.cli.byok.contextHandling")}
+                    </span>
+                    <span className="settings-field-hint">
+                      {t(
+                        isClaude
+                          ? "settings.cli.byok.contextHandlingHintClaude"
+                          : "settings.cli.byok.contextHandlingHintCodex"
+                      )}
+                    </span>
+                  </div>
+
+                  <label className="adapter-editor-field">
+                    <span className="adapter-editor-field-label">
+                      {t(
+                        isClaude
+                          ? "settings.cli.byok.compactionWindow"
+                          : "settings.cli.byok.contextWindow"
+                      )}
+                    </span>
+                    <span className="byok-context-input">
+                      <input
+                        type="number"
+                        min={BYOK_CONTEXT_WINDOW_MIN}
+                        max={BYOK_CONTEXT_WINDOW_MAX}
+                        step={1000}
+                        value={byokContextWindow}
+                        placeholder={t(
+                          "settings.cli.byok.contextWindowPlaceholder"
+                        )}
+                        aria-describedby="byok-context-window-hint"
+                        onChange={(e) => setByokContextWindow(e.target.value)}
+                      />
+                      <span className="byok-context-input-unit">
+                        {t("settings.cli.byok.tokensUnit")}
+                      </span>
+                    </span>
+                    <span
+                      id="byok-context-window-hint"
+                      className="settings-field-hint"
+                    >
+                      {t(
+                        isClaude
+                          ? "settings.cli.byok.contextWindowHintClaude"
+                          : "settings.cli.byok.contextWindowHintCodex"
+                      )}
+                    </span>
+                  </label>
+
+                  {isClaude && (
+                    <label className="byok-checkbox-field">
+                      <span className="byok-checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={claudeCompactionEnabled}
+                          aria-describedby="byok-compaction-hint"
+                          onChange={(e) =>
+                            setClaudeCompactionEnabled(e.target.checked)
+                          }
+                        />
+                        <span className="adapter-editor-field-label">
+                          {t("settings.cli.byok.compactionEnabled")}
+                        </span>
+                      </span>
+                      <span
+                        id="byok-compaction-hint"
+                        className="settings-field-hint"
+                      >
+                        {t("settings.cli.byok.compactionEnabledHint")}
+                      </span>
+                    </label>
+                  )}
+
+                  <div className="byok-context-note" role="note">
+                    <Info size={15} aria-hidden="true" />
+                    <span>
+                      <strong>
+                        {t("settings.cli.byok.contextNoteTitle")}
+                      </strong>{" "}
+                      {t(
+                        isClaude
+                          ? "settings.cli.byok.contextNoteClaude"
+                          : "settings.cli.byok.contextNoteCodex"
+                      )}
+                    </span>
+                  </div>
+                </div>
+
                 <details className="settings-advanced-panel">
                   <summary>{t("settings.cli.byok.advanced")}</summary>
                   {isCodex && (
@@ -1135,42 +1225,6 @@ function EditOverridePanel({
                       onChange={(e) => setCodexEnvKey(e.target.value)}
                     />
                   </label>
-                  <label className="adapter-editor-field">
-                    <span className="adapter-editor-field-label">
-                      {t("settings.cli.byok.contextWindow")}
-                    </span>
-                    <input
-                      type="number"
-                      min={BYOK_CONTEXT_WINDOW_MIN}
-                      max={BYOK_CONTEXT_WINDOW_MAX}
-                      step={1000}
-                      value={byokContextWindow}
-                      placeholder={t(
-                        "settings.cli.byok.contextWindowPlaceholder"
-                      )}
-                      onChange={(e) => setByokContextWindow(e.target.value)}
-                    />
-                    <span className="settings-field-hint">
-                      {t("settings.cli.byok.contextWindowHint")}
-                    </span>
-                  </label>
-                  {isClaude && (
-                    <label className="adapter-editor-field">
-                      <span className="adapter-editor-field-label">
-                        {t("settings.cli.byok.compactionEnabled")}
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={claudeCompactionEnabled}
-                        onChange={(e) =>
-                          setClaudeCompactionEnabled(e.target.checked)
-                        }
-                      />
-                      <span className="settings-field-hint">
-                        {t("settings.cli.byok.compactionEnabledHint")}
-                      </span>
-                    </label>
-                  )}
                   {isCodex && (
                     <label className="adapter-editor-field">
                       <span className="adapter-editor-field-label">{t("settings.cli.byok.wireApi")}</span>

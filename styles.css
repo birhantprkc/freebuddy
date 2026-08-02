@@ -1998,6 +1998,97 @@ button {
   background: var(--fb-brand-glow);
 }
 
+.byok-context-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--fb-border);
+  border-radius: 8px;
+  background: var(--fb-panel-bg);
+}
+
+.byok-context-section-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.byok-context-section-title {
+  color: var(--fb-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.byok-context-input {
+  display: flex;
+  align-items: stretch;
+  max-width: 360px;
+}
+
+.byok-context-input input {
+  min-width: 0;
+  flex: 1;
+  border-radius: 7px 0 0 7px;
+}
+
+.byok-context-input-unit {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid var(--fb-border);
+  border-left: 0;
+  border-radius: 0 7px 7px 0;
+  background: var(--fb-panel-soft);
+  color: var(--fb-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.byok-checkbox-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.byok-checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.byok-checkbox-row input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--fb-brand);
+}
+
+.byok-context-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--fb-border);
+  border-radius: 7px;
+  background: var(--fb-panel-soft);
+  color: var(--fb-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.byok-context-note svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--fb-brand);
+}
+
+.byok-context-note strong {
+  color: var(--fb-text-secondary);
+  font-weight: 650;
+}
+
 .settings-advanced-panel {
   display: flex;
   flex-direction: column;
