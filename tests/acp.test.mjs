@@ -500,6 +500,37 @@ test("ACP session lifecycle injects FreeBuddy stdio MCP servers", () => {
   );
 });
 
+test("ACP session setup can forward Claude SDK settings through _meta", () => {
+  const sessionMeta = {
+    claudeCode: {
+      options: {
+        settings: {
+          autoCompactEnabled: true,
+          autoCompactWindow: 150000
+        }
+      }
+    }
+  };
+  assert.deepEqual(
+    buildSessionNewRequest(4, "/tmp/project", [], sessionMeta),
+    {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "session/new",
+      params: {
+        cwd: "/tmp/project",
+        mcpServers: [],
+        _meta: sessionMeta
+      }
+    }
+  );
+  assert.deepEqual(
+    buildSessionResumeRequest(5, "sess-1", "/tmp/project", [], sessionMeta)
+      .params._meta,
+    sessionMeta
+  );
+});
+
 test("ACP runtime authenticates standard auth-required errors and separates missing sessions", () => {
   assert.match(acpRuntimeSource, /Saved agent session is no longer available/);
   assert.match(acpRuntimeSource, /isAuthenticationRequiredError/);
@@ -510,9 +541,23 @@ test("ACP runtime authenticates standard auth-required errors and separates miss
   );
   assert.match(
     acpRuntimeSource,
-    /toolSessionId\s*&&\s*isMissingSavedSessionError\(sessionErr\)/
+    /requestedToolSessionId\s*&&\s*isMissingSavedSessionError\(sessionErr\)/
   );
   assert.match(acpRuntimeSource, /Unsupported ACP protocol version/);
+});
+
+test("ACP runtime starts a fresh session once when a prompt exceeds context", () => {
+  assert.match(acpRuntimeSource, /isContextWindowError/);
+  assert.match(acpRuntimeSource, /contextResetAttempted/);
+  assert.match(acpRuntimeSource, /requestedToolSessionId = undefined/);
+  assert.match(
+    acpRuntimeSource,
+    /buildSessionNewRequest\(nextId\(\), args\.cwd, mcpServers, sessionMeta\)/
+  );
+  assert.match(
+    acpRuntimeSource,
+    /The previous agent session reached its context limit/
+  );
 });
 
 test("parseAcpLine parses JSON-RPC messages and ignores blank lines", () => {

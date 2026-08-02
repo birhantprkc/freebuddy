@@ -7,7 +7,8 @@ const {
   applyWorkflowLanguagePreference,
   decideImplementReviewLoop,
   reviewerHasFail,
-  augmentPromptWithConsumedSummaries
+  augmentPromptWithConsumedSummaries,
+  WORKFLOW_CONSUMED_CONTEXT_MAX_CHARS
 } = scheduler;
 
 const { buildImplementReviewLoopPlan } = await import(
@@ -265,6 +266,64 @@ test("augmentPromptWithConsumedSummaries prefers visible output over compact sum
   assert.doesNotMatch(out, /I need to search first/);
 });
 
+test("augmentPromptWithConsumedSummaries bounds large upstream outputs", () => {
+  const basePrompt = "Synthesize the prior work.";
+  const largeOutput = (label) =>
+    `${label}-HEAD\n${"implementation detail ".repeat(8_000)}\n${label}-TAIL`;
+  const out = augmentPromptWithConsumedSummaries(
+    basePrompt,
+    ["research", "implement", "review"],
+    new Map(
+      ["research", "implement", "review"].map((id) => [
+        id,
+        {
+          stepId: id,
+          title: id,
+          summary: `${id} compact summary`,
+          output: largeOutput(id)
+        }
+      ])
+    )
+  );
+
+  assert.ok(
+    out.length <= basePrompt.length + WORKFLOW_CONSUMED_CONTEXT_MAX_CHARS,
+    `expected bounded prompt, received ${out.length} characters`
+  );
+  for (const id of ["research", "implement", "review"]) {
+    assert.match(out, new RegExp(`${id}-HEAD`));
+    assert.match(out, new RegExp(`${id}-TAIL`));
+  }
+  assert.match(out, /truncated for workflow context/);
+});
+
+test("augmentPromptWithConsumedSummaries deduplicates and caps context blocks", () => {
+  const basePrompt = "Use only the bounded context.";
+  const ids = Array.from({ length: 40 }, (_, index) => `step-${index}`);
+  const out = augmentPromptWithConsumedSummaries(
+    basePrompt,
+    ["step-0", "step-0", ...ids.slice(1)],
+    new Map(
+      ids.map((id) => [
+        id,
+        {
+          stepId: id,
+          title: `${id}-${"long-title".repeat(30)}`,
+          output: `${id}-output`
+        }
+      ])
+    )
+  );
+
+  assert.ok(
+    out.length <= basePrompt.length + WORKFLOW_CONSUMED_CONTEXT_MAX_CHARS
+  );
+  assert.equal((out.match(/--- step-/g) ?? []).length, 32);
+  assert.equal((out.match(/--- step-0-/g) ?? []).length, 1);
+  assert.match(out, /step-31-output/);
+  assert.doesNotMatch(out, /step-32-output/);
+});
+
 test("workflow step prompts carry the configured response language", () => {
   const zh = applyWorkflowLanguagePreference(
     "Review the implementation. End with REVIEW_STATUS: PASS",
@@ -334,7 +393,7 @@ test("runtime loops build review when verification has unresolved issues", () =>
   assert.match(src, /verification feedback from the previous round/);
 });
 
-test("runtime resumes gated plan revisions and implementer review-loop sessions", () => {
+test("runtime resumes gated plan revisions but starts each implement loop round fresh", () => {
   const src = fs.readFileSync(
     new URL("../electron/cli/workflowRuntime.ts", import.meta.url),
     "utf8"
@@ -343,6 +402,7 @@ test("runtime resumes gated plan revisions and implementer review-loop sessions"
   assert.match(src, /Boolean\(step\.toolSessionId\)/);
   assert.match(src, /step\.prompt\.includes\("User requested changes before approval:"\)/);
   assert.match(src, /step\.stepId === IMPLEMENT_REVIEW_STEP_ID/);
+  assert.match(src, /step\.stepId === IMPLEMENT_REVIEW_STEP_ID[\s\S]*return false/);
   assert.match(src, /const resumeToolSession = shouldResumeWorkflowStep\(plan, step\)/);
   assert.match(src, /toolSessionScope: args\.toolSessionScope/);
   assert.match(src, /toolSessionId: args\.toolSessionId/);
@@ -370,6 +430,7 @@ test("workflow steps persist reusable tool session ids separately from task ids"
   assert.match(db, /ALTER TABLE workflow_steps ADD COLUMN tool_session_id TEXT/);
   assert.match(workflows, /toolSessionId: r\.tool_session_id/);
   assert.match(workflows, /tool_session_id = \?/);
+  assert.match(workflows, /tool_session_id = NULL/);
   assert.match(electronTypes, /toolSessionId\?: string/);
   assert.match(rendererTypes, /toolSessionId\?: string/);
 });

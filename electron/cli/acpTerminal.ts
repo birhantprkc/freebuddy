@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { ChildProcess } from "node:child_process";
 import spawn from "cross-spawn";
 
+/** Keep repeated terminal results from exhausting an agent's context window. */
+export const MAX_TERMINAL_OUTPUT_BYTES = 128 * 1024;
+
 export interface TerminalSnapshot {
   output: string;
   truncated: boolean;
@@ -116,7 +119,15 @@ export function createAcpTerminalManager(options: {
   return {
     async create(params) {
       const terminalId = `term_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-      const byteLimit = params.outputByteLimit ?? 1024 * 1024;
+      const requestedByteLimit =
+        typeof params.outputByteLimit === "number" &&
+        Number.isFinite(params.outputByteLimit)
+          ? Math.max(1, Math.floor(params.outputByteLimit))
+          : MAX_TERMINAL_OUTPUT_BYTES;
+      const byteLimit = Math.min(
+        requestedByteLimit,
+        MAX_TERMINAL_OUTPUT_BYTES
+      );
       const env = { ...process.env } as Record<string, string>;
       for (const entry of params.env ?? []) {
         env[entry.name] = entry.value;

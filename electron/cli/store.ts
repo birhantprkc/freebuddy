@@ -22,6 +22,7 @@ export interface CLICodexByokConfig {
   apiKeyPreview?: string;
   apiKeyEncrypted?: string;
   models?: CLIByokModel[];
+  contextWindow?: number;
 }
 
 export interface CLIClaudeByokConfig {
@@ -32,6 +33,13 @@ export interface CLIClaudeByokConfig {
   apiKeyPreview?: string;
   apiKeyEncrypted?: string;
   models?: CLIByokModel[];
+  contextWindow?: number;
+  compaction?: CLIClaudeCompactionConfig;
+}
+
+export interface CLIClaudeCompactionConfig {
+  enabled?: boolean;
+  window?: number;
 }
 
 export interface CLIByokModel {
@@ -210,6 +218,18 @@ function fallbackCodexModelTemplate(): Record<string, unknown> {
   };
 }
 
+const BYOK_CONTEXT_WINDOW_MIN = 100_000;
+const BYOK_CONTEXT_WINDOW_MAX = 1_000_000;
+
+function normalizeByokContextWindow(value: unknown): number | undefined {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= BYOK_CONTEXT_WINDOW_MIN &&
+    value <= BYOK_CONTEXT_WINDOW_MAX
+    ? value
+    : undefined;
+}
+
 function normalizeByokModels(
   models: CLIByokModel[] | undefined
 ): CLIByokModel[] {
@@ -226,10 +246,19 @@ function normalizeByokModels(
 }
 
 function createCodexByokModelCatalog(
-  models: CLIByokModel[]
+  models: CLIByokModel[],
+  contextWindow?: number
 ): string | undefined {
   if (!models.length) return undefined;
-  const template = readCodexModelTemplate() ?? fallbackCodexModelTemplate();
+  const baseTemplate = readCodexModelTemplate() ?? fallbackCodexModelTemplate();
+  const templateContextWindow = normalizeByokContextWindow(contextWindow);
+  const template = templateContextWindow
+    ? {
+        ...baseTemplate,
+        context_window: templateContextWindow,
+        max_context_window: templateContextWindow
+      }
+    : baseTemplate;
   const catalog = {
     models: models.map((model, index) => ({
       ...template,
@@ -332,6 +361,13 @@ function normalizeByokForStorage(
   const apiKeyPreview = apiKey
     ? redactApiKey(apiKey)
     : input.apiKeyPreview ?? previous?.apiKeyPreview;
+  const hasContextWindowInput = Object.prototype.hasOwnProperty.call(
+    input,
+    "contextWindow"
+  );
+  const contextWindow = hasContextWindowInput
+    ? normalizeByokContextWindow(input.contextWindow)
+    : normalizeByokContextWindow(previous?.contextWindow);
   return {
     enabled: true,
     providerId: input.providerId?.trim() || "proxy",
@@ -340,6 +376,7 @@ function normalizeByokForStorage(
     envKey: input.envKey?.trim() || "OPENAI_API_KEY",
     wireApi: normalizeWireApi(input.wireApi),
     models: normalizeByokModels(input.models),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
     apiKeyPreview,
     apiKeyEncrypted
   };
@@ -358,13 +395,38 @@ function normalizeClaudeByokForStorage(
   const apiKeyPreview = apiKey
     ? redactApiKey(apiKey)
     : input.apiKeyPreview ?? previous?.apiKeyPreview;
+  const hasContextWindowInput =
+    Object.prototype.hasOwnProperty.call(input, "contextWindow") ||
+    Object.prototype.hasOwnProperty.call(input.compaction ?? {}, "window");
+  const contextWindow = hasContextWindowInput
+    ? normalizeByokContextWindow(
+        input.contextWindow ?? input.compaction?.window
+      )
+    : normalizeByokContextWindow(
+        previous?.contextWindow ?? previous?.compaction?.window
+      );
+  const compaction = normalizeClaudeCompaction(
+    input.compaction ?? previous?.compaction
+  );
   return {
     enabled: true,
     baseUrl: input.baseUrl?.trim(),
     envKey: input.envKey?.trim() || "ANTHROPIC_API_KEY",
     models: normalizeByokModels(input.models),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(compaction ? { compaction } : {}),
     apiKeyPreview,
     apiKeyEncrypted
+  };
+}
+
+function normalizeClaudeCompaction(
+  input: CLIClaudeCompactionConfig | undefined
+): CLIClaudeCompactionConfig | undefined {
+  if (!input) return undefined;
+  if (input.enabled === undefined) return undefined;
+  return {
+    enabled: input.enabled === true
   };
 }
 
@@ -478,7 +540,10 @@ export function resolveCodexByokEnv(
     : model && shouldCreateCodexModelCatalog(model)
       ? [{ id: model }]
       : [];
-  const modelCatalogPath = createCodexByokModelCatalog(catalogModels);
+  const modelCatalogPath = createCodexByokModelCatalog(
+    catalogModels,
+    byok.contextWindow
+  );
   const codexPath = modelCatalogPath
     ? createCodexAppServerWrapper(modelCatalogPath)
     : undefined;
@@ -537,6 +602,35 @@ export function resolveClaudeByokEnv(
     env.ANTHROPIC_MODEL = activeModel;
   }
   return Object.keys(env).length ? env : undefined;
+}
+
+export function resolveClaudeByokSessionOptions(
+  agentId: string,
+  adapter: string
+): {
+  settings: {
+    autoCompactEnabled: boolean;
+    autoCompactWindow?: number;
+  };
+} | undefined {
+  if (adapter !== "claude-agent-acp" && adapter !== "claude") return undefined;
+  const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
+  const byok = readClaudeByokPrivate(overrideId);
+  if (!byok?.enabled) return undefined;
+  const contextWindow = normalizeByokContextWindow(
+    byok.contextWindow ?? byok.compaction?.window
+  );
+  const compaction = normalizeClaudeCompaction(byok.compaction);
+  return {
+    settings: {
+      // Existing Claude BYOK configurations predate this setting. Enable it
+      // by default so they also get protection from context-window overflow.
+      autoCompactEnabled: compaction?.enabled !== false,
+      ...(contextWindow !== undefined
+        ? { autoCompactWindow: contextWindow }
+        : {})
+    }
+  };
 }
 
 export function resolveCliByokEnv(

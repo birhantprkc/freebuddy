@@ -29,6 +29,7 @@ import {
   textFromContent,
   type AcpAuthMethod,
   type AcpMessage,
+  type AcpSessionMeta,
   type AcpRequestId
 } from "./acp.js";
 import { createAcpTerminalManager } from "./acpTerminal.js";
@@ -113,6 +114,12 @@ export interface AcpRuntimeInput {
     cwd?: string;
     env: Record<string, string | undefined>;
   };
+  claudeAcpSessionOptions?: {
+    settings: {
+      autoCompactEnabled: boolean;
+      autoCompactWindow?: number;
+    };
+  };
   restartAgent: () => Promise<{
     child: ChildProcessByStdio<Writable, Readable, Readable>;
     pid: number;
@@ -131,10 +138,12 @@ export async function runAcpAgent({
   capturedSessions,
   emit,
   agentCommand,
+  claudeAcpSessionOptions,
   restartAgent
 }: AcpRuntimeInput): Promise<void> {
   let child = initialChild;
   let pid = initialPid;
+  let requestedToolSessionId = toolSessionId;
   let requestId = 0;
   let activeAcpSessionId: string | undefined;
   let finished = false;
@@ -143,6 +152,11 @@ export async function runAcpAgent({
   let turnHadLiveAgentChunk = false;
   let sessionWasResumed = false;
   let mcpServers: AcpStdioMcpServer[] = [];
+  let contextResetAttempted = false;
+  let activePrompt = args.prompt;
+  const sessionMeta: AcpSessionMeta | undefined = claudeAcpSessionOptions
+    ? { claudeCode: { options: claudeAcpSessionOptions } }
+    : undefined;
   const remoteIsolated = isRemoteIsolatedCaller();
   const processSandboxed = shouldSandboxCurrentCaller();
   const replayMessageIds = new Set(args.knownStreamMessageIds ?? []);
@@ -808,24 +822,39 @@ export async function runAcpAgent({
     };
 
     sessionWasResumed = false;
-    const sessionStartMode = selectAcpSessionStartMode(toolSessionId, agentCaps);
+    const sessionStartMode = selectAcpSessionStartMode(
+      requestedToolSessionId,
+      agentCaps
+    );
     if (sessionStartMode === "load") {
       const loaded = await request(
-        buildSessionLoadRequest(nextId(), toolSessionId!, args.cwd, mcpServers)
+        buildSessionLoadRequest(
+          nextId(),
+          requestedToolSessionId!,
+          args.cwd,
+          mcpServers,
+          sessionMeta
+        )
       );
-      activeAcpSessionId = toolSessionId!;
+      activeAcpSessionId = requestedToolSessionId!;
       sessionWasResumed = true;
       emitSetupItems(loaded);
     } else if (sessionStartMode === "resume") {
       const resumed = await request(
-        buildSessionResumeRequest(nextId(), toolSessionId!, args.cwd, mcpServers)
+        buildSessionResumeRequest(
+          nextId(),
+          requestedToolSessionId!,
+          args.cwd,
+          mcpServers,
+          sessionMeta
+        )
       );
-      activeAcpSessionId = toolSessionId!;
+      activeAcpSessionId = requestedToolSessionId!;
       sessionWasResumed = true;
       emitSetupItems(resumed);
     } else {
       const created = await request(
-        buildSessionNewRequest(nextId(), args.cwd, mcpServers)
+        buildSessionNewRequest(nextId(), args.cwd, mcpServers, sessionMeta)
       );
       activeAcpSessionId = created?.sessionId ?? created?.session_id;
       emitSetupItems(created);
@@ -859,7 +888,7 @@ export async function runAcpAgent({
       buildSessionPromptRequest(
         nextId(),
         activeAcpSessionId!,
-        args.prompt,
+        activePrompt,
         args.promptAttachments
       )
     );
@@ -975,6 +1004,13 @@ export async function runAcpAgent({
     return e?.code === -32002 && /resource not found/i.test(e.message ?? "");
   };
 
+  const isContextWindowError = (err: unknown) => {
+    const message = String((err as Error)?.message ?? err).toLowerCase();
+    return /context window|context length|input exceeds|prompt is too long|too many tokens/.test(
+      message
+    );
+  };
+
   const savedSessionUnavailableError = (sessionId: string, err: unknown) => {
     const message = (err as Error)?.message || String(err);
     return new Error(
@@ -1050,10 +1086,10 @@ export async function runAcpAgent({
         await establishSession();
       } else if (
         !finished &&
-        toolSessionId &&
+        requestedToolSessionId &&
         isMissingSavedSessionError(sessionErr)
       ) {
-        throw savedSessionUnavailableError(toolSessionId, sessionErr);
+        throw savedSessionUnavailableError(requestedToolSessionId, sessionErr);
       } else {
         throw sessionErr;
       }
@@ -1121,7 +1157,34 @@ export async function runAcpAgent({
     try {
       await runPromptOnSession();
     } catch (promptErr) {
-      if (
+      if (!finished && !contextResetAttempted && isContextWindowError(promptErr)) {
+        contextResetAttempted = true;
+        const exhaustedSessionId = activeAcpSessionId;
+        appendLog(
+          logStream,
+          "system",
+          `context window exceeded; starting a fresh ACP session${
+            exhaustedSessionId ? ` from ${exhaustedSessionId}` : ""
+          }`
+        );
+        if (exhaustedSessionId && agentCaps?.sessionCapabilities?.close) {
+          try {
+            await request(buildSessionCloseRequest(nextId(), exhaustedSessionId));
+          } catch {
+            /* best-effort */
+          }
+        }
+        requestedToolSessionId = undefined;
+        activeAcpSessionId = undefined;
+        activePrompt = [
+          args.prompt.trimEnd(),
+          "",
+          "The previous agent session reached its context limit. Continue from the current workspace state; do not repeat completed work. Re-check the current files and finish the request."
+        ].join("\n");
+        await establishSession();
+        await applyConfigOptionOverrides();
+        await runPromptOnSession();
+      } else if (
         !finished &&
         !promptHadContent &&
         authMethods.length > 0 &&
@@ -1151,7 +1214,7 @@ export async function runAcpAgent({
 
     if (agentCaps?.sessionCapabilities?.close) {
       try {
-        await request(buildSessionCloseRequest(nextId(), activeAcpSessionId));
+        await request(buildSessionCloseRequest(nextId(), activeAcpSessionId!));
       } catch {
         /* best-effort */
       }

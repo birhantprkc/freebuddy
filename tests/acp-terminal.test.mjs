@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createAcpTerminalManager } from "../dist-electron/cli/acpTerminal.js";
+import {
+  createAcpTerminalManager,
+  MAX_TERMINAL_OUTPUT_BYTES
+} from "../dist-electron/cli/acpTerminal.js";
 
 test("terminal manager streams output and reports exit status", async () => {
   const events = [];
@@ -47,6 +50,30 @@ test("terminal manager enforces output byte limits", async () => {
   assert.ok(Buffer.byteLength(snap.output, "utf8") <= 32);
   assert.match(snap.output, /-tail$/);
   assert.doesNotMatch(snap.output, /^prefix-/);
+
+  manager.release(terminalId);
+});
+
+test("terminal manager caps agent-requested output limits", async () => {
+  const manager = createAcpTerminalManager({});
+  const { terminalId } = await manager.create({
+    sessionId: "sess-hard-cap",
+    command: process.execPath,
+    args: [
+      "-e",
+      `process.stdout.write('head-' + 'x'.repeat(${MAX_TERMINAL_OUTPUT_BYTES + 1024}) + '-tail')`
+    ],
+    outputByteLimit: MAX_TERMINAL_OUTPUT_BYTES * 8
+  });
+
+  await manager.waitForExit(terminalId);
+  const snap = manager.output(terminalId);
+
+  assert.equal(snap.truncated, true);
+  assert.ok(
+    Buffer.byteLength(snap.output, "utf8") <= MAX_TERMINAL_OUTPUT_BYTES
+  );
+  assert.match(snap.output, /-tail$/);
 
   manager.release(terminalId);
 });

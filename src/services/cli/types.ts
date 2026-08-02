@@ -28,6 +28,8 @@ export interface CLICodexByokConfig {
   apiKey?: string;
   apiKeyPreview?: string;
   models?: CLIByokModel[];
+  /** Provider model context window in tokens, when it is not discoverable. */
+  contextWindow?: number;
 }
 
 export interface CLIClaudeByokConfig {
@@ -37,6 +39,16 @@ export interface CLIClaudeByokConfig {
   apiKey?: string;
   apiKeyPreview?: string;
   models?: CLIByokModel[];
+  /** Provider model context window used as Claude's auto-compact window. */
+  contextWindow?: number;
+  compaction?: CLIClaudeCompactionConfig;
+}
+
+export interface CLIClaudeCompactionConfig {
+  /** Automatically compact the Claude conversation as it approaches its limit. */
+  enabled?: boolean;
+  /** Legacy location for contextWindow; read for backward compatibility. */
+  window?: number;
 }
 
 export interface CLIByokModel {

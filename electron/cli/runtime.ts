@@ -27,7 +27,10 @@ import {
   type Running
 } from "./runtimeShared.js";
 import { killProcessTree } from "./process-kill.js";
-import { resolveCliByokEnv } from "./store.js";
+import {
+  resolveClaudeByokSessionOptions,
+  resolveCliByokEnv
+} from "./store.js";
 import { getSkillOwnershipRoots } from "./skills.js";
 import {
   buildSkillAnnouncement,
@@ -372,6 +375,10 @@ export async function cliRun(
           cwd: executionArgs.cwd,
           env: spawnCommand.env
         },
+        claudeAcpSessionOptions: resolveClaudeByokSessionOptions(
+          args.agentId,
+          args.adapter
+        ),
         restartAgent: async () => {
           const restarted = spawn(spawnCommand.bin, spawnCommand.args, {
             cwd: executionArgs.cwd,

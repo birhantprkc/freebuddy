@@ -20,6 +20,17 @@ import { SkillPicker } from "@/components/CLI/SkillPicker";
 import { useSkillStore } from "@/store/skillStore";
 
 const CODEX_ACP_UPGRADE_REQUIRED = "codex-acp requires @agentclientprotocol/codex-acp";
+const BYOK_CONTEXT_WINDOW_MIN = 100000;
+const BYOK_CONTEXT_WINDOW_MAX = 1000000;
+
+function parseByokContextWindow(value: string): number | undefined {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) &&
+    parsed >= BYOK_CONTEXT_WINDOW_MIN &&
+    parsed <= BYOK_CONTEXT_WINDOW_MAX
+    ? parsed
+    : undefined;
+}
 
 function extractModelArg(args: string[]): { model: string; args: string[] } {
   const rest: string[] = [];
@@ -731,6 +742,13 @@ function EditOverridePanel({
         ? [{ id: parsedExtraArgs.model, name: "" }]
         : []
   );
+  const [byokContextWindow, setByokContextWindow] = useState(
+    savedByok?.contextWindow?.toString() ??
+      (isClaude ? savedClaudeByok?.compaction?.window?.toString() ?? "" : "")
+  );
+  const [claudeCompactionEnabled, setClaudeCompactionEnabled] = useState(
+    savedClaudeByok?.compaction?.enabled !== false
+  );
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -789,6 +807,7 @@ function EditOverridePanel({
             wireApi: codexWireApi,
             apiKey: codexApiKey.trim() || undefined,
             models: byokModels,
+            contextWindow: parseByokContextWindow(byokContextWindow),
             apiKeyPreview: savedByok?.apiKeyPreview
           }
         : undefined;
@@ -800,6 +819,10 @@ function EditOverridePanel({
             envKey: codexEnvKey.trim() || "ANTHROPIC_API_KEY",
             apiKey: codexApiKey.trim() || undefined,
             models: byokModels,
+            contextWindow: parseByokContextWindow(byokContextWindow),
+            compaction: {
+              enabled: claudeCompactionEnabled
+            },
             apiKeyPreview: savedClaudeByok?.apiKeyPreview
           }
         : undefined;
@@ -1112,6 +1135,42 @@ function EditOverridePanel({
                       onChange={(e) => setCodexEnvKey(e.target.value)}
                     />
                   </label>
+                  <label className="adapter-editor-field">
+                    <span className="adapter-editor-field-label">
+                      {t("settings.cli.byok.contextWindow")}
+                    </span>
+                    <input
+                      type="number"
+                      min={BYOK_CONTEXT_WINDOW_MIN}
+                      max={BYOK_CONTEXT_WINDOW_MAX}
+                      step={1000}
+                      value={byokContextWindow}
+                      placeholder={t(
+                        "settings.cli.byok.contextWindowPlaceholder"
+                      )}
+                      onChange={(e) => setByokContextWindow(e.target.value)}
+                    />
+                    <span className="settings-field-hint">
+                      {t("settings.cli.byok.contextWindowHint")}
+                    </span>
+                  </label>
+                  {isClaude && (
+                    <label className="adapter-editor-field">
+                      <span className="adapter-editor-field-label">
+                        {t("settings.cli.byok.compactionEnabled")}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={claudeCompactionEnabled}
+                        onChange={(e) =>
+                          setClaudeCompactionEnabled(e.target.checked)
+                        }
+                      />
+                      <span className="settings-field-hint">
+                        {t("settings.cli.byok.compactionEnabledHint")}
+                      </span>
+                    </label>
+                  )}
                   {isCodex && (
                     <label className="adapter-editor-field">
                       <span className="adapter-editor-field-label">{t("settings.cli.byok.wireApi")}</span>
