@@ -22,6 +22,7 @@ import { useSkillStore } from "@/store/skillStore";
 const CODEX_ACP_UPGRADE_REQUIRED = "codex-acp requires @agentclientprotocol/codex-acp";
 const BYOK_CONTEXT_WINDOW_MIN = 100000;
 const BYOK_CONTEXT_WINDOW_MAX = 1000000;
+const DEFAULT_CODEX_BYOK_CONTEXT_WINDOW = 272000;
 
 function parseByokContextWindow(value: string): number | undefined {
   const parsed = Number(value);
@@ -744,7 +745,9 @@ function EditOverridePanel({
   );
   const [byokContextWindow, setByokContextWindow] = useState(
     savedByok?.contextWindow?.toString() ??
-      (isClaude ? savedClaudeByok?.compaction?.window?.toString() ?? "" : "")
+      (isClaude
+        ? savedClaudeByok?.compaction?.window?.toString() ?? ""
+        : DEFAULT_CODEX_BYOK_CONTEXT_WINDOW.toString())
   );
   const [claudeCompactionEnabled, setClaudeCompactionEnabled] = useState(
     savedClaudeByok?.compaction?.enabled !== false
@@ -1133,7 +1136,9 @@ function EditOverridePanel({
                         step={1000}
                         value={byokContextWindow}
                         placeholder={t(
-                          "settings.cli.byok.contextWindowPlaceholder"
+                          isClaude
+                            ? "settings.cli.byok.contextWindowPlaceholderClaude"
+                            : "settings.cli.byok.contextWindowPlaceholderCodex"
                         )}
                         aria-describedby="byok-context-window-hint"
                         onChange={(e) => setByokContextWindow(e.target.value)}
