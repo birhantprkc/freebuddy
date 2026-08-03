@@ -89,12 +89,30 @@ import {
 } from "./sandboxRuntime.js";
 import { isPathWithinRoots } from "../shared/workspaceRoots.js";
 import { clearSessionOwner } from "./sessionOwners.js";
+import { getLanguage } from "./settings.js";
 
 function writeAcp(
   child: ChildProcessByStdio<Writable, Readable, Readable>,
   msg: AcpMessage
 ) {
   child.stdin.write(JSON.stringify(msg) + "\n");
+}
+
+function contextResetInstruction(): string {
+  // Agent-facing instruction (sent to the model). Keep it English for reliable
+  // instruction-following across all models; UI language must not change it.
+  return "The previous agent session reached its context limit. Continue from the current workspace state; do not repeat completed work. Re-check the current files and finish the request.";
+}
+
+function contextWindowExceededAfterResetError(err: unknown): Error {
+  const detail = (err as Error)?.message || String(err);
+  return getLanguage() === "zh-CN"
+    ? new Error(
+        `重置会话后，请求仍超出模型的上下文窗口。请缩短提示内容，或切换到上下文窗口更大的模型后重试。原始错误：${detail}`
+      )
+    : new Error(
+        `The request still exceeds the model's context window even after starting a fresh agent session. Shorten the prompt or switch to a model with a larger context window, then try again. Original error: ${detail}`
+      );
 }
 
 export interface AcpRuntimeInput {
@@ -1179,11 +1197,21 @@ export async function runAcpAgent({
         activePrompt = [
           args.prompt.trimEnd(),
           "",
-          "The previous agent session reached its context limit. Continue from the current workspace state; do not repeat completed work. Re-check the current files and finish the request."
+          contextResetInstruction()
         ].join("\n");
         await establishSession();
         await applyConfigOptionOverrides();
-        await runPromptOnSession();
+        try {
+          await runPromptOnSession();
+        } catch (resetErr) {
+          // A fresh session may still overflow (e.g. the prompt alone exceeds
+          // the model's window). Surface a friendly error instead of the raw
+          // ACP failure, since the reset path is already exhausted.
+          if (!finished && isContextWindowError(resetErr)) {
+            throw contextWindowExceededAfterResetError(resetErr);
+          }
+          throw resetErr;
+        }
       } else if (
         !finished &&
         !promptHadContent &&

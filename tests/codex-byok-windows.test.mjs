@@ -112,3 +112,16 @@ test("buildCodexAppServerWrapperContent emits Windows cmd and Unix sh scripts", 
   );
   assert.match(unix.script, /FREEBUDDY_NODE_BIN/);
 });
+
+test("Claude BYOK compaction preserves window instead of dropping it on persist", () => {
+  assert.match(
+    storeSource,
+    /window = contextWindow \?\? normalizeByokContextWindow\(input\.window\)/,
+    "normalizeClaudeCompaction must keep the window field (canonical top-level first)"
+  );
+  assert.match(
+    storeSource,
+    /normalizeClaudeCompaction\(\s*input\.compaction \?\? previous\?\.compaction,\s*contextWindow\s*\)/,
+    "storage must pass the canonical contextWindow so compaction.window stays synced"
+  );
+});

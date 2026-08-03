@@ -554,9 +554,37 @@ test("ACP runtime starts a fresh session once when a prompt exceeds context", ()
     acpRuntimeSource,
     /buildSessionNewRequest\(nextId\(\), args\.cwd, mcpServers, sessionMeta\)/
   );
+});
+
+test("ACP runtime reset instruction is fixed English for reliable model compliance", () => {
   assert.match(
     acpRuntimeSource,
-    /The previous agent session reached its context limit/
+    /activePrompt = \[\s*args\.prompt\.trimEnd\(\),\s*"",\s*contextResetInstruction\(\)\s*\]/,
+    "reset instruction must be applied via the helper"
+  );
+  assert.match(
+    acpRuntimeSource,
+    /The previous agent session reached its context limit/,
+    "reset instruction must be the fixed English agent-facing string"
+  );
+  assert.equal(
+    /之前的智能体会话已达到上下文上限/.test(acpRuntimeSource),
+    false,
+    "reset instruction must not be localized; it is sent to the model"
+  );
+});
+
+test("ACP runtime surfaces a friendly error when a fresh session still exceeds context", () => {
+  assert.match(acpRuntimeSource, /contextWindowExceededAfterResetError/);
+  assert.match(
+    acpRuntimeSource,
+    /重置会话后，请求仍超出模型的上下文窗口/,
+    "friendly after-reset error must have a Simplified Chinese translation"
+  );
+  assert.match(
+    acpRuntimeSource,
+    /The request still exceeds the model's context window even after starting a fresh agent session/,
+    "friendly after-reset error must explain the reset path is exhausted"
   );
 });
 
