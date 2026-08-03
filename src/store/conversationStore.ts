@@ -43,7 +43,11 @@ import {
   shouldApplyAgentSessionTitle,
   upsertConversationMessage
 } from "./conversationUtils";
-import { handleStreamEvent, killConversation } from "./conversationHandlers";
+import {
+  handleStreamControlEvent,
+  handleStreamEvent,
+  killConversation
+} from "./conversationHandlers";
 import {
   latestConfigOptionsFromItems,
   latestConfigOptionsFromMessages,
@@ -162,9 +166,29 @@ export const runCtxMap = new Map<string, RunCtx>();
 let transferInFlight = false;
 
 let workflowMessageUnsubscribe: (() => void) | null = null;
+const workflowEventUnsubscribes = new Map<string, () => void>();
+let workflowFinishedUnsubscribe: (() => void) | null = null;
 let workflowMessageConversationId: string | null = null;
 let workflowRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 const workflowPendingMessageIds = new Set<string>();
+
+const terminalWorkflowStatuses = new Set([
+  "completed",
+  "failed",
+  "killed",
+  "partial"
+]);
+
+function removeWorkflowEventSubscription(conversationId: string): void {
+  const unsubscribe = workflowEventUnsubscribes.get(conversationId);
+  if (!unsubscribe) return;
+  try {
+    unsubscribe();
+  } catch {
+    /* noop */
+  }
+  workflowEventUnsubscribes.delete(conversationId);
+}
 
 function hasActiveWorkflowMessages(messages: ConversationMessage[] | undefined): boolean {
   return (
@@ -183,6 +207,33 @@ function ensureWorkflowMessageSubscription(
   const fb = (globalThis as any).freebuddy;
   const api = fb?.workflow;
   if (!api?.onStepMessage) return;
+  if (!workflowFinishedUnsubscribe && api.onRunFinished) {
+    workflowFinishedUnsubscribe = api.onRunFinished((event) => {
+      if (
+        event.conversationId &&
+        terminalWorkflowStatuses.has(event.status)
+      ) {
+        removeWorkflowEventSubscription(event.conversationId);
+      }
+    });
+  }
+  if (
+    conversationId &&
+    api.onStepEvent &&
+    !workflowEventUnsubscribes.has(conversationId)
+  ) {
+    workflowEventUnsubscribes.set(
+      conversationId,
+      api.onStepEvent(
+        conversationId,
+        (event: { sessionId?: string; event?: CliEvent }) => {
+          if (event?.event) {
+            handleStreamControlEvent(conversationId, event.event);
+          }
+        }
+      )
+    );
+  }
   if (workflowMessageConversationId === conversationId) return;
   if (workflowMessageUnsubscribe) {
     try {

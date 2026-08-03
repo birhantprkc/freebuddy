@@ -39,6 +39,24 @@ test("ACP runtime still treats process close as a fallback finish signal", () =>
   assert.match(acpRuntimeSource, /finish\(status, exitCode, crashMessage\)/);
 });
 
+test("ACP auto approval never leaves an unsupported permission request pending", () => {
+  assert.match(
+    acpRuntimeSource,
+    /if \(args\.approvalMode === "auto"\)[\s\S]*?permission auto-cancelled \(no allow option\)[\s\S]*?respondToPermission\(requestRpcId, \{ outcome: "cancelled" \}\)/
+  );
+});
+
+test("ACP permission requests expire through the resolver registry", () => {
+  assert.match(acpRuntimeSource, /takePermissionResolver/);
+  assert.match(acpRuntimeSource, /PERMISSION_REQUEST_TIMEOUT_MS/);
+  assert.match(acpRuntimeSource, /setTimeout\(/);
+  assert.match(acpRuntimeSource, /permission timeout/);
+});
+
+test("CLI runtime records the approval mode with each task start", () => {
+  assert.match(runtimeSource, /approvalMode: args\.approvalMode \?\? "default"/);
+});
+
 test("ACP terminal output uses the stable exitStatus response shape", () => {
   assert.match(acpRuntimeSource, /buildTerminalOutputResponse\(snap\)/);
 });

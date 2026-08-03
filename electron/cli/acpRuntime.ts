@@ -45,6 +45,7 @@ import {
   clearPermissionResolversForSession,
   registerAuthenticationResolver,
   registerPermissionResolver,
+  takePermissionResolver,
   setTaskToolSessionId,
   updateTaskStatus,
   type CliEvent,
@@ -90,6 +91,8 @@ import {
 import { isPathWithinRoots } from "../shared/workspaceRoots.js";
 import { clearSessionOwner } from "./sessionOwners.js";
 import { getLanguage } from "./settings.js";
+
+const PERMISSION_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 
 function writeAcp(
   child: ChildProcessByStdio<Writable, Readable, Readable>,
@@ -506,7 +509,16 @@ export async function runAcpAgent({
         });
         return;
       }
-      // Fall through to manual prompting if no allow option is present.
+      // An auto-approved run has no renderer prompt to resolve. Cancelling is
+      // safer than leaving the ACP request pending forever when an adapter
+      // exposes only an unsupported permission shape.
+      appendLog(
+        logStream,
+        "system",
+        "permission auto-cancelled (no allow option)"
+      );
+      respondToPermission(requestRpcId, { outcome: "cancelled" });
+      return;
     }
 
     if (options.length === 0) {
@@ -543,7 +555,9 @@ export async function runAcpAgent({
         }
       : undefined;
 
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     registerPermissionResolver(args.sessionId, requestId, (decision) => {
+      if (timeout) clearTimeout(timeout);
       appendLog(
         logStream,
         "system",
@@ -556,6 +570,17 @@ export async function runAcpAgent({
       respondToPermission(requestRpcId, decision);
       emit({ type: "permission-resolved", requestId });
     });
+
+    timeout = setTimeout(() => {
+      const resolver = takePermissionResolver(args.sessionId, requestId);
+      if (!resolver) return;
+      appendLog(
+        logStream,
+        "system",
+        `permission timeout (${requestId}) after ${PERMISSION_REQUEST_TIMEOUT_MS}ms`
+      );
+      resolver({ outcome: "cancelled" });
+    }, PERMISSION_REQUEST_TIMEOUT_MS);
 
     appendLog(
       logStream,
