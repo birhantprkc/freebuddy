@@ -263,6 +263,26 @@ export function buildTerminalOutputResponse(snapshot: {
 
 export type AcpSessionStartMode = "new" | "load" | "resume";
 
+/** Adapter-specific metadata forwarded through ACP session setup. */
+export interface AcpSessionMeta {
+  claudeCode?: {
+    options?: {
+      settings?: {
+        autoCompactEnabled?: boolean;
+        autoCompactWindow?: number;
+      };
+    };
+  };
+  [key: string]: unknown;
+}
+
+function withSessionMeta(
+  params: Record<string, unknown>,
+  sessionMeta?: AcpSessionMeta
+): Record<string, unknown> {
+  return sessionMeta ? { ...params, _meta: sessionMeta } : params;
+}
+
 export function selectAcpSessionStartMode(
   toolSessionId: string | undefined,
   agentCapabilities:
@@ -282,16 +302,20 @@ export function selectAcpSessionStartMode(
 export function buildSessionNewRequest(
   id: AcpRequestId,
   cwd?: string,
-  mcpServers: AcpStdioMcpServer[] = []
+  mcpServers: AcpStdioMcpServer[] = [],
+  sessionMeta?: AcpSessionMeta
 ): AcpMessage {
   return {
     jsonrpc: "2.0",
     id,
     method: "session/new",
-    params: {
-      cwd: cwd || process.cwd(),
-      mcpServers
-    }
+    params: withSessionMeta(
+      {
+        cwd: cwd || process.cwd(),
+        mcpServers
+      },
+      sessionMeta
+    )
   };
 }
 
@@ -299,17 +323,21 @@ export function buildSessionResumeRequest(
   id: AcpRequestId,
   sessionId: string,
   cwd?: string,
-  mcpServers: AcpStdioMcpServer[] = []
+  mcpServers: AcpStdioMcpServer[] = [],
+  sessionMeta?: AcpSessionMeta
 ): AcpMessage {
   return {
     jsonrpc: "2.0",
     id,
     method: "session/resume",
-    params: {
-      sessionId,
-      cwd: cwd || process.cwd(),
-      mcpServers
-    }
+    params: withSessionMeta(
+      {
+        sessionId,
+        cwd: cwd || process.cwd(),
+        mcpServers
+      },
+      sessionMeta
+    )
   };
 }
 
@@ -317,17 +345,21 @@ export function buildSessionLoadRequest(
   id: AcpRequestId,
   sessionId: string,
   cwd?: string,
-  mcpServers: AcpStdioMcpServer[] = []
+  mcpServers: AcpStdioMcpServer[] = [],
+  sessionMeta?: AcpSessionMeta
 ): AcpMessage {
   return {
     jsonrpc: "2.0",
     id,
     method: "session/load",
-    params: {
-      sessionId,
-      cwd: cwd || process.cwd(),
-      mcpServers
-    }
+    params: withSessionMeta(
+      {
+        sessionId,
+        cwd: cwd || process.cwd(),
+        mcpServers
+      },
+      sessionMeta
+    )
   };
 }
 

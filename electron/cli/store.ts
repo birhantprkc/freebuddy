@@ -22,6 +22,7 @@ export interface CLICodexByokConfig {
   apiKeyPreview?: string;
   apiKeyEncrypted?: string;
   models?: CLIByokModel[];
+  contextWindow?: number;
 }
 
 export interface CLIClaudeByokConfig {
@@ -32,11 +33,19 @@ export interface CLIClaudeByokConfig {
   apiKeyPreview?: string;
   apiKeyEncrypted?: string;
   models?: CLIByokModel[];
+  contextWindow?: number;
+  compaction?: CLIClaudeCompactionConfig;
+}
+
+export interface CLIClaudeCompactionConfig {
+  enabled?: boolean;
+  window?: number;
 }
 
 export interface CLIByokModel {
   id: string;
   name?: string;
+  contextWindow?: number;
 }
 
 export interface CLIExecutorOverride {
@@ -200,14 +209,26 @@ function fallbackCodexModelTemplate(): Record<string, unknown> {
     truncation_policy: { mode: "tokens", limit: 10000 },
     supports_parallel_tool_calls: true,
     supports_image_detail_original: true,
-    context_window: 128000,
-    max_context_window: 128000,
+    context_window: 272000,
+    max_context_window: 272000,
     effective_context_window_percent: 95,
     experimental_supported_tools: [],
     input_modalities: ["text"],
     supports_search_tool: false,
     use_responses_lite: false
   };
+}
+
+const BYOK_CONTEXT_WINDOW_MIN = 100_000;
+const BYOK_CONTEXT_WINDOW_MAX = 1_000_000;
+
+function normalizeByokContextWindow(value: unknown): number | undefined {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= BYOK_CONTEXT_WINDOW_MIN &&
+    value <= BYOK_CONTEXT_WINDOW_MAX
+    ? value
+    : undefined;
 }
 
 function normalizeByokModels(
@@ -220,32 +241,53 @@ function normalizeByokModels(
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const name = model.name?.trim();
-    normalized.push({ id, ...(name ? { name } : {}) });
+    const contextWindow = normalizeByokContextWindow(model.contextWindow);
+    normalized.push({
+      id,
+      ...(name ? { name } : {}),
+      ...(contextWindow ? { contextWindow } : {})
+    });
   }
   return normalized;
 }
 
 function createCodexByokModelCatalog(
-  models: CLIByokModel[]
+  models: CLIByokModel[],
+  defaultContextWindow?: number
 ): string | undefined {
   if (!models.length) return undefined;
-  const template = readCodexModelTemplate() ?? fallbackCodexModelTemplate();
+  const baseTemplate = readCodexModelTemplate() ?? fallbackCodexModelTemplate();
+  const normalizedDefault = normalizeByokContextWindow(defaultContextWindow);
   const catalog = {
-    models: models.map((model, index) => ({
-      ...template,
-      slug: model.id,
-      display_name: model.name || model.id,
-      description: "Custom BYOK model",
-      priority: index,
-      supported_in_api: true,
-      visibility: "list",
-      supports_reasoning_summaries: true
-    }))
+    models: models.map((model, index) => {
+      const contextWindow =
+        normalizeByokContextWindow(model.contextWindow) ?? normalizedDefault;
+      const template = contextWindow
+        ? {
+            ...baseTemplate,
+            context_window: contextWindow,
+            max_context_window: contextWindow
+          }
+        : baseTemplate;
+      return {
+        ...template,
+        slug: model.id,
+        display_name: model.name || model.id,
+        description: "Custom BYOK model",
+        priority: index,
+        supported_in_api: true,
+        visibility: "list",
+        supports_reasoning_summaries: true
+      };
+    })
   };
   const dir = path.join(getDataDir(), "codex-model-catalogs");
   fs.mkdirSync(dir, { recursive: true });
   const signature = models
-    .map((model) => `${model.id}\u0000${model.name ?? ""}`)
+    .map(
+      (model) =>
+        `${model.id}\u0000${model.name ?? ""}\u0000${model.contextWindow ?? ""}`
+    )
     .join("\u0001");
   const file = path.join(dir, `${safeCatalogFilePart(signature)}.json`);
   fs.writeFileSync(file, JSON.stringify(catalog, null, 2), "utf8");
@@ -332,6 +374,13 @@ function normalizeByokForStorage(
   const apiKeyPreview = apiKey
     ? redactApiKey(apiKey)
     : input.apiKeyPreview ?? previous?.apiKeyPreview;
+  const hasContextWindowInput = Object.prototype.hasOwnProperty.call(
+    input,
+    "contextWindow"
+  );
+  const contextWindow = hasContextWindowInput
+    ? normalizeByokContextWindow(input.contextWindow)
+    : normalizeByokContextWindow(previous?.contextWindow);
   return {
     enabled: true,
     providerId: input.providerId?.trim() || "proxy",
@@ -340,6 +389,7 @@ function normalizeByokForStorage(
     envKey: input.envKey?.trim() || "OPENAI_API_KEY",
     wireApi: normalizeWireApi(input.wireApi),
     models: normalizeByokModels(input.models),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
     apiKeyPreview,
     apiKeyEncrypted
   };
@@ -358,13 +408,45 @@ function normalizeClaudeByokForStorage(
   const apiKeyPreview = apiKey
     ? redactApiKey(apiKey)
     : input.apiKeyPreview ?? previous?.apiKeyPreview;
+  const hasContextWindowInput =
+    Object.prototype.hasOwnProperty.call(input, "contextWindow") ||
+    Object.prototype.hasOwnProperty.call(input.compaction ?? {}, "window");
+  const contextWindow = hasContextWindowInput
+    ? normalizeByokContextWindow(
+        input.contextWindow ?? input.compaction?.window
+      )
+    : normalizeByokContextWindow(
+        previous?.contextWindow ?? previous?.compaction?.window
+      );
+  const compaction = normalizeClaudeCompaction(
+    input.compaction ?? previous?.compaction,
+    contextWindow
+  );
   return {
     enabled: true,
     baseUrl: input.baseUrl?.trim(),
     envKey: input.envKey?.trim() || "ANTHROPIC_API_KEY",
     models: normalizeByokModels(input.models),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(compaction ? { compaction } : {}),
     apiKeyPreview,
     apiKeyEncrypted
+  };
+}
+
+function normalizeClaudeCompaction(
+  input: CLIClaudeCompactionConfig | undefined,
+  contextWindow?: number
+): CLIClaudeCompactionConfig | undefined {
+  if (!input) return undefined;
+  if (input.enabled === undefined) return undefined;
+  // contextWindow (top-level) is canonical; compaction.window mirrors it for
+  // configs that still read the legacy field. Preserve the window instead of
+  // silently dropping it on persist.
+  const window = contextWindow ?? normalizeByokContextWindow(input.window);
+  return {
+    enabled: input.enabled === true,
+    ...(window !== undefined ? { window } : {})
   };
 }
 
@@ -478,7 +560,10 @@ export function resolveCodexByokEnv(
     : model && shouldCreateCodexModelCatalog(model)
       ? [{ id: model }]
       : [];
-  const modelCatalogPath = createCodexByokModelCatalog(catalogModels);
+  const modelCatalogPath = createCodexByokModelCatalog(
+    catalogModels,
+    byok.contextWindow
+  );
   const codexPath = modelCatalogPath
     ? createCodexAppServerWrapper(modelCatalogPath)
     : undefined;
@@ -525,6 +610,15 @@ export function resolveClaudeByokEnv(
   const baseUrl = byok.baseUrl?.trim();
   if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
   if (apiKey) env[envKey] = apiKey;
+  // Claude Code assumes 200K for model names it does not recognize (e.g. a
+  // non-Claude model served through a proxy). autoCompactWindow alone cannot
+  // raise that perceived limit — it is capped at the model's assumed window.
+  // CLAUDE_CODE_MAX_CONTEXT_TOKENS is the documented override for exactly this
+  // case, so a BYOK provider's real context window is honored.
+  const contextWindow = normalizeByokContextWindow(
+    byok.contextWindow ?? byok.compaction?.window
+  );
+  if (contextWindow) env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(contextWindow);
   const models = normalizeByokModels(byok.models);
   if (models.length) {
     const requestedModel = selectedModel?.trim();
@@ -537,6 +631,33 @@ export function resolveClaudeByokEnv(
     env.ANTHROPIC_MODEL = activeModel;
   }
   return Object.keys(env).length ? env : undefined;
+}
+
+export function resolveClaudeByokSessionOptions(
+  agentId: string,
+  adapter: string
+): {
+  settings: {
+    autoCompactEnabled: boolean;
+  };
+} | undefined {
+  if (adapter !== "claude-agent-acp" && adapter !== "claude") return undefined;
+  const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
+  const byok = readClaudeByokPrivate(overrideId);
+  if (!byok?.enabled) return undefined;
+  const compaction = normalizeClaudeCompaction(byok.compaction);
+  // The context window itself is set via CLAUDE_CODE_MAX_CONTEXT_TOKENS in
+  // resolveClaudeByokEnv. We intentionally do NOT set autoCompactWindow here:
+  // setting it switches the SDK into proactive compaction, which summarizes
+  // at a percentage of the window (~50-60%) instead of near the limit. Letting
+  // the SDK compact at the model's context limit matches what users expect.
+  return {
+    settings: {
+      // Existing Claude BYOK configurations predate this setting. Enable it
+      // by default so they also get protection from context-window overflow.
+      autoCompactEnabled: compaction?.enabled !== false
+    }
+  };
 }
 
 export function resolveCliByokEnv(

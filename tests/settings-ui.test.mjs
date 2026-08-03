@@ -61,6 +61,22 @@ test("coding agent settings expose Codex BYOK without echoing saved keys", () =>
   assert.equal(settingsSource.includes("settings.cli.byok.models"), true);
   assert.equal(settingsSource.includes("settings.cli.byok.addModel"), true);
   assert.equal(settingsSource.includes("byokModels"), true);
+  assert.equal(settingsSource.includes("compactionEnabled"), true);
+  assert.equal(settingsSource.includes("contextWindow"), true);
+  assert.equal(settingsSource.includes("byok-model-row--with-context"), true);
+  assert.equal(settingsSource.includes("byok-model-header"), true);
+  assert.equal(
+    settingsSource.includes("settings.cli.byok.modelContextWindowPlaceholder"),
+    true
+  );
+  assert.equal(
+    enLocale.settings.cli.byok.modelContextWindowHeader,
+    "Context window"
+  );
+  assert.equal(
+    zhLocale.settings.cli.byok.modelContextWindowHeader,
+    "上下文窗口"
+  );
   assert.equal(zhLocale.settings.cli.byok.title, "API Key");
   assert.equal(zhLocale.settings.cli.byok.addModel, "添加模型");
   assert.equal(zhLocale.settings.cli.byok.modeCustom, "使用自己的 API Key");
@@ -111,6 +127,30 @@ test("coding agent runtime stores Claude BYOK separately from Codex BYOK", () =>
   );
   assert.equal(electronStoreSource.includes("claude_byok"), true);
   assert.equal(electronStoreSource.includes("resolveClaudeByokEnv"), true);
+  assert.equal(
+    electronStoreSource.includes("resolveClaudeByokSessionOptions"),
+    true
+  );
+  assert.equal(electronStoreSource.includes("autoCompactEnabled"), true);
+  // autoCompactWindow is intentionally not forwarded as a session option:
+  // setting it switches the SDK to proactive compaction (~50-60% of the
+  // window). The window itself is set via CLAUDE_CODE_MAX_CONTEXT_TOKENS, so
+  // compaction triggers near the model's context limit instead.
+  assert.equal(
+    electronStoreSource.includes("autoCompactWindow: contextWindow"),
+    false
+  );
+  assert.equal(electronStoreSource.includes("contextWindow"), true);
+  assert.equal(electronStoreSource.includes("context_window"), true);
+  assert.equal(
+    electronStoreSource.includes("CLAUDE_CODE_MAX_CONTEXT_TOKENS"),
+    true
+  );
+  assert.equal(electronStoreSource.includes("defaultContextWindow"), true);
+  assert.match(
+    electronStoreSource,
+    /normalizeByokContextWindow\(model\.contextWindow\)/
+  );
   assert.equal(electronStoreSource.includes("ANTHROPIC_API_KEY"), true);
   assert.equal(electronStoreSource.includes("ANTHROPIC_BASE_URL"), true);
   assert.equal(
@@ -132,6 +172,10 @@ test("coding agent runtime stores Claude BYOK separately from Codex BYOK", () =>
   assert.match(electronStoreSource, /secretDecryptCache\.get\(value\)/);
   assert.match(electronStoreSource, /secretDecryptCache\.set\(value, decrypted\)/);
   assert.equal(electronRuntimeSource.includes("resolveCliByokEnv"), true);
+  assert.equal(
+    electronRuntimeSource.includes("resolveClaudeByokSessionOptions"),
+    true
+  );
 });
 
 test("coding agent settings let only cloned agents rename their display label", () => {
