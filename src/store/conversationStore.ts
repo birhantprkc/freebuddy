@@ -208,7 +208,12 @@ function ensureWorkflowMessageSubscription(
   const api = fb?.workflow;
   if (!api?.onStepMessage) return;
   if (!workflowFinishedUnsubscribe && api.onRunFinished) {
-    workflowFinishedUnsubscribe = api.onRunFinished((event) => {
+    workflowFinishedUnsubscribe = api.onRunFinished((event: {
+      runId: string;
+      conversationId?: string;
+      status: string;
+      name: string;
+    }) => {
       if (
         event.conversationId &&
         terminalWorkflowStatuses.has(event.status)
