@@ -8,6 +8,7 @@ import { useConversationStore } from "@/store/conversationStore";
 import { cliClient } from "@/services/cli/client";
 import type {
   CliAuthProbeResult,
+  CLIByokModel,
   CLIExecutorOverride,
   CliRuntime
 } from "@/services/cli/types";
@@ -22,7 +23,6 @@ import { useSkillStore } from "@/store/skillStore";
 const CODEX_ACP_UPGRADE_REQUIRED = "codex-acp requires @agentclientprotocol/codex-acp";
 const BYOK_CONTEXT_WINDOW_MIN = 100000;
 const BYOK_CONTEXT_WINDOW_MAX = 1000000;
-const DEFAULT_CODEX_BYOK_CONTEXT_WINDOW = 272000;
 
 function parseByokContextWindow(value: string): number | undefined {
   const parsed = Number(value);
@@ -683,6 +683,10 @@ function EditOverridePanel({
   const skills = useSkillStore((s) => s.skills);
   const skillsLoaded = useSkillStore((s) => s.loaded);
   const loadSkills = useSkillStore((s) => s.load);
+  const startInstall = useCliInstallStore((s) => s.startJob);
+  const installing = useCliInstallStore((s) =>
+    s.jobs.some((j) => j.adapterId === executorId && !j.done)
+  );
 
   const [label, setLabel] = useState(ex?.label ?? "");
   const [binary, setBinary] = useState(
@@ -744,10 +748,9 @@ function EditOverridePanel({
         : []
   );
   const [byokContextWindow, setByokContextWindow] = useState(
-    savedByok?.contextWindow?.toString() ??
-      (isClaude
-        ? savedClaudeByok?.compaction?.window?.toString() ?? ""
-        : DEFAULT_CODEX_BYOK_CONTEXT_WINDOW.toString())
+    savedClaudeByok?.contextWindow?.toString() ??
+      savedClaudeByok?.compaction?.window?.toString() ??
+      ""
   );
   const [claudeCompactionEnabled, setClaudeCompactionEnabled] = useState(
     savedClaudeByok?.compaction?.enabled !== false
@@ -810,7 +813,6 @@ function EditOverridePanel({
             wireApi: codexWireApi,
             apiKey: codexApiKey.trim() || undefined,
             models: byokModels,
-            contextWindow: parseByokContextWindow(byokContextWindow),
             apiKeyPreview: savedByok?.apiKeyPreview
           }
         : undefined;
@@ -906,15 +908,34 @@ function EditOverridePanel({
             </div>
           </div>
         </div>
-        {ex.runtime?.installed ? (
-          <span className="adapter-status adapter-editor-status ok">
-            {t("settings.cli.installed")}
-          </span>
-        ) : (
-          <span className="adapter-status adapter-editor-status muted">
-            {t("settings.cli.notChecked")}
-          </span>
-        )}
+        <div className="adapter-editor-status-group">
+          {ex.runtime?.installed ? (
+            <span className="adapter-status adapter-editor-status ok">
+              {t("settings.cli.installed")}
+            </span>
+          ) : (
+            <span className="adapter-status adapter-editor-status muted">
+              {t("settings.cli.notChecked")}
+            </span>
+          )}
+          {ex.runtime?.installed && ex.installHint && (
+            <button
+              type="button"
+              className="adapter-editor-upgrade"
+              disabled={installing}
+              title={t("settings.cli.upgradeHint")}
+              onClick={() =>
+                startInstall({
+                  adapterId: ex.id,
+                  label: ex.label,
+                  command: ex.installHint!
+                })
+              }
+            >
+              {installing ? t("common.upgrading") : t("common.upgrade")}
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="adapter-editor-scroll">
@@ -1036,8 +1057,27 @@ function EditOverridePanel({
                     {t("settings.cli.byok.models")}
                   </span>
                   <div className="byok-model-list">
+                    <div
+                      className={`byok-model-header${
+                        isCodex ? " byok-model-header--with-context" : ""
+                      }`}
+                      aria-hidden="true"
+                    >
+                      <span>{t("settings.cli.byok.modelIdPlaceholder")}</span>
+                      <span>{t("settings.cli.byok.modelNamePlaceholder")}</span>
+                      {isCodex && (
+                        <span>
+                          {t("settings.cli.byok.modelContextWindowHeader")}
+                        </span>
+                      )}
+                    </div>
                     {byokModels.map((byokModel, index) => (
-                      <div className="byok-model-row" key={index}>
+                      <div
+                        className={`byok-model-row${
+                          isCodex ? " byok-model-row--with-context" : ""
+                        }`}
+                        key={index}
+                      >
                         <input
                           value={byokModel.id}
                           placeholder={t(
@@ -1070,6 +1110,35 @@ function EditOverridePanel({
                             )
                           }
                         />
+                        {isCodex && (
+                          <input
+                            type="number"
+                            min={BYOK_CONTEXT_WINDOW_MIN}
+                            max={BYOK_CONTEXT_WINDOW_MAX}
+                            step={1000}
+                            value={byokModel.contextWindow ?? ""}
+                            placeholder={t(
+                              "settings.cli.byok.modelContextWindowPlaceholder"
+                            )}
+                            aria-label={t(
+                              "settings.cli.byok.modelContextWindowPlaceholder"
+                            )}
+                            onChange={(event) =>
+                              setByokModels((models) =>
+                                models.map((entry, entryIndex) => {
+                                  if (entryIndex !== index) return entry;
+                                  const parsed = parseByokContextWindow(
+                                    event.target.value
+                                  );
+                                  const next: CLIByokModel = { ...entry };
+                                  if (parsed) next.contextWindow = parsed;
+                                  else delete next.contextWindow;
+                                  return next;
+                                })
+                              )
+                            }
+                          />
+                        )}
                         <button
                           type="button"
                           className="byok-model-remove"
@@ -1106,6 +1175,7 @@ function EditOverridePanel({
                   </span>
                 </div>
 
+                {isClaude && (
                 <div className="byok-context-section">
                   <div className="byok-context-section-heading">
                     <span className="byok-context-section-title">
@@ -1197,6 +1267,7 @@ function EditOverridePanel({
                     </span>
                   </div>
                 </div>
+                )}
 
                 <details className="settings-advanced-panel">
                   <summary>{t("settings.cli.byok.advanced")}</summary>

@@ -54,6 +54,8 @@ export interface CLIClaudeCompactionConfig {
 export interface CLIByokModel {
   id: string;
   name?: string;
+  /** Per-model context window (tokens) written into the Codex model catalog. */
+  contextWindow?: number;
 }
 
 export interface AgentModelUsage {

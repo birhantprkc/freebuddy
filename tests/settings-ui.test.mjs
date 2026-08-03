@@ -63,6 +63,20 @@ test("coding agent settings expose Codex BYOK without echoing saved keys", () =>
   assert.equal(settingsSource.includes("byokModels"), true);
   assert.equal(settingsSource.includes("compactionEnabled"), true);
   assert.equal(settingsSource.includes("contextWindow"), true);
+  assert.equal(settingsSource.includes("byok-model-row--with-context"), true);
+  assert.equal(settingsSource.includes("byok-model-header"), true);
+  assert.equal(
+    settingsSource.includes("settings.cli.byok.modelContextWindowPlaceholder"),
+    true
+  );
+  assert.equal(
+    enLocale.settings.cli.byok.modelContextWindowHeader,
+    "Context window"
+  );
+  assert.equal(
+    zhLocale.settings.cli.byok.modelContextWindowHeader,
+    "上下文窗口"
+  );
   assert.equal(zhLocale.settings.cli.byok.title, "API Key");
   assert.equal(zhLocale.settings.cli.byok.addModel, "添加模型");
   assert.equal(zhLocale.settings.cli.byok.modeCustom, "使用自己的 API Key");
@@ -121,6 +135,15 @@ test("coding agent runtime stores Claude BYOK separately from Codex BYOK", () =>
   assert.equal(electronStoreSource.includes("autoCompactWindow"), true);
   assert.equal(electronStoreSource.includes("contextWindow"), true);
   assert.equal(electronStoreSource.includes("context_window"), true);
+  assert.equal(
+    electronStoreSource.includes("CLAUDE_CODE_MAX_CONTEXT_TOKENS"),
+    true
+  );
+  assert.equal(electronStoreSource.includes("defaultContextWindow"), true);
+  assert.match(
+    electronStoreSource,
+    /normalizeByokContextWindow\(model\.contextWindow\)/
+  );
   assert.equal(electronStoreSource.includes("ANTHROPIC_API_KEY"), true);
   assert.equal(electronStoreSource.includes("ANTHROPIC_BASE_URL"), true);
   assert.equal(
