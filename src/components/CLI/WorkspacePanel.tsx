@@ -159,6 +159,22 @@ export function WorkspacePanel({
   }, [isTeamRun, displayLive?.capturedSessionId, displayLive?.resumedFromSessionId, displayMessages]);
 
   const latestUsage = useMemo(() => {
+    type UsageItem = {
+      kind?: string;
+      contextUsed?: number;
+      contextSize?: number;
+      costAmount?: number;
+      costCurrency?: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      totalCost?: number;
+    };
+    // Prefer billable main-turn usage. Agents like Claude also emit usage from
+    // a background model (e.g. title generation) that reports a different
+    // context window; preferring cost-bearing updates keeps the card on the
+    // main model and avoids flicker. Adapters that never report cost (Codex)
+    // fall back to the most recent usage item.
+    let fallback: UsageItem | undefined;
     for (let i = displayMessages.length - 1; i >= 0; i -= 1) {
       const message = displayMessages[i];
       if (message.role !== "assistant") continue;
@@ -166,23 +182,16 @@ export function WorkspacePanel({
         const items = JSON.parse(message.content) as unknown[];
         if (!Array.isArray(items)) continue;
         for (let j = items.length - 1; j >= 0; j -= 1) {
-          const item = items[j] as {
-            kind?: string;
-            contextUsed?: number;
-            contextSize?: number;
-            costAmount?: number;
-            costCurrency?: string;
-            inputTokens?: number;
-            outputTokens?: number;
-            totalCost?: number;
-          };
-          if (item?.kind === "usage") return item;
+          const item = items[j] as UsageItem;
+          if (item?.kind !== "usage") continue;
+          if (item.costAmount != null) return item;
+          if (!fallback) fallback = item;
         }
       } catch {
         // ignore
       }
     }
-    return undefined;
+    return fallback;
   }, [displayMessages]);
 
   const latestPlan = useMemo(
