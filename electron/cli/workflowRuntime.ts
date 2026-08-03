@@ -1053,6 +1053,22 @@ export class WorkflowRuntime {
         resumeToolSession,
         cwd: run.cwd,
         onEvent: (e: CliEvent) => {
+          if (
+            run.conversationId &&
+            (e.type === "permission" ||
+              e.type === "permission-resolved" ||
+              e.type === "authentication" ||
+              e.type === "authentication-resolved" ||
+              e.type === "authentication-terminal-started" ||
+              e.type === "authentication-terminal-update" ||
+              e.type === "authentication-terminal-resolved")
+          ) {
+            this.broadcastWorkflowEvent({
+              conversationId: run.conversationId,
+              sessionId,
+              event: e
+            });
+          }
           if (e.type === "items" && e.items?.length) {
             collected.push(...e.items);
             scheduleMessageUpdate();
@@ -1117,6 +1133,18 @@ export class WorkflowRuntime {
     safeSendToWebContents(
       this.deps.webContents,
       `workflow://message/${payload.conversationId}`,
+      payload
+    );
+  }
+
+  private broadcastWorkflowEvent(payload: {
+    conversationId: string;
+    sessionId: string;
+    event: CliEvent;
+  }): void {
+    safeSendToWebContents(
+      this.deps.webContents,
+      `workflow://event/${payload.conversationId}`,
       payload
     );
   }

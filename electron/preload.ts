@@ -403,6 +403,16 @@ const workflow = {
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.off(channel, handler);
   },
+  onStepEvent(
+    conversationId: string,
+    cb: (event: { sessionId: string; event: unknown }) => void
+  ): () => void {
+    const channel = `workflow://event/${conversationId}`;
+    const handler = (_e: IpcRendererEvent, payload: unknown) =>
+      cb(payload as any);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
+  },
   onRunFinished(
     cb: (event: {
       runId: string;

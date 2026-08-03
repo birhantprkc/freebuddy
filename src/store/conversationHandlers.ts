@@ -119,6 +119,24 @@ function refreshLatestErrorDetails(
   return next;
 }
 
+function reconcileDanglingToolCalls(
+  items: CliStreamItem[],
+  terminalStatus: "completed" | "failed"
+): CliStreamItem[] {
+  let changed = false;
+  const next = items.map((item) => {
+    if (
+      item.kind === "tool-call" &&
+      (item.status === "pending" || item.status === "running")
+    ) {
+      changed = true;
+      return { ...item, status: terminalStatus };
+    }
+    return item;
+  });
+  return changed ? next : items;
+}
+
 export function handleStreamEvent(
   set: SetFn,
   get: GetFn,
@@ -128,38 +146,7 @@ export function handleStreamEvent(
   parseCtx: ParseContext,
   preserveConversationTitle = false
 ): void {
-  if (e.type === "permission") {
-    usePermissionStore.getState().enqueue(conversationId, e.request);
-    return;
-  }
-  if (e.type === "permission-resolved") {
-    usePermissionStore.getState().remove(e.requestId);
-    return;
-  }
-  if (e.type === "authentication") {
-    useAuthenticationStore.getState().enqueue(conversationId, e.request);
-    return;
-  }
-  if (e.type === "authentication-resolved") {
-    useAuthenticationStore.getState().remove(e.requestId);
-    return;
-  }
-  if (e.type === "authentication-terminal-started") {
-    useAuthenticationStore.getState().startTerminal(conversationId, e.request);
-    return;
-  }
-  if (e.type === "authentication-terminal-update") {
-    useAuthenticationStore.getState().updateTerminal(e.requestId, {
-      output: e.output,
-      running: e.running,
-      exitCode: e.exitCode
-    });
-    return;
-  }
-  if (e.type === "authentication-terminal-resolved") {
-    useAuthenticationStore.getState().removeTerminal(e.requestId);
-    return;
-  }
+  if (handleStreamControlEvent(conversationId, e)) return;
 
   set((s) => {
     const live = s.live[conversationId];
@@ -270,6 +257,13 @@ export function handleStreamEvent(
         status = e.exitCode === 0 ? "done" : "failed";
       }
       exitCode = e.exitCode;
+      // Some adapters (e.g. codebuddy/Hy3) abandon an in-progress tool call and
+      // end the turn without emitting a terminal tool_call_update, leaving the
+      // card spinning forever. Force any dangling tool-call to a terminal status.
+      nextItems = reconcileDanglingToolCalls(
+        nextItems,
+        status === "done" && e.exitCode === 0 ? "completed" : "failed"
+      );
       if (status !== "killed" && e.exitCode !== 0 && !hasUserFacingError(nextItems)) {
         nextItems = appendItems(nextItems, [failureSummaryFor(e.exitCode, parseCtx)]);
       }
@@ -358,6 +352,46 @@ export function handleStreamEvent(
     }
     void finalizeRun(set, get, conversationId, reason);
   }
+}
+
+export function handleStreamControlEvent(
+  conversationId: string,
+  e: CliEvent
+): boolean {
+  if (e.type === "permission") {
+    usePermissionStore.getState().enqueue(conversationId, e.request);
+    return true;
+  }
+  if (e.type === "permission-resolved") {
+    usePermissionStore.getState().remove(e.requestId);
+    return true;
+  }
+  if (e.type === "authentication") {
+    useAuthenticationStore.getState().enqueue(conversationId, e.request);
+    return true;
+  }
+  if (e.type === "authentication-resolved") {
+    useAuthenticationStore.getState().remove(e.requestId);
+    return true;
+  }
+  if (e.type === "authentication-terminal-started") {
+    useAuthenticationStore.getState().startTerminal(conversationId, e.request);
+    return true;
+  }
+  if (e.type === "authentication-terminal-update") {
+    useAuthenticationStore.getState().updateTerminal(e.requestId, {
+      output: e.output,
+      running: e.running,
+      exitCode: e.exitCode
+    });
+    return true;
+  }
+  if (e.type === "authentication-terminal-resolved") {
+    useAuthenticationStore.getState().removeTerminal(e.requestId);
+    return true;
+  }
+
+  return false;
 }
 
 async function finalizeRun(

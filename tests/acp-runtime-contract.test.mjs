@@ -39,6 +39,61 @@ test("ACP runtime still treats process close as a fallback finish signal", () =>
   assert.match(acpRuntimeSource, /finish\(status, exitCode, crashMessage\)/);
 });
 
+test("ACP auto approval never leaves an unsupported permission request pending", () => {
+  assert.match(
+    acpRuntimeSource,
+    /if \(args\.approvalMode === "auto"\)[\s\S]*?permission auto-cancelled \(no allow option\)[\s\S]*?respondToPermission\(requestRpcId, \{ outcome: "cancelled" \}\)/
+  );
+});
+
+test("ACP permission requests expire through the resolver registry", () => {
+  assert.match(acpRuntimeSource, /takePermissionResolver/);
+  assert.match(acpRuntimeSource, /PERMISSION_REQUEST_TIMEOUT_MS/);
+  assert.match(acpRuntimeSource, /setTimeout\(/);
+  assert.match(acpRuntimeSource, /permission timeout/);
+});
+
+test("ACP turns are cancelled when the agent stops producing output", () => {
+  assert.match(acpRuntimeSource, /INACTIVITY_TIMEOUT_MS/);
+  assert.match(acpRuntimeSource, /const armInactivityTimer/);
+  assert.match(acpRuntimeSource, /const disarmInactivityTimer/);
+  // The watchdog arms when a prompt turn starts and disarms when it settles,
+  // so a single stuck turn (not the whole session lifetime) is bounded.
+  const promptBodyIndex = acpRuntimeSource.indexOf("const runPromptOnSession");
+  const promptBody = acpRuntimeSource.slice(
+    promptBodyIndex,
+    acpRuntimeSource.indexOf("};", acpRuntimeSource.indexOf("disarmInactivityTimer();", promptBodyIndex)) + 2
+  );
+  assert.match(promptBody, /armInactivityTimer\(\);/);
+  assert.match(promptBody, /disarmInactivityTimer\(\);/);
+  // Every live session/update frame resets the timer, mirroring promptHadContent.
+  assert.match(
+    acpRuntimeSource,
+    /promptHadContent = true;\s*\n\s*armInactivityTimer\(\);/
+  );
+  // On expiry the run is torn down via the existing cancel+finish path so the
+  // workflow runtime observes the standard error+done event pair.
+  assert.match(
+    acpRuntimeSource,
+    /inactivity timeout after [\s\S]*?cancelRun\(\);[\s\S]*?finish\(\s*"failed"/
+  );
+  // finish() clears the timer so a late fire cannot race a normal completion.
+  const finishBody = acpRuntimeSource.slice(
+    acpRuntimeSource.indexOf("const finish ="),
+    acpRuntimeSource.indexOf("const cancelRun")
+  );
+  assert.match(finishBody, /disarmInactivityTimer\(\);/);
+  assert.ok(
+    finishBody.indexOf("disarmInactivityTimer();") <
+      finishBody.indexOf('emit({ type: "done"'),
+    "inactivity timer is cleared before the terminal done event fires"
+  );
+});
+
+test("CLI runtime records the approval mode with each task start", () => {
+  assert.match(runtimeSource, /approvalMode: args\.approvalMode \?\? "default"/);
+});
+
 test("ACP terminal output uses the stable exitStatus response shape", () => {
   assert.match(acpRuntimeSource, /buildTerminalOutputResponse\(snap\)/);
 });

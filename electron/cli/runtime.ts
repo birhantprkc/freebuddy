@@ -205,12 +205,13 @@ export async function cliRun(
   insertTask(args, logFile, toolSessionId);
   logMain().info("runtime", "agent run start", {
     adapter: args.adapter,
-    sessionId: args.sessionId
+    sessionId: args.sessionId,
+    approvalMode: args.approvalMode ?? "default"
   });
   appendLog(
     logStream,
     "system",
-    `start adapter=${args.adapter} cwd=${args.cwd ?? "."} resume=${toolSessionId ?? "-"}`
+    `start adapter=${args.adapter} approvalMode=${args.approvalMode ?? "default"} cwd=${args.cwd ?? "."} resume=${toolSessionId ?? "-"}`
   );
 
   // Avoid spawning codex-acp while npm is replacing its global package files.

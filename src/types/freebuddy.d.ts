@@ -429,6 +429,10 @@ declare global {
         messageId: string;
       }) => void
     ): () => void;
+    onStepEvent(
+      conversationId: string,
+      cb: (event: { sessionId: string; event: CliEvent }) => void
+    ): () => void;
     onRunFinished(
       cb: (event: {
         runId: string;

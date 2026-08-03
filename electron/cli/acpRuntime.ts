@@ -45,6 +45,7 @@ import {
   clearPermissionResolversForSession,
   registerAuthenticationResolver,
   registerPermissionResolver,
+  takePermissionResolver,
   setTaskToolSessionId,
   updateTaskStatus,
   type CliEvent,
@@ -90,6 +91,14 @@ import {
 import { isPathWithinRoots } from "../shared/workspaceRoots.js";
 import { clearSessionOwner } from "./sessionOwners.js";
 import { getLanguage } from "./settings.js";
+
+const PERMISSION_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
+// An ACP turn blocks on a single session/prompt request that only resolves
+// when the agent returns its final response. If a tool spawns a long-running
+// child (for example a dev server) that holds the agent's stdio open, the
+// agent stops emitting session/update frames and the prompt request never
+// settles. Cancel the turn after this much continuous silence.
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
 
 function writeAcp(
   child: ChildProcessByStdio<Writable, Readable, Readable>,
@@ -166,6 +175,8 @@ export async function runAcpAgent({
   let activeAcpSessionId: string | undefined;
   let finished = false;
   let promptStarted = false;
+  let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
+  let inactivityFired = false;
   let promptHadContent = false;
   let turnHadLiveAgentChunk = false;
   let sessionWasResumed = false;
@@ -250,6 +261,34 @@ export async function runAcpAgent({
     appendLog(logStream, "stdin", JSON.stringify(msg));
     writeAcp(child, msg);
   };
+  const armInactivityTimer = () => {
+    if (INACTIVITY_TIMEOUT_MS <= 0) return;
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    if (finished || inactivityFired) return;
+    inactivityTimer = setTimeout(() => {
+      if (finished || inactivityFired) return;
+      inactivityFired = true;
+      appendLog(
+        logStream,
+        "system",
+        `inactivity timeout after ${INACTIVITY_TIMEOUT_MS}ms with no agent output; cancelling`
+      );
+      cancelRun();
+      finish(
+        "failed",
+        -1,
+        `Agent produced no output for ${Math.round(
+          INACTIVITY_TIMEOUT_MS / 60000
+        )} minutes and was cancelled. This usually means a tool spawned a long-running process (for example a dev server) that held the agent's output stream open.`
+      );
+    }, INACTIVITY_TIMEOUT_MS);
+  };
+  const disarmInactivityTimer = () => {
+    if (inactivityTimer) {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = undefined;
+    }
+  };
   const finish = (
     status: "done" | "failed" | "killed",
     exitCode: number,
@@ -257,6 +296,7 @@ export async function runAcpAgent({
   ) => {
     if (finished) return;
     finished = true;
+    disarmInactivityTimer();
     terminalManager.dispose();
     running.delete(args.sessionId);
     unregisterDraftToolSession(args.sessionId);
@@ -365,6 +405,7 @@ export async function runAcpAgent({
         )
       ) {
         promptHadContent = true;
+        armInactivityTimer();
       }
       if (
         shouldSkipUserMessageChunk(msg.params?.update, {
@@ -506,7 +547,16 @@ export async function runAcpAgent({
         });
         return;
       }
-      // Fall through to manual prompting if no allow option is present.
+      // An auto-approved run has no renderer prompt to resolve. Cancelling is
+      // safer than leaving the ACP request pending forever when an adapter
+      // exposes only an unsupported permission shape.
+      appendLog(
+        logStream,
+        "system",
+        "permission auto-cancelled (no allow option)"
+      );
+      respondToPermission(requestRpcId, { outcome: "cancelled" });
+      return;
     }
 
     if (options.length === 0) {
@@ -543,7 +593,9 @@ export async function runAcpAgent({
         }
       : undefined;
 
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     registerPermissionResolver(args.sessionId, requestId, (decision) => {
+      if (timeout) clearTimeout(timeout);
       appendLog(
         logStream,
         "system",
@@ -556,6 +608,17 @@ export async function runAcpAgent({
       respondToPermission(requestRpcId, decision);
       emit({ type: "permission-resolved", requestId });
     });
+
+    timeout = setTimeout(() => {
+      const resolver = takePermissionResolver(args.sessionId, requestId);
+      if (!resolver) return;
+      appendLog(
+        logStream,
+        "system",
+        `permission timeout (${requestId}) after ${PERMISSION_REQUEST_TIMEOUT_MS}ms`
+      );
+      resolver({ outcome: "cancelled" });
+    }, PERMISSION_REQUEST_TIMEOUT_MS);
 
     appendLog(
       logStream,
@@ -902,14 +965,19 @@ export async function runAcpAgent({
     // be confined to the pre-prompt replay phase; keeping it enabled would drop
     // live agent chunks whose text matches a persisted history signature.
     sessionWasResumed = false;
-    await request(
-      buildSessionPromptRequest(
-        nextId(),
-        activeAcpSessionId!,
-        activePrompt,
-        args.promptAttachments
-      )
-    );
+    armInactivityTimer();
+    try {
+      await request(
+        buildSessionPromptRequest(
+          nextId(),
+          activeAcpSessionId!,
+          activePrompt,
+          args.promptAttachments
+        )
+      );
+    } finally {
+      disarmInactivityTimer();
+    }
   };
 
   const authRequiredError = (methods: AcpAuthMethod[]) => {

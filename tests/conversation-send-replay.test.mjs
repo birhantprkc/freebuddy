@@ -109,6 +109,7 @@ async function loadConversationStoreHarness() {
     export const feedArticleTitleFromMessages = () => undefined;
     export const mergeConversationMessages = (_, messages) => messages;
     export const shouldApplyAgentSessionTitle = () => false;
+    export const handleStreamControlEvent = () => false;
     export const handleStreamEvent = () => undefined;
     export const killConversation = async () => undefined;
     export const latestConfigOptionsFromItems = () => [];
