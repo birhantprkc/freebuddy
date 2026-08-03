@@ -419,7 +419,8 @@ function normalizeClaudeByokForStorage(
         previous?.contextWindow ?? previous?.compaction?.window
       );
   const compaction = normalizeClaudeCompaction(
-    input.compaction ?? previous?.compaction
+    input.compaction ?? previous?.compaction,
+    contextWindow
   );
   return {
     enabled: true,
@@ -434,12 +435,18 @@ function normalizeClaudeByokForStorage(
 }
 
 function normalizeClaudeCompaction(
-  input: CLIClaudeCompactionConfig | undefined
+  input: CLIClaudeCompactionConfig | undefined,
+  contextWindow?: number
 ): CLIClaudeCompactionConfig | undefined {
   if (!input) return undefined;
   if (input.enabled === undefined) return undefined;
+  // contextWindow (top-level) is canonical; compaction.window mirrors it for
+  // configs that still read the legacy field. Preserve the window instead of
+  // silently dropping it on persist.
+  const window = contextWindow ?? normalizeByokContextWindow(input.window);
   return {
-    enabled: input.enabled === true
+    enabled: input.enabled === true,
+    ...(window !== undefined ? { window } : {})
   };
 }
 
@@ -632,25 +639,23 @@ export function resolveClaudeByokSessionOptions(
 ): {
   settings: {
     autoCompactEnabled: boolean;
-    autoCompactWindow?: number;
   };
 } | undefined {
   if (adapter !== "claude-agent-acp" && adapter !== "claude") return undefined;
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
   const byok = readClaudeByokPrivate(overrideId);
   if (!byok?.enabled) return undefined;
-  const contextWindow = normalizeByokContextWindow(
-    byok.contextWindow ?? byok.compaction?.window
-  );
   const compaction = normalizeClaudeCompaction(byok.compaction);
+  // The context window itself is set via CLAUDE_CODE_MAX_CONTEXT_TOKENS in
+  // resolveClaudeByokEnv. We intentionally do NOT set autoCompactWindow here:
+  // setting it switches the SDK into proactive compaction, which summarizes
+  // at a percentage of the window (~50-60%) instead of near the limit. Letting
+  // the SDK compact at the model's context limit matches what users expect.
   return {
     settings: {
       // Existing Claude BYOK configurations predate this setting. Enable it
       // by default so they also get protection from context-window overflow.
-      autoCompactEnabled: compaction?.enabled !== false,
-      ...(contextWindow !== undefined
-        ? { autoCompactWindow: contextWindow }
-        : {})
+      autoCompactEnabled: compaction?.enabled !== false
     }
   };
 }

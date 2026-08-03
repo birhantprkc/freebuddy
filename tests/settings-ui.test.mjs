@@ -132,7 +132,14 @@ test("coding agent runtime stores Claude BYOK separately from Codex BYOK", () =>
     true
   );
   assert.equal(electronStoreSource.includes("autoCompactEnabled"), true);
-  assert.equal(electronStoreSource.includes("autoCompactWindow"), true);
+  // autoCompactWindow is intentionally not forwarded as a session option:
+  // setting it switches the SDK to proactive compaction (~50-60% of the
+  // window). The window itself is set via CLAUDE_CODE_MAX_CONTEXT_TOKENS, so
+  // compaction triggers near the model's context limit instead.
+  assert.equal(
+    electronStoreSource.includes("autoCompactWindow: contextWindow"),
+    false
+  );
   assert.equal(electronStoreSource.includes("contextWindow"), true);
   assert.equal(electronStoreSource.includes("context_window"), true);
   assert.equal(
