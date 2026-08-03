@@ -119,6 +119,24 @@ function refreshLatestErrorDetails(
   return next;
 }
 
+function reconcileDanglingToolCalls(
+  items: CliStreamItem[],
+  terminalStatus: "completed" | "failed"
+): CliStreamItem[] {
+  let changed = false;
+  const next = items.map((item) => {
+    if (
+      item.kind === "tool-call" &&
+      (item.status === "pending" || item.status === "running")
+    ) {
+      changed = true;
+      return { ...item, status: terminalStatus };
+    }
+    return item;
+  });
+  return changed ? next : items;
+}
+
 export function handleStreamEvent(
   set: SetFn,
   get: GetFn,
@@ -239,6 +257,13 @@ export function handleStreamEvent(
         status = e.exitCode === 0 ? "done" : "failed";
       }
       exitCode = e.exitCode;
+      // Some adapters (e.g. codebuddy/Hy3) abandon an in-progress tool call and
+      // end the turn without emitting a terminal tool_call_update, leaving the
+      // card spinning forever. Force any dangling tool-call to a terminal status.
+      nextItems = reconcileDanglingToolCalls(
+        nextItems,
+        status === "done" && e.exitCode === 0 ? "completed" : "failed"
+      );
       if (status !== "killed" && e.exitCode !== 0 && !hasUserFacingError(nextItems)) {
         nextItems = appendItems(nextItems, [failureSummaryFor(e.exitCode, parseCtx)]);
       }
