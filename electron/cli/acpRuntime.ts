@@ -99,6 +99,15 @@ const PERMISSION_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 // agent stops emitting session/update frames and the prompt request never
 // settles. Cancel the turn after this much continuous silence.
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+// When the inactivity watchdog fires, probe the agent with a read-only
+// session/list before killing the run. If the agent responds, its main process
+// is alive (most likely blocked on a silent long-running tool such as a
+// sub-agent task) and the run is granted more time. Requires the adapter to
+// implement session/list (advertised in agentCapabilities.sessionCapabilities);
+// adapters that reject the probe are treated as unresponsive. Reprieves are
+// capped so a permanently silent run still gets killed eventually.
+const INACTIVITY_PING_TIMEOUT_MS = 15_000;
+const MAX_INACTIVITY_REPRIEVES = 2;
 
 function writeAcp(
   child: ChildProcessByStdio<Writable, Readable, Readable>,
@@ -177,6 +186,7 @@ export async function runAcpAgent({
   let promptStarted = false;
   let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
   let inactivityFired = false;
+  let inactivityReprieves = 0;
   let promptHadContent = false;
   let turnHadLiveAgentChunk = false;
   let sessionWasResumed = false;
@@ -261,6 +271,67 @@ export async function runAcpAgent({
     appendLog(logStream, "stdin", JSON.stringify(msg));
     writeAcp(child, msg);
   };
+  const probeAgentLiveness = (): Promise<boolean> =>
+    new Promise<boolean>((resolve) => {
+      const probeId = nextId();
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        pending.delete(String(probeId));
+        resolve(false);
+      }, INACTIVITY_PING_TIMEOUT_MS);
+      pending.set(String(probeId), {
+        resolve: () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(true);
+        },
+        reject: () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(false);
+        }
+      });
+      const probeMsg = buildSessionListRequest(probeId);
+      appendLog(logStream, "stdin", JSON.stringify(probeMsg));
+      writeAcp(child, probeMsg);
+    });
+
+  const onInactivityExpired = async () => {
+    if (finished) return;
+    const alive = await probeAgentLiveness();
+    if (finished) return;
+    const minutes = Math.round(INACTIVITY_TIMEOUT_MS / 60000);
+    if (alive && inactivityReprieves < MAX_INACTIVITY_REPRIEVES) {
+      inactivityReprieves += 1;
+      appendLog(
+        logStream,
+        "system",
+        `inactivity after ${INACTIVITY_TIMEOUT_MS}ms; agent responded to liveness probe; continuing (reprieve ${inactivityReprieves}/${MAX_INACTIVITY_REPRIEVES})`
+      );
+      inactivityFired = false;
+      disarmInactivityTimer();
+      armInactivityTimer();
+      return;
+    }
+    appendLog(
+      logStream,
+      "system",
+      `inactivity timeout after ${INACTIVITY_TIMEOUT_MS}ms with no agent output; cancelling`
+    );
+    cancelRun();
+    finish(
+      "failed",
+      -1,
+      alive
+        ? `Agent produced no output for ${minutes} minutes and was still silent after ${MAX_INACTIVITY_REPRIEVES} liveness probes. This usually means a tool spawned a long-running process (for example a dev server or sub-agent) that held the agent's output stream open.`
+        : `Agent produced no output for ${minutes} minutes and did not respond to a liveness probe. This usually means a tool spawned a long-running process (for example a dev server) that held the agent's output stream open.`
+    );
+  };
+
   const armInactivityTimer = () => {
     if (INACTIVITY_TIMEOUT_MS <= 0) return;
     if (inactivityTimer) clearTimeout(inactivityTimer);
@@ -268,19 +339,7 @@ export async function runAcpAgent({
     inactivityTimer = setTimeout(() => {
       if (finished || inactivityFired) return;
       inactivityFired = true;
-      appendLog(
-        logStream,
-        "system",
-        `inactivity timeout after ${INACTIVITY_TIMEOUT_MS}ms with no agent output; cancelling`
-      );
-      cancelRun();
-      finish(
-        "failed",
-        -1,
-        `Agent produced no output for ${Math.round(
-          INACTIVITY_TIMEOUT_MS / 60000
-        )} minutes and was cancelled. This usually means a tool spawned a long-running process (for example a dev server) that held the agent's output stream open.`
-      );
+      void onInactivityExpired();
     }, INACTIVITY_TIMEOUT_MS);
   };
   const disarmInactivityTimer = () => {
@@ -961,6 +1020,7 @@ export async function runAcpAgent({
     promptStarted = true;
     promptHadContent = false;
     turnHadLiveAgentChunk = false;
+    inactivityReprieves = 0;
     // Live generation begins here. Replay suppression (sessionWasResumed) must
     // be confined to the pre-prompt replay phase; keeping it enabled would drop
     // live agent chunks whose text matches a persisted history signature.
