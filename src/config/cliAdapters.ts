@@ -10,6 +10,7 @@ export type CLIAdapterId =
   | "qoder-acp"
   | "codebuddy-acp"
   | "grok-acp"
+  | "agy-acp"
   | (string & {});
 
 export type CLIStreamMode =
@@ -146,6 +147,19 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     installHint:
       "curl -fsSL https://x.ai/cli/install.sh | bash",
     docsUrl: "https://docs.x.ai/build/cli/reference",
+    protocol: "acp"
+  },
+  {
+    id: "agy-acp",
+    label: "Antigravity",
+    defaultBinary: "agy-acp",
+    streamMode: "raw",
+    commandGroup: "antigravity",
+    capabilities: { toolSession: true },
+    toolSessionArgs: [],
+    toolSessionArgPrefixes: [],
+    installHint: "npm install -g agy-acp-bridge",
+    docsUrl: "https://github.com/maojindao55/agy-acp",
     protocol: "acp"
   }
 ];

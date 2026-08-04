@@ -12,6 +12,7 @@ export type CLIAdapterId =
   | "qoder-acp"
   | "codebuddy-acp"
   | "grok-acp"
+  | "agy-acp"
   | (string & {});
 
 export type CLIStreamMode =
@@ -211,6 +212,20 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
         ? "irm https://x.ai/cli/install.ps1 | iex"
         : "curl -fsSL https://x.ai/cli/install.sh | bash",
     docsUrl: "https://docs.x.ai/build/cli/reference",
+    protocol: "acp"
+  },
+  {
+    id: "agy-acp",
+    label: "Antigravity",
+    defaultBinary: "agy-acp",
+    checkProbe: { args: ["--version"], versionOptional: true },
+    streamMode: "raw",
+    commandGroup: "antigravity",
+    capabilities: { toolSession: true, skills: { mode: "native", nativeDirs: [".agents/skills"], reloadPolicy: "process-start" } },
+    toolSessionArgs: [],
+    toolSessionArgPrefixes: [],
+    installHint: "npm install -g agy-acp-bridge",
+    docsUrl: "https://github.com/maojindao55/agy-acp",
     protocol: "acp"
   }
 ];
@@ -540,6 +555,15 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
     }
     case "grok-acp": {
       const args: string[] = [...extra, "agent", "stdio"];
+      return {
+        bin,
+        args,
+        promptViaStdin: false,
+        protocol: "acp"
+      };
+    }
+    case "agy-acp": {
+      const args: string[] = [...extra];
       return {
         bin,
         args,

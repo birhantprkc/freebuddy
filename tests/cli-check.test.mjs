@@ -44,3 +44,10 @@ test("legacy adapters still require a version response", () => {
     versionOptional: false
   });
 });
+
+test("agy-acp checks agy-acp binary probe", () => {
+  assert.deepEqual(getCliCheckProbe("agy-acp"), {
+    args: ["--version"],
+    versionOptional: true
+  });
+});

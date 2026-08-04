@@ -637,6 +637,13 @@ function adapterConfigPaths(adapter: string): string[] {
   if (adapter.includes("grok")) {
     paths.push(path.join(home, ".grok"), path.join(home, ".config", "grok"));
   }
+  if (adapter.includes("agy") || adapter.includes("antigravity")) {
+    paths.push(
+      path.join(home, ".gemini"),
+      path.join(home, ".config", "antigravity"),
+      path.join(home, ".antigravity")
+    );
+  }
   return existing(paths);
 }
 
