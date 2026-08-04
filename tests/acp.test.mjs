@@ -131,7 +131,8 @@ test("visible adapter definitions are ACP-only with product names", () => {
       { id: "kimi-acp", label: "Kimi", protocol: "acp" },
       { id: "qoder-acp", label: "Qoder", protocol: "acp" },
       { id: "codebuddy-acp", label: "CodeBuddy", protocol: "acp" },
-      { id: "grok-acp", label: "Grok", protocol: "acp" }
+      { id: "grok-acp", label: "Grok", protocol: "acp" },
+      { id: "agy-acp", label: "Antigravity", protocol: "acp" }
     ]
   );
 });

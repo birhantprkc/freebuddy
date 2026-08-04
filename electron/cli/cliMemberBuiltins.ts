@@ -61,5 +61,11 @@ export const builtinCliMembers: CLIMember[] = [
     name: "Grok",
     enabled: true,
     cli: { adapter: "grok-acp", approvalMode: "auto", showStderr: true }
+  },
+  {
+    id: "cli-agy-acp",
+    name: "Antigravity",
+    enabled: true,
+    cli: { adapter: "agy-acp", approvalMode: "auto", showStderr: true }
   }
 ];

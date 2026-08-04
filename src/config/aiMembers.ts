@@ -91,5 +91,14 @@ export const builtinCliMembers: CLIMember[] = [
     source: "builtin",
     enabled: true,
     cli: { adapter: "grok-acp", approvalMode: "auto", showStderr: true }
+  },
+  {
+    id: "cli-agy-acp",
+    kind: "cli",
+    name: "Antigravity",
+    description: "Local Antigravity coding agent via ACP.",
+    source: "builtin",
+    enabled: true,
+    cli: { adapter: "agy-acp", approvalMode: "auto", showStderr: true }
   }
 ];
