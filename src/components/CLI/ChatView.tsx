@@ -25,6 +25,7 @@ import {
   pathsEqual
 } from "@/utils/projectPaths";
 import { cliClient } from "@/services/cli/client";
+import { pruneConfigOptionOverrides } from "@/utils/sessionConfigOptions";
 import type {
   AttachmentPrepareRejection,
   ChatAttachment,
@@ -713,6 +714,32 @@ export function ChatView({
   const availableCommands = sessionMeta.commands;
   const sessionConfigOptions = sessionMeta.configOptions;
 
+  // Persist the thought_level candidates an agent reports for each model while
+  // a real conversation runs. The new-task picker probes with the agent's
+  // default model, so model-dependent candidates (e.g. [high, max] on glm-5.2
+  // vs [none, high] on the default) are missing there until this backfills
+  // them — without spawning an extra probe per model.
+  useEffect(() => {
+    const agentId = conv?.agentId;
+    if (!agentId) return;
+    const modelOption = sessionConfigOptions.find(
+      (option) => option.id === "model" || option.category === "model"
+    );
+    const thoughtOption = sessionConfigOptions.find(
+      (option) =>
+        option.category === "thought_level" || option.id === "thought_level"
+    );
+    const modelId = modelOption?.currentValue;
+    const values = thoughtOption?.values;
+    if (!modelId || !values || values.length === 0) return;
+    void cliClient
+      .setSetting(
+        `seen-thought-level:${agentId}:${modelId}`,
+        JSON.stringify(values)
+      )
+      .catch(() => {});
+  }, [conv?.agentId, sessionConfigOptions]);
+
   const slashDraft = useMemo(() => parseSlashDraft(draft), [draft]);
   const projects = useProjectStore((s) => s.projects);
   const conversationProject = useMemo(() => {
@@ -1072,6 +1099,53 @@ export function ChatView({
       };
       setNewTaskConfigLoading(true);
       void (async () => {
+        const restoreLastOverrides = async (opts: SessionConfigOption[]) => {
+          if (opts.length === 0) return;
+          try {
+            const raw = await cliClient.getSetting(
+              `last-session-config:${selectedMember.id}`
+            );
+            if (newTaskConfigProbeGenerationRef.current !== generation) return;
+            if (!raw) return;
+            const stored = JSON.parse(raw) as Record<string, string>;
+            // The probe ran with the agent's default model, so model-dependent
+            // candidates (e.g. thought_level [high, max] on glm-5.2 vs
+            // [none, high] on the default) are wrong until we substitute the
+            // values seen for the remembered model in a real conversation.
+            let effective = opts;
+            if (stored.model) {
+              try {
+                const seenRaw = await cliClient.getSetting(
+                  `seen-thought-level:${selectedMember.id}:${stored.model}`
+                );
+                if (newTaskConfigProbeGenerationRef.current !== generation) return;
+                if (seenRaw) {
+                  const seen = JSON.parse(seenRaw) as {
+                    id: string;
+                    name?: string;
+                  }[];
+                  if (Array.isArray(seen) && seen.length > 0) {
+                    effective = opts.map((option) =>
+                      option.category === "thought_level" ||
+                      option.id === "thought_level"
+                        ? { ...option, values: seen }
+                        : option
+                    );
+                    setNewTaskConfigOptions(effective);
+                  }
+                }
+              } catch {
+                /* ignore: seen-values lookup is best-effort */
+              }
+            }
+            const restored = pruneConfigOptionOverrides(stored, effective);
+            if (Object.keys(restored).length > 0) {
+              setNewTaskConfigOptionOverrides(restored);
+            }
+          } catch {
+            /* ignore: best-effort restore */
+          }
+        };
         let hasCachedOptions = false;
         try {
           const cached = await cliClient.getCachedSessionConfigOptions(probeInput);
@@ -1080,11 +1154,15 @@ export function ChatView({
             hasCachedOptions = true;
             setNewTaskConfigOptions(cached);
             setNewTaskConfigLoading(false);
+            void restoreLastOverrides(cached);
           }
 
           const fresh = await cliClient.inspectSessionConfigOptions(probeInput);
           if (newTaskConfigProbeGenerationRef.current !== generation) return;
-          if (fresh.length > 0) setNewTaskConfigOptions(fresh);
+          if (fresh.length > 0) {
+            setNewTaskConfigOptions(fresh);
+            void restoreLastOverrides(fresh);
+          }
         } catch {
           if (
             newTaskConfigProbeGenerationRef.current === generation &&
@@ -1846,7 +1924,50 @@ export function ChatView({
           void checkAgentEntries(agentEntriesNeedingRefresh(agentAvailability))
         }
         onManageAgents={() => onOpenAgentSettings?.()}
-        onConfigOptionOverrides={setNewTaskConfigOptionOverrides}
+        onConfigOptionOverrides={(next) => {
+          const prevModel = newTaskConfigOptionOverrides.model;
+          setNewTaskConfigOptionOverrides(next);
+          const member = members.find((entry) => entry.id === selectedMemberId);
+          if (member) {
+            void cliClient
+              .setSetting(
+                `last-session-config:${member.id}`,
+                JSON.stringify(next)
+              )
+              .catch(() => {});
+          }
+          // Picking a model changes which thought_level candidates are valid.
+          // The probe ran with the default model, so substitute the values seen
+          // for the chosen model in a real conversation (best-effort, no probe).
+          if (
+            next.model &&
+            next.model !== prevModel &&
+            newTaskConfigOptions.length > 0
+          ) {
+            void cliClient
+              .getSetting(`seen-thought-level:${selectedMemberId}:${next.model}`)
+              .then((raw) => {
+                if (!raw) return;
+                let seen: { id: string; name?: string }[] = [];
+                try {
+                  const parsed = JSON.parse(raw);
+                  if (Array.isArray(parsed)) seen = parsed;
+                } catch {
+                  return;
+                }
+                if (seen.length === 0) return;
+                setNewTaskConfigOptions((prev) =>
+                  prev.map((option) =>
+                    option.category === "thought_level" ||
+                    option.id === "thought_level"
+                      ? { ...option, values: seen }
+                      : option
+                  )
+                );
+              })
+              .catch(() => {});
+          }
+        }}
         onSkills={setNewTaskSkillIds}
         onCwd={(cwd) => {
           setNewTaskCwd(cwd);
