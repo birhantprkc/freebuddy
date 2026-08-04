@@ -90,6 +90,36 @@ test("ACP turns are cancelled when the agent stops producing output", () => {
   );
 });
 
+test("ACP inactivity watchdog probes liveness before cancelling and caps reprieves", () => {
+  // Before killing a silent run, the runtime sends a read-only session/list
+  // probe. A responsive agent gets extra time (reprieve); an unresponsive one
+  // or one that exhausted reprieves is still cancelled.
+  assert.match(acpRuntimeSource, /const probeAgentLiveness/);
+  assert.match(acpRuntimeSource, /buildSessionListRequest\(probeId\)/);
+  assert.match(acpRuntimeSource, /INACTIVITY_PING_TIMEOUT_MS/);
+  assert.match(acpRuntimeSource, /MAX_INACTIVITY_REPRIEVES/);
+  // Reprieve path increments a counter and re-arms the timer instead of
+  // cancelling, so a silent-but-alive sub-agent task isn't killed immediately.
+  assert.match(acpRuntimeSource, /inactivityReprieves \+= 1/);
+  assert.match(
+    acpRuntimeSource,
+    /inactivityFired = false;\s*\n\s*disarmInactivityTimer\(\);\s*\n\s*armInactivityTimer\(\);/
+  );
+  // Reprieves reset per prompt turn.
+  const promptBodyIndex = acpRuntimeSource.indexOf("const runPromptOnSession");
+  const promptBody = acpRuntimeSource.slice(
+    promptBodyIndex,
+    acpRuntimeSource.indexOf("};", acpRuntimeSource.indexOf("armInactivityTimer();", promptBodyIndex)) + 2
+  );
+  assert.match(promptBody, /inactivityReprieves = 0/);
+  // The kill path is preserved (probe timed out / unsupported, or reprieves
+  // exhausted) and still tears the run down via cancel+finish.
+  assert.match(
+    acpRuntimeSource,
+    /inactivity timeout after [\s\S]*?cancelRun\(\);[\s\S]*?finish\(\s*"failed"/
+  );
+});
+
 test("CLI runtime records the approval mode with each task start", () => {
   assert.match(runtimeSource, /approvalMode: args\.approvalMode \?\? "default"/);
 });
