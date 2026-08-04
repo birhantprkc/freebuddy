@@ -11929,10 +11929,15 @@ button.ghost:disabled {
 
 .plan-card {
   display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
+  min-height: 240px;
+  flex: 1 1 240px;
   flex-direction: column;
   overflow: hidden;
+}
+
+.workspace-cards > .info-data-card,
+.workspace-cards > .feed-card {
+  flex: 0 0 auto;
 }
 
 .plan-list {
