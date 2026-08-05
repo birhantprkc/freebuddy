@@ -4,52 +4,45 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to rebuild or publish (for example, v1.2.3)
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Create release notes
+        run: node scripts/release-notes.mjs --version "${{ env.RELEASE_TAG }}" --output .release-notes.md
+
       - name: Create draft release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release create "${{ github.ref_name }}" \
+          if ! gh release view "${{ env.RELEASE_TAG }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "${{ env.RELEASE_TAG }}" \
               --repo "${{ github.repository }}" \
-              --title "FreeBuddy ${{ github.ref_name }}" \
+              --title "FreeBuddy ${{ env.RELEASE_TAG }}" \
               --draft \
-              --notes "## 下载安装包
-
-          | 平台 | 文件 | 说明 |
-          |------|------|------|
-          | macOS Apple Silicon | \`FreeBuddy_macOS-Apple-Silicon-${{ github.ref_name }}.dmg\` | M 系列芯片 Mac |
-          | macOS Intel | \`FreeBuddy_macOS-Intel-${{ github.ref_name }}.dmg\` | Intel 芯片 Mac |
-          | Windows | \`FreeBuddy_Windows_x64-${{ github.ref_name }}.exe\` | Windows 10/11 64 位 |
-          | Ubuntu / Debian (x64) | \`FreeBuddy_Ubuntu_x64-${{ github.ref_name }}.deb\` | Ubuntu 22.04/24.04 及 Debian 系发行版 |
-          | Linux AppImage (x64) | \`FreeBuddy_Linux_x64-${{ github.ref_name }}.AppImage\` | 免安装的通用 Linux 包 |
-
-          ## macOS 安装提示
-          如果提示无法打开，请在终端执行：
-          \`\`\`bash
-          xattr -cr /Applications/FreeBuddy.app
-          \`\`\`
-
-          ## Windows 安装提示
-          如果 SmartScreen 弹出警告，点击「更多信息」后选择「仍要运行」。
-
-          ## Ubuntu / Linux 安装提示
-          Ubuntu / Debian 推荐安装 DEB：
-          \`\`\`bash
-          sudo apt install ./FreeBuddy_Ubuntu_x64-${{ github.ref_name }}.deb
-          \`\`\`
-          AppImage 下载后可直接授权运行：
-          \`\`\`bash
-          chmod +x FreeBuddy_Linux_x64-${{ github.ref_name }}.AppImage
-          ./FreeBuddy_Linux_x64-${{ github.ref_name }}.AppImage
-          \`\`\`"
+              --notes-file .release-notes.md
           fi
 
   build:
@@ -91,6 +84,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -138,7 +133,7 @@ jobs:
               exit 1
             fi
             cp "$FILE" "$asset_name"
-            gh release upload "${{ github.ref_name }}" "$asset_name" \
+            gh release upload "${{ env.RELEASE_TAG }}" "$asset_name" \
               --repo "${{ github.repository }}" --clobber
           done <<'ASSETS'
           ${{ matrix.assets }}
@@ -150,7 +145,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          tag="${{ github.ref_name }}"
+          tag="${{ env.RELEASE_TAG }}"
           repo="${{ github.repository }}"
           version_suffix="v$(node -p "require('./package.json').version")"
           arm_dmg="FreeBuddy_macOS-Apple-Silicon-${version_suffix}.dmg"
@@ -212,7 +207,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          tag="${{ github.ref_name }}"
+          tag="${{ env.RELEASE_TAG }}"
           repo="${{ github.repository }}"
           version_suffix="v$(node -p "require('./package.json').version")"
           appimage_name="FreeBuddy_Linux_x64-${version_suffix}.AppImage"
@@ -259,7 +254,7 @@ jobs:
               exit 1
             }
             Copy-Item $file.FullName $assetName
-            gh release upload "${{ github.ref_name }}" $assetName `
+            gh release upload "${{ env.RELEASE_TAG }}" $assetName `
               --repo "${{ github.repository }}" --clobber
           }
 
@@ -269,7 +264,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = "${{ env.RELEASE_TAG }}"
           $repo = "${{ github.repository }}"
           $appVersion = (Get-Content package.json | ConvertFrom-Json).version
           $windowsAssetName = "FreeBuddy_Windows_x64-v$appVersion.exe"
@@ -297,6 +292,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -309,7 +306,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ github.ref_name }}"
+          tag="${{ env.RELEASE_TAG }}"
           repo="${{ github.repository }}"
           mkdir -p _mac_meta
           gh release download "$tag" --repo "$repo" \
@@ -334,7 +331,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release edit "${{ github.ref_name }}" \
+          gh release edit "${{ env.RELEASE_TAG }}" \
             --repo "${{ github.repository }}" \
             --draft=false \
             --latest
