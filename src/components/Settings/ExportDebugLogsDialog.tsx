@@ -2,13 +2,16 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useDebugLogsDialogStore } from "@/store/debugLogsDialogStore";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
+import { useNewTaskUiStore } from "@/store/newTaskUiStore";
+import { useConversationStore } from "@/store/conversationStore";
+import {
+  buildAgentLogSelfCheckPrompt,
+  type AgentLogSelfCheckPreview
+} from "@/utils/agentLogSelfCheck";
 
-type Mode = "standard" | "full";
+type Mode = "agent" | "standard" | "full";
 
-interface Preview {
-  environment: Record<string, unknown>;
-  files: Array<{ name: string; totalLines: number; lines: string[]; truncated: boolean }>;
-}
+type Preview = AgentLogSelfCheckPreview;
 
 // Electron wraps ipcRenderer.invoke rejections, e.g.
 // "Error invoking remote method 'debugLogs:export': Error: Export failed: <cause>".
@@ -20,8 +23,12 @@ function unwrapInvokeError(err: unknown): string {
 }
 
 export function ExportDebugLogsDialog() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const open = useDebugLogsDialogStore((s) => s.open);
+  const conversations = useConversationStore((s) => s.conversations);
+  const setActiveConversation = useConversationStore((s) => s.setActive);
+  const requestNewTask = useNewTaskUiStore((s) => s.requestNewTask);
+  const setTaskMode = useNewTaskUiStore((s) => s.setTaskMode);
   const setOpen = useDebugLogsDialogStore((s) => s.setOpen);
   const conversationId = useDebugLogsDialogStore((s) => s.conversationId);
   const notify = useAgentBridgeStore((s) => s.notify);
@@ -34,12 +41,11 @@ export function ExportDebugLogsDialog() {
   const [busy, setBusy] = useState(false);
   const [prevOpen, setPrevOpen] = useState(open);
 
-  // Reset to the privacy-safe mode whenever the dialog is (re)opened. Done
-  // during render so the preview effect below fires exactly once per open,
-  // already with the "standard" mode.
+  // Conversation-scoped exports default to Agent self-check. Other entry
+  // points keep the privacy-safe standard export as their default.
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (open) setMode("standard");
+    if (open) setMode(conversationId ? "agent" : "standard");
   }
 
   useEffect(() => {
@@ -48,6 +54,7 @@ export function ExportDebugLogsDialog() {
     dialogRef.current?.focus();
     return () => previousFocusRef.current?.focus();
   }, [open]);
+  const previewMode = mode === "standard" ? "standard" : "full";
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +67,7 @@ export function ExportDebugLogsDialog() {
       return;
     }
     api
-      .preview(mode, conversationId ? { conversationId } : undefined)
+      .preview(previewMode, conversationId ? { conversationId } : undefined)
       .then((p) => {
         if (!cancelled) setPreview(p as Preview);
       })
@@ -73,7 +80,7 @@ export function ExportDebugLogsDialog() {
     return () => {
       cancelled = true;
     };
-  }, [open, mode, conversationId]);
+  }, [open, previewMode, conversationId]);
 
   if (!open) return null;
 
@@ -82,6 +89,7 @@ export function ExportDebugLogsDialog() {
   };
 
   const doExport = async () => {
+    if (mode === "agent") return;
     setBusy(true);
     try {
       const result = await window.freebuddy?.debugLogs?.export(
@@ -94,6 +102,38 @@ export function ExportDebugLogsDialog() {
       }
     } catch (err) {
       notify(t("debugLogs.error", { message: unwrapInvokeError(err) }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doSelfCheck = async () => {
+    if (!conversationId) return;
+    const sourceConversation = conversations.find(
+      (entry) => entry.id === conversationId
+    );
+    if (!sourceConversation) return;
+
+    setBusy(true);
+    try {
+      const debugLogs = window.freebuddy?.debugLogs;
+      if (!debugLogs) {
+        throw new Error("debug log API is unavailable");
+      }
+      const prepared = await debugLogs.prepareSelfCheck({ conversationId });
+
+      const prompt = buildAgentLogSelfCheckPrompt({
+        conversation: sourceConversation,
+        logDirectory: prepared.path,
+        language: i18n.resolvedLanguage ?? i18n.language
+      });
+      setTaskMode("normal");
+      requestNewTask({ cwd: prepared.path, draft: prompt });
+      setOpen(false);
+      await setActiveConversation(undefined);
+      notify(t("debugLogs.selfCheckReady"));
+    } catch (err) {
+      notify(t("debugLogs.selfCheckError", { message: unwrapInvokeError(err) }));
     } finally {
       setBusy(false);
     }
@@ -146,6 +186,21 @@ export function ExportDebugLogsDialog() {
         )}
 
         <div className="debug-logs-modes">
+          {conversationId && (
+            <label className="debug-logs-mode">
+              <input
+                type="radio"
+                name="debug-logs-mode"
+                checked={mode === "agent"}
+                disabled={busy}
+                onChange={() => setMode("agent")}
+              />
+              <span>
+                <strong>{t("debugLogs.modeAgent")}</strong>
+                <small>{t("debugLogs.modeAgentHint")}</small>
+              </span>
+            </label>
+          )}
           <label className="debug-logs-mode">
             <input
               type="radio"
@@ -220,9 +275,11 @@ export function ExportDebugLogsDialog() {
             type="button"
             className="primary-btn"
             disabled={busy}
-            onClick={() => void doExport()}
+            onClick={() => void (mode === "agent" ? doSelfCheck() : doExport())}
           >
-            {busy ? t("debugLogs.exporting") : t("debugLogs.export")}
+            {busy
+              ? t(mode === "agent" ? "debugLogs.selfChecking" : "debugLogs.exporting")
+              : t(mode === "agent" ? "debugLogs.selfCheck" : "debugLogs.export")}
           </button>
         </div>
       </div>

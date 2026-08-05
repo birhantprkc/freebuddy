@@ -1,7 +1,11 @@
 import { ipcMain, BrowserWindow, dialog, shell, type IpcMainInvokeEvent } from "electron";
 import { registerHandler } from "../invokeRegistry.js";
 import { appendRendererLogEntries } from "../debugLog.js";
-import { buildDebugLogPreview, exportDebugLogs } from "../debugLogExport.js";
+import {
+  buildDebugLogPreview,
+  exportDebugLogs,
+  prepareAgentSelfCheckLogs
+} from "../debugLogExport.js";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -592,6 +596,13 @@ export function registerCliIpc() {
       typeof conversationId === "string" ? conversationId : undefined
     )
   );
+  registerHandler("debugLogs:prepareSelfCheck", (_event, conversationId: unknown) => {
+    if (typeof conversationId !== "string" || conversationId.trim().length === 0) {
+      throw new Error("conversation id is required");
+    }
+    return prepareAgentSelfCheckLogs(conversationId);
+  });
+
   registerHandler("debugLogs:export", (event, mode: unknown, conversationId: unknown) => {
     const win = event.sender ? BrowserWindow.fromWebContents(event.sender) : null;
     if (!win) throw new Error("no window");

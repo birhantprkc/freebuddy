@@ -186,6 +186,7 @@ const DENY = [
   // Debug log export is desktop-only (privacy).
   "debugLog:write",
   "debugLogs:preview",
+  "debugLogs:prepareSelfCheck",
   "debugLogs:export",
 
   // Native dialogs and shell integration have no meaning off-device.
