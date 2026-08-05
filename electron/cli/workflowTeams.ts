@@ -161,7 +161,8 @@ function mergeBuiltinRoles(
       ...(savedRole?.model ? { model: savedRole.model } : {}),
       ...(savedRole?.modelOptionId
         ? { modelOptionId: savedRole.modelOptionId }
-        : {})
+        : {}),
+      skillIds: savedRole?.skillIds ?? role.skillIds
     };
   });
 }
