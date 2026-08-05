@@ -9,7 +9,19 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { bumpVersion, validateSemver, parseReleaseArgs, RELEASE_HELP } from "./release-lib.mjs";
+import {
+  bumpVersion,
+  hasOnlyAllowedWorkingTreeChange,
+  validateSemver,
+  parseReleaseArgs,
+  RELEASE_HELP
+} from "./release-lib.mjs";
+import {
+  formatChangelogSection,
+  formatReleaseNotes,
+  groupCommitSubjects,
+  prependChangelogSection
+} from "./changelog-lib.mjs";
 
 const rootDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 process.chdir(rootDir);
@@ -22,10 +34,49 @@ function gitQuiet(args) {
   git(args, { stdio: "ignore" });
 }
 
-function getLatestTagVersion() {
+function getRepositoryRelativePath(filePath) {
+  if (!filePath) return "";
+  const relativePath = path.relative(rootDir, path.resolve(rootDir, filePath));
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) return "";
+  return relativePath.split(path.sep).join("/");
+}
+
+function getLatestTag() {
   const out = git(["tag", "-l", "v[0-9]*.[0-9]*.[0-9]*", "--sort=-v:refname"], { stdio: ["ignore", "pipe", "ignore"] });
   const latest = out.split(/\r?\n/).find((l) => l.trim().length > 0);
-  return latest ? latest.replace(/^v/, "") : "0.0.0";
+  return latest || "";
+}
+
+function getCommitSubjectsSince(tag) {
+  const range = tag ? `${tag}..HEAD` : "HEAD";
+  return git(["log", "--no-merges", "--format=%s", range], { stdio: ["ignore", "pipe", "ignore"] })
+    .split(/\r?\n/)
+    .filter(Boolean);
+}
+
+function readReleaseNotes(notesFile, latestTag) {
+  if (notesFile) {
+    const notesPath = path.resolve(rootDir, notesFile);
+    if (!fs.existsSync(notesPath)) {
+      throw new Error(`找不到变更说明文件: ${notesFile}`);
+    }
+    const notes = fs.readFileSync(notesPath, "utf8").trim();
+    if (!notes) throw new Error(`变更说明文件为空: ${notesFile}`);
+    return notes;
+  }
+
+  const notes = formatReleaseNotes(groupCommitSubjects(getCommitSubjectsSince(latestTag)));
+  return notes || "### 其他更新\n\n- 常规维护与稳定性改进";
+}
+
+function updateChangelog(version, notes) {
+  const changelogPath = path.join(rootDir, "CHANGELOG.md");
+  const existing = fs.existsSync(changelogPath)
+    ? fs.readFileSync(changelogPath, "utf8")
+    : "# Changelog\n";
+  const date = new Date().toISOString().slice(0, 10);
+  const section = formatChangelogSection({ version, date, notes });
+  fs.writeFileSync(changelogPath, prependChangelogSection(existing, section));
 }
 
 function updateVersionFiles(version) {
@@ -89,8 +140,8 @@ async function main() {
     process.exit(1);
   }
 
-  const porcelain = git(["status", "--porcelain"], { stdio: ["ignore", "pipe", "ignore"] });
-  if (porcelain.trim().length > 0) {
+  const porcelain = git(["status", "--porcelain=v1", "-z"], { stdio: ["ignore", "pipe", "ignore"] });
+  if (porcelain.length > 0 && !hasOnlyAllowedWorkingTreeChange(porcelain, getRepositoryRelativePath(opts.notesFile))) {
     console.error("工作区有未提交的改动，请先 commit 或 stash：");
     console.error(git(["status", "--short"]));
     process.exit(1);
@@ -106,7 +157,8 @@ async function main() {
 
   gitQuiet(["fetch", "origin", "--tags", "--quiet"]);
 
-  const latestVersion = getLatestTagVersion();
+  const latestTag = getLatestTag();
+  const latestVersion = latestTag ? latestTag.replace(/^v/, "") : "0.0.0";
   const newVersion = opts.explicitVersion || bumpVersion(latestVersion, opts.bumpType);
   validateSemver(newVersion);
   const newTag = `v${newVersion}`;
@@ -124,13 +176,18 @@ async function main() {
     process.exit(1);
   }
 
+  const releaseNotes = readReleaseNotes(opts.notesFile, latestTag);
+
   console.log("");
   console.log("发布预览");
   console.log(`  当前最新 tag : v${latestVersion}`);
   console.log(`  新版本       : ${newVersion}`);
   console.log(`  新 tag       : ${newTag}`);
   console.log(`  分支         : ${currentBranch}`);
-  console.log("  将更新文件   : package.json, package-lock.json, desktop/macos/Info.plist");
+  console.log("  将更新文件   : package.json, package-lock.json, desktop/macos/Info.plist, CHANGELOG.md");
+  console.log("");
+  console.log("变更说明预览");
+  console.log(releaseNotes);
   console.log("");
 
   if (!opts.skipConfirm && !opts.dryRun) {
@@ -141,7 +198,7 @@ async function main() {
   }
 
   const steps = [
-    ["git add package.json package-lock.json desktop/macos/Info.plist", () => gitQuiet(["add", "package.json", "package-lock.json", "desktop/macos/Info.plist"])],
+    ["git add package.json package-lock.json desktop/macos/Info.plist CHANGELOG.md", () => gitQuiet(["add", "package.json", "package-lock.json", "desktop/macos/Info.plist", "CHANGELOG.md"])],
     [`git commit -m "chore: release ${newTag}"`, () => gitQuiet(["commit", "-m", `chore: release ${newTag}`])],
     [`git tag ${newTag}`, () => gitQuiet(["tag", newTag])],
     [`git push origin ${currentBranch}`, () => gitQuiet(["push", "origin", currentBranch])],
@@ -149,12 +206,13 @@ async function main() {
   ];
 
   if (opts.dryRun) {
-    console.log(`[dry-run] 将更新 package.json, package-lock.json, desktop/macos/Info.plist → ${newVersion}`);
+    console.log(`[dry-run] 将更新 package.json, package-lock.json, desktop/macos/Info.plist, CHANGELOG.md → ${newVersion}`);
     run(steps, true);
     console.log("");
     console.log("[dry-run] 完成，未实际修改仓库。");
   } else {
     updateVersionFiles(newVersion);
+    updateChangelog(newVersion, releaseNotes);
     run(steps, false);
     console.log("");
     console.log(`发布完成: ${newTag}`);

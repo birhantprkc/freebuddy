@@ -37,6 +37,12 @@ test("electron-builder config packages FreeBuddy for desktop platforms", () => {
 test("release workflow uploads version-suffixed assets and update metadata for every platform", () => {
   assert.match(workflow, /name:\s+Release/);
   assert.match(workflow, /tags:\s+\['v\*'\]/);
+  assert.match(workflow, /workflow_dispatch:[\s\S]*inputs:[\s\S]*tag:[\s\S]*required:\s+true/);
+  assert.match(workflow, /RELEASE_TAG:\s+\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.tag \|\| github\.ref_name \}\}/);
+  assert.match(workflow, /ref:\s+\$\{\{ env\.RELEASE_TAG \}\}/);
+  assert.match(workflow, /Create release notes/);
+  assert.match(workflow, /node scripts\/release-notes\.mjs --version "\$\{\{ env\.RELEASE_TAG \}\}"/);
+  assert.match(workflow, /--notes-file \.release-notes\.md/);
   assert.match(workflow, /FreeBuddy_macOS-Apple-Silicon-__VERSION__\.dmg/);
   assert.match(workflow, /FreeBuddy_macOS-Apple-Silicon-__VERSION__\.zip/);
   assert.match(workflow, /FreeBuddy_macOS-Intel-__VERSION__\.dmg/);
