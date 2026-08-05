@@ -1102,6 +1102,50 @@ export function acpSessionListToItems(
   return match ? acpSessionSetupToItems(sessionId, match) : [];
 }
 
+/**
+ * Reads `update._meta.codex.error`, the structured channel codex-acp uses to
+ * relay retryable upstream gateway errors (e.g. HTTP 422 from the model
+ * endpoint). Without this, the error is invisible until retries are exhausted,
+ * at which point the raw error body is emitted as an `agent_message_chunk`
+ * and rendered as if it were an assistant reply (see codex-acp issues #340
+ * and #355). The message is intentionally stable across retry attempts so
+ * adjacent identical error items collapse into one UI entry
+ * (see conversationUtils.ts adjacent-error dedupe).
+ */
+function codexMetaErrorToItems(meta: unknown): AcpStreamItem[] {
+  if (!meta || typeof meta !== "object") return [];
+  const codex = (meta as { codex?: { error?: unknown } }).codex;
+  const error = codex?.error;
+  if (!error || typeof error !== "object") return [];
+  const e = error as {
+    message?: unknown;
+    additionalDetails?: unknown;
+    codexErrorInfo?: unknown;
+    willRetry?: unknown;
+  };
+  const info = e.codexErrorInfo as
+    | { responseStreamDisconnected?: { httpStatusCode?: unknown } }
+    | undefined;
+  const httpStatus = info?.responseStreamDisconnected?.httpStatusCode;
+  const message = typeof e.message === "string" ? e.message : "";
+  const additionalDetails =
+    typeof e.additionalDetails === "string" ? e.additionalDetails : "";
+  const attemptMatch = message.match(/(\d+)\s*\/\s*\d+/);
+  const attempt = attemptMatch ? attemptMatch[1] : undefined;
+
+  const statusText = typeof httpStatus === "number" ? ` (HTTP ${httpStatus})` : "";
+  const headline = `Upstream gateway error${statusText}`;
+  const subline =
+    e.willRetry === false
+      ? "codex gave up after retries; the turn did not complete."
+      : "codex is retrying the request…";
+  const details: string[] = [];
+  if (attempt) details.push(`Retry attempt ${attempt}.`);
+  if (message) details.push(message);
+  if (additionalDetails) details.push(additionalDetails);
+  return [{ kind: "error", message: `${headline} — ${subline}`, details }];
+}
+
 export function acpUpdateToItems(
   update: any,
   fallbackSessionId?: string
@@ -1190,14 +1234,18 @@ export function acpUpdateToItems(
         typeof update.updatedAt === "string" && update.updatedAt
           ? update.updatedAt
           : undefined;
-      if (!sessionId && !title && !updatedAt) return [];
-      const item: Extract<AcpStreamItem, { kind: "session" }> = {
-        kind: "session",
-        sessionId: sessionId ? String(sessionId) : String(fallbackSessionId ?? "")
-      };
-      if (title) item.title = title;
-      if (updatedAt) item.updatedAt = updatedAt;
-      return [item];
+      const items: AcpStreamItem[] = [];
+      if (sessionId || title || updatedAt) {
+        const item: Extract<AcpStreamItem, { kind: "session" }> = {
+          kind: "session",
+          sessionId: sessionId ? String(sessionId) : String(fallbackSessionId ?? "")
+        };
+        if (title) item.title = title;
+        if (updatedAt) item.updatedAt = updatedAt;
+        items.push(item);
+      }
+      items.push(...codexMetaErrorToItems(update?._meta));
+      return items;
     }
     case "usage_update":
       return [

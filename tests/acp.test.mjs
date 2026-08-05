@@ -716,6 +716,118 @@ test("acpUpdateToItems maps session metadata, commands and config options", () =
   );
 });
 
+test("acpUpdateToItems surfaces codex _meta.codex.error retryable gateway errors", () => {
+  // Real shape from codex-acp 1.1.7 when an upstream gateway returns HTTP 422
+  // and codex begins its Reconnecting 1..5 retry loop (issues #340 / #355).
+  const retrying = acpUpdateToItems({
+    sessionUpdate: "session_info_update",
+    sessionId: "019fcd3a-5586-7932-8860-b6fb71aafbfd",
+    _meta: {
+      codex: {
+        error: {
+          message: "Reconnecting... 1/5",
+          additionalDetails:
+            "unexpected status 422 Unprocessable Entity: content input null",
+          codexErrorInfo: {
+            responseStreamDisconnected: { httpStatusCode: 422 }
+          },
+          willRetry: true
+        }
+      }
+    }
+  });
+  assert.deepEqual(retrying, [
+    {
+      kind: "session",
+      sessionId: "019fcd3a-5586-7932-8860-b6fb71aafbfd"
+    },
+    {
+      kind: "error",
+      message: "Upstream gateway error (HTTP 422) — codex is retrying the request…",
+      details: [
+        "Retry attempt 1.",
+        "Reconnecting... 1/5",
+        "unexpected status 422 Unprocessable Entity: content input null"
+      ]
+    }
+  ]);
+
+  // No session fields, only the structured error: still emit the error item
+  // so retries never render as silent assistant replies.
+  const errorOnly = acpUpdateToItems({
+    sessionUpdate: "session_info_update",
+    _meta: {
+      codex: {
+        error: {
+          message: "Reconnecting... 5/5",
+          additionalDetails: "unexpected status 422 Unprocessable Entity",
+          codexErrorInfo: {
+            responseStreamDisconnected: { httpStatusCode: 422 }
+          },
+          willRetry: false
+        }
+      }
+    }
+  });
+  assert.deepEqual(errorOnly, [
+    {
+      kind: "error",
+      message:
+        "Upstream gateway error (HTTP 422) — codex gave up after retries; the turn did not complete.",
+      details: [
+        "Retry attempt 5.",
+        "Reconnecting... 5/5",
+        "unexpected status 422 Unprocessable Entity"
+      ]
+    }
+  ]);
+
+  // Stable headline across retry attempts: attempt 1 and 2 produce the same
+  // message so downstream adjacent-error dedupe collapses them into one entry.
+  const attempt1 = acpUpdateToItems({
+    sessionUpdate: "session_info_update",
+    _meta: {
+      codex: {
+        error: {
+          message: "Reconnecting... 1/5",
+          codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 422 } },
+          willRetry: true
+        }
+      }
+    }
+  });
+  const attempt2 = acpUpdateToItems({
+    sessionUpdate: "session_info_update",
+    _meta: {
+      codex: {
+        error: {
+          message: "Reconnecting... 2/5",
+          codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 422 } },
+          willRetry: true
+        }
+      }
+    }
+  });
+  assert.equal(attempt1[0].message, attempt2[0].message);
+
+  // Non-codex _meta (or missing error) is ignored — backward compatible.
+  assert.deepEqual(
+    acpUpdateToItems({
+      sessionUpdate: "session_info_update",
+      sessionId: "s1",
+      _meta: { kimi: { session: { title: "hi" } } }
+    }),
+    [{ kind: "session", sessionId: "s1" }]
+  );
+  assert.deepEqual(
+    acpUpdateToItems({
+      sessionUpdate: "session_info_update",
+      sessionId: "s1"
+    }),
+    [{ kind: "session", sessionId: "s1" }]
+  );
+});
+
 test("buildPromptContentBlocks maps text and resource links for attachments", () => {
   assert.deepEqual(buildPromptContentBlocks("hello"), [{ type: "text", text: "hello" }]);
   const blocks = buildPromptContentBlocks("see file", [
