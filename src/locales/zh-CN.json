@@ -665,6 +665,8 @@
     "removeAttachmentAria": "移除 {{name}}",
     "dropAttachmentsHint": "释放以添加附件",
     "newTaskAria": "新建任务",
+    "unreadConversations": "未读对话",
+    "unreadConversationsAria": "未读对话",
     "commonTasksAria": "常用任务",
     "titlebarMore": "更多操作",
     "replay": {

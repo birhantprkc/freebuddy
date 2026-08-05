@@ -666,6 +666,8 @@
     "removeAttachmentAria": "Remove {{name}}",
     "dropAttachmentsHint": "Drop to add attachments",
     "newTaskAria": "New task",
+    "unreadConversations": "Unread conversations",
+    "unreadConversationsAria": "Unread conversations",
     "commonTasksAria": "Common tasks",
     "titlebarMore": "More actions",
     "replay": {

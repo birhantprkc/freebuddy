@@ -503,10 +503,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
     set({ members, conversations: synced.conversations });
     const cur = get().activeId;
+    // Keep startup on the new-task page: do not auto-open the latest conversation.
+    // Only clear activeId when a previously selected conversation no longer exists.
     if (cur && !list.find((c) => c.id === cur)) {
-      set({ activeId: list[0]?.id });
-    } else if (!cur && list.length) {
-      set({ activeId: list[0].id });
+      set({ activeId: undefined });
     }
     const active = get().activeId;
     if (active) get().markConversationRead(active);

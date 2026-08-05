@@ -78,6 +78,7 @@ import {
 import { SessionConfigPicker } from "./SessionConfigPicker";
 import { ComposerAddMenu } from "./ComposerAddMenu";
 import { AgentPicker } from "./AgentPicker";
+import { NewTaskUnreadConversations } from "./NewTaskUnreadConversations";
 import { HostDirectoryPicker } from "./HostDirectoryPicker";
 import { useSkillStore } from "@/store/skillStore";
 import { useAttachmentImport } from "@/hooks/useAttachmentImport";
@@ -2678,6 +2679,7 @@ function NewTaskHome({
 
         {preflightMsg && <div className="preflight-warn new-task-warn">{preflightMsg}</div>}
       </section>
+      <NewTaskUnreadConversations />
       </div>
       {workspacePickerOpen && (
         <HostDirectoryPicker
