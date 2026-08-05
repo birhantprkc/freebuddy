@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { LoaderCircle, MessageSquare } from "lucide-react";
+import { ChevronRight, Folder, LoaderCircle, MessageSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { displayAgentName } from "@/config/agentDisplay";
@@ -16,8 +16,28 @@ import {
 
 const UNREAD_PREVIEW_LIMIT = 3;
 
+function formatRelativeActivity(timestampMs: number, locale: string): string {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return "";
+  const diffSec = Math.round((timestampMs - Date.now()) / 1000);
+  const abs = Math.abs(diffSec);
+  const rtf = new Intl.RelativeTimeFormat(locale || undefined, {
+    numeric: "auto"
+  });
+  if (abs < 60) return rtf.format(diffSec, "second");
+  const diffMin = Math.round(diffSec / 60);
+  if (Math.abs(diffMin) < 60) return rtf.format(diffMin, "minute");
+  const diffHour = Math.round(diffMin / 60);
+  if (Math.abs(diffHour) < 24) return rtf.format(diffHour, "hour");
+  const diffDay = Math.round(diffHour / 24);
+  if (Math.abs(diffDay) < 30) return rtf.format(diffDay, "day");
+  return new Date(timestampMs).toLocaleDateString(locale || undefined, {
+    month: "short",
+    day: "numeric"
+  });
+}
+
 export function NewTaskUnreadConversations() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const conversations = useConversationStore((s) => s.conversations);
   const unreadConversations = useConversationStore((s) => s.unreadConversations);
   const live = useConversationStore((s) => s.live);
@@ -58,7 +78,10 @@ export function NewTaskUnreadConversations() {
             (run) => run.conversationId === conversation.id
           );
           const isBusy = isRunning || isWorkflowRunning;
-          const meta = [agentLabel, workspaceLabel].filter(Boolean).join(" · ");
+          const activityLabel = formatRelativeActivity(
+            conversationActivityTime(conversation),
+            i18n.language
+          );
 
           return (
             <li key={conversation.id}>
@@ -70,19 +93,28 @@ export function NewTaskUnreadConversations() {
               >
                 <AgentAvatar
                   adapter={conversation.adapter}
-                  agentId={conversation.agentId}
-                  className="new-task-unread-avatar"
+                  className="conv-item-avatar"
                   fallback={<MessageSquare aria-hidden="true" />}
                 />
                 <span className="new-task-unread-copy">
                   <strong>{conversation.title}</strong>
-                  {meta ? (
-                    <small title={cwd ? formatDisplayPath(cwd) : undefined}>
-                      {meta}
-                    </small>
-                  ) : null}
+                  <span className="new-task-unread-meta">
+                    <span className="new-task-unread-agent">{agentLabel}</span>
+                    {workspaceLabel ? (
+                      <span
+                        className="new-task-unread-workspace"
+                        title={formatDisplayPath(cwd)}
+                      >
+                        <Folder aria-hidden="true" size={12} strokeWidth={1.8} />
+                        {workspaceLabel}
+                      </span>
+                    ) : null}
+                  </span>
                 </span>
                 <span className="new-task-unread-side">
+                  {activityLabel ? (
+                    <span className="new-task-unread-time">{activityLabel}</span>
+                  ) : null}
                   {isBusy ? (
                     <span
                       className="new-task-unread-running"
@@ -106,12 +138,18 @@ export function NewTaskUnreadConversations() {
                     </span>
                   ) : (
                     <span
-                      className="conv-unread-dot"
+                      className="new-task-unread-dot"
                       role="status"
                       aria-label={t("conversations.unread")}
                       title={t("conversations.unread")}
                     />
                   )}
+                  <ChevronRight
+                    className="new-task-unread-chevron"
+                    aria-hidden="true"
+                    size={16}
+                    strokeWidth={1.8}
+                  />
                 </span>
               </button>
             </li>
