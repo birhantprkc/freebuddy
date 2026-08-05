@@ -519,6 +519,8 @@ const debugLogs = {
   write: (entries: unknown[]) => ipcRenderer.invoke("debugLog:write", entries),
   preview: (mode: "standard" | "full", opts?: { conversationId?: string }) =>
     ipcRenderer.invoke("debugLogs:preview", mode, opts?.conversationId),
+  prepareSelfCheck: (opts: { conversationId: string }) =>
+    ipcRenderer.invoke("debugLogs:prepareSelfCheck", opts.conversationId) as Promise<{ path: string }>,
   export: (mode: "standard" | "full", opts?: { conversationId?: string }) =>
     ipcRenderer.invoke("debugLogs:export", mode, opts?.conversationId) as Promise<{
       path?: string;

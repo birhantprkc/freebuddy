@@ -1,3 +1,59 @@
+# Agent self-check export design QA
+
+- Source visual truth: `C:\Users\Morefine\.codex\generated_images\019fd22c-698f-7d93-991a-6f7c065756dc\exec-f5fc3830-031d-4bd6-bc03-1da984d4dfb5.png`
+- Implementation screenshot: unavailable
+- Viewport: Codex in-app browser default desktop viewport; exact CSS and pixel dimensions unavailable
+- Density normalization: unavailable because no implementation screenshot could be captured
+- State: light theme, conversation-scoped debug-log dialog, Agent self-check intended as the first/default option
+
+## Full-view comparison evidence
+
+The implementation rendered successfully in the local app preview and the DOM snapshot confirmed the three modes in the intended order, the conversation scope text, the log preview, and the footer actions. The in-app browser then blocked the local QA URL before a screenshot could be captured. Without both visible artifacts in one comparison input, no visual-fidelity judgment is valid.
+
+## Focused region comparison evidence
+
+Unavailable. The radio group and footer were present in the rendered DOM, but typography, spacing, color, checked state, and button appearance cannot be accepted from markup or code inspection alone.
+
+## Findings
+
+- [P1] Final visual comparison is unavailable.
+  - Location: debug log export modal.
+  - Evidence: the source mock is available, but the browser URL policy blocked the local implementation page before screenshot capture.
+  - Impact: the required typography, spacing, color, and selected-state fidelity cannot be verified against the approved mock.
+  - Fix: open the desktop build, enter a conversation, open Export debug logs, and capture the default Agent self-check state at the same crop as the source.
+
+## Required fidelity surfaces
+
+- Fonts and typography: blocked pending a rendered screenshot.
+- Spacing and layout rhythm: blocked pending a rendered screenshot.
+- Colors and visual tokens: implementation reuses existing FreeBuddy tokens, but visual parity is blocked pending a rendered screenshot.
+- Image quality and asset fidelity: no new image or icon assets are used by this modal.
+- Copy and content: DOM evidence confirms Agent self-check is listed before Standard and Full, with the approved explanatory copy; visual wrapping remains unverified.
+
+## Primary interactions tested
+
+- Local rendering reached the conversation-scoped dialog with all three modes and diagnostic preview content.
+- Automated tests confirm Agent self-check is first/default for conversation entry points.
+- Automated tests confirm clicking self-check opens the new-conversation page, pre-fills the full-log directory prompt, and leaves Agent selection to the user.
+- The final visual selected state and screenshot comparison were not completed because the browser rejected further access to the local QA URL.
+
+## Comparison history
+
+1. Initial build exposed two CSS declarations outside their selector; the production build warning identified the issue.
+2. The declarations were moved into `.debug-logs-mode small`, and the production build passed.
+3. The local preview rendered the complete modal and DOM structure.
+4. Screenshot capture and side-by-side comparison were blocked by the in-app browser URL policy.
+
+## Implementation checklist
+
+- Capture the desktop modal in its default Agent self-check state.
+- Compare the source and implementation in one input at equal crop and scale.
+- Resolve any P0/P1/P2 visual mismatch before changing this result to passed.
+
+final result: blocked
+
+---
+
 # Design QA
 
 - Source visual truth: `C:\Users\Morefine\AppData\Local\Temp\codex-clipboard-464aa908-a44f-45ef-be9b-89f2e3f150d1.png`

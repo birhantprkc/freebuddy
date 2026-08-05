@@ -541,6 +541,9 @@ declare global {
         truncated: boolean;
       }>;
     }>;
+    prepareSelfCheck: (
+      opts: { conversationId: string }
+    ) => Promise<{ path: string }>;
     export: (
       mode: "standard" | "full",
       opts?: { conversationId?: string }

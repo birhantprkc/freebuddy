@@ -24,6 +24,8 @@ import {
 const SESSION_TAIL_BYTES = 2 * 1024 * 1024;
 const MAX_SESSION_FILES = 20;
 const PREVIEW_LINES = 200;
+const SELF_CHECK_DIR_PREFIX = "freebuddy-agent-self-check-";
+const SELF_CHECK_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
@@ -258,6 +260,89 @@ export async function buildDebugLogPreview(
     truncated: f.lines.length > PREVIEW_LINES
   }));
   return { environment, files };
+}
+
+function cleanupStaleSelfCheckDirectories(now = Date.now()): void {
+  const tempRoot = os.tmpdir();
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(tempRoot);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith(SELF_CHECK_DIR_PREFIX)) continue;
+    const candidate = path.join(tempRoot, name);
+    try {
+      const stat = fs.lstatSync(candidate);
+      if (
+        stat.isDirectory() &&
+        !stat.isSymbolicLink() &&
+        now - stat.mtimeMs > SELF_CHECK_RETENTION_MS
+      ) {
+        fs.rmSync(candidate, { recursive: true, force: true });
+      }
+    } catch {
+      /* stale cleanup is best-effort */
+    }
+  }
+}
+
+export async function prepareAgentSelfCheckLogs(
+  conversationId: string
+): Promise<{ path: string }> {
+  const exportedAt = formatLocalTimestamp(new Date());
+  const { environment, appLogs, sessionLogs } = collectBundle(
+    "full",
+    exportedAt,
+    conversationId
+  );
+  cleanupStaleSelfCheckDirectories();
+  const target = fs.mkdtempSync(path.join(os.tmpdir(), SELF_CHECK_DIR_PREFIX));
+  try {
+    try {
+      fs.chmodSync(target, 0o700);
+    } catch {
+      /* Windows may not apply POSIX modes */
+    }
+    const logsDir = path.join(target, "logs");
+    const sessionsDir = path.join(target, "sessions");
+    fs.mkdirSync(logsDir, { mode: 0o700 });
+    fs.mkdirSync(sessionsDir, { mode: 0o700 });
+    fs.writeFileSync(
+      path.join(target, "environment.json"),
+      JSON.stringify(environment, null, 2),
+      { encoding: "utf8", mode: 0o600 }
+    );
+    fs.writeFileSync(
+      path.join(target, "README.txt"),
+      [
+        readmeText("full", exportedAt, "conversation"),
+        "This temporary directory was created for Agent self-check."
+      ].join("\n\n"),
+      { encoding: "utf8", mode: 0o600 }
+    );
+    for (const file of appLogs) {
+      fs.writeFileSync(path.join(logsDir, file.name), file.lines.join("\n") + "\n", {
+        encoding: "utf8",
+        mode: 0o600
+      });
+    }
+    for (const file of sessionLogs) {
+      fs.writeFileSync(path.join(sessionsDir, file.name), file.lines.join("\n") + "\n", {
+        encoding: "utf8",
+        mode: 0o600
+      });
+    }
+    return { path: target };
+  } catch (err) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+    } catch {
+      /* preserve the original write error */
+    }
+    throw err;
+  }
 }
 
 function readmeText(mode: ExportMode, exportedAt: string, scope: "conversation" | "all"): string {

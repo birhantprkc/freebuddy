@@ -536,6 +536,7 @@ export function ChatView({
   const setRequestedTeamId = useNewTaskUiStore((s) => s.setRequestedTeamId);
   const requestedCwd = useNewTaskUiStore((s) => s.requestedCwd);
   const requestedProjectId = useNewTaskUiStore((s) => s.requestedProjectId);
+  const requestedDraft = useNewTaskUiStore((s) => s.requestedDraft);
   const cwdRequestToken = useNewTaskUiStore((s) => s.cwdRequestToken);
   const teamMode = taskMode === "team";
   const workflowMode = false;
@@ -1231,7 +1232,8 @@ export function ChatView({
     if (cwdRequestToken === 0) return;
     setNewTaskCwd(requestedCwd ?? "");
     setNewTaskProjectId(requestedProjectId);
-  }, [activeId, cwdRequestToken, requestedCwd, requestedProjectId]);
+    setNewTaskDraft(requestedDraft ?? "");
+  }, [activeId, cwdRequestToken, requestedCwd, requestedDraft, requestedProjectId]);
 
   useEffect(() => {
     const resolved = conv?.approvalMode ?? member?.cli.approvalMode;
