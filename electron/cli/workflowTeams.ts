@@ -1,4 +1,6 @@
+import { BrowserWindow } from "electron";
 import { getDb } from "./db.js";
+import { safeSendToWebContents } from "./ipcSend.js";
 import type {
   WorkflowTeam,
   WorkflowTeamPolicy,
@@ -6,6 +8,12 @@ import type {
   WorkflowTemplate2
 } from "./workflowTeamTypes.js";
 import { builtinWorkflowTeams } from "./workflowTeamBuiltins.js";
+
+function notifyWorkflowTeamsChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    safeSendToWebContents(win.webContents, "workflowTeams://changed", undefined);
+  }
+}
 
 function rowToTeam(r: any): WorkflowTeam {
   return {
@@ -72,7 +80,9 @@ export function insertWorkflowTeam(input: UpsertWorkflowTeamInput): WorkflowTeam
       now,
       now
     );
-  return getWorkflowTeam(input.id) as WorkflowTeam;
+  const created = getWorkflowTeam(input.id) as WorkflowTeam;
+  notifyWorkflowTeamsChanged();
+  return created;
 }
 
 export interface UpdateWorkflowTeamPatch {
@@ -126,7 +136,9 @@ export function updateWorkflowTeam(
   getDb()
     .prepare(`UPDATE workflow_teams SET ${fields.join(", ")} WHERE id = ?`)
     .run(...params);
-  return getWorkflowTeam(id);
+  const updated = getWorkflowTeam(id);
+  notifyWorkflowTeamsChanged();
+  return updated;
 }
 
 export function deleteWorkflowTeam(id: string): boolean {
@@ -134,6 +146,7 @@ export function deleteWorkflowTeam(id: string): boolean {
   if (!team) return false;
   if (team.source === "builtin") return false;
   getDb().prepare("DELETE FROM workflow_teams WHERE id = ?").run(id);
+  notifyWorkflowTeamsChanged();
   return true;
 }
 

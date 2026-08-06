@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { app } from "electron";
 
 import { getDataDir, getDb } from "./db.js";
@@ -72,7 +73,13 @@ export interface PreparedSkillInstallResult {
 function builtinRoot(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, "skills")
-    : path.join(app.getAppPath(), "assets", "skills");
+    : path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "..",
+        "assets",
+        "skills"
+      );
 }
 
 function importedRoot(): string {

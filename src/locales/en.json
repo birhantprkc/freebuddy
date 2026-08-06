@@ -1056,7 +1056,15 @@
       "noResults": "No matching agents",
       "category": {
         "builtin": "Built-in",
-        "custom": "Custom"
+        "custom": "Custom",
+        "official": "Official"
+      },
+      "official": {
+        "runtime": "Adapter",
+        "runtimeHint": "Pick the installed adapter this official agent runs on. Existing conversations keep the adapter they started with.",
+        "requiredSkills": "Required skills",
+        "requiredSkillsHint": "These skills are always active for this agent and cannot be disabled.",
+        "noRequiredSkills": "No required skills."
       },
       "loading": "Loading…",
       "runInBackground": "Run in background",

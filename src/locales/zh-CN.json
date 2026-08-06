@@ -212,7 +212,7 @@
     "deleteConfirm": "删除已导入的 Skill“{{name}}”？",
     "picker": "Skills {{count}}",
     "activeForTask": "本任务启用",
-    "required": "??",
+    "required": "必选",
     "agentDefaults": "默认 Skills",
     "agentDefaultsHint": "使用这个 Agent 新建任务时自动选中。",
     "roleOverride": "角色 Skills",
@@ -640,7 +640,7 @@
       "selectionAria": "选择可用 Agent",
       "available": "已安装",
       "ready": "可以立即使用",
-      "butler": "FreeBuddy ??",
+      "butler": "FreeBuddy 管家",
       "checking": "正在检测 Agent…",
       "checkingCount": "正在检测 {{count}} 个 Agent…",
       "checkingHint": "检测完成后，可用 Agent 会自动出现在这里。",
@@ -1041,7 +1041,15 @@
       "noResults": "没有匹配的 Agent",
       "category": {
         "builtin": "内置",
-        "custom": "自定义"
+        "custom": "自定义",
+        "official": "官方"
+      },
+      "official": {
+        "runtime": "适配器",
+        "runtimeHint": "选择此官方 Agent 所使用的已安装适配器。已有会话会保留其启动时的适配器。",
+        "requiredSkills": "必选 Skills",
+        "requiredSkillsHint": "这些 Skills 对该 Agent 始终启用，无法关闭。",
+        "noRequiredSkills": "无必选 Skills。"
       },
       "loading": "加载中…",
       "runInBackground": "后台运行",

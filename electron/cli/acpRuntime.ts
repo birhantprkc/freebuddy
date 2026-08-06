@@ -68,6 +68,11 @@ import {
   unregisterSkillToolSession
 } from "../skillToolService.js";
 import {
+  registerButlerToolSession,
+  unregisterButlerToolSession
+} from "../butlerToolService.js";
+import { BUTLERBUDDY_AGENT_ID } from "./agentProfiles.js";
+import {
   registerContextToolSession,
   unregisterContextToolSession
 } from "../contextToolService.js";
@@ -361,6 +366,7 @@ export async function runAcpAgent({
     unregisterDraftToolSession(args.sessionId);
     unregisterBrowserToolSession(args.sessionId);
     unregisterSkillToolSession(args.sessionId);
+    unregisterButlerToolSession(args.sessionId);
     unregisterContextToolSession(args.sessionId);
     unregisterWorkspaceFsToolSession(args.sessionId);
     clearAuthenticationTerminalsForSession(args.sessionId);
@@ -1193,6 +1199,16 @@ export async function runAcpAgent({
     }
     if (args.skills?.length) {
       mcpServers.push(registerSkillToolSession(args.sessionId, args.skills));
+    }
+    if (args.agentId === BUTLERBUDDY_AGENT_ID && !remoteIsolated) {
+      mcpServers.push(
+        await registerButlerToolSession({
+          taskSessionId: args.sessionId,
+          agentId: args.agentId,
+          userId: getCallerUserId(),
+          webContents
+        })
+      );
     }
     if (args.contextReferences?.length) {
       mcpServers.push(

@@ -35,7 +35,7 @@ export const builtinCliMembers: CLIMember[] = [
     enabled: true,
     cli: {
       adapter: "codex-acp",
-      approvalMode: "ask",
+      approvalMode: "auto",
       showStderr: true,
       skillIds: ["butlerbuddy"]
     }

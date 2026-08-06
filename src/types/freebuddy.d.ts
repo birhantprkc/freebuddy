@@ -284,6 +284,8 @@ declare global {
     onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
     onOpenConversation(cb: (conversationId: string) => void): () => void;
+    onOpenSettings(cb: (tab: string) => void): () => void;
+    onAppearanceChanged(cb: (theme: string) => void): () => void;
     notifyTask(payload: {
       kind: "success" | "failure";
       title: string;
@@ -477,6 +479,7 @@ declare global {
     >;
     delete(id: string): Promise<boolean>;
     seedBuiltins(): Promise<WorkflowTeam[]>;
+    onChanged(cb: () => void): () => void;
   }
 
   interface FreebuddyScheduledTasks {

@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { getAgentIconId } from "@/config/agentIcon";
+import { BUTLERBUDDY_AGENT_ID } from "@/config/agentProfiles";
 import { lobehubAvatarUrl } from "@/utils/lobehubAvatar";
 import { useCliExecutorStore } from "@/store/cliExecutorStore";
 
@@ -33,7 +34,10 @@ export function AgentAvatar({
     }
     return adapter ? s.overrides[adapter]?.icon : undefined;
   });
-  const iconId = getAgentIconId(adapter, iconKey ?? storedIcon);
+  const iconId =
+    agentId === BUTLERBUDDY_AGENT_ID
+      ? "Bilibili"
+      : getAgentIconId(adapter, iconKey ?? storedIcon);
   const url = iconId && !errored ? lobehubAvatarUrl(iconId) : undefined;
 
   if (!url) {

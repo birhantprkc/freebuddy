@@ -317,6 +317,18 @@ const window = {
     ipcRenderer.on("window:open-conversation", handler);
     return () => ipcRenderer.off("window:open-conversation", handler);
   },
+  onOpenSettings(cb: (tab: string) => void): () => void {
+    const handler = (_e: IpcRendererEvent, payload: { tab?: string }) =>
+      cb(payload?.tab ?? "cli");
+    ipcRenderer.on("freebuddy://open-settings", handler);
+    return () => ipcRenderer.off("freebuddy://open-settings", handler);
+  },
+  onAppearanceChanged(cb: (theme: string) => void): () => void {
+    const handler = (_e: IpcRendererEvent, payload: { theme?: string }) =>
+      cb(payload?.theme ?? "system");
+    ipcRenderer.on("freebuddy://appearance-changed", handler);
+    return () => ipcRenderer.off("freebuddy://appearance-changed", handler);
+  },
   notifyTask(payload: {
     kind: "success" | "failure";
     title: string;
@@ -435,7 +447,15 @@ const workflowTeams = {
   create: (input: unknown) => ipcRenderer.invoke("workflowTeams:create", input),
   update: (args: unknown) => ipcRenderer.invoke("workflowTeams:update", args),
   delete: (id: string) => ipcRenderer.invoke("workflowTeams:delete", id),
-  seedBuiltins: () => ipcRenderer.invoke("workflowTeams:seedBuiltins")
+  seedBuiltins: () => ipcRenderer.invoke("workflowTeams:seedBuiltins"),
+  onChanged: (cb: () => void): (() => void) => {
+    const channel = "workflowTeams://changed";
+    const listener = () => cb();
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.off(channel, listener);
+    };
+  }
 };
 
 const skills = {

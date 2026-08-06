@@ -1,23 +1,63 @@
-import { getAdapterDefinition } from "./adapters.js";
+import { getAdapterDefinition, cliAdapterDefinitions } from "./adapters.js";
 import { builtinCliMembers, type CLIMember } from "./cliMemberBuiltins.js";
 import { listOverrides } from "./store.js";
 import { mergeRequiredSkillIds } from "./agentProfiles.js";
+import { getSetting } from "./settings.js";
+import { listRuntimes } from "./check.js";
+
+const MEMBER_RUNTIME_OVERRIDES_KEY = "member.runtimeOverrides";
+
+function loadMemberOverrideMap(key: string): Record<string, string> {
+  const raw = getSetting(key);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object") {
+      const result: Record<string, string> = {};
+      for (const [mapKey, value] of Object.entries(
+        parsed as Record<string, unknown>
+      )) {
+        if (typeof value === "string") result[mapKey] = value;
+      }
+      return result;
+    }
+  } catch {
+    // ignore malformed override payload
+  }
+  return {};
+}
 
 export { builtinCliMembers, type CLIMember };
 
 export function listCliMembers(): CLIMember[] {
   const overrides = listOverrides();
   const overrideById = new Map(overrides.map((override) => [override.id, override]));
-  const builtinMembers = builtinCliMembers.map((member) => ({
-    ...member,
-    cli: {
-      ...member.cli,
-      skillIds: mergeRequiredSkillIds(
-        member.id,
-        overrideById.get(member.cli.adapter)?.skillIds ?? member.cli.skillIds
-      )
-    }
-  }));
+  const runtimeOverrides = loadMemberOverrideMap(MEMBER_RUNTIME_OVERRIDES_KEY);
+  const runtimesById = new Map(listRuntimes().map((rt) => [rt.adapter, rt]));
+  const dynamicDefaultAdapter = cliAdapterDefinitions.find(
+    (def) => def.protocol === "acp" && runtimesById.get(def.id)?.installed
+  )?.id;
+  const builtinMembers = builtinCliMembers.map((member) => {
+    const overrideAdapter = member.runtimeKey
+      ? runtimeOverrides[member.id]
+      : undefined;
+    const adapter =
+      overrideAdapter ??
+      (member.runtimeKey ? dynamicDefaultAdapter : undefined) ??
+      member.cli.adapter;
+    return {
+      ...member,
+      runtimeKey: adapter,
+      cli: {
+        ...member.cli,
+        adapter,
+        skillIds: mergeRequiredSkillIds(
+          member.id,
+          overrideById.get(adapter)?.skillIds ?? member.cli.skillIds
+        )
+      }
+    };
+  });
   const customMembers = overrides
     .filter((override) => override.baseAdapter)
     .map((override): CLIMember | undefined => {

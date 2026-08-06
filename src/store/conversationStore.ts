@@ -86,6 +86,7 @@ export interface LiveAssistant {
 
 export interface ConversationState {
   members: CLIMember[];
+  memberRuntimeOverrides: Record<string, string>;
   conversations: Conversation[];
   activeId?: string;
   messages: Record<string, ConversationMessage[]>;
@@ -97,6 +98,7 @@ export interface ConversationState {
   load(): Promise<void>;
   refreshList(): Promise<void>;
   refreshMembers(): void;
+  setMemberRuntimeOverride(memberId: string, runtimeKey: string): Promise<void>;
   setActive(id: string | undefined): Promise<void>;
   loadMessages(id: string, messageIds?: string[]): Promise<void>;
   markConversationUnread(id: string): void;
@@ -324,15 +326,62 @@ function mergeMemberSkillIds(
   return [...new Set([...(requiredIds ?? []), ...(selectedIds ?? [])])];
 }
 
-function buildConversationMembers(): CLIMember[] {
+const MEMBER_RUNTIME_OVERRIDES_KEY = "member.runtimeOverrides";
+
+async function loadMemberOverrideMap(
+  key: string
+): Promise<Record<string, string>> {
+  const raw = await cliClient.getSetting(key);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === "object") {
+      const result: Record<string, string> = {};
+      for (const [mapKey, value] of Object.entries(
+        parsed as Record<string, unknown>
+      )) {
+        if (typeof value === "string") result[mapKey] = value;
+      }
+      return result;
+    }
+  } catch {
+    // ignore malformed override payload
+  }
+  return {};
+}
+
+function firstInstalledAcpAdapter(
+  executorStore: ReturnType<typeof useCliExecutorStore.getState>
+): string | undefined {
+  for (const def of executorStore.adapters) {
+    if (def.protocol === "acp" && executorStore.runtimes[def.id]?.installed) {
+      return def.id;
+    }
+  }
+  return undefined;
+}
+
+function buildConversationMembers(
+  runtimeOverrides: Record<string, string> = {}
+): CLIMember[] {
   const executorStore = useCliExecutorStore.getState();
+  const dynamicDefaultAdapter = firstInstalledAcpAdapter(executorStore);
   const builtinMembers = builtinCliMembers.map((member) => {
-    const executor = executorStore.resolve(member.cli.adapter);
+    const overrideAdapter = member.runtimeKey
+      ? runtimeOverrides[member.id]
+      : undefined;
+    const resolvedAdapter =
+      overrideAdapter ??
+      (member.runtimeKey ? dynamicDefaultAdapter : undefined) ??
+      member.cli.adapter;
+    const executor = executorStore.resolve(resolvedAdapter);
     return {
       ...member,
+      runtimeKey: resolvedAdapter,
       enabled: executor?.enabled ?? member.enabled,
       cli: {
         ...member.cli,
+        adapter: resolvedAdapter,
         skillIds: mergeMemberSkillIds(
           executor?.skillIds ?? member.cli.skillIds,
           member.requiredSkillIds
@@ -489,6 +538,7 @@ async function workflowFollowupContextForRun(
 
 export const useConversationStore = create<ConversationState>((set, get) => ({
   members: buildConversationMembers(),
+  memberRuntimeOverrides: {},
   conversations: [],
   activeId: undefined,
   messages: {},
@@ -499,7 +549,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
   async load() {
     if (!cliClient.isAvailable()) return;
-    const members = buildConversationMembers();
+    const memberRuntimeOverrides = await loadMemberOverrideMap(
+      MEMBER_RUNTIME_OVERRIDES_KEY
+    );
+    const members = buildConversationMembers(memberRuntimeOverrides);
     const list = await cliClient.listConversations({ archived: false });
     const synced = syncConversationAgentNames(list, members);
     persistSyncedConversationAgentNames(synced);
@@ -511,7 +564,11 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } catch {
       // current user unavailable; non-fatal
     }
-    set({ members, conversations: synced.conversations });
+    set({
+      members,
+      memberRuntimeOverrides,
+      conversations: synced.conversations
+    });
     const cur = get().activeId;
     // Keep startup on the new-task page: do not auto-open the latest conversation.
     // Only clear activeId when a previously selected conversation no longer exists.
@@ -530,7 +587,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
   async refreshList() {
     if (!cliClient.isAvailable()) return;
-    const members = buildConversationMembers();
+    const members = buildConversationMembers(get().memberRuntimeOverrides);
     const list = await cliClient.listConversations({ archived: false });
     const synced = syncConversationAgentNames(list, members);
     persistSyncedConversationAgentNames(synced);
@@ -538,10 +595,25 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   refreshMembers() {
-    const members = buildConversationMembers();
+    const members = buildConversationMembers(get().memberRuntimeOverrides);
     const synced = syncConversationAgentNames(get().conversations, members);
     persistSyncedConversationAgentNames(synced);
     set({ members, conversations: synced.conversations });
+  },
+
+  async setMemberRuntimeOverride(memberId, runtimeKey) {
+    const memberRuntimeOverrides = {
+      ...get().memberRuntimeOverrides,
+      [memberId]: runtimeKey
+    };
+    await cliClient.setSetting(
+      MEMBER_RUNTIME_OVERRIDES_KEY,
+      JSON.stringify(memberRuntimeOverrides)
+    );
+    const members = buildConversationMembers(memberRuntimeOverrides);
+    const synced = syncConversationAgentNames(get().conversations, members);
+    persistSyncedConversationAgentNames(synced);
+    set({ members, memberRuntimeOverrides, conversations: synced.conversations });
   },
 
   async setActive(id) {

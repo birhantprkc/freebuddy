@@ -74,14 +74,16 @@ export function pruneConfigOptionOverrides(
   const out: Record<string, string> = {};
   for (const [id, value] of Object.entries(overrides)) {
     const option = allowed.get(id);
+    if (!option || value == null || value === "") continue;
+    if (isUnsupportedThoughtLevelNone(option, value)) continue;
     if (
-      option &&
-      value != null &&
-      value !== "" &&
-      !isUnsupportedThoughtLevelNone(option, value)
+      option.values &&
+      option.values.length > 0 &&
+      !option.values.some((candidate) => candidate.id === value)
     ) {
-      out[id] = value;
+      continue;
     }
+    out[id] = value;
   }
   return out;
 }

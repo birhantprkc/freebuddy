@@ -32,7 +32,7 @@ test("ButlerBuddy is a first-class Agent profile backed by Codex ACP", () => {
     assert.match(source, /profile: "butler"/);
     assert.match(source, /runtimeKey: "codex-acp"/);
     assert.match(source, /requiredSkillIds: \["butlerbuddy"\]/);
-    assert.match(source, /approvalMode: "ask"/);
+    assert.match(source, /approvalMode: "auto"/);
   }
 });
 
