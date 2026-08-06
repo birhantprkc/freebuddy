@@ -317,6 +317,13 @@ function workflowFollowupToolSessionScope(
   return `workflow-followup:${run.id}:${member.id}`;
 }
 
+function mergeMemberSkillIds(
+  selectedIds: readonly string[] | undefined,
+  requiredIds: readonly string[] | undefined
+): string[] {
+  return [...new Set([...(requiredIds ?? []), ...(selectedIds ?? [])])];
+}
+
 function buildConversationMembers(): CLIMember[] {
   const executorStore = useCliExecutorStore.getState();
   const builtinMembers = builtinCliMembers.map((member) => {
@@ -326,7 +333,10 @@ function buildConversationMembers(): CLIMember[] {
       enabled: executor?.enabled ?? member.enabled,
       cli: {
         ...member.cli,
-        skillIds: executor?.skillIds
+        skillIds: mergeMemberSkillIds(
+          executor?.skillIds ?? member.cli.skillIds,
+          member.requiredSkillIds
+        )
       }
     };
   });
@@ -668,7 +678,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       ...(configOptionOverrides && Object.keys(configOptionOverrides).length > 0
         ? { configOptionOverrides }
         : {}),
-      skillIds: skillIds ?? member.cli.skillIds ?? [],
+      skillIds: mergeMemberSkillIds(
+        skillIds ?? member.cli.skillIds,
+        member.requiredSkillIds
+      ),
       titleSource: title ? "prompt" : "default"
     });
     set((s) => ({

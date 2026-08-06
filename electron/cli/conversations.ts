@@ -5,6 +5,7 @@ import {
 } from "./attachments.js";
 import { resolveSkillSnapshots } from "./skills.js";
 import type { SkillSnapshot } from "./skillTypes.js";
+import { mergeRequiredSkillIds } from "./agentProfiles.js";
 import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 import { getUserById } from "./users.js";
 import { findProjectByCwd } from "./projects.js";
@@ -270,7 +271,9 @@ export function createConversation(input: CreateConversationInput): Conversation
         Object.keys(input.configOptionOverrides).length > 0
         ? JSON.stringify(input.configOptionOverrides)
         : null,
-      JSON.stringify(resolveSkillSnapshots(input.skillIds ?? [])),
+      JSON.stringify(
+        resolveSkillSnapshots(mergeRequiredSkillIds(input.agentId, input.skillIds))
+      ),
       input.titleSource ?? "default",
       input.sourceConversationId ?? null,
       input.sourceAgentId ?? null,
@@ -295,10 +298,14 @@ export function setConversationSkills(
   id: string,
   skillIds: string[]
 ): Conversation | undefined {
+  const conversation = getConversation(id);
+  if (!conversation) return undefined;
   getDb()
     .prepare("UPDATE conversations SET skill_snapshot = ?, updated_at = ? WHERE id = ?")
     .run(
-      JSON.stringify(resolveSkillSnapshots(skillIds)),
+      JSON.stringify(
+        resolveSkillSnapshots(mergeRequiredSkillIds(conversation.agentId, skillIds))
+      ),
       new Date().toISOString(),
       id
     );

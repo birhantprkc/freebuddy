@@ -1,6 +1,7 @@
 import { getAdapterDefinition } from "./adapters.js";
 import { builtinCliMembers, type CLIMember } from "./cliMemberBuiltins.js";
 import { listOverrides } from "./store.js";
+import { mergeRequiredSkillIds } from "./agentProfiles.js";
 
 export { builtinCliMembers, type CLIMember };
 
@@ -11,7 +12,10 @@ export function listCliMembers(): CLIMember[] {
     ...member,
     cli: {
       ...member.cli,
-      skillIds: overrideById.get(member.cli.adapter)?.skillIds
+      skillIds: mergeRequiredSkillIds(
+        member.id,
+        overrideById.get(member.cli.adapter)?.skillIds ?? member.cli.skillIds
+      )
     }
   }));
   const customMembers = overrides

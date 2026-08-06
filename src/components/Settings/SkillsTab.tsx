@@ -18,6 +18,7 @@ import { SkillMarketPanel } from "@/components/Settings/SkillMarketPanel";
 import { skillsClient } from "@/services/skills/client";
 import type { SkillImportResult } from "@/services/skills/types";
 import { useSkillStore } from "@/store/skillStore";
+import { BUTLERBUDDY_SKILL_ID } from "@/config/agentProfiles";
 
 type SkillFilter = "all" | "enabled" | "disabled";
 type DetailTab = "instructions" | "metadata";
@@ -303,6 +304,7 @@ export function SkillsTab() {
                       <input
                         type="checkbox"
                         checked={skill.enabled}
+                        disabled={skill.id === BUTLERBUDDY_SKILL_ID}
                         aria-label={t("skills.toggleAria", { name: skill.name })}
                         onChange={(event) =>
                           void setEnabled(skill.id, event.currentTarget.checked)
@@ -361,6 +363,7 @@ export function SkillsTab() {
                         <input
                           type="checkbox"
                           checked={selected.enabled}
+                          disabled={selected.id === BUTLERBUDDY_SKILL_ID}
                           aria-label={t("skills.toggleAria", { name: selected.name })}
                           onChange={(event) =>
                             void setEnabled(selected.id, event.currentTarget.checked)

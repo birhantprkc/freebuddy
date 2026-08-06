@@ -1,0 +1,4 @@
+interface:
+  display_name: "ButlerBuddy Core"
+  short_description: "Configure and troubleshoot FreeBuddy safely"
+  default_prompt: "Use $butlerbuddy to inspect and configure my FreeBuddy setup."

@@ -235,7 +235,11 @@ export function AgentPicker({
                       />
                       <span className="agent-picker-option-copy">
                         <strong>{entry.member.name}</strong>
-                        <small>{t("chat.agentPicker.ready")}</small>
+                        <small>
+                          {entry.member.profile === "butler"
+                            ? t("chat.agentPicker.butler")
+                            : t("chat.agentPicker.ready")}
+                        </small>
                       </span>
                       {active ? (
                         <Check className="agent-picker-check" aria-hidden="true" />

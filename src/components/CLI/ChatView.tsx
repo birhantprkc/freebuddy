@@ -96,6 +96,7 @@ import {
 } from "./conversationProjectGrouping";
 import {
   agentEntriesNeedingRefresh,
+  agentRuntimeKey,
   buildAgentAvailabilityGroups,
   type AgentAvailabilityEntry,
   type AgentAvailabilityGroups
@@ -1044,10 +1045,17 @@ export function ChatView({
       return;
     }
     const preferred = agentAvailability.available[0]?.member.id ?? "";
-    if (preferred !== selectedMemberId) setSelectedMemberId(preferred);
+    if (preferred !== selectedMemberId) {
+      setSelectedMemberId(preferred);
+      const preferredMember = members.find((entry) => entry.id === preferred);
+      if (preferredMember?.cli.approvalMode) {
+        setPermissionMode(preferredMember.cli.approvalMode);
+      }
+    }
   }, [
     activeId,
     agentAvailability.available,
+    members,
     selectedMemberId,
     taskMode
   ]);
@@ -1518,9 +1526,7 @@ export function ChatView({
       return false;
     }
     try {
-      const runtimeAdapter = targetMember.id.startsWith("cli-")
-        ? targetMember.id.slice(4)
-        : targetMember.cli.adapter;
+      const runtimeAdapter = agentRuntimeKey(targetMember);
       const r = await cliClient.check(
         targetMember.cli.adapter,
         targetMember.cli.binary,
@@ -1922,6 +1928,10 @@ export function ChatView({
         onMember={(id) => {
           memberSelectionTouchedRef.current = true;
           setSelectedMemberId(id);
+          const selectedMember = members.find((entry) => entry.id === id);
+          if (selectedMember?.cli.approvalMode) {
+            setPermissionMode(selectedMember.cli.approvalMode);
+          }
         }}
         onRefreshAgents={() =>
           void checkAgentEntries(agentEntriesNeedingRefresh(agentAvailability))
@@ -2273,6 +2283,7 @@ export function ChatView({
             <ComposerAddMenu
               skills={skills}
               selectedIds={conv?.skillSnapshot.map((skill) => skill.id) ?? []}
+              requiredIds={member?.requiredSkillIds}
               pluginAgent={pluginAgentForAdapter(member?.cli.adapter ?? conv?.adapter)}
               attachmentDisabled={
                 sending ||
@@ -2545,6 +2556,11 @@ function NewTaskHome({
           <ComposerAddMenu
             skills={skills}
             selectedIds={selectedSkillIds}
+            requiredIds={
+              agentAvailability.available.find(
+                (entry) => entry.member.id === selectedMemberId
+              )?.member.requiredSkillIds
+            }
             pluginAgent={pluginAgent}
             attachmentDisabled={
               attachmentBusy || pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE
