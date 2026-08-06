@@ -133,14 +133,14 @@ html[data-surface="butler-chat"] #root {
 
 .butler-pet-button {
   position: absolute;
-  left: 16px;
-  top: 16px;
-  width: 96px;
-  height: 96px;
+  left: 14px;
+  top: 14px;
+  width: 80px;
+  height: 80px;
   padding: 0;
   overflow: visible;
   border: 0;
-  border-radius: 28px;
+  border-radius: 23px;
   background: transparent;
   /* Dragging is handled from JS (pointer events) so the window stays
      focusable: false; `-webkit-app-region` is unreliable on Windows

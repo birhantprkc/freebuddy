@@ -339,6 +339,14 @@ const window = {
   }
 };
 
+type ButlerBuddyPreferencesPayload = {
+  visible: boolean;
+  shortcutEnabled: boolean;
+  shortcut: string;
+  shortcutRegistered: boolean;
+  error?: "shortcutUnavailable";
+};
+
 const butlerBuddy = {
   toggleChat: () => ipcRenderer.send("butlerBuddy:toggleChat"),
   hideChat: () => ipcRenderer.send("butlerBuddy:hideChat"),
@@ -355,6 +363,16 @@ const butlerBuddy = {
     const handler = () => cb();
     ipcRenderer.on("butlerBuddy:newConversation", handler);
     return () => ipcRenderer.off("butlerBuddy:newConversation", handler);
+  },
+  onPreferencesChanged(
+    cb: (prefs: ButlerBuddyPreferencesPayload) => void
+  ): () => void {
+    const handler = (
+      _event: unknown,
+      prefs: ButlerBuddyPreferencesPayload
+    ) => cb(prefs);
+    ipcRenderer.on("butlerBuddy:preferencesChanged", handler);
+    return () => ipcRenderer.off("butlerBuddy:preferencesChanged", handler);
   }
 };
 

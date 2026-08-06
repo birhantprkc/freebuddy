@@ -306,6 +306,8 @@
     "collapse": "Collapse sidebar",
     "toggleTheme": "Toggle theme",
     "logout": "Log out",
+    "showPet": "Show pet",
+    "hidePet": "Hide pet",
     "hostAccount": "Host",
     "primaryNavigation": "Workspace navigation",
     "newConversation": "New conversation",

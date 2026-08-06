@@ -318,6 +318,9 @@ declare global {
       shortcut?: string;
     }): Promise<ButlerBuddyPreferences>;
     onNewConversation(cb: () => void): () => void;
+    onPreferencesChanged(
+      cb: (prefs: ButlerBuddyPreferences) => void
+    ): () => void;
   }
 
   interface FreebuddySettings {

@@ -207,7 +207,7 @@ let mainWindow: BrowserWindow | null = null;
 let butlerPetWindow: BrowserWindow | null = null;
 let butlerChatWindow: BrowserWindow | null = null;
 
-const BUTLER_PET_SIZE = 128;
+const BUTLER_PET_SIZE = 108;
 const BUTLER_CHAT_WIDTH = 360;
 const BUTLER_CHAT_HEIGHT = 420;
 const BUTLER_WINDOW_GAP = 6;
@@ -446,7 +446,16 @@ function updateButlerBuddyPreferences(
     applyButlerBuddyVisibility(nextVisible);
   }
 
-  return readButlerBuddyPreferences();
+  const result = readButlerBuddyPreferences();
+  // Push the new preferences to the main window so the settings toggle stays
+  // in sync when the change originated from the main process (e.g. the pet's
+  // right-click "关闭宠物" menu). Renderer-initiated updates already reflect
+  // the IPC return value; this broadcast is idempotent for them.
+  const win = mainWindow;
+  if (win && !win.isDestroyed()) {
+    safeSendToWebContents(win.webContents, "butlerBuddy:preferencesChanged", result);
+  }
+  return result;
 }
 
 function closeButlerBuddyWindows() {
@@ -546,6 +555,11 @@ function showButlerContextMenu() {
     {
       label: "隐藏聊天面板",
       click: () => hideButlerChat()
+    },
+    { type: "separator" },
+    {
+      label: "关闭宠物",
+      click: () => updateButlerBuddyPreferences({ visible: false })
     },
     { type: "separator" },
     {

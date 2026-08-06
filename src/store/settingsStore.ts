@@ -36,6 +36,13 @@ interface SettingsState {
     shortcutEnabled?: boolean;
     shortcut?: string;
   }): Promise<void>;
+  applyButlerBuddyPreferences(prefs: {
+    visible: boolean;
+    shortcutEnabled: boolean;
+    shortcut: string;
+    shortcutRegistered: boolean;
+    error?: "shortcutUnavailable";
+  }): void;
   refreshSystemTheme(): void;
 }
 
@@ -158,5 +165,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set((state) => ({
       resolvedTheme: resolveThemePreference(state.theme, systemTheme)
     }));
+  },
+  applyButlerBuddyPreferences(prefs) {
+    set({
+      butlerBuddyVisible: prefs.visible,
+      butlerBuddyShortcutEnabled: prefs.shortcutEnabled,
+      butlerBuddyShortcut: prefs.shortcut,
+      butlerBuddyShortcutRegistered: prefs.shortcutRegistered,
+      butlerBuddyShortcutError: prefs.error
+    });
   }
 }));

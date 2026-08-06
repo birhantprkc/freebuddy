@@ -196,6 +196,15 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const off = window.freebuddy?.butlerBuddy?.onPreferencesChanged?.((prefs) => {
+      useSettingsStore.getState().applyButlerBuddyPreferences(prefs);
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const off = window.freebuddy?.workflow?.onRunFinished?.((event) => {
       const success = event.status === "completed" || event.status === "partial";
       if (success) playTaskSuccess(true);
