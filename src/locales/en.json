@@ -158,7 +158,21 @@
     "themeDark": "Dark",
     "telemetryLabel": "Anonymous usage data",
     "telemetryEnabled": "Help improve FreeBuddy",
-    "telemetryDescription": "Sends anonymous install, launch, update, app version, operating system, and CPU architecture data. Conversations, prompts, file paths, and workspace contents are never sent."
+    "telemetryDescription": "Sends anonymous install, launch, update, app version, operating system, and CPU architecture data. Conversations, prompts, file paths, and workspace contents are never sent.",
+    "butlerTitle": "Floating companion",
+    "butlerDescription": "Keep ButlerBuddy close by and call it up whenever you need it.",
+    "butlerShowPet": "Show desktop companion",
+    "butlerShowPetDescription": "Click to chat, drag to move, or right-click for more actions.",
+    "butlerShortcut": "Quick access",
+    "butlerShortcutDescription": "Open or hide the chat even while using another app.",
+    "butlerShortcutCurrent": "Current shortcut",
+    "butlerShortcutRecording": "Press a key combination",
+    "butlerShortcutCancelHint": "Esc to cancel",
+    "butlerShortcutChange": "Click to change",
+    "butlerShortcutReset": "Restore default shortcut",
+    "butlerShortcutReady": "Global shortcut is active",
+    "butlerShortcutUnavailable": "That shortcut is already used by another app. Try another one.",
+    "butlerShortcutInvalid": "Include Ctrl/⌘ or Alt together with another key."
   },
   "app": { "brand": "FreeBuddy", "chat": "Chat" },
   "skills": {

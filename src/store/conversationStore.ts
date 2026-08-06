@@ -98,7 +98,9 @@ export interface ConversationState {
   load(): Promise<void>;
   refreshList(): Promise<void>;
   refreshMembers(): void;
+  reloadMemberRuntimeOverrides(): Promise<void>;
   setMemberRuntimeOverride(memberId: string, runtimeKey: string): Promise<void>;
+  requestFreshContext(id: string): void;
   setActive(id: string | undefined): Promise<void>;
   loadMessages(id: string, messageIds?: string[]): Promise<void>;
   markConversationUnread(id: string): void;
@@ -269,10 +271,17 @@ function ensureWorkflowMessageSubscription(
   });
 }
 
-function latestSessionIdFromMessages(messages: ConversationMessage[]): string | undefined {
+function latestSessionIdFromMessages(
+  messages: ConversationMessage[],
+  adapter?: string
+): string | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message.role !== "assistant") continue;
+    // Never resume a session that was created by a different adapter: the new
+    // adapter doesn't know that session and rejects it (e.g. "Session not
+    // found" / "Invalid params" after switching the ButlerBuddy adapter).
+    if (adapter && message.adapter && message.adapter !== adapter) continue;
     try {
       const items = JSON.parse(message.content) as CliStreamItem[];
       if (!Array.isArray(items)) continue;
@@ -599,6 +608,29 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     const synced = syncConversationAgentNames(get().conversations, members);
     persistSyncedConversationAgentNames(synced);
     set({ members, conversations: synced.conversations });
+  },
+
+  async reloadMemberRuntimeOverrides() {
+    // Re-read the persisted runtime-override map (e.g. the ButlerBuddy adapter
+    // chosen in Settings) and rebuild members. The floating ButlerBuddy chat is
+    // a separate renderer with its own store; without this, an adapter change
+    // made in the main window never reaches the companion, so sendMessage keeps
+    // using the stale adapter.
+    if (!cliClient.isAvailable()) return;
+    const memberRuntimeOverrides = await loadMemberOverrideMap(
+      MEMBER_RUNTIME_OVERRIDES_KEY
+    );
+    const members = buildConversationMembers(memberRuntimeOverrides);
+    set({ members, memberRuntimeOverrides });
+  },
+
+  requestFreshContext(id) {
+    // Force the next sendMessage for this conversation to start a fresh agent
+    // session (no toolSession resume). Used by the ButlerBuddy model picker so a
+    // newly chosen model reliably takes effect at session/new time.
+    set((s) => ({
+      pendingFreshContext: { ...s.pendingFreshContext, [id]: true }
+    }));
   },
 
   async setMemberRuntimeOverride(memberId, runtimeKey) {
@@ -1104,7 +1136,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       }
       if (!workflowRun) {
         resumedFromSessionId ??= latestSessionIdFromMessages(
-          get().messages[conversationId] ?? []
+          get().messages[conversationId] ?? [],
+          member.cli.adapter
         );
       }
     }

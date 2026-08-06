@@ -24,6 +24,8 @@ type Props = {
   disabled?: boolean;
   className?: string;
   fallback?: ReactNode;
+  leadingIcon?: ReactNode;
+  trailingIcon?: ReactNode;
   onChange: (next: Record<string, string>) => void;
 };
 
@@ -88,6 +90,8 @@ export function SessionConfigPicker({
   disabled,
   className,
   fallback = null,
+  leadingIcon,
+  trailingIcon,
   onChange
 }: Props) {
   const { t } = useTranslation();
@@ -199,7 +203,17 @@ export function SessionConfigPicker({
         aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
       >
+        {leadingIcon ? (
+          <span className="session-config-picker-icon" aria-hidden="true">
+            {leadingIcon}
+          </span>
+        ) : null}
         <span className="session-config-picker-value">{summaryLabel}</span>
+        {trailingIcon ? (
+          <span className="session-config-picker-icon" aria-hidden="true">
+            {trailingIcon}
+          </span>
+        ) : null}
       </button>
       {open && position
         ? createPortal(

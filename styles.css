@@ -131,12 +131,6 @@ html[data-surface="butler-chat"] #root {
   background: transparent;
 }
 
-.butler-pet-drag-zone {
-  position: absolute;
-  inset: 0;
-  -webkit-app-region: drag;
-}
-
 .butler-pet-button {
   position: absolute;
   left: 16px;
@@ -148,17 +142,21 @@ html[data-surface="butler-chat"] #root {
   border: 0;
   border-radius: 28px;
   background: transparent;
-  -webkit-app-region: no-drag;
+  /* Dragging is handled from JS (pointer events) so the window stays
+     focusable: false; `-webkit-app-region` is unreliable on Windows
+     transparent windows and would steal click events. */
+  cursor: grab;
+  touch-action: none;
   filter: drop-shadow(0 12px 12px rgba(15, 23, 42, 0.18));
+}
+
+.butler-pet-button:active {
+  cursor: grabbing;
 }
 
 .butler-pet-button:hover {
   transform: translateY(-3px) scale(1.025);
   filter: drop-shadow(0 16px 15px rgba(15, 23, 42, 0.22));
-}
-
-.butler-pet-button:active {
-  transform: translateY(0) scale(0.98);
 }
 
 .butler-pet-button:focus-visible {
@@ -180,6 +178,37 @@ html[data-surface="butler-chat"] #root {
   top: 8px;
   color: var(--fb-brand);
   filter: drop-shadow(0 0 2px #ffffff) drop-shadow(0 2px 3px rgba(15, 23, 42, 0.2));
+}
+.butler-pet-hint {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  z-index: 2;
+  display: inline-flex;
+  min-width: 54px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  color: #475569;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 6px 14px -8px rgba(15, 23, 42, 0.42);
+  font-family: var(--fb-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 3px) scale(0.96);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  white-space: nowrap;
+}
+
+.butler-pet-button:hover .butler-pet-hint {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
 }
 
 .butler-chat-window {
@@ -208,19 +237,35 @@ html[data-surface="butler-chat"] #root {
   height: 48px;
   flex: 0 0 48px;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 14px;
+  gap: 10px;
+  padding: 0 10px 0 14px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  /* The header drives a main-process group drag via pointer events (see
+     ButlerBuddyChat.tsx), so the pet and chat move together. CSS app-region
+     drag is intentionally avoided: its `move` event is unreliable on Windows
+     during a native drag, which left the pet behind. */
+  cursor: grab;
+  touch-action: none;
 }
 
-.butler-chat-header > img {
+.butler-chat-brand {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.butler-chat-brand > img {
   width: 24px;
   height: 24px;
+  flex: 0 0 24px;
   object-fit: contain;
 }
 
-.butler-chat-header strong {
+.butler-chat-brand strong {
   overflow: hidden;
+  min-width: 0;
   color: var(--fb-text-primary);
   font-size: 13px;
   font-weight: 700;
@@ -231,14 +276,25 @@ html[data-surface="butler-chat"] #root {
 
 .butler-chat-online {
   flex: 0 0 auto;
+  margin-left: -1px;
   color: var(--fb-brand);
 }
 
-.butler-chat-close {
+.butler-chat-header-controls {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.butler-chat-close,
+.butler-chat-action {
   display: inline-flex;
   width: 30px;
   height: 30px;
-  margin-left: auto;
+  flex: 0 0 30px;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -246,13 +302,101 @@ html[data-surface="butler-chat"] #root {
   border: 0;
   border-radius: 8px;
   background: transparent;
+  cursor: pointer;
 }
 
-.butler-chat-close:hover {
+.butler-chat-close {
+  color: var(--fb-text-tertiary);
+}
+
+.butler-chat-close:hover,
+.butler-chat-action:hover:not(:disabled) {
   color: var(--fb-text-primary);
   background: var(--fb-hover);
 }
 
+.butler-chat-action:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.butler-chat-header-tools {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.butler-chat-header-divider {
+  width: 1px;
+  height: 18px;
+  flex: 0 0 1px;
+  margin: 0 2px;
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.butler-chat-header .butler-model-picker {
+  min-width: 0;
+  max-width: 104px;
+  flex: 0 1 104px;
+}
+
+.butler-chat-header .butler-model-picker .session-config-picker-trigger {
+  width: 100%;
+  height: 30px;
+  min-width: 0;
+  padding: 0 7px 0 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--fb-text-secondary);
+  background: transparent;
+  font-size: 11.5px;
+  line-height: 1;
+  gap: 4px;
+}
+
+.butler-chat-header .butler-model-picker .session-config-picker-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--fb-text-tertiary);
+}
+
+.butler-chat-header .butler-model-picker .session-config-picker-trigger:hover:not(:disabled),
+.butler-chat-header .butler-model-picker .session-config-picker-trigger[aria-expanded="true"] {
+  color: var(--fb-text-primary);
+  background: var(--fb-hover);
+}
+
+.butler-chat-header .butler-model-picker .session-config-picker-trigger:hover:not(:disabled) .session-config-picker-icon,
+.butler-chat-header .butler-model-picker .session-config-picker-trigger[aria-expanded="true"] .session-config-picker-icon {
+  color: var(--fb-text-secondary);
+}
+
+.butler-chat-header .butler-model-picker .session-config-picker-value {
+  overflow: hidden;
+  min-width: 0;
+  max-width: 76px;
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.butler-model-fallback {
+  display: inline-flex;
+  height: 30px;
+  max-width: 104px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px 0 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  color: var(--fb-text-tertiary);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .butler-chat-messages {
   display: flex;
   min-height: 0;
@@ -277,14 +421,6 @@ html[data-surface="butler-chat"] #root {
 
 .butler-chat-row.role-user {
   justify-content: flex-end;
-}
-
-.butler-chat-row > img {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  margin-top: 2px;
-  object-fit: contain;
 }
 
 .butler-chat-bubble {
@@ -14701,6 +14837,298 @@ button.ghost:focus-visible,
 }
 
 .settings-section { padding: 12px 0; border-bottom: 1px solid var(--border, #e5e7eb); }
+.butler-settings-section {
+  padding-top: 2px;
+}
+
+.butler-settings-heading {
+  display: flex;
+  max-width: 620px;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.butler-settings-heading-icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  color: var(--fb-brand);
+  border-radius: 9px;
+  background: var(--fb-brand-glow);
+}
+
+.settings-section .butler-settings-heading h3 {
+  margin: 1px 0 3px;
+  font-size: 14px;
+}
+
+.butler-settings-heading p {
+  margin: 0;
+  color: var(--fb-text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.butler-settings-card {
+  max-width: 620px;
+  overflow: hidden;
+  border: 1px solid var(--fb-border-strong);
+  border-radius: 14px;
+  background: var(--fb-panel-bg);
+  box-shadow: var(--fb-shadow-sm);
+}
+
+.butler-settings-row {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+}
+
+.butler-settings-pet-preview {
+  position: relative;
+  display: inline-flex;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.12), rgba(6, 182, 212, 0.08));
+}
+
+.butler-settings-pet-preview img {
+  width: 43px;
+  height: 43px;
+  object-fit: contain;
+}
+
+.butler-settings-pet-preview span {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--fb-panel-bg);
+  border-radius: 50%;
+  background: var(--fb-brand);
+}
+
+.butler-settings-row-icon {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  color: var(--fb-text-secondary);
+  border: 1px solid var(--fb-border);
+  border-radius: 10px;
+  background: var(--fb-panel-soft);
+}
+
+.butler-settings-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+}
+
+.butler-settings-copy strong {
+  color: var(--fb-text-primary);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.butler-settings-copy small {
+  color: var(--fb-text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.butler-settings-divider {
+  height: 1px;
+  margin: 0 16px;
+  background: var(--fb-border);
+}
+
+.butler-settings-switch {
+  position: relative;
+  display: inline-flex;
+  width: 38px;
+  height: 22px;
+  flex: 0 0 38px;
+  cursor: pointer;
+}
+
+.butler-settings-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.butler-settings-switch > span {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--fb-border-strong);
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.butler-settings-switch > span::after {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+  content: "";
+  transition: transform 0.18s ease;
+}
+
+.butler-settings-switch input:checked + span {
+  background: var(--fb-brand);
+}
+
+.butler-settings-switch input:checked + span::after {
+  transform: translateX(16px);
+}
+
+.butler-settings-switch input:focus-visible + span {
+  box-shadow: 0 0 0 3px var(--fb-brand-glow);
+}
+
+.butler-shortcut-editor {
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+  margin: -2px 16px 10px 64px;
+}
+
+.butler-shortcut-recorder {
+  display: grid;
+  min-width: 0;
+  min-height: 48px;
+  flex: 1;
+  grid-template-columns: minmax(88px, 1fr) auto minmax(64px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 12px;
+  color: var(--fb-text-secondary);
+  border: 1px solid var(--fb-border-strong);
+  border-radius: 10px;
+  background: var(--fb-panel-soft);
+  text-align: left;
+}
+
+.butler-shortcut-recorder:hover,
+.butler-shortcut-recorder.is-recording {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: var(--fb-panel-bg);
+  box-shadow: 0 0 0 3px var(--fb-brand-glow);
+}
+
+.butler-shortcut-recorder-label {
+  overflow: hidden;
+  color: var(--fb-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.butler-shortcut-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.butler-shortcut-keys kbd {
+  display: inline-flex;
+  min-width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  color: var(--fb-text-primary);
+  border: 1px solid var(--fb-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--fb-panel-bg);
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+  font-family: var(--fb-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.butler-shortcut-recorder.is-recording .butler-shortcut-keys kbd {
+  color: var(--fb-brand);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.butler-shortcut-action {
+  color: var(--fb-text-tertiary);
+  font-size: 10.5px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.butler-shortcut-reset {
+  display: inline-flex;
+  width: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  color: var(--fb-text-secondary);
+  border: 1px solid var(--fb-border-strong);
+  border-radius: 10px;
+  background: var(--fb-panel-bg);
+}
+
+.butler-shortcut-reset:hover:not(:disabled) {
+  color: var(--fb-text-primary);
+  background: var(--fb-hover);
+}
+
+.butler-shortcut-reset:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.butler-shortcut-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 16px 12px 64px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.butler-shortcut-status.is-success {
+  color: var(--fb-link);
+}
+
+.butler-shortcut-status.is-error {
+  color: var(--fb-danger);
+}
+
+@media (max-width: 680px) {
+  .butler-shortcut-recorder {
+    grid-template-columns: 1fr auto;
+  }
+
+  .butler-shortcut-recorder-label {
+    display: none;
+  }
+}
 .settings-section h3 { margin: 0 0 8px; font-size: 13px; }
 .settings-section select { padding: 6px 8px; border-radius: 6px; }
 .telemetry-setting-toggle {

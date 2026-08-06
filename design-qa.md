@@ -497,3 +497,51 @@ The marketplace rail and catalog toolbar were checked at the normalized desktop 
 - P3: long marketplace names can truncate at the 1024px desktop viewport; the leading unique text and full source tooltip remain available, while the stacked responsive layout exposes more width.
 
 final result: passed
+---
+
+# ButlerBuddy header controls design QA
+
+- Source visual truth: `C:\Users\Morefine\.codex\visualizations\2026\08\06\019fd7a2-e8bc-7e13-bc5c-b112b2aaf36d\butler-header\reference.png`
+- Browser-rendered implementation screenshot: `C:\Users\Morefine\.codex\visualizations\2026\08\06\019fd7a2-e8bc-7e13-bc5c-b112b2aaf36d\butler-header\implementation.png`
+- Viewport: implementation captured at 360 x 420 px; production chat surface is 360 x 420 CSS px
+- Density normalization: source is 433 x 525 px from a Windows 125% desktop capture, approximately 346 x 420 CSS px; implementation is 360 x 420 px at 1x. The focused header regions were compared at their equivalent CSS scale.
+- State: light theme, ButlerBuddy chat open. The source is an empty conversation; the browser preview contains two sample messages. Conversation content differs intentionally and is outside this header-only change.
+
+## Full-view comparison evidence
+
+Both artifacts preserve the same compact white floating surface, 48 px header rhythm, left brand identity, right model control, new-conversation action, close action, and bottom composer. The implementation keeps all body and composer styling unchanged while restructuring only the header controls requested by the user.
+
+## Focused region comparison evidence
+
+The source and implementation were opened together in one comparison input. Post-fix browser measurements show the brand image, title, online dot, model control, new-conversation button, divider, and close button all share an exact vertical center at 32.4 px. Model text is constrained to a 104 px control with ellipsis, and both icon buttons use 30 x 30 px hit areas. The new-conversation glyph is the installed Lucide `MessageCirclePlus` icon.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing FreeBuddy font stack is preserved; ButlerBuddy remains 13 px / 700, while the model label stays at the compact 11.5 px UI scale with single-line truncation.
+- Spacing and layout rhythm: brand and actions are now explicit flex groups; controls share one baseline, 4 px tool gaps, a quiet 18 px divider, and consistent 30 px control height.
+- Colors and visual tokens: existing primary, secondary, tertiary, hover, border, and brand-green tokens remain unchanged.
+- Image quality and asset fidelity: the supplied ButlerBuddy raster asset is unchanged; the requested new-conversation affordance uses the project's installed Lucide icon library rather than a custom drawing.
+- Copy and content: `ButlerBuddy`, the selected model label, `新会话`, and close semantics are unchanged. Long model labels truncate instead of pushing adjacent actions.
+
+## Findings
+
+No actionable P0, P1, or P2 header mismatch remains.
+
+## Comparison history
+
+1. The supplied source exposed a P2 hierarchy problem: brand, model, new-conversation, and close elements were independent siblings with mixed 26/30 px heights and no separation between creation and dismissal actions.
+2. The header was split into stable brand and control groups; model and action heights were normalized; model width was bounded; a light divider was added before close; `SquarePen` was replaced by `MessageCirclePlus`.
+3. Post-fix evidence confirms every visible header element shares the same 32.4 px centerline and the right-side tools remain inside the 360 px viewport without overlap.
+
+## Primary interactions tested
+
+- Confirmed the new-conversation and close actions remain native buttons with accessible names and 30 x 30 px hit areas.
+- Confirmed long model content is constrained by the fixed-width picker and ellipsis rules.
+- Checked the browser-rendered surface for console warnings and errors: none.
+- Type checking and the ButlerBuddy contract suite cover the retained new-conversation handler and model picker wiring.
+
+## Follow-up polish
+
+- P3: The model picker is a non-interactive fallback in the browser preview because live options come from the Electron adapter bridge; the production desktop picker retains its existing interaction.
+
+final result: passed

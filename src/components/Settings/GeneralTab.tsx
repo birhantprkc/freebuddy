@@ -1,3 +1,11 @@
+import {
+  AlertCircle,
+  Check,
+  Keyboard,
+  PawPrint,
+  RotateCcw
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "@/store/settingsStore";
 import {
@@ -21,6 +29,56 @@ const THEME_LABEL_KEY: Record<ThemePreference, string> = {
   dark: "general.themeDark"
 };
 
+const DEFAULT_BUTLER_SHORTCUT = "CommandOrControl+Shift+Space";
+const petImageUrl = `${import.meta.env.BASE_URL}butlerbuddy-pet.png`;
+
+function shortcutFromEvent(event: KeyboardEvent): string | undefined {
+  if (["Control", "Meta", "Alt", "Shift"].includes(event.key)) return;
+  if (!event.ctrlKey && !event.metaKey && !event.altKey) return;
+
+  const modifiers: string[] = [];
+  if (event.ctrlKey || event.metaKey) modifiers.push("CommandOrControl");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+
+  const keyMap: Record<string, string> = {
+    " ": "Space",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Escape: "Esc",
+    Enter: "Enter",
+    Tab: "Tab",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown"
+  };
+  const key =
+    keyMap[event.key] ??
+    (/^F(?:[1-9]|1\d|2[0-4])$/.test(event.key)
+      ? event.key
+      : event.key.length === 1
+        ? event.key.toUpperCase()
+        : undefined);
+  return key ? [...modifiers, key].join("+") : undefined;
+}
+
+function shortcutTokens(shortcut: string): string[] {
+  const isMac =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+  return shortcut.split("+").map((token) => {
+    if (token === "CommandOrControl") return isMac ? "⌘" : "Ctrl";
+    if (token === "Shift") return "⇧";
+    if (token === "Alt") return isMac ? "⌥" : "Alt";
+    if (token === "Space") return "Space";
+    return token;
+  });
+}
+
 export function GeneralTab() {
   const { t } = useTranslation();
   const language = useSettingsStore((s) => s.language);
@@ -29,9 +87,171 @@ export function GeneralTab() {
   const setTheme = useSettingsStore((s) => s.setTheme);
   const telemetryEnabled = useSettingsStore((s) => s.telemetryEnabled);
   const setTelemetryEnabled = useSettingsStore((s) => s.setTelemetryEnabled);
+  const butlerVisible = useSettingsStore((s) => s.butlerBuddyVisible);
+  const shortcutEnabled = useSettingsStore((s) => s.butlerBuddyShortcutEnabled);
+  const shortcut = useSettingsStore((s) => s.butlerBuddyShortcut);
+  const shortcutRegistered = useSettingsStore(
+    (s) => s.butlerBuddyShortcutRegistered
+  );
+  const shortcutError = useSettingsStore((s) => s.butlerBuddyShortcutError);
+  const updateButler = useSettingsStore(
+    (s) => s.updateButlerBuddyPreferences
+  );
+  const [recording, setRecording] = useState(false);
+  const [captureError, setCaptureError] = useState("");
+
+  useEffect(() => {
+    if (!recording) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat) return;
+      if (event.key === "Escape") {
+        setRecording(false);
+        setCaptureError("");
+        return;
+      }
+      const next = shortcutFromEvent(event);
+      if (!next) {
+        if (!["Control", "Meta", "Alt", "Shift"].includes(event.key)) {
+          setCaptureError(t("general.butlerShortcutInvalid"));
+        }
+        return;
+      }
+      setCaptureError("");
+      setRecording(false);
+      void updateButler({ shortcut: next, shortcutEnabled: true });
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [recording, t, updateButler]);
+
+  const shownShortcutError = captureError ||
+    (shortcutError ? t("general.butlerShortcutUnavailable") : "");
 
   return (
     <>
+      <section className="settings-section butler-settings-section">
+        <div className="butler-settings-heading">
+          <span className="butler-settings-heading-icon" aria-hidden="true">
+            <PawPrint size={17} strokeWidth={1.9} />
+          </span>
+          <div>
+            <h3>{t("general.butlerTitle")}</h3>
+            <p>{t("general.butlerDescription")}</p>
+          </div>
+        </div>
+
+        <div className="butler-settings-card">
+          <div className="butler-settings-row">
+            <div className="butler-settings-pet-preview" aria-hidden="true">
+              <img src={petImageUrl} alt="" />
+              <span />
+            </div>
+            <div className="butler-settings-copy">
+              <strong>{t("general.butlerShowPet")}</strong>
+              <small>{t("general.butlerShowPetDescription")}</small>
+            </div>
+            <label className="butler-settings-switch">
+              <input
+                type="checkbox"
+                checked={butlerVisible}
+                onChange={(event) =>
+                  void updateButler({ visible: event.target.checked })
+                }
+                aria-label={t("general.butlerShowPet")}
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+
+          <div className="butler-settings-divider" />
+
+          <div className="butler-settings-row butler-settings-shortcut-row">
+            <span className="butler-settings-row-icon" aria-hidden="true">
+              <Keyboard size={18} strokeWidth={1.8} />
+            </span>
+            <div className="butler-settings-copy">
+              <strong>{t("general.butlerShortcut")}</strong>
+              <small>{t("general.butlerShortcutDescription")}</small>
+            </div>
+            <label className="butler-settings-switch">
+              <input
+                type="checkbox"
+                checked={shortcutEnabled}
+                onChange={(event) => {
+                  setRecording(false);
+                  setCaptureError("");
+                  void updateButler({ shortcutEnabled: event.target.checked });
+                }}
+                aria-label={t("general.butlerShortcut")}
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+
+          {shortcutEnabled && (
+            <div className="butler-shortcut-editor">
+              <button
+                type="button"
+                className={`butler-shortcut-recorder${recording ? " is-recording" : ""}`}
+                aria-pressed={recording}
+                onClick={() => {
+                  setCaptureError("");
+                  setRecording((value) => !value);
+                }}
+              >
+                <span className="butler-shortcut-recorder-label">
+                  {recording
+                    ? t("general.butlerShortcutRecording")
+                    : t("general.butlerShortcutCurrent")}
+                </span>
+                <span className="butler-shortcut-keys" aria-label={shortcut}>
+                  {recording ? (
+                    <kbd>…</kbd>
+                  ) : (
+                    shortcutTokens(shortcut).map((token, index) => (
+                      <kbd key={`${token}-${index}`}>{token}</kbd>
+                    ))
+                  )}
+                </span>
+                <span className="butler-shortcut-action">
+                  {recording
+                    ? t("general.butlerShortcutCancelHint")
+                    : t("general.butlerShortcutChange")}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="butler-shortcut-reset"
+                onClick={() => {
+                  setRecording(false);
+                  setCaptureError("");
+                  void updateButler({ shortcut: DEFAULT_BUTLER_SHORTCUT });
+                }}
+                disabled={shortcut === DEFAULT_BUTLER_SHORTCUT}
+                title={t("general.butlerShortcutReset")}
+                aria-label={t("general.butlerShortcutReset")}
+              >
+                <RotateCcw size={14} strokeWidth={1.9} />
+              </button>
+            </div>
+          )}
+
+          {shortcutEnabled && shownShortcutError ? (
+            <div className="butler-shortcut-status is-error" role="alert">
+              <AlertCircle size={13} />
+              <span>{shownShortcutError}</span>
+            </div>
+          ) : shortcutEnabled && shortcutRegistered ? (
+            <div className="butler-shortcut-status is-success">
+              <Check size={13} />
+              <span>{t("general.butlerShortcutReady")}</span>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       <section className="settings-section">
         <h3>{t("general.languageLabel")}</h3>
         <select

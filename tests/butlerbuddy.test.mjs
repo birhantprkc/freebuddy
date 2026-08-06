@@ -115,7 +115,7 @@ test("the built-in skill and composer expose the protected core capability", () 
     "utf8"
   );
 
-  assert.match(skill, /^---\nname: butlerbuddy\n/);
+  assert.match(skill, /^---\r?\nname: butlerbuddy\r?\n/);
   assert.match(skill, /request confirmation/i);
   assert.match(skill, /Never write directly to FreeBuddy databases/);
   assert.match(composer, /disabled=\{required\.has\(skill\.id\)\}/);
@@ -145,7 +145,8 @@ test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", ()
   assert.match(main, /surface: "butler-pet" \| "butler-chat"/);
   assert.match(main, /alwaysOnTop: true/);
   assert.match(main, /transparent: true/);
-  assert.match(main, /butlerPetWindow\.on\("move", syncButlerChatPosition\)/);
+  assert.match(main, /startButlerPetDrag|applyButlerPetDrag/);
+  assert.match(main, /butlerDragChatOrigin/);
   assert.match(preload, /ipcRenderer\.send\("butlerBuddy:toggleChat"\)/);
   assert.match(preload, /ipcRenderer\.send\("butlerBuddy:hideChat"\)/);
   assert.match(renderer, /surface === "butler-pet"/);
@@ -153,6 +154,28 @@ test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", ()
   assert.match(pet, /butlerbuddy-pet\.png/);
 });
 
+test("ButlerBuddy preferences expose a global shortcut with conflict feedback", () => {
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const settings = fs.readFileSync(
+    new URL("../src/components/Settings/GeneralTab.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(main, /CommandOrControl\+Shift\+Space/);
+  assert.match(main, /globalShortcut\.register\(shortcut, toggleButlerChat\)/);
+  assert.match(main, /butlerBuddy:updatePreferences/);
+  assert.match(preload, /butlerBuddy:getPreferences/);
+  assert.match(settings, /butler-shortcut-recorder/);
+  assert.match(settings, /butlerShortcutUnavailable/);
+  assert.match(settings, /DEFAULT_BUTLER_SHORTCUT/);
+});
 test("the ButlerBuddy popover is a persisted real conversation, not a fake panel", () => {
   const chat = fs.readFileSync(
     new URL("../src/components/ButlerBuddy/ButlerBuddyChat.tsx", import.meta.url),
@@ -165,5 +188,7 @@ test("the ButlerBuddy popover is a persisted real conversation, not a fake panel
   assert.match(chat, /getState\(\)\.loadMessages\(conversation\.id\)/);
   assert.match(chat, /sendMessage\(\{/);
   assert.match(chat, /发消息给 ButlerBuddy/);
+  assert.match(chat, /MessageCirclePlus/);
+  assert.match(chat, /butler-chat-header-controls/);
   assert.doesNotMatch(chat, /打开插件管理|检查所有 Agent|查看更新/);
 });

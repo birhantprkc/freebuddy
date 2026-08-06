@@ -341,7 +341,21 @@ const window = {
 
 const butlerBuddy = {
   toggleChat: () => ipcRenderer.send("butlerBuddy:toggleChat"),
-  hideChat: () => ipcRenderer.send("butlerBuddy:hideChat")
+  hideChat: () => ipcRenderer.send("butlerBuddy:hideChat"),
+  beginDrag: () => ipcRenderer.send("butlerBuddy:beginDrag"),
+  endDrag: () => ipcRenderer.send("butlerBuddy:endDrag"),
+  openMenu: () => ipcRenderer.send("butlerBuddy:openMenu"),
+  getPreferences: () => ipcRenderer.invoke("butlerBuddy:getPreferences"),
+  updatePreferences: (input: {
+    visible?: boolean;
+    shortcutEnabled?: boolean;
+    shortcut?: string;
+  }) => ipcRenderer.invoke("butlerBuddy:updatePreferences", input),
+  onNewConversation(cb: () => void): () => void {
+    const handler = () => cb();
+    ipcRenderer.on("butlerBuddy:newConversation", handler);
+    return () => ipcRenderer.off("butlerBuddy:newConversation", handler);
+  }
 };
 
 const settings: {

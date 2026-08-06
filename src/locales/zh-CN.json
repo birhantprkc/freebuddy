@@ -158,7 +158,21 @@
     "themeDark": "深色",
     "telemetryLabel": "匿名使用数据",
     "telemetryEnabled": "帮助改进 FreeBuddy",
-    "telemetryDescription": "发送匿名安装、启动、升级、应用版本、操作系统和 CPU 架构；不会发送对话、提示词、文件路径或工作区内容。"
+    "telemetryDescription": "发送匿名安装、启动、升级、应用版本、操作系统和 CPU 架构；不会发送对话、提示词、文件路径或工作区内容。",
+    "butlerTitle": "宠物浮窗",
+    "butlerDescription": "把 ButlerBuddy 留在桌面，需要时随手唤起。",
+    "butlerShowPet": "显示桌面宠物",
+    "butlerShowPetDescription": "点击打开对话，拖动调整位置，右键查看更多操作。",
+    "butlerShortcut": "快捷唤起",
+    "butlerShortcutDescription": "在其他应用中也能打开或收起对话。",
+    "butlerShortcutCurrent": "当前快捷键",
+    "butlerShortcutRecording": "请按下组合键",
+    "butlerShortcutCancelHint": "Esc 取消",
+    "butlerShortcutChange": "点击修改",
+    "butlerShortcutReset": "恢复默认快捷键",
+    "butlerShortcutReady": "全局快捷键已生效",
+    "butlerShortcutUnavailable": "这个组合键已被其他应用占用，请换一个。",
+    "butlerShortcutInvalid": "请同时按下 Ctrl/⌘ 或 Alt 与另一个按键。"
   },
   "app": { "brand": "FreeBuddy", "chat": "聊天" },
   "skills": {

@@ -298,9 +298,26 @@ declare global {
     logout(): void;
   }
 
-  interface FreebuddyButlerBuddy {
-    toggleChat(): void;
+  interface ButlerBuddyPreferences {
+    visible: boolean;
+    shortcutEnabled: boolean;
+    shortcut: string;
+    shortcutRegistered: boolean;
+    error?: "shortcutUnavailable";
+  }
+
+  interface FreebuddyButlerBuddy {    toggleChat(): void;
     hideChat(): void;
+    beginDrag(): void;
+    endDrag(): void;
+    openMenu(): void;
+    getPreferences(): Promise<ButlerBuddyPreferences>;
+    updatePreferences(input: {
+      visible?: boolean;
+      shortcutEnabled?: boolean;
+      shortcut?: string;
+    }): Promise<ButlerBuddyPreferences>;
+    onNewConversation(cb: () => void): () => void;
   }
 
   interface FreebuddySettings {
