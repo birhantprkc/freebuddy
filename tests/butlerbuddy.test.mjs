@@ -122,3 +122,48 @@ test("the built-in skill and composer expose the protected core capability", () 
   assert.match(design, /first-class built-in Agent/);
   assert.match(design, /freebuddy-admin-controlled/);
 });
+
+test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", () => {
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const renderer = fs.readFileSync(
+    new URL("../src/main.tsx", import.meta.url),
+    "utf8"
+  );
+  const pet = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/ButlerBuddyPet.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(main, /function createButlerBuddyWindows\(\)/);
+  assert.match(main, /surface: "butler-pet" \| "butler-chat"/);
+  assert.match(main, /alwaysOnTop: true/);
+  assert.match(main, /transparent: true/);
+  assert.match(main, /butlerPetWindow\.on\("move", syncButlerChatPosition\)/);
+  assert.match(preload, /ipcRenderer\.send\("butlerBuddy:toggleChat"\)/);
+  assert.match(preload, /ipcRenderer\.send\("butlerBuddy:hideChat"\)/);
+  assert.match(renderer, /surface === "butler-pet"/);
+  assert.match(renderer, /surface === "butler-chat"/);
+  assert.match(pet, /butlerbuddy-pet\.png/);
+});
+
+test("the ButlerBuddy popover is a persisted real conversation, not a fake panel", () => {
+  const chat = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/ButlerBuddyChat.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(chat, /butlerbuddy\.petConversationId/);
+  assert.match(chat, /entry\.id === BUTLERBUDDY_AGENT_ID/);
+  assert.match(chat, /state\.newConversation\(/);
+  assert.match(chat, /getState\(\)\.loadMessages\(conversation\.id\)/);
+  assert.match(chat, /sendMessage\(\{/);
+  assert.match(chat, /发消息给 ButlerBuddy/);
+  assert.doesNotMatch(chat, /打开插件管理|检查所有 Agent|查看更新/);
+});

@@ -113,6 +113,291 @@ button {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+html[data-surface="butler-pet"],
+html[data-surface="butler-chat"],
+html[data-surface="butler-pet"] body,
+html[data-surface="butler-chat"] body,
+html[data-surface="butler-pet"] #root,
+html[data-surface="butler-chat"] #root {
+  color-scheme: light;
+  background: transparent;
+}
+
+.butler-pet-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+.butler-pet-drag-zone {
+  position: absolute;
+  inset: 0;
+  -webkit-app-region: drag;
+}
+
+.butler-pet-button {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  width: 96px;
+  height: 96px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 28px;
+  background: transparent;
+  -webkit-app-region: no-drag;
+  filter: drop-shadow(0 12px 12px rgba(15, 23, 42, 0.18));
+}
+
+.butler-pet-button:hover {
+  transform: translateY(-3px) scale(1.025);
+  filter: drop-shadow(0 16px 15px rgba(15, 23, 42, 0.22));
+}
+
+.butler-pet-button:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.butler-pet-button:focus-visible {
+  outline: 3px solid rgba(16, 185, 129, 0.3);
+  outline-offset: 2px;
+}
+
+.butler-pet-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.butler-pet-online {
+  position: absolute;
+  right: 9px;
+  top: 8px;
+  color: var(--fb-brand);
+  filter: drop-shadow(0 0 2px #ffffff) drop-shadow(0 2px 3px rgba(15, 23, 42, 0.2));
+}
+
+.butler-chat-window {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  display: flex;
+  width: calc(100% - 16px);
+  height: calc(100% - 16px);
+  max-width: 344px;
+  max-height: 404px;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--fb-text-primary);
+  background: rgba(255, 255, 255, 0.985);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 16px;
+  box-shadow: 0 24px 54px -24px rgba(15, 23, 42, 0.34),
+    0 8px 18px -12px rgba(15, 23, 42, 0.2);
+}
+
+.butler-chat-header {
+  display: flex;
+  height: 48px;
+  flex: 0 0 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.butler-chat-header > img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.butler-chat-header strong {
+  overflow: hidden;
+  color: var(--fb-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.butler-chat-online {
+  flex: 0 0 auto;
+  color: var(--fb-brand);
+}
+
+.butler-chat-close {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--fb-text-secondary);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.butler-chat-close:hover {
+  color: var(--fb-text-primary);
+  background: var(--fb-hover);
+}
+
+.butler-chat-messages {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 14px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 18px 16px 14px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.36) transparent;
+}
+
+.butler-chat-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.butler-chat-row.role-user {
+  justify-content: flex-end;
+}
+
+.butler-chat-row > img {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  margin-top: 2px;
+  object-fit: contain;
+}
+
+.butler-chat-bubble {
+  max-width: 82%;
+  padding: 9px 11px;
+  color: var(--fb-text-primary);
+  border-radius: 11px;
+  background: #f3f6f8;
+  font-family: var(--fb-chat-font);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.butler-chat-row.role-user .butler-chat-bubble {
+  background: #e8f7f1;
+}
+
+.butler-chat-loading,
+.butler-chat-empty {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: var(--fb-text-tertiary);
+  font-size: 12px;
+}
+
+.butler-chat-empty {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.butler-chat-empty img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  opacity: 0.9;
+}
+
+.butler-chat-typing {
+  color: var(--fb-text-tertiary);
+}
+
+.butler-chat-error {
+  margin: 0 16px 8px;
+  color: var(--fb-danger);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.butler-chat-composer {
+  display: flex;
+  min-height: 56px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 12px;
+  padding: 7px 7px 7px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: #ffffff;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.butler-chat-composer:focus-within {
+  border-color: rgba(16, 185, 129, 0.58);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.08);
+}
+
+.butler-chat-composer input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 6px 0;
+  color: var(--fb-text-primary);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.butler-chat-composer input::placeholder {
+  color: var(--fb-text-tertiary);
+}
+
+.butler-chat-composer button {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #ffffff;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fb-brand);
+}
+
+.butler-chat-composer button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #059669;
+}
+
+.butler-chat-composer button:disabled {
+  cursor: default;
+  color: #94a3b8;
+  background: #e2e8f0;
+}
+
 .app-shell {
   position: fixed;
   inset: 0;

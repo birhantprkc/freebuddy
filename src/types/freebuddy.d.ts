@@ -298,6 +298,11 @@ declare global {
     logout(): void;
   }
 
+  interface FreebuddyButlerBuddy {
+    toggleChat(): void;
+    hideChat(): void;
+  }
+
   interface FreebuddySettings {
     getSetting(key: string): Promise<string | null>;
     setSetting(key: string, value: string): Promise<void>;
@@ -682,6 +687,7 @@ declare global {
     debugLogs: FreebuddyDebugLogs;
     shell: FreebuddyShell;
     remote: FreebuddyRemote;
+    butlerBuddy: FreebuddyButlerBuddy;
   }
 
   interface Window {

@@ -339,6 +339,11 @@ const window = {
   }
 };
 
+const butlerBuddy = {
+  toggleChat: () => ipcRenderer.send("butlerBuddy:toggleChat"),
+  hideChat: () => ipcRenderer.send("butlerBuddy:hideChat")
+};
+
 const settings: {
   getSetting: (key: string) => Promise<unknown>;
   setSetting: (key: string, value: string) => Promise<unknown>;
@@ -609,5 +614,6 @@ contextBridge.exposeInMainWorld("freebuddy", {
   updater,
   debugLogs,
   shell: shellApi,
-  remote
+  remote,
+  butlerBuddy
 });

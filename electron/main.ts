@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, Notification, protocol, shell } from "electron";
+import { app, BrowserWindow, ipcMain, nativeImage, Notification, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -204,6 +204,155 @@ async function injectShellPath() {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let butlerPetWindow: BrowserWindow | null = null;
+let butlerChatWindow: BrowserWindow | null = null;
+
+const BUTLER_PET_SIZE = 128;
+const BUTLER_CHAT_WIDTH = 360;
+const BUTLER_CHAT_HEIGHT = 420;
+const BUTLER_WINDOW_GAP = 6;
+
+function companionWebPreferences() {
+  return {
+    preload: path.join(__dirname, "preload.js"),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: false
+  };
+}
+
+function loadCompanionSurface(
+  win: BrowserWindow,
+  surface: "butler-pet" | "butler-chat"
+) {
+  if (isDev) {
+    const url = new URL(process.env.VITE_DEV_SERVER_URL as string);
+    url.searchParams.set("surface", surface);
+    void win.loadURL(url.toString());
+    return;
+  }
+  void win.loadFile(path.join(__dirname, "../dist/index.html"), {
+    query: { surface }
+  });
+}
+
+function initialButlerPetBounds() {
+  const workArea = screen.getPrimaryDisplay().workArea;
+  return {
+    width: BUTLER_PET_SIZE,
+    height: BUTLER_PET_SIZE,
+    x: workArea.x + workArea.width - BUTLER_PET_SIZE - 18,
+    y: workArea.y + Math.round((workArea.height - BUTLER_PET_SIZE) / 2)
+  };
+}
+
+function syncButlerChatPosition() {
+  const pet = butlerPetWindow;
+  const chat = butlerChatWindow;
+  if (!pet || pet.isDestroyed() || !chat || chat.isDestroyed()) return;
+
+  const petBounds = pet.getBounds();
+  const workArea = screen.getDisplayMatching(petBounds).workArea;
+  let x = petBounds.x - BUTLER_CHAT_WIDTH - BUTLER_WINDOW_GAP;
+  if (x < workArea.x + 8) {
+    x = petBounds.x + petBounds.width + BUTLER_WINDOW_GAP;
+  }
+  const idealY = petBounds.y - Math.round((BUTLER_CHAT_HEIGHT - petBounds.height) / 2);
+  const y = Math.max(
+    workArea.y + 8,
+    Math.min(idealY, workArea.y + workArea.height - BUTLER_CHAT_HEIGHT - 8)
+  );
+  chat.setPosition(Math.round(x), Math.round(y), false);
+}
+
+function hideButlerChat() {
+  if (butlerChatWindow && !butlerChatWindow.isDestroyed()) {
+    butlerChatWindow.hide();
+  }
+}
+
+function toggleButlerChat() {
+  const chat = butlerChatWindow;
+  if (!chat || chat.isDestroyed()) return;
+  if (chat.isVisible()) {
+    chat.hide();
+    return;
+  }
+  syncButlerChatPosition();
+  chat.show();
+  chat.focus();
+}
+
+function closeButlerBuddyWindows() {
+  if (butlerChatWindow && !butlerChatWindow.isDestroyed()) {
+    butlerChatWindow.close();
+  }
+  if (butlerPetWindow && !butlerPetWindow.isDestroyed()) {
+    butlerPetWindow.close();
+  }
+  butlerChatWindow = null;
+  butlerPetWindow = null;
+}
+
+function createButlerBuddyWindows() {
+  if (butlerPetWindow && !butlerPetWindow.isDestroyed()) return;
+
+  butlerChatWindow = new BrowserWindow({
+    width: BUTLER_CHAT_WIDTH,
+    height: BUTLER_CHAT_HEIGHT,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    webPreferences: companionWebPreferences()
+  });
+  butlerChatWindow.setAlwaysOnTop(true, "floating");
+  butlerChatWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  butlerChatWindow.on("close", () => {
+    butlerChatWindow = null;
+  });
+  loadCompanionSurface(butlerChatWindow, "butler-chat");
+
+  butlerPetWindow = new BrowserWindow({
+    ...initialButlerPetBounds(),
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    webPreferences: companionWebPreferences()
+  });
+  butlerPetWindow.setAlwaysOnTop(true, "floating");
+  butlerPetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  butlerPetWindow.on("move", syncButlerChatPosition);
+  butlerPetWindow.on("closed", () => {
+    hideButlerChat();
+    butlerPetWindow = null;
+  });
+  butlerPetWindow.once("ready-to-show", () => {
+    butlerPetWindow?.showInactive();
+  });
+  loadCompanionSurface(butlerPetWindow, "butler-pet");
+}
+
+function registerButlerBuddyWindowIpc() {
+  ipcMain.on("butlerBuddy:toggleChat", toggleButlerChat);
+  ipcMain.on("butlerBuddy:hideChat", hideButlerChat);
+}
 
 function windowChromeOptions() {
   return process.platform === "darwin"
@@ -232,6 +381,11 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false
     }
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    closeButlerBuddyWindows();
   });
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
@@ -295,6 +449,8 @@ function createWindow() {
   } else {
     void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+
+  createButlerBuddyWindows();
 }
 
 type TaskNotificationPayload = {
@@ -422,6 +578,7 @@ app.whenReady().then(async () => {
   seedBuiltinWorkflowTeams();
   registerCliIpc();
   registerTaskNotificationIpc();
+  registerButlerBuddyWindowIpc();
   bindConversationNotifier((conversationId) => {
     for (const win of BrowserWindow.getAllWindows()) {
       safeSendToWebContents(win.webContents, "messages://changed", { conversationId });
