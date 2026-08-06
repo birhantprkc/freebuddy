@@ -45,15 +45,28 @@ export function listCliMembers(): CLIMember[] {
       overrideAdapter ??
       (member.runtimeKey ? dynamicDefaultAdapter : undefined) ??
       member.cli.adapter;
+    const adapterOverride = overrideById.get(adapter);
+    const extraArgs = [
+      ...(adapterOverride?.extraArgs ?? []),
+      ...(member.cli.extraArgs ?? [])
+    ];
+    const env = {
+      ...(adapterOverride?.env ?? {}),
+      ...(member.cli.env ?? {})
+    };
     return {
       ...member,
       runtimeKey: adapter,
+      enabled: adapterOverride?.enabled ?? member.enabled,
       cli: {
         ...member.cli,
         adapter,
+        binary: member.cli.binary ?? adapterOverride?.binary,
+        ...(extraArgs.length > 0 ? { extraArgs } : {}),
+        ...(Object.keys(env).length > 0 ? { env } : {}),
         skillIds: mergeRequiredSkillIds(
           member.id,
-          overrideById.get(adapter)?.skillIds ?? member.cli.skillIds
+          adapterOverride?.skillIds ?? member.cli.skillIds
         )
       }
     };
