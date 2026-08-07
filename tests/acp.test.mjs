@@ -18,6 +18,7 @@ import {
   buildSessionSetConfigOptionRequest,
   buildTerminalOutputResponse,
   contentBlockToItems,
+  isMissingSavedSessionError,
   parseAcpLine,
   selectAcpAuthMethod,
   selectAcpSessionStartMode,
@@ -462,6 +463,31 @@ test("buildSessionLoadRequest loads Cursor-style ACP sessions", () => {
   });
 });
 
+test("isMissingSavedSessionError recognizes Cursor Invalid params Session not found", () => {
+  const cursorErr = Object.assign(new Error("Invalid params"), {
+    code: -32602,
+    data: {
+      message: 'Session "8140ff9a-7f50-426d-987e-3e8c5c2b0ece" not found'
+    }
+  });
+  assert.equal(isMissingSavedSessionError(cursorErr), true);
+
+  const resourceErr = Object.assign(new Error("Resource not found"), {
+    code: -32002
+  });
+  assert.equal(isMissingSavedSessionError(resourceErr), true);
+
+  const authErr = Object.assign(new Error("Authentication required"), {
+    code: -32000
+  });
+  assert.equal(isMissingSavedSessionError(authErr), false);
+
+  const invalidParamsUnrelated = Object.assign(new Error("Invalid params"), {
+    code: -32602
+  });
+  assert.equal(isMissingSavedSessionError(invalidParamsUnrelated), false);
+});
+
 test("ACP session lifecycle injects FreeBuddy stdio MCP servers", () => {
   const mcpServers = [
     {
@@ -532,8 +558,7 @@ test("ACP session setup can forward Claude SDK settings through _meta", () => {
   );
 });
 
-test("ACP runtime authenticates standard auth-required errors and separates missing sessions", () => {
-  assert.match(acpRuntimeSource, /Saved agent session is no longer available/);
+test("ACP runtime authenticates standard auth-required errors and recovers missing sessions", () => {
   assert.match(acpRuntimeSource, /isAuthenticationRequiredError/);
   assert.match(acpRuntimeSource, /e\?\.code === -32000/);
   assert.match(
@@ -543,6 +568,15 @@ test("ACP runtime authenticates standard auth-required errors and separates miss
   assert.match(
     acpRuntimeSource,
     /requestedToolSessionId\s*&&\s*isMissingSavedSessionError\(sessionErr\)/
+  );
+  assert.match(acpRuntimeSource, /abandonStaleToolSession/);
+  assert.match(
+    acpRuntimeSource,
+    /Previous agent session is no longer available; starting a fresh session/
+  );
+  assert.match(
+    acpRuntimeSource,
+    /abandonStaleToolSession\(requestedToolSessionId, sessionErr\);\s*await establishSession\(\);/
   );
   assert.match(acpRuntimeSource, /Unsupported ACP protocol version/);
 });

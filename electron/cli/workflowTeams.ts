@@ -1,5 +1,6 @@
 import { BrowserWindow } from "electron";
 import { getDb } from "./db.js";
+import { logMain } from "../debugLog.js";
 import { safeSendToWebContents } from "./ipcSend.js";
 import type {
   WorkflowTeam,
@@ -12,6 +13,33 @@ import { builtinWorkflowTeams } from "./workflowTeamBuiltins.js";
 function notifyWorkflowTeamsChanged(): void {
   for (const win of BrowserWindow.getAllWindows()) {
     safeSendToWebContents(win.webContents, "workflowTeams://changed", undefined);
+  }
+}
+
+/**
+ * Audit every workflow_teams write so exported debug logs can pinpoint which
+ * process / caller mutated a team's roles (esp. skillIds). The pid field is the
+ * key signal for the multi-process clobber scenario; skillCounts reveals whether
+ * the write cleared or preserved per-role skills.
+ */
+function auditTeamWrite(
+  action: string,
+  teamId: string,
+  roles: WorkflowTeamRole[] | undefined,
+  extra?: Record<string, unknown>
+): void {
+  try {
+    logMain().info("workflowTeams", "audit write", {
+      action,
+      teamId,
+      pid: process.pid,
+      ppid: process.ppid,
+      roleCount: roles?.length ?? 0,
+      skillCounts: roles?.map((r) => ({ id: r.id, n: r.skillIds?.length ?? 0 })),
+      ...extra
+    });
+  } catch {
+    /* audit logging must never disrupt the write path */
   }
 }
 
@@ -59,6 +87,7 @@ export interface UpsertWorkflowTeamInput {
 
 export function insertWorkflowTeam(input: UpsertWorkflowTeamInput): WorkflowTeam {
   const now = new Date().toISOString();
+  auditTeamWrite("insert", input.id, input.roles, { source: input.source });
   getDb()
     .prepare(
       `INSERT INTO workflow_teams
@@ -101,6 +130,13 @@ export function updateWorkflowTeam(
 ): WorkflowTeam | undefined {
   const existing = getWorkflowTeam(id);
   if (!existing) return undefined;
+
+  auditTeamWrite(
+    "update",
+    id,
+    patch.roles ?? existing.roles,
+    patch.roles !== undefined ? { changedRoles: true } : { changedRoles: false }
+  );
 
   const fields: string[] = ["updated_at = ?"];
   const params: any[] = [new Date().toISOString()];
@@ -145,6 +181,7 @@ export function deleteWorkflowTeam(id: string): boolean {
   const team = getWorkflowTeam(id);
   if (!team) return false;
   if (team.source === "builtin") return false;
+  auditTeamWrite("delete", id, team.roles, { source: team.source });
   getDb().prepare("DELETE FROM workflow_teams WHERE id = ?").run(id);
   notifyWorkflowTeamsChanged();
   return true;
@@ -192,9 +229,18 @@ function mergeBuiltinPolicy(
 }
 
 export function seedBuiltinWorkflowTeams(): void {
+  logMain().info("workflowTeams", "seed builtins start", { pid: process.pid });
   const db = getDb();
   for (const id of removedBuiltinWorkflowTeamIds) {
+    const row = db
+      .prepare("SELECT id, source, roles_json FROM workflow_teams WHERE id = ?")
+      .get(id) as any;
     db.prepare("DELETE FROM workflow_teams WHERE id = ? AND source = 'builtin'").run(id);
+    if (row) {
+      auditTeamWrite("seed-retire", id, row.roles_json ? JSON.parse(row.roles_json) : undefined, {
+        source: row.source
+      });
+    }
   }
 
   const existing = listWorkflowTeams();
@@ -202,10 +248,15 @@ export function seedBuiltinWorkflowTeams(): void {
   for (const team of builtinWorkflowTeams()) {
     const saved = existingById.get(team.id);
     if (!saved) {
+      auditTeamWrite("seed-insert", team.id, team.roles, { reason: "missing" });
       insertWorkflowTeam(team);
       continue;
     }
     if (saved.source !== "builtin") continue;
+    const mergedRoles = mergeBuiltinRoles(saved, team);
+    auditTeamWrite("seed-merge", team.id, mergedRoles, {
+      savedSkillCounts: saved.roles.map((r) => ({ id: r.id, n: r.skillIds?.length ?? 0 }))
+    });
     updateWorkflowTeam(team.id, {
       name: team.name,
       description: team.description,
@@ -216,4 +267,5 @@ export function seedBuiltinWorkflowTeams(): void {
       policy: mergeBuiltinPolicy(saved, team)
     });
   }
+  logMain().info("workflowTeams", "seed builtins done", { pid: process.pid });
 }
