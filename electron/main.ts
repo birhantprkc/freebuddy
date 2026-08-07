@@ -12,6 +12,7 @@ import { handleDraftRequest } from "./draftProtocol.js";
 import { startPreviewServer } from "./previewServer.js";
 import { startWebUIServer } from "./webUIServer.js";
 import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
+import { setButlerAppWindowGetter } from "./butlerToolService.js";
 import { ensureOwnerUser, getOwnerUser } from "./cli/users.js";
 import { bindConversationNotifier } from "./cli/conversations.js";
 import { applyOwnerBackfill } from "./cli/ownerBackfill.js";
@@ -785,6 +786,9 @@ app.whenReady().then(async () => {
     applyOwnerBackfill(existingOwner.id);
   }
   setLocalInvokeWindowGetter(() =>
+    mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  );
+  setButlerAppWindowGetter(() =>
     mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
   );
   const remoteEnabled =
