@@ -73,3 +73,22 @@ test("main window presence is published through preload and App", () => {
   assert.match(app, /setUiPresence/);
   assert.match(types, /setUiPresence/);
 });
+
+test("status_get and butler skill expose mainWindow presence", () => {
+  const service = fs.readFileSync(
+    new URL("../electron/butlerToolService.ts", import.meta.url),
+    "utf8"
+  );
+  const mcp = fs.readFileSync(
+    new URL("../electron/mcp/butlerMcpServer.ts", import.meta.url),
+    "utf8"
+  );
+  const skill = fs.readFileSync(
+    new URL("../assets/skills/butlerbuddy/SKILL.md", import.meta.url),
+    "utf8"
+  );
+  assert.match(service, /getMainWindowPresence/);
+  assert.match(service, /mainWindow/);
+  assert.match(mcp, /mainWindow/);
+  assert.match(skill, /main window|mainWindow|主端/i);
+});

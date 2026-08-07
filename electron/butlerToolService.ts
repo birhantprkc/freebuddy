@@ -38,6 +38,7 @@ import { cliCheck, listRuntimes } from "./cli/check.js";
 import { setSetting } from "./cli/settings.js";
 import { safeSendToWebContents } from "./cli/ipcSend.js";
 import { prepareAgentSelfCheckLogs } from "./debugLogExport.js";
+import { getMainWindowPresence } from "./uiPresence.js";
 
 const BUTLER_TOOL_PATH = "/freebuddy/butler-tool";
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -256,7 +257,8 @@ async function dispatchButlerAction(
           lastCheckAt: rt.lastCheckAt
         })),
         scheduledTaskCount: taskCount,
-        teamCount
+        teamCount,
+        mainWindow: getMainWindowPresence()
       };
     }
     case "scheduled_task_list": {

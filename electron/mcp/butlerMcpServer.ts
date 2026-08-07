@@ -86,7 +86,7 @@ export function createButlerMcpServer(): McpServer {
     {
       title: "Get FreeBuddy Status",
       description:
-        "List installed agents (id/name/adapter/enabled) and skills (id/name/source/enabled/trusted) in this FreeBuddy app. Read-only. Use to understand the current setup before recommending changes.",
+        "List installed agents (id/name/adapter/enabled), skills (id/name/source/enabled/trusted), adapter runtimes, scheduled-task/team counts, and mainWindow (current FreeBuddy UI presence: workspace view, settings tab, active conversation metadata, streaming). Read-only. Use to understand the current setup and what the user is looking at before recommending changes.",
       inputSchema: {},
       annotations: {
         readOnlyHint: true,
