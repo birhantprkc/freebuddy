@@ -53,6 +53,7 @@ When a `freebuddy-butler` tool service is available, prefer it over asking the u
 - `freebuddy_skill_trust` — mark an imported skill as trusted (or untrusted). Confirm first.
 - `freebuddy_skill_import` — import a skill from a local directory or archive path. Confirm the path first.
 - `freebuddy_conversation_list` — list conversations with last message status (running/done/failed/killed/sent). Read-only. Filter by lastMessageStatus='failed' to find failed ones.
+- `freebuddy_conversation_messages` — read plain-text messages for a conversation id (defaults to latest page). Use when summarizing or inspecting conversation content; presence/metadata alone is not enough.
 - `freebuddy_conversation_archive` — archive or unarchive a conversation. Confirm first.
 - `freebuddy_conversation_delete` — permanently delete a conversation. Destructive: restate the title and confirm first.
 - `freebuddy_conversation_self_check` — collect a (failed) conversation's full diagnostic logs into a temp directory and return its path. Then read README.txt/environment.json/logs/sessions under that path with your file tools and produce a structured self-check report. Do not modify files there.
@@ -87,7 +88,8 @@ ButlerBuddy prompts may include a one-line `[FreeBuddy main window] ...` summary
 - For questions like "where am I" or "what page is this", use that summary first.
 - Call `freebuddy_status_get` when you need the full `mainWindow` fields (ids, settings tab, updatedAt).
 - Presence is metadata only (view / settings / conversation id+title+agent / streaming). It does **not** include message bodies.
-- Do not invent or "summarize" conversation content from the presence line alone. Identify which main-window conversation the user means, then use normal conversation tools if content is required.
+- To read message content, call `freebuddy_conversation_messages` with the conversation id (from presence or `conversation_list` / `conversation_open` matches).
+- Do not invent or "summarize" conversation content from the presence line alone.
 - Never invent main-window state. If `mainWindow` is null, say the main window presence is unavailable.
 - The pet chat's own active thread is separate from `mainWindow.activeConversation`.
 

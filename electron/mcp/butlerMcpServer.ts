@@ -405,6 +405,57 @@ export function createButlerMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "freebuddy_conversation_messages",
+    {
+      title: "Read Conversation Messages",
+      description:
+        "Read a page of plain-text messages from a conversation the user owns. Defaults to the latest messages (tail). Use for summarizing or inspecting the main-window / listed conversation content. Does not include raw stream JSON or binary attachments.",
+      inputSchema: {
+        conversationId: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Conversation id to read."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(40)
+          .optional()
+          .default(20)
+          .describe("Max messages to return (1-40)."),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Start index from the beginning. When set, disables default tail mode."),
+        tail: z
+          .boolean()
+          .optional()
+          .describe("If true (default when offset omitted), return the latest messages."),
+        role: z
+          .enum(["user", "assistant", "system"])
+          .optional()
+          .describe("Optional role filter.")
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeButlerBridge("conversation_messages", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
     "freebuddy_conversation_archive",
     {
       title: "Archive or Unarchive a Conversation",

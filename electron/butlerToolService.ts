@@ -32,8 +32,10 @@ import {
   archiveConversation,
   deleteConversation,
   getConversation,
+  listMessages,
   requireOwnedConversation,
-  notifyConversationsChanged
+  notifyConversationsChanged,
+  type ConversationMessage
 } from "./cli/conversations.js";
 import { getDb } from "./cli/db.js";
 import { cliCheck, listRuntimes } from "./cli/check.js";
@@ -103,6 +105,7 @@ type ButlerToolAction =
   | "conversation_archive"
   | "conversation_delete"
   | "conversation_self_check"
+  | "conversation_messages"
   | "agent_check"
   | "settings_open"
   | "set_appearance"
@@ -142,6 +145,7 @@ function isButlerToolAction(value: unknown): value is ButlerToolAction {
     value === "conversation_archive" ||
     value === "conversation_delete" ||
     value === "conversation_self_check" ||
+    value === "conversation_messages" ||
     value === "agent_check" ||
     value === "settings_open" ||
     value === "set_appearance" ||
@@ -177,6 +181,57 @@ function butlerMcpServerPath(): string {
 
 function withCaller<T>(binding: ButlerToolBinding, fn: () => T): T {
   return binding.userId ? runAsCaller(binding.userId, fn) : fn();
+}
+
+const MAX_MESSAGE_TEXT_CHARS = 4000;
+
+function extractMessageText(message: ConversationMessage): string {
+  if (message.role !== "assistant") {
+    return String(message.content ?? "");
+  }
+  try {
+    const parsed = JSON.parse(message.content) as unknown;
+    if (!Array.isArray(parsed)) {
+      return String(message.content ?? "");
+    }
+    return parsed
+      .flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const row = item as Record<string, unknown>;
+        const kind = String(row.kind ?? "");
+        if (kind === "text" || kind === "raw" || kind === "thinking") {
+          return [String(row.content ?? row.text ?? "")];
+        }
+        if (kind === "error") {
+          return [String(row.message ?? row.content ?? "")];
+        }
+        return [];
+      })
+      .filter((piece) => piece.trim().length > 0)
+      .join("\n\n");
+  } catch {
+    return String(message.content ?? "");
+  }
+}
+
+function publicConversationMessage(message: ConversationMessage) {
+  const fullText = extractMessageText(message).replace(
+    /data:[^;,\s]+;base64,[a-z0-9+/=]+/gi,
+    "[inline media removed]"
+  );
+  const truncated = fullText.length > MAX_MESSAGE_TEXT_CHARS;
+  return {
+    id: message.id,
+    role: message.role,
+    status: message.status,
+    createdAt: message.createdAt,
+    agentName: message.agentName,
+    text: truncated
+      ? `${fullText.slice(0, MAX_MESSAGE_TEXT_CHARS)}\n[truncated]`
+      : fullText,
+    truncated,
+    attachmentCount: message.attachments?.length ?? 0
+  };
 }
 
 function publicTask(task: ReturnType<typeof listScheduledTasks>[number]) {
@@ -471,6 +526,50 @@ async function dispatchButlerAction(
           adapter: conv.adapter
         },
         hint: "Read README.txt, environment.json, logs/, and sessions/ under logDirectory, then produce a structured self-check report."
+      };
+    }
+    case "conversation_messages": {
+      const conversationId = String(params.conversationId ?? params.id ?? "").trim();
+      if (!conversationId) {
+        return { ok: false, error: "conversationId is required." };
+      }
+      const conv = withCaller(binding, () => requireOwnedConversation(conversationId));
+      if (!conv) {
+        return { ok: false, error: "Conversation not found." };
+      }
+      const all = withCaller(binding, () => listMessages(conversationId));
+      const roleFilter = String(params.role ?? "").trim();
+      const filtered =
+        roleFilter === "user" || roleFilter === "assistant" || roleFilter === "system"
+          ? all.filter((message) => message.role === roleFilter)
+          : all;
+      const limitRaw = Number(params.limit ?? 20);
+      const limit = Number.isFinite(limitRaw)
+        ? Math.min(40, Math.max(1, Math.floor(limitRaw)))
+        : 20;
+      const useTail = params.tail !== false && params.offset === undefined;
+      const offsetRaw = Number(params.offset ?? 0);
+      const offset = Number.isFinite(offsetRaw)
+        ? Math.max(0, Math.floor(offsetRaw))
+        : 0;
+      const start = useTail
+        ? Math.max(0, filtered.length - limit)
+        : Math.min(offset, filtered.length);
+      const page = filtered.slice(start, start + limit);
+      return {
+        ok: true,
+        conversation: {
+          id: conv.id,
+          title: conv.title,
+          agentId: conv.agentId,
+          agentName: conv.agentName
+        },
+        total: filtered.length,
+        offset: start,
+        limit,
+        tail: useTail,
+        hasMore: start + page.length < filtered.length || start > 0,
+        messages: page.map(publicConversationMessage)
       };
     }
     case "agent_check": {

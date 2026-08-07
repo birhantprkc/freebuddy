@@ -336,3 +336,24 @@ test("butler chat follows main FreeBuddy theme", () => {
   assert.match(preload, /broadcastTheme/);
   assert.match(styles, /\[data-theme="dark"\][\s\S]*?\.butler-chat-window/);
 });
+
+test("Butler can read a conversation's messages as plain text pages", () => {
+  const service = fs.readFileSync(
+    new URL("../electron/butlerToolService.ts", import.meta.url),
+    "utf8"
+  );
+  const mcp = fs.readFileSync(
+    new URL("../electron/mcp/butlerMcpServer.ts", import.meta.url),
+    "utf8"
+  );
+  const skill = fs.readFileSync(
+    new URL("../assets/skills/butlerbuddy/SKILL.md", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(service, /case "conversation_messages"/);
+  assert.match(service, /listMessages/);
+  assert.match(service, /tail/);
+  assert.match(mcp, /freebuddy_conversation_messages/);
+  assert.match(skill, /freebuddy_conversation_messages/);
+});
