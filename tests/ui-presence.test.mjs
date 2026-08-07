@@ -51,3 +51,25 @@ test("uiPresence formats a stable one-line main-window summary", async () => {
   assert.match(line, /conversation="每周汇报" \(cli-codex-acp\)/);
   assert.match(line, /streaming=false/);
 });
+
+test("main window presence is published through preload and App", () => {
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const app = fs.readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  const types = fs.readFileSync(
+    new URL("../src/types/freebuddy.d.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(preload, /setUiPresence/);
+  assert.match(preload, /freebuddy:uiPresence/);
+  assert.match(main, /freebuddy:uiPresence/);
+  assert.match(main, /clearMainWindowPresence/);
+  assert.match(app, /setUiPresence/);
+  assert.match(types, /setUiPresence/);
+});

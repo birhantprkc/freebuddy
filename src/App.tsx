@@ -353,6 +353,43 @@ function App() {
     const status = s.live[activeId]?.status;
     return status === "running" || status === "starting";
   });
+
+  useEffect(() => {
+    const member = members.find((m) => m.id === activeConversation?.agentId);
+    const snapshot = {
+      workspaceView,
+      settingsOpen,
+      settingsTab: settingsOpen ? settingsInitialTab : null,
+      activeConversation: activeConversation
+        ? {
+            id: activeConversation.id,
+            title: activeConversation.title,
+            agentId: activeConversation.agentId,
+            agentName:
+              member?.name ??
+              activeConversation.agentName ??
+              activeConversation.agentId
+          }
+        : null,
+      streaming: activeConversationRunning,
+      updatedAt: new Date().toISOString()
+    };
+    const timer = window.setTimeout(() => {
+      window.freebuddy?.window?.setUiPresence?.(snapshot);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    workspaceView,
+    settingsOpen,
+    settingsInitialTab,
+    activeConversation?.id,
+    activeConversation?.title,
+    activeConversation?.agentId,
+    activeConversation?.agentName,
+    activeConversationRunning,
+    members
+  ]);
+
   const activeWorkflowRunning = useWorkflowStore((s) =>
     Boolean(activeId && s.activeRuns.some((run) => run.conversationId === activeId))
   );

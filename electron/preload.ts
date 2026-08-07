@@ -329,6 +329,9 @@ const window = {
     ipcRenderer.on("freebuddy://appearance-changed", handler);
     return () => ipcRenderer.off("freebuddy://appearance-changed", handler);
   },
+  setUiPresence(snapshot: unknown): void {
+    ipcRenderer.send("freebuddy:uiPresence", snapshot);
+  },
   notifyTask(payload: {
     kind: "success" | "failure";
     title: string;

@@ -286,6 +286,27 @@ declare global {
     onOpenConversation(cb: (conversationId: string) => void): () => void;
     onOpenSettings(cb: (tab: string) => void): () => void;
     onAppearanceChanged(cb: (theme: string) => void): () => void;
+    setUiPresence(snapshot: {
+      workspaceView: "chat" | "scheduledTasks" | "workflowTeams" | "usage";
+      settingsOpen: boolean;
+      settingsTab:
+        | "general"
+        | "cli"
+        | "skills"
+        | "plugins"
+        | "feed"
+        | "remote"
+        | "about"
+        | null;
+      activeConversation: {
+        id: string;
+        title: string;
+        agentId: string;
+        agentName: string;
+      } | null;
+      streaming: boolean;
+      updatedAt: string;
+    }): void;
     notifyTask(payload: {
       kind: "success" | "failure";
       title: string;

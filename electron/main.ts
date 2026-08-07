@@ -34,6 +34,10 @@ import { initializeTelemetry, shutdownTelemetry } from "./telemetry.js";
 import { getFreshWindowsEnvironment } from "./cli/windowsEnv.js";
 import { initializeAgentUsageReconciler } from "./cli/usageReconciler.js";
 import { initDebugLog, logMain } from "./debugLog.js";
+import {
+  clearMainWindowPresence,
+  setMainWindowPresence
+} from "./uiPresence.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -585,6 +589,9 @@ function registerButlerBuddyWindowIpc() {
   ipcMain.on("butlerBuddy:beginDrag", startButlerPetDrag);
   ipcMain.on("butlerBuddy:endDrag", stopButlerPetDrag);
   ipcMain.on("butlerBuddy:openMenu", showButlerContextMenu);
+  ipcMain.on("freebuddy:uiPresence", (_event, payload) => {
+    setMainWindowPresence(payload);
+  });
   ipcMain.handle("butlerBuddy:getPreferences", () =>
     readButlerBuddyPreferences()
   );
@@ -627,6 +634,7 @@ function createWindow() {
 
   mainWindow.on("closed", () => {
     mainWindow = null;
+    clearMainWindowPresence();
     closeButlerBuddyWindows();
   });
 
