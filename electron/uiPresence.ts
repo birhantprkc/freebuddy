@@ -125,10 +125,14 @@ export function formatMainWindowPresenceSummary(
     ? `settings=${presence.settingsTab}`
     : "settings=closed";
   const conversation = presence.activeConversation
-    ? `conversation="${presence.activeConversation.title.replace(/"/g, '\\"')}" (${presence.activeConversation.agentId})`
+    ? `conversation="${sanitizePresenceText(presence.activeConversation.title)}" (${presence.activeConversation.agentId})`
     : "conversation=none";
   return (
     `[FreeBuddy main window] view=${presence.workspaceView}; ${settings}; ` +
     `${conversation}; streaming=${presence.streaming}`
   );
+}
+
+function sanitizePresenceText(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").replace(/"/g, '\\"');
 }

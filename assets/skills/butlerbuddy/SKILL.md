@@ -82,8 +82,10 @@ All mutations still go through the standard approval flow. If a needed tool is m
 
 ButlerBuddy prompts may include a one-line `[FreeBuddy main window] ...` summary describing what the user currently sees in the main FreeBuddy window (not the pet chat itself).
 
-- For questions like "where am I", "what page is this", or "summarize the current conversation", use that summary first.
+- For questions like "where am I" or "what page is this", use that summary first.
 - Call `freebuddy_status_get` when you need the full `mainWindow` fields (ids, settings tab, updatedAt).
+- Presence is metadata only (view / settings / conversation id+title+agent / streaming). It does **not** include message bodies.
+- Do not invent or "summarize" conversation content from the presence line alone. Identify which main-window conversation the user means, then use normal conversation tools if content is required.
 - Never invent main-window state. If `mainWindow` is null, say the main window presence is unavailable.
 - The pet chat's own active thread is separate from `mainWindow.activeConversation`.
 

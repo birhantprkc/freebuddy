@@ -589,7 +589,9 @@ function registerButlerBuddyWindowIpc() {
   ipcMain.on("butlerBuddy:beginDrag", startButlerPetDrag);
   ipcMain.on("butlerBuddy:endDrag", stopButlerPetDrag);
   ipcMain.on("butlerBuddy:openMenu", showButlerContextMenu);
-  ipcMain.on("freebuddy:uiPresence", (_event, payload) => {
+  ipcMain.on("freebuddy:uiPresence", (event, payload) => {
+    const win = mainWindow;
+    if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
     setMainWindowPresence(payload);
   });
   ipcMain.handle("butlerBuddy:getPreferences", () =>

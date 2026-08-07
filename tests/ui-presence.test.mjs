@@ -50,6 +50,17 @@ test("uiPresence formats a stable one-line main-window summary", async () => {
   assert.match(line, /settings=closed/);
   assert.match(line, /conversation="每周汇报" \(cli-codex-acp\)/);
   assert.match(line, /streaming=false/);
+  assert.equal(line.includes("\n"), false);
+
+  const multiline = mod.formatMainWindowPresenceSummary({
+    ...valid,
+    activeConversation: {
+      ...valid.activeConversation,
+      title: "一行\n两行"
+    }
+  });
+  assert.equal(multiline.includes("\n"), false);
+  assert.match(multiline, /conversation="一行 两行"/);
 });
 
 test("main window presence is published through preload and App", () => {
@@ -70,6 +81,7 @@ test("main window presence is published through preload and App", () => {
   assert.match(preload, /freebuddy:uiPresence/);
   assert.match(main, /freebuddy:uiPresence/);
   assert.match(main, /clearMainWindowPresence/);
+  assert.match(main, /event\.sender !== win\.webContents/);
   assert.match(app, /setUiPresence/);
   assert.match(types, /setUiPresence/);
 });
