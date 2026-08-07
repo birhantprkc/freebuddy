@@ -8,6 +8,7 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
+import { useTranslation } from "react-i18next";
 
 import { SessionConfigPicker } from "@/components/CLI/SessionConfigPicker";
 import type { CliStreamItem } from "@/services/cli/parsers";
@@ -29,18 +30,20 @@ type PreviewMessage = {
   text: string;
 };
 
-const previewSeed: PreviewMessage[] = [
-  {
-    id: "preview-user",
-    role: "user",
-    text: "帮我看看为什么 Codex 连不上"
-  },
-  {
-    id: "preview-assistant",
-    role: "assistant",
-    text: "我正在检查连接和 CLI 状态…"
-  }
-];
+function buildPreviewSeed(t: (key: string) => string): PreviewMessage[] {
+  return [
+    {
+      id: "preview-user",
+      role: "user",
+      text: t("butler.previewUserMessage")
+    },
+    {
+      id: "preview-assistant",
+      role: "assistant",
+      text: t("butler.previewAssistantMessage")
+    }
+  ];
+}
 
 function parseAssistantItems(content: string): CliStreamItem[] {
   try {
@@ -73,12 +76,15 @@ function assistantText(
 }
 
 export function ButlerBuddyChat() {
+  const { t } = useTranslation();
   const hasDesktopBridge = cliClient.isAvailable();
   const showHeaderTools = hasDesktopBridge || import.meta.env.DEV;
   const [ready, setReady] = useState(!hasDesktopBridge);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
-  const [previewMessages, setPreviewMessages] = useState(previewSeed);
+  const [previewMessages, setPreviewMessages] = useState<PreviewMessage[]>(() =>
+    buildPreviewSeed(t)
+  );
   const [previewReplying, setPreviewReplying] = useState(false);
   const [probedConfigOptions, setProbedConfigOptions] = useState<ConfigOptionItem[]>([]);
   const [probeLoading, setProbeLoading] = useState(false);
@@ -121,7 +127,7 @@ export function ButlerBuddyChat() {
         return {
           id: message.id,
           role: message.role,
-          text: text || "正在思考…"
+          text: text || t("butler.thinking")
         };
       })
       .filter((message): message is PreviewMessage => Boolean(message))
@@ -185,10 +191,10 @@ export function ButlerBuddyChat() {
         const member = state.members.find(
           (entry) => entry.id === BUTLERBUDDY_AGENT_ID
         );
-        if (!member) throw new Error("ButlerBuddy Agent 不可用");
+        if (!member) throw new Error(t("butler.agentUnavailable"));
         conversation = await state.newConversation({
           member,
-          title: "ButlerBuddy 浮窗"
+          title: t("butler.conversationTitle")
         });
         await cliClient.setSetting(PET_CONVERSATION_SETTING, conversation.id);
       }
@@ -200,7 +206,7 @@ export function ButlerBuddyChat() {
       setError(cause instanceof Error ? cause.message : String(cause));
       setReady(true);
     }
-  }, [hasDesktopBridge]);
+  }, [hasDesktopBridge, t]);
 
   useEffect(() => {
     if (initializationStartedRef.current) return;
@@ -320,10 +326,10 @@ export function ButlerBuddyChat() {
     try {
       const state = useConversationStore.getState();
       const m = state.members.find((entry) => entry.id === BUTLERBUDDY_AGENT_ID);
-      if (!m) throw new Error("ButlerBuddy Agent 不可用");
+      if (!m) throw new Error(t("butler.agentUnavailable"));
       const created = await state.newConversation({
         member: m,
-        title: "ButlerBuddy 浮窗"
+        title: t("butler.conversationTitle")
       });
       await cliClient.setSetting(PET_CONVERSATION_SETTING, created.id);
       await state.setActive(created.id);
@@ -333,7 +339,7 @@ export function ButlerBuddyChat() {
     }
   };
 
-  // "新会话" is triggered from the pet's right-click menu (handled in the main
+  // "New conversation" is triggered from the pet's right-click menu (handled
   // process, which forwards here). Keep a ref so the listener always calls the
   // latest closure without resubscribing.
   const startNewConversationRef = useRef(startNewConversation);
@@ -383,7 +389,7 @@ export function ButlerBuddyChat() {
           {
             id: `${id}-assistant`,
             role: "assistant",
-            text: "收到，我会在 FreeBuddy 里帮你检查。"
+            text: t("butler.previewReply")
           }
         ]);
         setPreviewReplying(false);
@@ -392,7 +398,7 @@ export function ButlerBuddyChat() {
     }
 
     if (!activeId) {
-      setError("ButlerBuddy 对话尚未准备好");
+      setError(t("butler.notReady"));
       return;
     }
 
@@ -411,7 +417,7 @@ export function ButlerBuddyChat() {
   };
 
   return (
-    <section className="butler-chat-window" aria-label="ButlerBuddy chat">
+    <section className="butler-chat-window" aria-label={t("butler.openChatAria")}>
       <header className="butler-chat-header" onPointerDown={onHeaderPointerDown}>
         <div className="butler-chat-brand">
           <img src={petImageUrl} alt="" draggable={false} />
@@ -421,7 +427,7 @@ export function ButlerBuddyChat() {
             size={7}
             strokeWidth={2}
             fill="currentColor"
-            aria-label="在线"
+            aria-label={t("butler.onlineAria")}
           />
         </div>
         <div className="butler-chat-header-controls">
@@ -437,14 +443,16 @@ export function ButlerBuddyChat() {
                   <span
                     className="butler-model-fallback"
                     title={
-                      probeLoading ? "正在加载模型列表" : "当前适配器未提供模型列表"
+                      probeLoading
+                        ? t("butler.modelLoadingTitle")
+                        : t("butler.modelUnavailableTitle")
                     }
                   >
                     {!hasDesktopBridge
                       ? "composer-2.5"
                       : probeLoading
-                        ? "模型加载中…"
-                        : "模型"}
+                        ? t("butler.modelLoading")
+                        : t("butler.modelLabel")}
                     <ChevronDown size={13} strokeWidth={2.2} aria-hidden="true" />
                   </span>
                 }
@@ -453,8 +461,8 @@ export function ButlerBuddyChat() {
               <button
                 type="button"
                 className="butler-chat-action"
-                aria-label="新会话"
-                title="新会话"
+                aria-label={t("butler.newConversationAria")}
+                title={t("butler.newConversationAria")}
                 disabled={running || !ready}
                 onClick={() => void startNewConversation()}
               >
@@ -468,7 +476,7 @@ export function ButlerBuddyChat() {
           <button
             type="button"
             className="butler-chat-close"
-            aria-label="关闭 ButlerBuddy 对话"
+            aria-label={t("butler.closeAria")}
             onClick={() => window.freebuddy?.butlerBuddy?.hideChat()}
           >
             <X size={16} strokeWidth={1.8} />
@@ -478,11 +486,11 @@ export function ButlerBuddyChat() {
 
       <div className="butler-chat-messages" ref={scrollRef} aria-live="polite">
         {!ready ? (
-          <div className="butler-chat-loading">正在唤醒 ButlerBuddy…</div>
+          <div className="butler-chat-loading">{t("butler.loading")}</div>
         ) : visibleMessages.length === 0 ? (
           <div className="butler-chat-empty">
             <img src={petImageUrl} alt="" draggable={false} />
-            <span>有什么需要我帮你管理的吗？</span>
+            <span>{t("butler.emptyPrompt")}</span>
           </div>
         ) : (
           visibleMessages.map((message) => (
@@ -496,7 +504,7 @@ export function ButlerBuddyChat() {
         )}
         {previewReplying && (
           <div className="butler-chat-row role-assistant">
-            <div className="butler-chat-bubble butler-chat-typing">正在回复…</div>
+            <div className="butler-chat-bubble butler-chat-typing">{t("butler.typing")}</div>
           </div>
         )}
       </div>
@@ -508,13 +516,13 @@ export function ButlerBuddyChat() {
           ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="发消息给 ButlerBuddy…"
-          aria-label="发消息给 ButlerBuddy"
+          placeholder={t("butler.inputPlaceholder")}
+          aria-label={t("butler.inputAria")}
           disabled={!ready}
         />
         <button
           type="submit"
-          aria-label="发送消息"
+          aria-label={t("butler.sendAria")}
           disabled={!draft.trim() || running || previewReplying || !ready}
         >
           <ArrowUp size={17} strokeWidth={2} />

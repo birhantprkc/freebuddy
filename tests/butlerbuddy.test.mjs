@@ -187,7 +187,7 @@ test("the ButlerBuddy popover is a persisted real conversation, not a fake panel
   assert.match(chat, /state\.newConversation\(/);
   assert.match(chat, /getState\(\)\.loadMessages\(conversation\.id\)/);
   assert.match(chat, /sendMessage\(\{/);
-  assert.match(chat, /发消息给 ButlerBuddy/);
+  assert.match(chat, /butler\.inputPlaceholder/);
   assert.match(chat, /MessageCirclePlus/);
   assert.match(chat, /butler-chat-header-controls/);
   assert.doesNotMatch(chat, /打开插件管理|检查所有 Agent|查看更新/);

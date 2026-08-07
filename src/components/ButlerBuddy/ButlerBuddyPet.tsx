@@ -1,5 +1,6 @@
 import { Circle } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 const petImageUrl = `${import.meta.env.BASE_URL}butlerbuddy-pet.png`;
 const DRAG_THRESHOLD = 3;
@@ -14,6 +15,7 @@ function compactShortcut(shortcut: string): string {
 }
 
 export function ButlerBuddyPet() {
+  const { t } = useTranslation();
   // Dragging is driven by the main process: on press we send beginDrag, on
   // release we send endDrag, and the main process polls the global cursor
   // position to move the window. This is necessary because the pet window is
@@ -37,7 +39,7 @@ export function ButlerBuddyPet() {
         setShortcutHint(
           preferences.shortcutEnabled
             ? compactShortcut(preferences.shortcut)
-            : "点击聊天"
+            : t("butler.clickToChat")
         );
       })
       .catch(() => undefined);
@@ -99,8 +101,8 @@ export function ButlerBuddyPet() {
       <button
         type="button"
         className="butler-pet-button"
-        aria-label="打开 ButlerBuddy 对话"
-        title="点击聊天 · 拖动移动 · 右键更多"
+        aria-label={t("butler.openChatAria")}
+        title={t("butler.petTooltip")}
         onPointerEnter={refreshShortcutHint}
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}

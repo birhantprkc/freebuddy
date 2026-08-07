@@ -1681,5 +1681,30 @@
     "manualFallbackPlaceholder": "or enter a URL / README.md / data.json / image.png / file.pdf…",
     "emptyNoWorkspace": "No workspace selected. Pick a working directory to preview the agent's output.",
     "emptyNoEntry": "No preview yet. Ask the agent to start a dev server, create a page, write a Markdown doc, or generate an image, then it will open here automatically."
+  },
+  "butler": {
+    "previewUserMessage": "Help me see why Codex won't connect",
+    "previewAssistantMessage": "I'm checking the connection and CLI status…",
+    "thinking": "Thinking…",
+    "agentUnavailable": "ButlerBuddy Agent is unavailable",
+    "conversationTitle": "ButlerBuddy floating companion",
+    "previewReply": "Got it, I'll check it for you in FreeBuddy.",
+    "notReady": "ButlerBuddy chat is not ready yet",
+    "onlineAria": "Online",
+    "modelLoadingTitle": "Loading model list",
+    "modelUnavailableTitle": "The current adapter provides no model list",
+    "modelLoading": "Loading models…",
+    "modelLabel": "Model",
+    "newConversationAria": "New conversation",
+    "closeAria": "Close ButlerBuddy chat",
+    "loading": "Waking ButlerBuddy…",
+    "emptyPrompt": "What can I help you manage?",
+    "typing": "Replying…",
+    "inputPlaceholder": "Message ButlerBuddy…",
+    "inputAria": "Message ButlerBuddy",
+    "sendAria": "Send message",
+    "clickToChat": "Click to chat",
+    "openChatAria": "Open ButlerBuddy chat",
+    "petTooltip": "Click to chat · Drag to move · Right-click for more"
   }
 }

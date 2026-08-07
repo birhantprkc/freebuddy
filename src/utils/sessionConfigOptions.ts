@@ -70,7 +70,10 @@ export function pruneConfigOptionOverrides(
   options: SessionConfigOptionLike[]
 ): Record<string, string> {
   if (!overrides) return {};
-  const allowed = new Map(options.map((option) => [option.id, option]));
+  const allowed = new Map<string, SessionConfigOptionLike>();
+  for (const option of options) {
+    if (!allowed.has(option.id)) allowed.set(option.id, option);
+  }
   const out: Record<string, string> = {};
   for (const [id, value] of Object.entries(overrides)) {
     const option = allowed.get(id);

@@ -87,6 +87,8 @@ async function loadConversationStoreHarness() {
 
     export const useCliExecutorStore = {
       getState: () => ({
+        adapters: [],
+        runtimes: {},
         resolve: () => ({
           enabled: true,
           binary: "mock-agent",
