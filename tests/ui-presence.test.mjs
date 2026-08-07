@@ -27,6 +27,7 @@ const valid = {
     agentName: "Codex"
   },
   streaming: false,
+  unreadCount: 0,
   updatedAt: "2026-08-07T00:00:00.000Z"
 };
 
