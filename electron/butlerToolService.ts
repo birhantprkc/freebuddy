@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import type { WebContents } from "electron";
+import type { BrowserWindow, WebContents } from "electron";
 
 import { waitForActiveBridgePort } from "./agentBridge.js";
 import type { AcpStdioMcpServer } from "./shared/draftToolProtocol.js";
@@ -53,6 +53,38 @@ interface ButlerToolBinding {
 
 const bindingsByToken = new Map<string, ButlerToolBinding>();
 const tokensByTaskSession = new Map<string, string>();
+
+// Pet/chat companions bind butler tools to their own webContents. UI shell
+// mutations (theme, settings) must still reach the main FreeBuddy window.
+let butlerAppWindowGetter: (() => BrowserWindow | null) | null = null;
+
+export function setButlerAppWindowGetter(
+  getter: () => BrowserWindow | null
+): void {
+  butlerAppWindowGetter = getter;
+}
+
+function resolveButlerAppWebContents(
+  fallback?: WebContents
+): WebContents | undefined {
+  const win = butlerAppWindowGetter?.() ?? null;
+  if (win && !win.isDestroyed()) {
+    return win.webContents;
+  }
+  if (fallback && !fallback.isDestroyed()) {
+    return fallback;
+  }
+  return undefined;
+}
+
+function focusButlerAppWindow(): boolean {
+  const win = butlerAppWindowGetter?.() ?? null;
+  if (!win || win.isDestroyed()) return false;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  return true;
+}
 
 type ButlerToolAction =
   | "status_get"
@@ -443,11 +475,13 @@ async function dispatchButlerAction(
     }
     case "settings_open": {
       const tab = String(params.tab ?? "cli");
-      if (binding.webContents) {
-        safeSendToWebContents(binding.webContents, "freebuddy://open-settings", { tab });
-        return { ok: true, tab };
+      const target = resolveButlerAppWebContents(binding.webContents);
+      if (!target) {
+        return { ok: false, error: "No active window to open settings." };
       }
-      return { ok: false, error: "No active window to open settings." };
+      focusButlerAppWindow();
+      safeSendToWebContents(target, "freebuddy://open-settings", { tab });
+      return { ok: true, tab };
     }
     case "set_appearance": {
       const theme = String(params.theme ?? "").trim();
@@ -455,8 +489,9 @@ async function dispatchButlerAction(
         return { ok: false, error: "theme must be one of: system, light, dark." };
       }
       setSetting("theme", theme);
-      if (binding.webContents) {
-        safeSendToWebContents(binding.webContents, "freebuddy://appearance-changed", {
+      const target = resolveButlerAppWebContents(binding.webContents);
+      if (target) {
+        safeSendToWebContents(target, "freebuddy://appearance-changed", {
           theme
         });
       }

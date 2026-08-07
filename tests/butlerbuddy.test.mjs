@@ -192,3 +192,32 @@ test("the ButlerBuddy popover is a persisted real conversation, not a fake panel
   assert.match(chat, /butler-chat-header-controls/);
   assert.doesNotMatch(chat, /打开插件管理|检查所有 Agent|查看更新/);
 });
+
+test("Butler UI tools notify the main FreeBuddy window from the pet chat companion", () => {
+  // Pet/chat cli:run binds butler tools to the companion webContents. Theme and
+  // settings IPC must still target the main App window, which owns the UI shell.
+  const service = fs.readFileSync(
+    new URL("../electron/butlerToolService.ts", import.meta.url),
+    "utf8"
+  );
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(service, /export function setButlerAppWindowGetter/);
+  assert.match(service, /function resolveButlerAppWebContents/);
+  assert.match(
+    service,
+    /case "set_appearance":[\s\S]*?resolveButlerAppWebContents\(binding\.webContents\)/
+  );
+  assert.match(
+    service,
+    /case "settings_open":[\s\S]*?resolveButlerAppWebContents\(binding\.webContents\)/
+  );
+  assert.match(
+    service,
+    /case "settings_open":[\s\S]*?focusButlerAppWindow\(\)/
+  );
+  assert.match(main, /setButlerAppWindowGetter\(\(\) =>/);
+});
