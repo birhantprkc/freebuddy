@@ -19,6 +19,8 @@ import { useAgentBridgeStore } from "@/store/agentBridgeStore";
 import { getAgentIconId } from "@/config/agentIcon";
 import { SkillPicker } from "@/components/CLI/SkillPicker";
 import { useSkillStore } from "@/store/skillStore";
+import { cliAdapterDefinitions, type CLIAdapterDefinition } from "@/config/cliAdapters";
+import type { CLIMember } from "@/config/aiMembers";
 
 const CODEX_ACP_UPGRADE_REQUIRED = "codex-acp requires @agentclientprotocol/codex-acp";
 const BYOK_CONTEXT_WINDOW_MIN = 100000;
@@ -75,7 +77,7 @@ function sortAdapters(list: ResolvedExecutor[]): ResolvedExecutor[] {
   });
 }
 
-type AgentCategory = "builtin" | "custom";
+type AgentCategory = "builtin" | "custom" | "official";
 
 function categoryOf(ex: ResolvedExecutor): AgentCategory {
   return ex.isClone ? "custom" : "builtin";
@@ -155,6 +157,22 @@ export function CLIAdaptersTab() {
     [adapters, overrides, runtimes, listResolved]
   );
 
+  const members = useConversationStore((s) => s.members);
+  const setMemberRuntimeOverride = useConversationStore(
+    (s) => s.setMemberRuntimeOverride
+  );
+  const officialMembers = useMemo(
+    () => members.filter((member) => member.profile === "butler"),
+    [members]
+  );
+  const runtimeOptions = useMemo(
+    () =>
+      cliAdapterDefinitions.filter(
+        (definition) => definition.protocol === "acp"
+      ),
+    []
+  );
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [checkingIds, setCheckingIds] = useState<Set<string>>(() => new Set());
   const [checkingAll, setCheckingAll] = useState(false);
@@ -171,6 +189,10 @@ export function CLIAdaptersTab() {
     () => list.find((ex) => ex.id === editingId),
     [editingId, list]
   );
+  const selectedOfficialMember = useMemo(
+    () => officialMembers.find((member) => member.id === editingId),
+    [editingId, officialMembers]
+  );
 
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<AgentCategory>("builtin");
@@ -182,8 +204,8 @@ export function CLIAdaptersTab() {
       if (ex.isClone) custom += 1;
       else builtin += 1;
     }
-    return { builtin, custom };
-  }, [list]);
+    return { builtin, custom, official: officialMembers.length };
+  }, [list, officialMembers]);
 
   const filteredList = useMemo(
     () =>
@@ -193,6 +215,16 @@ export function CLIAdaptersTab() {
       ),
     [list, category, query]
   );
+
+  const filteredOfficialMembers = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return officialMembers.filter(
+      (member) =>
+        !q ||
+        member.name.toLowerCase().includes(q) ||
+        member.id.toLowerCase().includes(q)
+    );
+  }, [officialMembers, query]);
 
   const handleCheck = useCallback(
     async (id: string) => {
@@ -343,11 +375,15 @@ export function CLIAdaptersTab() {
 
   useEffect(() => {
     if (!loaded) return;
-    if (editingId && !list.some((ex) => ex.id === editingId)) {
+    if (
+      editingId &&
+      !list.some((ex) => ex.id === editingId) &&
+      !officialMembers.some((member) => member.id === editingId)
+    ) {
       setEditingId(null);
       return;
     }
-  }, [editingId, list, loaded]);
+  }, [editingId, list, loaded, officialMembers]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -403,6 +439,24 @@ export function CLIAdaptersTab() {
     );
   }
 
+  if (editingId && selectedOfficialMember) {
+    return (
+      <div className="settings-tab">
+        <div className="adapter-edit-workspace">
+          <OfficialPersonaPanel
+            key={selectedOfficialMember.id}
+            memberId={selectedOfficialMember.id}
+            runtimeOptions={runtimeOptions}
+            onChangeRuntime={(runtimeKey) =>
+              void setMemberRuntimeOverride(selectedOfficialMember.id, runtimeKey)
+            }
+            onBackToList={() => setEditingId(null)}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (editingId && selectedExecutor) {
     return (
       <div className="settings-tab">
@@ -429,7 +483,7 @@ export function CLIAdaptersTab() {
 
       <div className="adapter-list-toolbar">
         <div className="adapter-filter-tabs" role="tablist">
-          {(["builtin", "custom"] as AgentCategory[]).map((c) => (
+          {(["builtin", "custom", "official"] as AgentCategory[]).map((c) => (
             <button
               key={c}
               type="button"
@@ -437,7 +491,7 @@ export function CLIAdaptersTab() {
               aria-selected={category === c}
               className={category === c ? "active" : undefined}
               onClick={() => setCategory(c)}
-              disabled={!loaded}
+              disabled={c !== "official" && !loaded}
             >
               {t(`settings.cli.category.${c}`)}{" "}
               <span>{categoryCounts[c]}</span>
@@ -456,7 +510,19 @@ export function CLIAdaptersTab() {
       <div className="adapter-settings-workspace">
         <div className="adapter-list-panel">
           <div className="adapter-list">
-            {!loaded ? (
+            {category === "official" ? (
+              filteredOfficialMembers.length === 0 ? (
+                <p className="muted adapter-empty">{t("settings.cli.noResults")}</p>
+              ) : (
+                filteredOfficialMembers.map((member) => (
+                  <OfficialRow
+                    key={member.id}
+                    member={member}
+                    onEdit={() => setEditingId(member.id)}
+                  />
+                ))
+              )
+            ) : !loaded ? (
               <p className="muted">{t("settings.cli.loading")}</p>
             ) : filteredList.length === 0 ? (
               <p className="muted adapter-empty">{t("settings.cli.noResults")}</p>
@@ -467,6 +533,152 @@ export function CLIAdaptersTab() {
         </div>
       </div>
     </div>
+  );
+}
+
+function OfficialRow({
+  member,
+  onEdit
+}: {
+  member: CLIMember;
+  onEdit: () => void;
+}) {
+  const { t } = useTranslation();
+  const runtimeLabel = member.runtimeKey ?? member.cli.adapter;
+  return (
+    <div className="adapter-row">
+      <AgentAvatar
+        adapter={member.cli.adapter}
+        agentId={member.id}
+        className="adapter-avatar"
+        fallback={<span>{member.name.slice(0, 2).toUpperCase()}</span>}
+      />
+      <button type="button" className="adapter-row-main" onClick={onEdit}>
+        <div className="adapter-row-title">
+          <strong>{member.name}</strong>
+          <span className="adapter-availability available">
+            {t("settings.cli.category.official")}
+          </span>
+        </div>
+        <div className="adapter-row-meta">
+          <span className="adapter-status muted">
+            {t("settings.cli.official.runtime")}: <code>{runtimeLabel}</code>
+          </span>
+          {member.description && <span className="muted">{member.description}</span>}
+        </div>
+      </button>
+      <div className="adapter-row-actions">
+        <button type="button" className="adapter-row-edit-btn" onClick={onEdit}>
+          ›
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OfficialPersonaPanel({
+  memberId,
+  runtimeOptions,
+  onChangeRuntime,
+  onBackToList
+}: {
+  memberId: string;
+  runtimeOptions: CLIAdapterDefinition[];
+  onChangeRuntime: (runtimeKey: string) => void;
+  onBackToList: () => void;
+}) {
+  const { t } = useTranslation();
+  const member = useConversationStore((s) =>
+    s.members.find((m) => m.id === memberId)
+  );
+  const skills = useSkillStore((s) => s.skills);
+  const skillsLoaded = useSkillStore((s) => s.loaded);
+  const loadSkills = useSkillStore((s) => s.load);
+
+  useEffect(() => {
+    if (!skillsLoaded) void loadSkills();
+  }, [loadSkills, skillsLoaded]);
+
+  if (!member) return null;
+  const currentRuntime = member.runtimeKey ?? member.cli.adapter;
+  const requiredSkills = (member.requiredSkillIds ?? []).map((id) => ({
+    id,
+    name: skills.find((skill) => skill.id === id)?.name ?? id
+  }));
+  return (
+    <section className="adapter-editor-form">
+      <header className="adapter-editor-header">
+        <div className="adapter-editor-titlebar">
+          <button
+            type="button"
+            className="adapter-editor-back"
+            onClick={onBackToList}
+          >
+            <span className="adapter-editor-back-chevron">‹</span>
+            {t("settings.cli.backToList")}
+          </button>
+          <div className="adapter-editor-heading">
+            <AgentAvatar
+              adapter={member.cli.adapter}
+              agentId={member.id}
+              className="adapter-editor-avatar"
+              fallback={<span>{member.name.slice(0, 2).toUpperCase()}</span>}
+            />
+            <div className="adapter-editor-heading-text">
+              <h3>{member.name}</h3>
+              {member.description && (
+                <p className="muted">{member.description}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="adapter-editor-scroll">
+        <div className="adapter-editor-section">
+          <label className="adapter-editor-field">
+            <span className="adapter-editor-field-label">
+              {t("settings.cli.official.runtime")}
+            </span>
+            <select
+              value={currentRuntime}
+              onChange={(event) => onChangeRuntime(event.target.value)}
+            >
+              {runtimeOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <span className="settings-field-hint">
+              {t("settings.cli.official.runtimeHint")}
+            </span>
+          </label>
+        </div>
+
+        <div className="adapter-editor-section">
+          <div className="adapter-editor-field">
+            <span className="adapter-editor-field-label">
+              {t("settings.cli.official.requiredSkills")}
+            </span>
+            {requiredSkills.length === 0 ? (
+              <p className="muted">{t("settings.cli.official.noRequiredSkills")}</p>
+            ) : (
+              <ul className="adapter-editor-readonly-list">
+                {requiredSkills.map((skill) => (
+                  <li key={skill.id}>
+                    <strong>{skill.name}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <span className="settings-field-hint">
+              {t("settings.cli.official.requiredSkillsHint")}
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

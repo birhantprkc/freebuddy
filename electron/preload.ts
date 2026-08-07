@@ -317,6 +317,18 @@ const window = {
     ipcRenderer.on("window:open-conversation", handler);
     return () => ipcRenderer.off("window:open-conversation", handler);
   },
+  onOpenSettings(cb: (tab: string) => void): () => void {
+    const handler = (_e: IpcRendererEvent, payload: { tab?: string }) =>
+      cb(payload?.tab ?? "cli");
+    ipcRenderer.on("freebuddy://open-settings", handler);
+    return () => ipcRenderer.off("freebuddy://open-settings", handler);
+  },
+  onAppearanceChanged(cb: (theme: string) => void): () => void {
+    const handler = (_e: IpcRendererEvent, payload: { theme?: string }) =>
+      cb(payload?.theme ?? "system");
+    ipcRenderer.on("freebuddy://appearance-changed", handler);
+    return () => ipcRenderer.off("freebuddy://appearance-changed", handler);
+  },
   notifyTask(payload: {
     kind: "success" | "failure";
     title: string;
@@ -324,6 +336,43 @@ const window = {
     conversationId?: string;
   }): Promise<void> {
     return ipcRenderer.invoke("window:notify", payload);
+  }
+};
+
+type ButlerBuddyPreferencesPayload = {
+  visible: boolean;
+  shortcutEnabled: boolean;
+  shortcut: string;
+  shortcutRegistered: boolean;
+  error?: "shortcutUnavailable";
+};
+
+const butlerBuddy = {
+  toggleChat: () => ipcRenderer.send("butlerBuddy:toggleChat"),
+  hideChat: () => ipcRenderer.send("butlerBuddy:hideChat"),
+  beginDrag: () => ipcRenderer.send("butlerBuddy:beginDrag"),
+  endDrag: () => ipcRenderer.send("butlerBuddy:endDrag"),
+  openMenu: () => ipcRenderer.send("butlerBuddy:openMenu"),
+  getPreferences: () => ipcRenderer.invoke("butlerBuddy:getPreferences"),
+  updatePreferences: (input: {
+    visible?: boolean;
+    shortcutEnabled?: boolean;
+    shortcut?: string;
+  }) => ipcRenderer.invoke("butlerBuddy:updatePreferences", input),
+  onNewConversation(cb: () => void): () => void {
+    const handler = () => cb();
+    ipcRenderer.on("butlerBuddy:newConversation", handler);
+    return () => ipcRenderer.off("butlerBuddy:newConversation", handler);
+  },
+  onPreferencesChanged(
+    cb: (prefs: ButlerBuddyPreferencesPayload) => void
+  ): () => void {
+    const handler = (
+      _event: unknown,
+      prefs: ButlerBuddyPreferencesPayload
+    ) => cb(prefs);
+    ipcRenderer.on("butlerBuddy:preferencesChanged", handler);
+    return () => ipcRenderer.off("butlerBuddy:preferencesChanged", handler);
   }
 };
 
@@ -435,7 +484,15 @@ const workflowTeams = {
   create: (input: unknown) => ipcRenderer.invoke("workflowTeams:create", input),
   update: (args: unknown) => ipcRenderer.invoke("workflowTeams:update", args),
   delete: (id: string) => ipcRenderer.invoke("workflowTeams:delete", id),
-  seedBuiltins: () => ipcRenderer.invoke("workflowTeams:seedBuiltins")
+  seedBuiltins: () => ipcRenderer.invoke("workflowTeams:seedBuiltins"),
+  onChanged: (cb: () => void): (() => void) => {
+    const channel = "workflowTeams://changed";
+    const listener = () => cb();
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.off(channel, listener);
+    };
+  }
 };
 
 const skills = {
@@ -589,5 +646,6 @@ contextBridge.exposeInMainWorld("freebuddy", {
   updater,
   debugLogs,
   shell: shellApi,
-  remote
+  remote,
+  butlerBuddy
 });

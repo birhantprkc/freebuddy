@@ -22,10 +22,27 @@ interface SettingsState {
   theme: ThemePreference;
   resolvedTheme: ResolvedTheme;
   telemetryEnabled: boolean;
+  butlerBuddyVisible: boolean;
+  butlerBuddyShortcutEnabled: boolean;
+  butlerBuddyShortcut: string;
+  butlerBuddyShortcutRegistered: boolean;
+  butlerBuddyShortcutError?: "shortcutUnavailable";
   load(): Promise<void>;
   setLanguage(lng: LanguagePreference): Promise<void>;
   setTheme(theme: ThemePreference): Promise<void>;
   setTelemetryEnabled(enabled: boolean): Promise<void>;
+  updateButlerBuddyPreferences(input: {
+    visible?: boolean;
+    shortcutEnabled?: boolean;
+    shortcut?: string;
+  }): Promise<void>;
+  applyButlerBuddyPreferences(prefs: {
+    visible: boolean;
+    shortcutEnabled: boolean;
+    shortcut: string;
+    shortcutRegistered: boolean;
+    error?: "shortcutUnavailable";
+  }): void;
   refreshSystemTheme(): void;
 }
 
@@ -36,6 +53,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   theme: "system",
   resolvedTheme: getSystemTheme(),
   telemetryEnabled: true,
+  butlerBuddyVisible: true,
+  butlerBuddyShortcutEnabled: true,
+  butlerBuddyShortcut: "CommandOrControl+Shift+Space",
+  butlerBuddyShortcutRegistered: false,
+  butlerBuddyShortcutError: undefined,
 
   async load() {
     const systemLanguage =
@@ -50,7 +72,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         resolvedLanguage: resolved,
         theme: "system",
         resolvedTheme: resolveThemePreference("system", systemTheme),
-        telemetryEnabled: true
+        telemetryEnabled: true,
+        butlerBuddyVisible: true,
+        butlerBuddyShortcutEnabled: true,
+        butlerBuddyShortcut: "CommandOrControl+Shift+Space",
+        butlerBuddyShortcutRegistered: false,
+        butlerBuddyShortcutError: undefined
       });
       return;
     }
@@ -59,6 +86,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const resolved = resolveLanguagePreference(preference, systemLanguage);
     const storedTheme = await cliClient.getSetting("theme");
     const storedTelemetryEnabled = await cliClient.getSetting("telemetry.enabled");
+    const butlerPreferences = await window.freebuddy?.butlerBuddy
+      ?.getPreferences()
+      .catch(() => undefined);
     const themePreference = normalizeThemePreference(storedTheme);
     const resolvedTheme = resolveThemePreference(themePreference, systemTheme);
     await i18next.changeLanguage(resolved);
@@ -68,7 +98,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       resolvedLanguage: resolved,
       theme: themePreference,
       resolvedTheme,
-      telemetryEnabled: storedTelemetryEnabled !== "false"
+      telemetryEnabled: storedTelemetryEnabled !== "false",
+      butlerBuddyVisible: butlerPreferences?.visible ?? true,
+      butlerBuddyShortcutEnabled: butlerPreferences?.shortcutEnabled ?? true,
+      butlerBuddyShortcut:
+        butlerPreferences?.shortcut ?? "CommandOrControl+Shift+Space",
+      butlerBuddyShortcutRegistered:
+        butlerPreferences?.shortcutRegistered ?? false,
+      butlerBuddyShortcutError: butlerPreferences?.error
     });
   },
 
@@ -98,10 +135,44 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     }
   },
 
+  async updateButlerBuddyPreferences(input) {
+    const api = window.freebuddy?.butlerBuddy;
+    if (!api) {
+      set({
+        ...(input.visible === undefined
+          ? {}
+          : { butlerBuddyVisible: input.visible }),
+        ...(input.shortcutEnabled === undefined
+          ? {}
+          : { butlerBuddyShortcutEnabled: input.shortcutEnabled }),
+        ...(input.shortcut === undefined
+          ? {}
+          : { butlerBuddyShortcut: input.shortcut })
+      });
+      return;
+    }
+    const result = await api.updatePreferences(input);
+    set({
+      butlerBuddyVisible: result.visible,
+      butlerBuddyShortcutEnabled: result.shortcutEnabled,
+      butlerBuddyShortcut: result.shortcut,
+      butlerBuddyShortcutRegistered: result.shortcutRegistered,
+      butlerBuddyShortcutError: result.error
+    });
+  },
   refreshSystemTheme() {
     const systemTheme = getSystemTheme();
     set((state) => ({
       resolvedTheme: resolveThemePreference(state.theme, systemTheme)
     }));
+  },
+  applyButlerBuddyPreferences(prefs) {
+    set({
+      butlerBuddyVisible: prefs.visible,
+      butlerBuddyShortcutEnabled: prefs.shortcutEnabled,
+      butlerBuddyShortcut: prefs.shortcut,
+      butlerBuddyShortcutRegistered: prefs.shortcutRegistered,
+      butlerBuddyShortcutError: prefs.error
+    });
   }
 }));

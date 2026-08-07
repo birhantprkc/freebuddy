@@ -284,6 +284,8 @@ declare global {
     onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
     onOpenConversation(cb: (conversationId: string) => void): () => void;
+    onOpenSettings(cb: (tab: string) => void): () => void;
+    onAppearanceChanged(cb: (theme: string) => void): () => void;
     notifyTask(payload: {
       kind: "success" | "failure";
       title: string;
@@ -294,6 +296,31 @@ declare global {
 
   interface FreebuddySession {
     logout(): void;
+  }
+
+  interface ButlerBuddyPreferences {
+    visible: boolean;
+    shortcutEnabled: boolean;
+    shortcut: string;
+    shortcutRegistered: boolean;
+    error?: "shortcutUnavailable";
+  }
+
+  interface FreebuddyButlerBuddy {    toggleChat(): void;
+    hideChat(): void;
+    beginDrag(): void;
+    endDrag(): void;
+    openMenu(): void;
+    getPreferences(): Promise<ButlerBuddyPreferences>;
+    updatePreferences(input: {
+      visible?: boolean;
+      shortcutEnabled?: boolean;
+      shortcut?: string;
+    }): Promise<ButlerBuddyPreferences>;
+    onNewConversation(cb: () => void): () => void;
+    onPreferencesChanged(
+      cb: (prefs: ButlerBuddyPreferences) => void
+    ): () => void;
   }
 
   interface FreebuddySettings {
@@ -477,6 +504,7 @@ declare global {
     >;
     delete(id: string): Promise<boolean>;
     seedBuiltins(): Promise<WorkflowTeam[]>;
+    onChanged(cb: () => void): () => void;
   }
 
   interface FreebuddyScheduledTasks {
@@ -679,6 +707,7 @@ declare global {
     debugLogs: FreebuddyDebugLogs;
     shell: FreebuddyShell;
     remote: FreebuddyRemote;
+    butlerBuddy: FreebuddyButlerBuddy;
   }
 
   interface Window {

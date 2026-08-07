@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useWorkflowTeamStore } from "@/store/workflowTeamStore";
+import { workflowTeamsClient } from "@/services/workflowTeams/client";
 import type { WorkflowTeam } from "@/services/workflowTeams/types";
 import { WorkflowTeamList } from "./WorkflowTeamList";
 import { WorkflowTeamEditor } from "./WorkflowTeamEditor";
@@ -16,6 +17,7 @@ export function WorkflowTeamsTab({
   const { t } = useTranslation();
   const loaded = useWorkflowTeamStore((s) => s.loaded);
   const load = useWorkflowTeamStore((s) => s.load);
+  const refresh = useWorkflowTeamStore((s) => s.refresh);
   const teams = useWorkflowTeamStore((s) => s.teams);
   const [editing, setEditing] = useState<WorkflowTeam | null>(null);
   const [creating, setCreating] = useState(startCreating);
@@ -23,6 +25,15 @@ export function WorkflowTeamsTab({
   useEffect(() => {
     if (!loaded) load();
   }, [loaded, load]);
+
+  useEffect(() => {
+    const off = workflowTeamsClient.onChanged(() => {
+      void refresh();
+    });
+    return () => {
+      off?.();
+    };
+  }, [refresh]);
 
   useEffect(() => {
     if (startCreating || !initialTeamId) return;

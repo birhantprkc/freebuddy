@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, Notification, protocol, shell } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,7 @@ import { bindConversationNotifier } from "./cli/conversations.js";
 import { applyOwnerBackfill } from "./cli/ownerBackfill.js";
 import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
-import { getSetting } from "./cli/settings.js";
+import { getSetting, setSetting } from "./cli/settings.js";
 import {
   initRemoteControl,
   getConfiguredBindMode,
@@ -204,6 +204,397 @@ async function injectShellPath() {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let butlerPetWindow: BrowserWindow | null = null;
+let butlerChatWindow: BrowserWindow | null = null;
+
+const BUTLER_PET_SIZE = 108;
+const BUTLER_CHAT_WIDTH = 360;
+const BUTLER_CHAT_HEIGHT = 420;
+const BUTLER_WINDOW_GAP = 6;
+const BUTLER_VISIBLE_SETTING = "butlerbuddy.visible";
+const BUTLER_SHORTCUT_ENABLED_SETTING = "butlerbuddy.shortcut.enabled";
+const BUTLER_SHORTCUT_SETTING = "butlerbuddy.shortcut";
+const BUTLER_DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
+
+type ButlerBuddyPreferences = {
+  visible: boolean;
+  shortcutEnabled: boolean;
+  shortcut: string;
+  shortcutRegistered: boolean;
+  error?: "shortcutUnavailable";
+};
+
+let registeredButlerShortcut: string | null = null;
+let butlerShortcutError: "shortcutUnavailable" | undefined;
+
+function readButlerBuddyPreferences(): ButlerBuddyPreferences {
+  const visible = getSetting(BUTLER_VISIBLE_SETTING) !== "false";
+  const shortcutEnabled =
+    getSetting(BUTLER_SHORTCUT_ENABLED_SETTING) !== "false";
+  const shortcut =
+    getSetting(BUTLER_SHORTCUT_SETTING)?.trim() || BUTLER_DEFAULT_SHORTCUT;
+  return {
+    visible,
+    shortcutEnabled,
+    shortcut,
+    shortcutRegistered:
+      shortcutEnabled &&
+      registeredButlerShortcut === shortcut &&
+      globalShortcut.isRegistered(shortcut),
+    error: butlerShortcutError
+  };
+}
+
+function companionWebPreferences() {
+  return {
+    preload: path.join(__dirname, "preload.js"),
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: false
+  };
+}
+
+function loadCompanionSurface(
+  win: BrowserWindow,
+  surface: "butler-pet" | "butler-chat"
+) {
+  if (isDev) {
+    const url = new URL(process.env.VITE_DEV_SERVER_URL as string);
+    url.searchParams.set("surface", surface);
+    void win.loadURL(url.toString());
+    return;
+  }
+  void win.loadFile(path.join(__dirname, "../dist/index.html"), {
+    query: { surface }
+  });
+}
+
+function initialButlerPetBounds() {
+  const workArea = screen.getPrimaryDisplay().workArea;
+  return {
+    width: BUTLER_PET_SIZE,
+    height: BUTLER_PET_SIZE,
+    x: workArea.x + workArea.width - BUTLER_PET_SIZE - 18,
+    y: workArea.y + Math.round((workArea.height - BUTLER_PET_SIZE) / 2)
+  };
+}
+
+function syncButlerChatPosition() {
+  const pet = butlerPetWindow;
+  const chat = butlerChatWindow;
+  if (!pet || pet.isDestroyed() || !chat || chat.isDestroyed()) return;
+
+  const petBounds = pet.getBounds();
+  const workArea = screen.getDisplayMatching(petBounds).workArea;
+  let x = petBounds.x - BUTLER_CHAT_WIDTH - BUTLER_WINDOW_GAP;
+  if (x < workArea.x + 8) {
+    x = petBounds.x + petBounds.width + BUTLER_WINDOW_GAP;
+  }
+  const idealY = petBounds.y - Math.round((BUTLER_CHAT_HEIGHT - petBounds.height) / 2);
+  const y = Math.max(
+    workArea.y + 8,
+    Math.min(idealY, workArea.y + workArea.height - BUTLER_CHAT_HEIGHT - 8)
+  );
+  chat.setPosition(Math.round(x), Math.round(y), false);
+}
+
+function hideButlerChat() {
+  if (butlerChatWindow && !butlerChatWindow.isDestroyed()) {
+    butlerChatWindow.hide();
+  }
+}
+
+// The pet and chat move as a rigid group: dragging either translates both by
+// the same delta, preserving whatever offset the user chose.
+//
+// Both surfaces only signal begin/end (via pointer events in their renderers);
+// this poll drives the actual movement so the transparent, non-focusable pet
+// window doesn't need to receive pointermove on Windows. The poll moves BOTH
+// windows directly, so no `move`-event listener is used — relying on `move`
+// events here previously caused the pet to drift away from the chat, because
+// on Windows `getBounds()` immediately after `setPosition` can return stale
+// bounds and the async move event then double-translated the pet.
+let butlerDragCursor: { x: number; y: number } | null = null;
+let butlerDragPetOrigin: { x: number; y: number } | null = null;
+let butlerDragChatOrigin: { x: number; y: number } | null = null;
+let butlerDragTimer: ReturnType<typeof setInterval> | null = null;
+
+function applyButlerPetDrag() {
+  if (!butlerDragCursor || !butlerDragPetOrigin) return;
+  const pet = butlerPetWindow;
+  if (!pet || pet.isDestroyed()) {
+    stopButlerPetDrag();
+    return;
+  }
+  const c = screen.getCursorScreenPoint();
+  const dx = c.x - butlerDragCursor.x;
+  const dy = c.y - butlerDragCursor.y;
+  pet.setPosition(butlerDragPetOrigin.x + dx, butlerDragPetOrigin.y + dy);
+  const chat = butlerChatWindow;
+  if (chat && !chat.isDestroyed() && butlerDragChatOrigin) {
+    chat.setPosition(butlerDragChatOrigin.x + dx, butlerDragChatOrigin.y + dy);
+  }
+}
+
+function startButlerPetDrag() {
+  const pet = butlerPetWindow;
+  if (!pet || pet.isDestroyed() || butlerDragCursor) return;
+  const [px, py] = pet.getPosition();
+  butlerDragCursor = screen.getCursorScreenPoint();
+  butlerDragPetOrigin = { x: px, y: py };
+  const chat = butlerChatWindow;
+  if (chat && !chat.isDestroyed()) {
+    const [cx, cy] = chat.getPosition();
+    butlerDragChatOrigin = { x: cx, y: cy };
+  } else {
+    butlerDragChatOrigin = null;
+  }
+  if (butlerDragTimer) clearInterval(butlerDragTimer);
+  butlerDragTimer = setInterval(applyButlerPetDrag, 1000 / 60);
+}
+
+function stopButlerPetDrag() {
+  butlerDragCursor = null;
+  butlerDragPetOrigin = null;
+  butlerDragChatOrigin = null;
+  if (butlerDragTimer) {
+    clearInterval(butlerDragTimer);
+    butlerDragTimer = null;
+  }
+}
+
+function toggleButlerChat() {
+  const chat = butlerChatWindow;
+  if (!chat || chat.isDestroyed()) return;
+  if (chat.isVisible()) {
+    chat.hide();
+    return;
+  }
+  syncButlerChatPosition();
+  chat.show();
+  chat.focus();
+}
+
+function updateButlerShortcutRegistration(
+  enabled: boolean,
+  shortcut: string
+): "shortcutUnavailable" | undefined {
+  if (!enabled) {
+    if (registeredButlerShortcut) {
+      globalShortcut.unregister(registeredButlerShortcut);
+      registeredButlerShortcut = null;
+    }
+    butlerShortcutError = undefined;
+    return;
+  }
+
+  if (
+    registeredButlerShortcut === shortcut &&
+    globalShortcut.isRegistered(shortcut)
+  ) {
+    butlerShortcutError = undefined;
+    return;
+  }
+
+  try {
+    if (!globalShortcut.register(shortcut, toggleButlerChat)) {
+      butlerShortcutError = "shortcutUnavailable";
+      return butlerShortcutError;
+    }
+  } catch {
+    butlerShortcutError = "shortcutUnavailable";
+    return butlerShortcutError;
+  }
+
+  if (registeredButlerShortcut && registeredButlerShortcut !== shortcut) {
+    globalShortcut.unregister(registeredButlerShortcut);
+  }
+  registeredButlerShortcut = shortcut;
+  butlerShortcutError = undefined;
+}
+
+function applyButlerBuddyVisibility(visible: boolean) {
+  const pet = butlerPetWindow;
+  if (!pet || pet.isDestroyed()) return;
+  if (visible) {
+    pet.showInactive();
+    return;
+  }
+  hideButlerChat();
+  pet.hide();
+}
+
+function updateButlerBuddyPreferences(
+  input: Partial<Pick<ButlerBuddyPreferences, "visible" | "shortcutEnabled" | "shortcut">>
+): ButlerBuddyPreferences {
+  const current = readButlerBuddyPreferences();
+  const nextVisible = input.visible ?? current.visible;
+  const nextEnabled = input.shortcutEnabled ?? current.shortcutEnabled;
+  const nextShortcut = input.shortcut?.trim() || current.shortcut;
+  const shortcutChanged =
+    nextEnabled !== current.shortcutEnabled || nextShortcut !== current.shortcut;
+
+  if (shortcutChanged) {
+    const error = updateButlerShortcutRegistration(nextEnabled, nextShortcut);
+    if (error) return { ...current, error };
+    setSetting(BUTLER_SHORTCUT_ENABLED_SETTING, String(nextEnabled));
+    setSetting(BUTLER_SHORTCUT_SETTING, nextShortcut);
+  }
+
+  if (nextVisible !== current.visible) {
+    setSetting(BUTLER_VISIBLE_SETTING, String(nextVisible));
+    applyButlerBuddyVisibility(nextVisible);
+  }
+
+  const result = readButlerBuddyPreferences();
+  // Push the new preferences to the main window so the settings toggle stays
+  // in sync when the change originated from the main process (e.g. the pet's
+  // right-click "关闭宠物" menu). Renderer-initiated updates already reflect
+  // the IPC return value; this broadcast is idempotent for them.
+  const win = mainWindow;
+  if (win && !win.isDestroyed()) {
+    safeSendToWebContents(win.webContents, "butlerBuddy:preferencesChanged", result);
+  }
+  return result;
+}
+
+function closeButlerBuddyWindows() {
+  if (butlerChatWindow && !butlerChatWindow.isDestroyed()) {
+    butlerChatWindow.close();
+  }
+  if (butlerPetWindow && !butlerPetWindow.isDestroyed()) {
+    butlerPetWindow.close();
+  }
+  butlerChatWindow = null;
+  butlerPetWindow = null;
+}
+
+function createButlerBuddyWindows() {
+  if (butlerPetWindow && !butlerPetWindow.isDestroyed()) return;
+
+  butlerChatWindow = new BrowserWindow({
+    width: BUTLER_CHAT_WIDTH,
+    height: BUTLER_CHAT_HEIGHT,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    webPreferences: companionWebPreferences()
+  });
+  butlerChatWindow.setAlwaysOnTop(true, "floating");
+  butlerChatWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  butlerChatWindow.on("close", () => {
+    butlerChatWindow = null;
+  });
+  loadCompanionSurface(butlerChatWindow, "butler-chat");
+  if (isDev) {
+    // Detached DevTools so the companion renderer can be inspected when
+    // debugging the floating chat (stream/done delivery, store state, etc.).
+    butlerChatWindow.webContents.once("dom-ready", () => {
+      butlerChatWindow?.webContents.openDevTools({ mode: "detach" });
+    });
+  }
+
+  butlerPetWindow = new BrowserWindow({
+    ...initialButlerPetBounds(),
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    webPreferences: companionWebPreferences()
+  });
+  butlerPetWindow.setAlwaysOnTop(true, "floating");
+  butlerPetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  butlerPetWindow.on("closed", () => {
+    hideButlerChat();
+    butlerPetWindow = null;
+  });
+  butlerPetWindow.once("ready-to-show", () => {
+    if (readButlerBuddyPreferences().visible) {
+      butlerPetWindow?.showInactive();
+    }
+  });
+  loadCompanionSurface(butlerPetWindow, "butler-pet");
+}
+
+function showButlerContextMenu() {
+  const menu = Menu.buildFromTemplate([
+    {
+      label: "新会话",
+      click: () => {
+        const chat = butlerChatWindow;
+        if (!chat || chat.isDestroyed()) return;
+        if (!chat.isVisible()) {
+          syncButlerChatPosition();
+          chat.show();
+          chat.focus();
+        }
+        safeSendToWebContents(
+          chat.webContents,
+          "butlerBuddy:newConversation",
+          undefined
+        );
+      }
+    },
+    { type: "separator" },
+    {
+      label: "隐藏聊天面板",
+      click: () => hideButlerChat()
+    },
+    { type: "separator" },
+    {
+      label: "关闭宠物",
+      click: () => updateButlerBuddyPreferences({ visible: false })
+    },
+    { type: "separator" },
+    {
+      label: "浮窗与快捷键设置…",
+      click: () => {
+        const win = mainWindow;
+        if (!win || win.isDestroyed()) return;
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+        safeSendToWebContents(win.webContents, "freebuddy://open-settings", {
+          tab: "general"
+        });
+      }
+    }
+  ]);
+  menu.popup({ window: butlerPetWindow ?? undefined });
+}
+
+function registerButlerBuddyWindowIpc() {
+  ipcMain.on("butlerBuddy:toggleChat", toggleButlerChat);
+  ipcMain.on("butlerBuddy:hideChat", hideButlerChat);
+  ipcMain.on("butlerBuddy:beginDrag", startButlerPetDrag);
+  ipcMain.on("butlerBuddy:endDrag", stopButlerPetDrag);
+  ipcMain.on("butlerBuddy:openMenu", showButlerContextMenu);
+  ipcMain.handle("butlerBuddy:getPreferences", () =>
+    readButlerBuddyPreferences()
+  );
+  ipcMain.handle(
+    "butlerBuddy:updatePreferences",
+    (_event, input: Partial<
+      Pick<ButlerBuddyPreferences, "visible" | "shortcutEnabled" | "shortcut">
+    >) => updateButlerBuddyPreferences(input)
+  );
+}
 
 function windowChromeOptions() {
   return process.platform === "darwin"
@@ -232,6 +623,11 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false
     }
+  });
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    closeButlerBuddyWindows();
   });
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
@@ -295,6 +691,8 @@ function createWindow() {
   } else {
     void mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+
+  createButlerBuddyWindows();
 }
 
 type TaskNotificationPayload = {
@@ -422,6 +820,7 @@ app.whenReady().then(async () => {
   seedBuiltinWorkflowTeams();
   registerCliIpc();
   registerTaskNotificationIpc();
+  registerButlerBuddyWindowIpc();
   bindConversationNotifier((conversationId) => {
     for (const win of BrowserWindow.getAllWindows()) {
       safeSendToWebContents(win.webContents, "messages://changed", { conversationId });
@@ -433,6 +832,16 @@ app.whenReady().then(async () => {
     app.dock.setIcon(appIcon);
   }
   createWindow();
+  const butlerPreferences = readButlerBuddyPreferences();
+  const shortcutError = updateButlerShortcutRegistration(
+    butlerPreferences.shortcutEnabled,
+    butlerPreferences.shortcut
+  );
+  if (shortcutError) {
+    logMain().warn("butlerbuddy", "global shortcut unavailable", {
+      shortcut: butlerPreferences.shortcut
+    });
+  }
   initializeScheduledTaskScheduler(() =>
     mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined
   );

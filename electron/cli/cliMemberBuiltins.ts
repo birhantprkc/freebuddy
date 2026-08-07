@@ -1,6 +1,9 @@
 export interface CLIMember {
   id: string;
   name: string;
+  profile?: "butler";
+  runtimeKey?: string;
+  requiredSkillIds?: string[];
   enabled?: boolean;
   cli: {
     adapter: string;
@@ -14,6 +17,20 @@ export interface CLIMember {
 }
 
 export const builtinCliMembers: CLIMember[] = [
+  {
+    id: "cli-butlerbuddy",
+    name: "ButlerBuddy",
+    profile: "butler",
+    runtimeKey: "codex-acp",
+    requiredSkillIds: ["butlerbuddy"],
+    enabled: true,
+    cli: {
+      adapter: "codex-acp",
+      approvalMode: "auto",
+      showStderr: true,
+      skillIds: ["butlerbuddy"]
+    }
+  },
   {
     id: "cli-codex-acp",
     name: "Codex",

@@ -175,6 +175,36 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const off = window.freebuddy?.window?.onOpenSettings?.((tab) => {
+      setSettingsInitialTab(tab as SettingsTab);
+      setSettingsOpen(true);
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const off = window.freebuddy?.window?.onAppearanceChanged?.((theme) => {
+      if (theme === "system" || theme === "light" || theme === "dark") {
+        void useSettingsStore.getState().setTheme(theme);
+      }
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const off = window.freebuddy?.butlerBuddy?.onPreferencesChanged?.((prefs) => {
+      useSettingsStore.getState().applyButlerBuddyPreferences(prefs);
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const off = window.freebuddy?.workflow?.onRunFinished?.((event) => {
       const success = event.status === "completed" || event.status === "partial";
       if (success) playTaskSuccess(true);

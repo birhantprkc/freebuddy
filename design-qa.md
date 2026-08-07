@@ -1,3 +1,57 @@
+# ButlerBuddy floating pet and mini-chat design QA
+
+- Source visual truth: `/Users/hongbin9/.codex/generated_images/019fd6fd-bfec-7bf2-8ce7-848bf0ae24c9/exec-f3883e82-cf3a-48b0-b64f-68418dad8910.png`
+- Browser-rendered implementation screenshot: `/Users/hongbin9/.codex/visualizations/2026/08/06/019fd6fd-bfec-7bf2-8ce7-848bf0ae24c9/butlerbuddy/chat-browser.jpg`
+- Normalized chat-window crop: `/Users/hongbin9/.codex/visualizations/2026/08/06/019fd6fd-bfec-7bf2-8ce7-848bf0ae24c9/butlerbuddy/chat-crop.png`
+- Floating-pet capture: `/Users/hongbin9/.codex/visualizations/2026/08/06/019fd6fd-bfec-7bf2-8ce7-848bf0ae24c9/butlerbuddy/pet-browser.png`
+- Combined focused comparison: `/Users/hongbin9/.codex/visualizations/2026/08/06/019fd6fd-bfec-7bf2-8ce7-848bf0ae24c9/butlerbuddy/comparison.png`
+- Viewport: browser capture 1280 x 720 px; production chat window 360 x 420 CSS px; normalized component crop 360 x 420 px; pet window 128 x 128 CSS px
+- Density normalization: source 1487 x 1058 px at 1x; implementation browser capture 1280 x 720 px at 1x; both component regions are shown without density scaling in the combined comparison
+- State: light theme, ButlerBuddy mini-chat open, one user message and one assistant reply, composer idle
+
+## Full-view comparison evidence
+
+The source establishes a very small white chat surface attached to a floating green pet, with only a title bar, conversation, and composer. The browser-rendered implementation preserves that hierarchy and keeps the production dimensions fixed even inside a larger browser viewport. The pet is delivered as a transparent raster asset in its own always-on-top 128 px Electron window; the chat is a separate 360 x 420 window positioned beside it.
+
+## Focused region comparison evidence
+
+`comparison.png` places the source crop on the left and the final implementation crop on the right. Both use the same compact title row, green online status, right-aligned pale-green user bubble, left-aligned neutral assistant bubble with pet avatar, generous empty conversation space, and one bottom composer. The implementation is intentionally slightly narrower than the generated mock because the approved feedback asked for a lighter surface; the prompt target specified an approximately 340 px panel and the implementation content width is 344 px.
+
+## Required fidelity surfaces
+
+- Fonts and typography: FreeBuddy's existing Plus Jakarta Sans / system Chinese font stack is retained. Header is 13 px / 700; messages are 13 px with 1.55 line height; placeholder is 12.5 px. Text stays on the same lines as the source crop without clipping.
+- Spacing and layout rhythm: 48 px header, 16-18 px conversation padding, 14 px message gaps, 11 px bubble radii, 14 px composer radius, and 8 px outer breathing room preserve the approved lightweight rhythm.
+- Colors and visual tokens: white and `#f8fafc`-family surfaces, slate text, `#10b981` online/send accents, pale-green user message, and subtle gray borders map to the existing FreeBuddy token system.
+- Image quality and asset fidelity: the pet is a dedicated generated 512 x 512 RGBA raster asset at `public/butlerbuddy-pet.png`, not CSS art or an emoji. Its alpha edge was contracted and visually checked on white; transparent padding was tightened after the first comparison so the 24 px avatars match the source scale.
+- Copy and content: the final surface contains only `ButlerBuddy`, the user/assistant messages, and `发消息给 ButlerBuddy…`. Diagnostics, quick actions, metrics, update cards, and settings shortcuts from the earlier concept are absent.
+
+## Findings
+
+No actionable P0, P1, or P2 differences remain for the approved lightweight chat direction.
+
+## Primary interactions tested
+
+- Entered `测试一下` in the browser-rendered composer and submitted it.
+- Confirmed the user message appeared, the temporary replying state resolved, and an assistant reply rendered.
+- Confirmed the empty composer disables the send button.
+- Confirmed the clean chat and pet tabs report no browser console warnings or errors.
+- Automated contracts cover the Electron toggle/hide IPC, separate always-on-top transparent windows, pet-to-chat positioning, persisted ButlerBuddy conversation id, real conversation creation, message loading, and real `sendMessage` dispatch.
+
+## Comparison history
+
+1. The first browser render exposed an unstable empty-array Zustand selector and React stopped the chat surface with a maximum-update-depth error.
+2. The selector now reuses one stable empty array; a clean reload renders with no console errors.
+3. The first focused comparison showed the pet avatars smaller than the mock because the generated RGBA asset retained excessive transparent padding.
+4. The asset was cropped to its visible alpha bounds with controlled padding; the revised comparison confirms source-like avatar scale and clean edges.
+
+## Follow-up polish
+
+- P3: A future motion pass could add a restrained hover/idle animation to the pet, but motion was intentionally excluded from this lightweight implementation.
+
+final result: passed
+
+---
+
 # Agent self-check export design QA
 
 - Source visual truth: `C:\Users\Morefine\.codex\generated_images\019fd22c-698f-7d93-991a-6f7c065756dc\exec-f5fc3830-031d-4bd6-bc03-1da984d4dfb5.png`
@@ -441,5 +495,53 @@ The marketplace rail and catalog toolbar were checked at the normalized desktop 
 ## Remaining polish
 
 - P3: long marketplace names can truncate at the 1024px desktop viewport; the leading unique text and full source tooltip remain available, while the stacked responsive layout exposes more width.
+
+final result: passed
+---
+
+# ButlerBuddy header controls design QA
+
+- Source visual truth: `C:\Users\Morefine\.codex\visualizations\2026\08\06\019fd7a2-e8bc-7e13-bc5c-b112b2aaf36d\butler-header\reference.png`
+- Browser-rendered implementation screenshot: `C:\Users\Morefine\.codex\visualizations\2026\08\06\019fd7a2-e8bc-7e13-bc5c-b112b2aaf36d\butler-header\implementation.png`
+- Viewport: implementation captured at 360 x 420 px; production chat surface is 360 x 420 CSS px
+- Density normalization: source is 433 x 525 px from a Windows 125% desktop capture, approximately 346 x 420 CSS px; implementation is 360 x 420 px at 1x. The focused header regions were compared at their equivalent CSS scale.
+- State: light theme, ButlerBuddy chat open. The source is an empty conversation; the browser preview contains two sample messages. Conversation content differs intentionally and is outside this header-only change.
+
+## Full-view comparison evidence
+
+Both artifacts preserve the same compact white floating surface, 48 px header rhythm, left brand identity, right model control, new-conversation action, close action, and bottom composer. The implementation keeps all body and composer styling unchanged while restructuring only the header controls requested by the user.
+
+## Focused region comparison evidence
+
+The source and implementation were opened together in one comparison input. Post-fix browser measurements show the brand image, title, online dot, model control, new-conversation button, divider, and close button all share an exact vertical center at 32.4 px. Model text is constrained to a 104 px control with ellipsis, and both icon buttons use 30 x 30 px hit areas. The new-conversation glyph is the installed Lucide `MessageCirclePlus` icon.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing FreeBuddy font stack is preserved; ButlerBuddy remains 13 px / 700, while the model label stays at the compact 11.5 px UI scale with single-line truncation.
+- Spacing and layout rhythm: brand and actions are now explicit flex groups; controls share one baseline, 4 px tool gaps, a quiet 18 px divider, and consistent 30 px control height.
+- Colors and visual tokens: existing primary, secondary, tertiary, hover, border, and brand-green tokens remain unchanged.
+- Image quality and asset fidelity: the supplied ButlerBuddy raster asset is unchanged; the requested new-conversation affordance uses the project's installed Lucide icon library rather than a custom drawing.
+- Copy and content: `ButlerBuddy`, the selected model label, `新会话`, and close semantics are unchanged. Long model labels truncate instead of pushing adjacent actions.
+
+## Findings
+
+No actionable P0, P1, or P2 header mismatch remains.
+
+## Comparison history
+
+1. The supplied source exposed a P2 hierarchy problem: brand, model, new-conversation, and close elements were independent siblings with mixed 26/30 px heights and no separation between creation and dismissal actions.
+2. The header was split into stable brand and control groups; model and action heights were normalized; model width was bounded; a light divider was added before close; `SquarePen` was replaced by `MessageCirclePlus`.
+3. Post-fix evidence confirms every visible header element shares the same 32.4 px centerline and the right-side tools remain inside the 360 px viewport without overlap.
+
+## Primary interactions tested
+
+- Confirmed the new-conversation and close actions remain native buttons with accessible names and 30 x 30 px hit areas.
+- Confirmed long model content is constrained by the fixed-width picker and ellipsis rules.
+- Checked the browser-rendered surface for console warnings and errors: none.
+- Type checking and the ButlerBuddy contract suite cover the retained new-conversation handler and model picker wiring.
+
+## Follow-up polish
+
+- P3: The model picker is a non-interactive fallback in the browser preview because live options come from the Electron adapter bridge; the production desktop picker retains its existing interaction.
 
 final result: passed

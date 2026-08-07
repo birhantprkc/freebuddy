@@ -41,6 +41,7 @@ function PluginMenuIcon({ plugin }: { plugin: NativePluginRecord }) {
 export function ComposerAddMenu({
   skills,
   selectedIds,
+  requiredIds = [],
   pluginAgent,
   onSkillsChange,
   onSelectPlugin,
@@ -51,6 +52,7 @@ export function ComposerAddMenu({
 }: {
   skills: SkillRecord[];
   selectedIds: string[];
+  requiredIds?: string[];
   pluginAgent?: NativePluginAgent;
   onSkillsChange: (ids: string[]) => void;
   onSelectPlugin: (plugin: NativePluginRecord) => void;
@@ -91,6 +93,7 @@ export function ComposerAddMenu({
     );
   }, [installedPlugins, pluginQuery]);
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const required = useMemo(() => new Set(requiredIds), [requiredIds]);
   const selectedAvailableCount = available.reduce(
     (count, skill) => count + (selected.has(skill.id) ? 1 : 0),
     0
@@ -162,6 +165,7 @@ export function ComposerAddMenu({
   }, [activePanel]);
 
   const toggleSkill = (skillId: string, checked: boolean) => {
+    if (required.has(skillId) && !checked) return;
     const next = new Set(selectedIds);
     if (checked) next.add(skillId);
     else next.delete(skillId);
@@ -278,9 +282,11 @@ export function ComposerAddMenu({
                     <input
                       type="checkbox"
                       checked={selected.has(skill.id)}
+                      disabled={required.has(skill.id)}
                       onChange={(event) => toggleSkill(skill.id, event.currentTarget.checked)}
                     />
                     <span>{skill.name}</span>
+                    {required.has(skill.id) ? <small>{t("skills.required")}</small> : null}
                   </label>
                 ))}
               </div>

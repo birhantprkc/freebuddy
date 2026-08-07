@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LogOut, Settings } from "lucide-react";
+import { Dog, LogOut, Settings } from "lucide-react";
 import { useConversationStore } from "@/store/conversationStore";
+import { useSettingsStore } from "@/store/settingsStore";
 
 export function SidebarUserMenu({
   onOpenSettings,
@@ -12,7 +13,12 @@ export function SidebarUserMenu({
 }) {
   const { t } = useTranslation();
   const me = useConversationStore((s) => s.currentUser);
+  const butlerVisible = useSettingsStore((s) => s.butlerBuddyVisible);
+  const updateButler = useSettingsStore((s) => s.updateButlerBuddyPreferences);
   const platform = window.freebuddy?.platform;
+  const canTogglePet =
+    platform !== "web" &&
+    Boolean(window.freebuddy?.butlerBuddy?.updatePreferences);
   const username =
     me?.username?.trim() ||
     (platform !== "web" ? t("sidebar.hostAccount") : "");
@@ -76,6 +82,20 @@ export function SidebarUserMenu({
             <Settings size={15} strokeWidth={1.8} />
             {t("common.settings")}
           </button>
+          {canTogglePet && (
+            <button
+              type="button"
+              className="sidebar-user-item"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                void updateButler({ visible: !butlerVisible });
+              }}
+            >
+              <Dog size={15} strokeWidth={1.8} />
+              {butlerVisible ? t("sidebar.hidePet") : t("sidebar.showPet")}
+            </button>
+          )}
           {showLogout && (
             <button
               type="button"

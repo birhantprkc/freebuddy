@@ -158,7 +158,21 @@
     "themeDark": "深色",
     "telemetryLabel": "匿名使用数据",
     "telemetryEnabled": "帮助改进 FreeBuddy",
-    "telemetryDescription": "发送匿名安装、启动、升级、应用版本、操作系统和 CPU 架构；不会发送对话、提示词、文件路径或工作区内容。"
+    "telemetryDescription": "发送匿名安装、启动、升级、应用版本、操作系统和 CPU 架构；不会发送对话、提示词、文件路径或工作区内容。",
+    "butlerTitle": "宠物浮窗",
+    "butlerDescription": "把 ButlerBuddy 留在桌面，需要时随手唤起。",
+    "butlerShowPet": "显示桌面宠物",
+    "butlerShowPetDescription": "点击打开对话，拖动调整位置，右键查看更多操作。",
+    "butlerShortcut": "快捷唤起",
+    "butlerShortcutDescription": "在其他应用中也能打开或收起对话。",
+    "butlerShortcutCurrent": "当前快捷键",
+    "butlerShortcutRecording": "请按下组合键",
+    "butlerShortcutCancelHint": "Esc 取消",
+    "butlerShortcutChange": "点击修改",
+    "butlerShortcutReset": "恢复默认快捷键",
+    "butlerShortcutReady": "全局快捷键已生效",
+    "butlerShortcutUnavailable": "这个组合键已被其他应用占用，请换一个。",
+    "butlerShortcutInvalid": "请同时按下 Ctrl/⌘ 或 Alt 与另一个按键。"
   },
   "app": { "brand": "FreeBuddy", "chat": "聊天" },
   "skills": {
@@ -212,6 +226,7 @@
     "deleteConfirm": "删除已导入的 Skill“{{name}}”？",
     "picker": "Skills {{count}}",
     "activeForTask": "本任务启用",
+    "required": "必选",
     "agentDefaults": "默认 Skills",
     "agentDefaultsHint": "使用这个 Agent 新建任务时自动选中。",
     "roleOverride": "角色 Skills",
@@ -291,6 +306,8 @@
     "collapse": "收起侧边栏",
     "toggleTheme": "切换主题",
     "logout": "退出登录",
+    "showPet": "显示宠物",
+    "hidePet": "关闭宠物",
     "hostAccount": "本机",
     "primaryNavigation": "工作区导航",
     "newConversation": "新会话",
@@ -639,6 +656,7 @@
       "selectionAria": "选择可用 Agent",
       "available": "已安装",
       "ready": "可以立即使用",
+      "butler": "FreeBuddy 管家",
       "checking": "正在检测 Agent…",
       "checkingCount": "正在检测 {{count}} 个 Agent…",
       "checkingHint": "检测完成后，可用 Agent 会自动出现在这里。",
@@ -933,7 +951,7 @@
       "authChecking": "检查中…",
       "authMethodsFound_other": "发现 {{count}} 种登录方式",
       "authProbeFailed": "登录检查失败：{{error}}",
-      "logout": "退出登录",
+    "logout": "退出登录",
       "loggingOut": "退出中…",
       "logoutSuccess": "已退出登录",
       "logoutFailed": "退出登录失败：{{error}}",
@@ -1039,7 +1057,15 @@
       "noResults": "没有匹配的 Agent",
       "category": {
         "builtin": "内置",
-        "custom": "自定义"
+        "custom": "自定义",
+        "official": "官方"
+      },
+      "official": {
+        "runtime": "适配器",
+        "runtimeHint": "选择此官方 Agent 所使用的已安装适配器。已有会话会保留其启动时的适配器。",
+        "requiredSkills": "必选 Skills",
+        "requiredSkillsHint": "这些 Skills 对该 Agent 始终启用，无法关闭。",
+        "noRequiredSkills": "无必选 Skills。"
       },
       "loading": "加载中…",
       "runInBackground": "后台运行",

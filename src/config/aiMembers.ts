@@ -4,6 +4,9 @@ export interface CLIMember {
   id: string;
   kind: "cli";
   name: string;
+  profile?: "butler";
+  runtimeKey?: CLIAdapterId;
+  requiredSkillIds?: string[];
   avatar?: string;
   description?: string;
   source: "builtin" | "user";
@@ -20,6 +23,23 @@ export interface CLIMember {
 }
 
 export const builtinCliMembers: CLIMember[] = [
+  {
+    id: "cli-butlerbuddy",
+    kind: "cli",
+    name: "ButlerBuddy",
+    profile: "butler",
+    runtimeKey: "codex-acp",
+    requiredSkillIds: ["butlerbuddy"],
+    description: "FreeBuddy's built-in configuration and troubleshooting agent.",
+    source: "builtin",
+    enabled: true,
+    cli: {
+      adapter: "codex-acp",
+      approvalMode: "auto",
+      showStderr: true,
+      skillIds: ["butlerbuddy"]
+    }
+  },
   {
     id: "cli-codex-acp",
     kind: "cli",

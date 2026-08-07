@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { app } from "electron";
 
 import { getDataDir, getDb } from "./db.js";
@@ -23,6 +24,7 @@ import type {
   SkillSnapshot,
   SkillSource
 } from "./skillTypes.js";
+import { BUTLERBUDDY_SKILL_ID } from "./agentProfiles.js";
 
 export { nextSkillEnabledFlag } from "./skillEnabled.js";
 export {
@@ -71,7 +73,13 @@ export interface PreparedSkillInstallResult {
 function builtinRoot(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, "skills")
-    : path.join(app.getAppPath(), "assets", "skills");
+    : path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "..",
+        "..",
+        "assets",
+        "skills"
+      );
 }
 
 function importedRoot(): string {
@@ -613,6 +621,9 @@ export function importSkills(sourcePath: string): SkillImportResult {
 }
 
 export function setSkillEnabled(id: string, enabled: boolean): SkillRecord | undefined {
+  if (id === BUTLERBUDDY_SKILL_ID && !enabled) {
+    return getSkill(id);
+  }
   getDb().prepare("UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?")
     .run(enabled ? 1 : 0, new Date().toISOString(), id);
   return getSkill(id);
@@ -620,6 +631,9 @@ export function setSkillEnabled(id: string, enabled: boolean): SkillRecord | und
 
 /** Explicit user trust after reviewing an untrusted market/imported skill. */
 export function setSkillTrusted(id: string, trusted: boolean): SkillRecord | undefined {
+  if (id === BUTLERBUDDY_SKILL_ID && !trusted) {
+    return getSkill(id);
+  }
   const skill = getSkill(id);
   if (!skill) return undefined;
   const now = new Date().toISOString();

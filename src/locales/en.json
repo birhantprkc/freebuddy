@@ -158,7 +158,21 @@
     "themeDark": "Dark",
     "telemetryLabel": "Anonymous usage data",
     "telemetryEnabled": "Help improve FreeBuddy",
-    "telemetryDescription": "Sends anonymous install, launch, update, app version, operating system, and CPU architecture data. Conversations, prompts, file paths, and workspace contents are never sent."
+    "telemetryDescription": "Sends anonymous install, launch, update, app version, operating system, and CPU architecture data. Conversations, prompts, file paths, and workspace contents are never sent.",
+    "butlerTitle": "Floating companion",
+    "butlerDescription": "Keep ButlerBuddy close by and call it up whenever you need it.",
+    "butlerShowPet": "Show desktop companion",
+    "butlerShowPetDescription": "Click to chat, drag to move, or right-click for more actions.",
+    "butlerShortcut": "Quick access",
+    "butlerShortcutDescription": "Open or hide the chat even while using another app.",
+    "butlerShortcutCurrent": "Current shortcut",
+    "butlerShortcutRecording": "Press a key combination",
+    "butlerShortcutCancelHint": "Esc to cancel",
+    "butlerShortcutChange": "Click to change",
+    "butlerShortcutReset": "Restore default shortcut",
+    "butlerShortcutReady": "Global shortcut is active",
+    "butlerShortcutUnavailable": "That shortcut is already used by another app. Try another one.",
+    "butlerShortcutInvalid": "Include Ctrl/⌘ or Alt together with another key."
   },
   "app": { "brand": "FreeBuddy", "chat": "Chat" },
   "skills": {
@@ -212,6 +226,7 @@
     "deleteConfirm": "Delete imported skill “{{name}}”?",
     "picker": "Skills {{count}}",
     "activeForTask": "Active for this task",
+    "required": "Required",
     "agentDefaults": "Default skills",
     "agentDefaultsHint": "Automatically selected when a new task uses this agent.",
     "roleOverride": "Role skills",
@@ -291,6 +306,8 @@
     "collapse": "Collapse sidebar",
     "toggleTheme": "Toggle theme",
     "logout": "Log out",
+    "showPet": "Show pet",
+    "hidePet": "Hide pet",
     "hostAccount": "Host",
     "primaryNavigation": "Workspace navigation",
     "newConversation": "New conversation",
@@ -640,6 +657,7 @@
       "selectionAria": "Choose an available agent",
       "available": "Installed",
       "ready": "Ready to use",
+      "butler": "FreeBuddy butler",
       "checking": "Checking agents…",
       "checkingCount": "Checking {{count}} agents…",
       "checkingHint": "Available agents will appear here when checks finish.",
@@ -1054,7 +1072,15 @@
       "noResults": "No matching agents",
       "category": {
         "builtin": "Built-in",
-        "custom": "Custom"
+        "custom": "Custom",
+        "official": "Official"
+      },
+      "official": {
+        "runtime": "Adapter",
+        "runtimeHint": "Pick the installed adapter this official agent runs on. Existing conversations keep the adapter they started with.",
+        "requiredSkills": "Required skills",
+        "requiredSkillsHint": "These skills are always active for this agent and cannot be disabled.",
+        "noRequiredSkills": "No required skills."
       },
       "loading": "Loading…",
       "runInBackground": "Run in background",

@@ -78,6 +78,44 @@ export function latestSessionInfoFromMessages(
   return latestItemFromMessages(messages, "session");
 }
 
+// Walk every config-options item in chronological order (oldest first) and
+// merge by id. A later partial update that only carries an override/currentValue
+// (and no `values`) must not evict the full candidate list an earlier complete
+// update provided — otherwise the picker trigger still renders the override
+// label while the dropdown panel goes empty.
+function mergeConfigOptionsChronologically(
+  itemLists: CliStreamItem[][]
+): ConfigOptionItem[] {
+  const byId = new Map<string, ConfigOptionItem>();
+  for (const items of itemLists) {
+    for (const item of items) {
+      if (item.kind !== "config-options") continue;
+      for (const option of item.options) {
+        const existing = byId.get(option.id);
+        if (!existing) {
+          byId.set(option.id, option);
+          continue;
+        }
+        const incomingValues = Array.isArray(option.values)
+          ? option.values
+          : undefined;
+        const mergedValues =
+          incomingValues && incomingValues.length > 0
+            ? incomingValues
+            : existing.values;
+        byId.set(option.id, {
+          ...existing,
+          ...option,
+          ...(mergedValues && mergedValues.length > 0
+            ? { values: mergedValues }
+            : {})
+        });
+      }
+    }
+  }
+  return Array.from(byId.values());
+}
+
 export function mergeSessionMetaItems(
   messageItems: CliStreamItem[],
   liveItems: CliStreamItem[] | undefined
@@ -89,9 +127,9 @@ export function mergeSessionMetaItems(
     latestAvailableCommandsFromItems(liveItems ?? []).length > 0
       ? latestAvailableCommandsFromItems(liveItems ?? [])
       : latestAvailableCommandsFromItems(messageItems);
-  const configOptions =
-    latestConfigOptionsFromItems(liveItems ?? []).length > 0
-      ? latestConfigOptionsFromItems(liveItems ?? [])
-      : latestConfigOptionsFromItems(messageItems);
+  const configOptions = mergeConfigOptionsChronologically([
+    messageItems,
+    liveItems ?? []
+  ]);
   return { commands, configOptions };
 }

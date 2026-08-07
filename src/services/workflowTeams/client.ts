@@ -64,6 +64,10 @@ export const workflowTeamsClient = {
     return api().delete(id);
   },
 
+  onChanged(cb: () => void): (() => void) | undefined {
+    return window.freebuddy?.workflowTeams?.onChanged?.(cb);
+  },
+
   seedBuiltins(): Promise<WorkflowTeam[]> {
     return api().seedBuiltins();
   },
