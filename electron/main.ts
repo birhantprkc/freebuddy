@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -209,6 +209,8 @@ async function injectShellPath() {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let isQuittingApp = false;
+let isShowingCloseConfirm = false;
 let butlerPetWindow: BrowserWindow | null = null;
 let butlerChatWindow: BrowserWindow | null = null;
 
@@ -635,6 +637,38 @@ function createWindow() {
     }
   });
 
+  mainWindow.on("close", (event) => {
+    if (isQuittingApp || process.platform !== "darwin" || isShowingCloseConfirm) {
+      return;
+    }
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) {
+      return;
+    }
+    event.preventDefault();
+    isShowingCloseConfirm = true;
+    void dialog
+      .showMessageBox(win, {
+        type: "warning",
+        buttons: ["退出", "取消"],
+        defaultId: 1,
+        cancelId: 1,
+        title: APP_NAME,
+        message: `退出 ${APP_NAME}？`,
+        detail: "关闭主窗口将退出应用程序及其桌面宠物，确定要退出吗？"
+      })
+      .then((result) => {
+        isShowingCloseConfirm = false;
+        if (result.response === 0) {
+          isQuittingApp = true;
+          app.quit();
+        }
+      })
+      .catch(() => {
+        isShowingCloseConfirm = false;
+      });
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
     clearMainWindowPresence();
@@ -877,6 +911,7 @@ app.on("window-all-closed", () => {
 
 let telemetryShutdownStarted = false;
 app.on("before-quit", (event) => {
+  isQuittingApp = true;
   if (telemetryShutdownStarted) return;
   telemetryShutdownStarted = true;
   event.preventDefault();
