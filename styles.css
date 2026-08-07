@@ -2819,6 +2819,7 @@ html[data-surface="butler-chat"] #root {
 
 .settings-tab {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
@@ -2861,14 +2862,17 @@ html[data-surface="butler-chat"] #root {
 
 .settings-layout-content-only {
   display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .settings-surface-page .settings-tab {
+  display: flex;
+  flex: 1;
   height: 100%;
-}
-
-.settings-surface-page .settings-panel {
   min-height: 0;
+  flex-direction: column;
 }
 
 .settings-nav {
@@ -2932,6 +2936,8 @@ html[data-surface="butler-chat"] #root {
 }
 
 .settings-surface-page .settings-panel {
+  flex: 1;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -4673,9 +4679,10 @@ html[data-surface="butler-chat"] #root {
 }
 
 .adapter-settings-workspace {
-  display: block;
+  display: flex;
   flex: 1;
   min-height: 0;
+  flex-direction: column;
   overflow: hidden;
   padding: 14px;
   border-radius: 18px;
@@ -4683,9 +4690,12 @@ html[data-surface="butler-chat"] #root {
 }
 
 .adapter-list-panel {
+  flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding-right: 0;
+  overscroll-behavior: contain;
 }
 
 .adapter-edit-workspace {
