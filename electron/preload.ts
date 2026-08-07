@@ -317,6 +317,25 @@ const window = {
     ipcRenderer.on("window:open-conversation", handler);
     return () => ipcRenderer.off("window:open-conversation", handler);
   },
+  onOpenView(
+    cb: (payload: {
+      view: string;
+      teamId?: string;
+      create?: boolean;
+    }) => void
+  ): () => void {
+    const handler = (
+      _e: IpcRendererEvent,
+      payload: { view?: string; teamId?: string; create?: boolean }
+    ) =>
+      cb({
+        view: payload?.view ?? "chat",
+        teamId: payload?.teamId,
+        create: payload?.create === true
+      });
+    ipcRenderer.on("freebuddy://open-view", handler);
+    return () => ipcRenderer.off("freebuddy://open-view", handler);
+  },
   onOpenSettings(cb: (tab: string) => void): () => void {
     const handler = (_e: IpcRendererEvent, payload: { tab?: string }) =>
       cb(payload?.tab ?? "cli");

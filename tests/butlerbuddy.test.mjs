@@ -221,3 +221,40 @@ test("Butler UI tools notify the main FreeBuddy window from the pet chat compani
   );
   assert.match(main, /setButlerAppWindowGetter\(\(\) =>/);
 });
+
+test("Butler navigation tools can open a conversation or main workspace view", () => {
+  const service = fs.readFileSync(
+    new URL("../electron/butlerToolService.ts", import.meta.url),
+    "utf8"
+  );
+  const mcp = fs.readFileSync(
+    new URL("../electron/mcp/butlerMcpServer.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const app = fs.readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  const skill = fs.readFileSync(
+    new URL("../assets/skills/butlerbuddy/SKILL.md", import.meta.url),
+    "utf8"
+  );
+  const types = fs.readFileSync(
+    new URL("../src/types/freebuddy.d.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(service, /case "conversation_open"/);
+  assert.match(service, /case "view_open"/);
+  assert.match(service, /window:open-conversation/);
+  assert.match(service, /freebuddy:\/\/open-view/);
+  assert.match(mcp, /freebuddy_conversation_open/);
+  assert.match(mcp, /freebuddy_view_open/);
+  assert.match(preload, /onOpenView/);
+  assert.match(preload, /freebuddy:\/\/open-view/);
+  assert.match(app, /onOpenView/);
+  assert.match(types, /onOpenView/);
+  assert.match(skill, /freebuddy_conversation_open/);
+  assert.match(skill, /freebuddy_view_open/);
+});

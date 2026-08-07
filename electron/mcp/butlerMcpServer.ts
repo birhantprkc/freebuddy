@@ -536,6 +536,64 @@ export function createButlerMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "freebuddy_conversation_open",
+    {
+      title: "Open a Conversation in Main Window",
+      description:
+        "Focus the main FreeBuddy window and open an existing conversation by id in the chat view. Use after listing conversations when the user asks to jump to a specific thread. Confirm the conversation title with the user when ambiguous.",
+      inputSchema: {
+        id: z.string().describe("Conversation id to open.")
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeButlerBridge("conversation_open", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "freebuddy_view_open",
+    {
+      title: "Open a Main Workspace View",
+      description:
+        "Focus the main FreeBuddy window and switch to a workspace page. Views: chat, scheduledTasks, workflowTeams, usage. For workflowTeams, optional teamId selects a team and create=true opens the create flow.",
+      inputSchema: {
+        view: z
+          .enum(["chat", "scheduledTasks", "workflowTeams", "usage"])
+          .describe("Main workspace view to open."),
+        teamId: z
+          .string()
+          .optional()
+          .describe("Optional workflow team id when view=workflowTeams."),
+        create: z
+          .boolean()
+          .optional()
+          .describe("When view=workflowTeams, open the create-team flow.")
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeButlerBridge("view_open", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
     "freebuddy_set_appearance",
     {
       title: "Set Theme Appearance",

@@ -284,6 +284,13 @@ declare global {
     onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
     onOpenConversation(cb: (conversationId: string) => void): () => void;
+    onOpenView(
+      cb: (payload: {
+        view: "chat" | "scheduledTasks" | "workflowTeams" | "usage" | string;
+        teamId?: string;
+        create?: boolean;
+      }) => void
+    ): () => void;
     onOpenSettings(cb: (tab: string) => void): () => void;
     onAppearanceChanged(cb: (theme: string) => void): () => void;
     setUiPresence(snapshot: {

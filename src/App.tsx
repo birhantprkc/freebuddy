@@ -167,6 +167,8 @@ function App() {
 
   useEffect(() => {
     const off = window.freebuddy?.window?.onOpenConversation?.((conversationId) => {
+      setSettingsOpen(false);
+      setWorkspaceView("chat");
       void useConversationStore.getState().setActive(conversationId);
     });
     return () => {
@@ -436,6 +438,31 @@ function App() {
     setWorkspaceView("usage");
     void setActive(undefined);
   };
+
+  useEffect(() => {
+    const off = window.freebuddy?.window?.onOpenView?.((payload) => {
+      if (payload.view === "scheduledTasks") {
+        openScheduledTasks();
+        return;
+      }
+      if (payload.view === "workflowTeams") {
+        openWorkflowTeams({
+          teamId: payload.teamId,
+          create: payload.create === true
+        });
+        return;
+      }
+      if (payload.view === "usage") {
+        openUsage();
+        return;
+      }
+      setSettingsOpen(false);
+      setWorkspaceView("chat");
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (activeId) setWorkspaceView("chat");

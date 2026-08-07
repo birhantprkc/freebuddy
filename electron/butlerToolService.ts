@@ -31,7 +31,8 @@ import {
   listConversations,
   archiveConversation,
   deleteConversation,
-  getConversation
+  getConversation,
+  requireOwnedConversation
 } from "./cli/conversations.js";
 import { getDb } from "./cli/db.js";
 import { cliCheck, listRuntimes } from "./cli/check.js";
@@ -104,6 +105,8 @@ type ButlerToolAction =
   | "agent_check"
   | "settings_open"
   | "set_appearance"
+  | "conversation_open"
+  | "view_open"
   | "team_list"
   | "team_get"
   | "team_create"
@@ -141,6 +144,8 @@ function isButlerToolAction(value: unknown): value is ButlerToolAction {
     value === "agent_check" ||
     value === "settings_open" ||
     value === "set_appearance" ||
+    value === "conversation_open" ||
+    value === "view_open" ||
     value === "team_list" ||
     value === "team_get" ||
     value === "team_create" ||
@@ -496,6 +501,59 @@ async function dispatchButlerAction(
         });
       }
       return { ok: true, theme };
+    }
+    case "conversation_open": {
+      const id = String(params.id ?? "").trim();
+      if (!id) {
+        return { ok: false, error: "id is required." };
+      }
+      const conv = withCaller(binding, () => requireOwnedConversation(id));
+      if (!conv) {
+        return { ok: false, error: "Conversation not found." };
+      }
+      const target = resolveButlerAppWebContents(binding.webContents);
+      if (!target) {
+        return { ok: false, error: "No active window to open conversation." };
+      }
+      focusButlerAppWindow();
+      safeSendToWebContents(target, "window:open-conversation", id);
+      return {
+        ok: true,
+        id: conv.id,
+        title: conv.title,
+        agentId: conv.agentId,
+        agentName: conv.agentName
+      };
+    }
+    case "view_open": {
+      const view = String(params.view ?? "").trim();
+      if (
+        view !== "chat" &&
+        view !== "scheduledTasks" &&
+        view !== "workflowTeams" &&
+        view !== "usage"
+      ) {
+        return {
+          ok: false,
+          error: "view must be one of: chat, scheduledTasks, workflowTeams, usage."
+        };
+      }
+      const target = resolveButlerAppWebContents(binding.webContents);
+      if (!target) {
+        return { ok: false, error: "No active window to open view." };
+      }
+      const payload: Record<string, unknown> = { view };
+      if (view === "workflowTeams") {
+        if (typeof params.teamId === "string" && params.teamId.trim()) {
+          payload.teamId = params.teamId.trim();
+        }
+        if (params.create === true) {
+          payload.create = true;
+        }
+      }
+      focusButlerAppWindow();
+      safeSendToWebContents(target, "freebuddy://open-view", payload);
+      return { ok: true, ...payload };
     }
     case "team_list": {
       const teams = listWorkflowTeams();
