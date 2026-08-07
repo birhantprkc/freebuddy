@@ -2,6 +2,25 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.7.2] - 2026-08-07
+
+### 新功能
+
+- add conversation_messages read tool
+- hide-chat menu item removed and stop button during reply
+- sync lists, fuzzy open, and pet theme
+- add conversation and workspace navigation tools
+- inject main window presence into butler prompts
+- expose mainWindow on status_get
+- publish main window UI presence
+- add main window presence store
+
+### 问题修复
+
+- confirm quit when closing main window on macOS
+- harden main window presence publishing
+- route pet chat UI tools to main window
+
 ## [0.7.1] - 2026-08-07
 
 ### 问题修复
