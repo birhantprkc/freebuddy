@@ -27,6 +27,7 @@ import {
   shouldEmitAcpUpdate,
   shouldSkipUserMessageChunk,
   textFromContent,
+  isMissingSavedSessionError,
   type AcpAuthMethod,
   type AcpMessage,
   type AcpSessionMeta,
@@ -37,6 +38,7 @@ import { updateRuntimeRun } from "./check.js";
 import {
   hasCliByokModels,
   mergeCliByokModelOption,
+  clearToolSession,
   saveToolSession
 } from "./store.js";
 import {
@@ -1151,11 +1153,6 @@ export async function runAcpAgent({
     );
   };
 
-  const isMissingSavedSessionError = (err: unknown) => {
-    const e = err as Error & { code?: number };
-    return e?.code === -32002 && /resource not found/i.test(e.message ?? "");
-  };
-
   const isContextWindowError = (err: unknown) => {
     const message = String((err as Error)?.message ?? err).toLowerCase();
     return /context window|context length|input exceeds|prompt is too long|too many tokens/.test(
@@ -1163,11 +1160,28 @@ export async function runAcpAgent({
     );
   };
 
-  const savedSessionUnavailableError = (sessionId: string, err: unknown) => {
-    const message = (err as Error)?.message || String(err);
-    return new Error(
-      `Saved agent session is no longer available (${sessionId}). The agent returned: ${message}. Start a new conversation or choose a workspace and retry so FreeBuddy can create a fresh agent session.`
+  const abandonStaleToolSession = (sessionId: string, err: unknown) => {
+    const detail = (err as Error)?.message || String(err);
+    appendLog(
+      logStream,
+      "system",
+      `saved ACP session unavailable (${sessionId}); starting a fresh session: ${detail}`
     );
+    emit({
+      type: "stderr",
+      content:
+        "Previous agent session is no longer available; starting a fresh session."
+    });
+    if (toolSessionScope) {
+      try {
+        clearToolSession(args.agentId, toolSessionScope);
+      } catch {
+        /* best-effort */
+      }
+    }
+    requestedToolSessionId = undefined;
+    activeAcpSessionId = undefined;
+    sessionWasResumed = false;
   };
 
   try {
@@ -1251,7 +1265,8 @@ export async function runAcpAgent({
         requestedToolSessionId &&
         isMissingSavedSessionError(sessionErr)
       ) {
-        throw savedSessionUnavailableError(requestedToolSessionId, sessionErr);
+        abandonStaleToolSession(requestedToolSessionId, sessionErr);
+        await establishSession();
       } else {
         throw sessionErr;
       }

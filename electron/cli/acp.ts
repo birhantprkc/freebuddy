@@ -299,6 +299,38 @@ export function selectAcpSessionStartMode(
   return "new";
 }
 
+/**
+ * Detect ACP session/load or session/resume failures where the saved session
+ * id is gone (process died, session GC'd, etc.). Cursor reports this as
+ * `-32602 Invalid params` with nested `Session "…" not found`; other agents
+ * may use `-32002` / "resource not found".
+ */
+export function isMissingSavedSessionError(err: unknown): boolean {
+  const e = err as Error & { code?: number; data?: unknown };
+  const parts: string[] = [String(e?.message ?? err)];
+  if (typeof e?.data === "string") {
+    parts.push(e.data);
+  } else if (e?.data && typeof e.data === "object") {
+    const data = e.data as Record<string, unknown>;
+    if (typeof data.message === "string") parts.push(data.message);
+    try {
+      parts.push(JSON.stringify(e.data));
+    } catch {
+      /* noop */
+    }
+  }
+  const haystack = parts.join(" ");
+  if (/session\s+["'`]?[^"'`\s]+["'`]?\s+not found/i.test(haystack)) {
+    return true;
+  }
+  if (e?.code === -32002 && /resource not found/i.test(haystack)) {
+    return true;
+  }
+  return /saved (?:agent )?session.*(?:not found|no longer available|unavailable)/i.test(
+    haystack
+  );
+}
+
 export function buildSessionNewRequest(
   id: AcpRequestId,
   cwd?: string,

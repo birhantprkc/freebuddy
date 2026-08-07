@@ -854,3 +854,19 @@ export function clearToolSessionsForAgent(agentId: string): void {
     .prepare("DELETE FROM cli_tool_sessions WHERE agent_id = ?")
     .run(agentId);
 }
+
+export function clearToolSession(
+  agentId: string,
+  workspacePath: string
+): void {
+  const ownerId = getCallerUserId();
+  const db = getDb();
+  db.prepare("DELETE FROM cli_tool_sessions WHERE key = ?").run(
+    toolSessionKey(agentId, workspacePath, ownerId)
+  );
+  if (isCallerAdmin() || ownerId === null) {
+    db.prepare("DELETE FROM cli_tool_sessions WHERE key = ?").run(
+      toolSessionKey(agentId, workspacePath, null)
+    );
+  }
+}
