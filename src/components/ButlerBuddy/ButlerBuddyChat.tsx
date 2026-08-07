@@ -1,4 +1,4 @@
-import { ArrowUp, ChevronDown, Circle, MessageCirclePlus, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Circle, MessageCirclePlus, Square, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -92,6 +92,7 @@ export function ButlerBuddyChat() {
   const initializationStartedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const previewReplyTimerRef = useRef<number | null>(null);
 
   const activeId = useConversationStore((state) => state.activeId);
   const messages = useConversationStore((state) =>
@@ -400,7 +401,8 @@ export function ButlerBuddyChat() {
         { id: `${id}-user`, role: "user", text: prompt }
       ]);
       setPreviewReplying(true);
-      window.setTimeout(() => {
+      previewReplyTimerRef.current = window.setTimeout(() => {
+        previewReplyTimerRef.current = null;
         setPreviewMessages((current) => [
           ...current,
           {
@@ -432,6 +434,18 @@ export function ButlerBuddyChat() {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
+
+  const stopReply = useCallback(() => {
+    if (previewReplyTimerRef.current !== null) {
+      window.clearTimeout(previewReplyTimerRef.current);
+      previewReplyTimerRef.current = null;
+      setPreviewReplying(false);
+      return;
+    }
+    if (activeId) {
+      void useConversationStore.getState().stopActive(activeId);
+    }
+  }, [activeId]);
 
   return (
     <section className="butler-chat-window" aria-label={t("butler.openChatAria")}>
@@ -537,13 +551,23 @@ export function ButlerBuddyChat() {
           aria-label={t("butler.inputAria")}
           disabled={!ready}
         />
-        <button
-          type="submit"
-          aria-label={t("butler.sendAria")}
-          disabled={!draft.trim() || running || previewReplying || !ready}
-        >
-          <ArrowUp size={17} strokeWidth={2} />
-        </button>
+        {(running || previewReplying) ? (
+          <button
+            type="button"
+            aria-label={t("butler.stopAria")}
+            onClick={stopReply}
+          >
+            <Square size={14} fill="currentColor" strokeWidth={0} />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            aria-label={t("butler.sendAria")}
+            disabled={!draft.trim() || !ready}
+          >
+            <ArrowUp size={17} strokeWidth={2} />
+          </button>
+        )}
       </form>
     </section>
   );

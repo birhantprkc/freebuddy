@@ -560,11 +560,6 @@ function showButlerContextMenu() {
     },
     { type: "separator" },
     {
-      label: "隐藏聊天面板",
-      click: () => hideButlerChat()
-    },
-    { type: "separator" },
-    {
       label: "关闭宠物",
       click: () => updateButlerBuddyPreferences({ visible: false })
     },
