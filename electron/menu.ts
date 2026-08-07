@@ -8,44 +8,44 @@ export function buildAppMenu(lang: "en" | "zh-CN") {
     {
       label: APP_NAME,
       submenu: [
-        { role: "about" },
+        { role: "about", label: tMain("menu.app.about", lang) },
         { type: "separator" },
-        { role: "hide" },
-        { role: "hideOthers" },
-        { role: "unhide" },
+        { role: "hide", label: tMain("menu.app.hide", lang) },
+        { role: "hideOthers", label: tMain("menu.app.hideOthers", lang) },
+        { role: "unhide", label: tMain("menu.app.unhide", lang) },
         { type: "separator" },
-        { role: "quit" }
+        { role: "quit", label: `${tMain("menu.app.quit", lang)} ${APP_NAME}` }
       ]
     },
     {
       label: tMain("menu.edit", lang),
       submenu: [
-        { role: "undo" }, { role: "redo" }, { type: "separator" },
-        { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" }
+        { role: "undo", label: tMain("contextMenu.undo", lang) },
+        { role: "redo", label: tMain("contextMenu.redo", lang) },
+        { type: "separator" },
+        { role: "cut", label: tMain("contextMenu.cut", lang) },
+        { role: "copy", label: tMain("contextMenu.copy", lang) },
+        { role: "paste", label: tMain("contextMenu.paste", lang) },
+        { role: "selectAll", label: tMain("contextMenu.selectAll", lang) }
       ]
-    },
-    {
-      label: tMain("menu.view", lang),
-      submenu: [
-        { role: "reload" }, { role: "toggleDevTools" }, { type: "separator" },
-        { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" },
-        { role: "togglefullscreen" }
-      ]
-    },
-    {
-      label: tMain("menu.window", lang),
-      submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "close" }]
     }
   ]);
 }
 
 export function setApplicationMenuForLanguage(lang: "en" | "zh-CN") {
+  // The application menu is a macOS convention (and macOS needs the Edit-menu
+  // roles for Cmd+C/V/X/A/Z in text fields). On Windows/Linux the text-edit
+  // shortcuts are handled natively by the OS, so we hide the in-window menu
+  // bar there to keep the UI clean.
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
   Menu.setApplicationMenu(buildAppMenu(lang));
 }
 
 export function initApplicationMenu() {
-  const lang = getLanguage();
-  Menu.setApplicationMenu(buildAppMenu(lang));
+  setApplicationMenuForLanguage(getLanguage());
 }
 
 export function setupContextMenu(window: BrowserWindow, isDev: boolean) {

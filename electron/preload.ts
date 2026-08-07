@@ -317,6 +317,11 @@ const window = {
     ipcRenderer.on("window:open-conversation", handler);
     return () => ipcRenderer.off("window:open-conversation", handler);
   },
+  onNewConversation(cb: () => void): () => void {
+    const handler = () => cb();
+    ipcRenderer.on("window:new-conversation", handler);
+    return () => ipcRenderer.off("window:new-conversation", handler);
+  },
   onOpenView(
     cb: (payload: {
       view: string;

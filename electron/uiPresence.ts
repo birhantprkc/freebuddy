@@ -24,6 +24,7 @@ export interface MainWindowPresence {
     agentName: string;
   } | null;
   streaming: boolean;
+  unreadCount: number;
   updatedAt: string;
 }
 
@@ -93,12 +94,23 @@ export function parseMainWindowPresence(
     };
   }
 
+  // unreadCount is optional for backward compatibility with older renderers
+  // that don't send it yet; default to 0 when missing or invalid.
+  let unreadCount = 0;
+  if (value.unreadCount !== null && value.unreadCount !== undefined) {
+    if (typeof value.unreadCount !== "number" || !Number.isFinite(value.unreadCount)) {
+      return null;
+    }
+    unreadCount = Math.max(0, Math.floor(value.unreadCount));
+  }
+
   return {
     workspaceView: value.workspaceView as MainWorkspaceView,
     settingsOpen: value.settingsOpen,
     settingsTab,
     activeConversation,
     streaming: value.streaming,
+    unreadCount,
     updatedAt: value.updatedAt
   };
 }
