@@ -92,3 +92,13 @@ test("status_get and butler skill expose mainWindow presence", () => {
   assert.match(mcp, /mainWindow/);
   assert.match(skill, /main window|mainWindow|主端/i);
 });
+
+test("cli:run prefixes ButlerBuddy prompts with main window summary", () => {
+  const ipc = fs.readFileSync(
+    new URL("../electron/cli/ipc.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(ipc, /formatMainWindowPresenceSummary/);
+  assert.match(ipc, /BUTLERBUDDY_AGENT_ID/);
+  assert.match(ipc, /getMainWindowPresence/);
+});

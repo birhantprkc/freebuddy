@@ -192,6 +192,11 @@ import {
   removeConversationContextReference
 } from "./conversationContext.js";
 import { applyAgentLanguagePreference } from "./agentLanguage.js";
+import { BUTLERBUDDY_AGENT_ID } from "./agentProfiles.js";
+import {
+  formatMainWindowPresenceSummary,
+  getMainWindowPresence
+} from "../uiPresence.js";
 import {
   connectCursorUsage,
   disconnectCursorUsage,
@@ -725,6 +730,16 @@ export function registerCliIpc() {
         ),
         contextReferences
       };
+    }
+    if (runArgs.agentId === BUTLERBUDDY_AGENT_ID) {
+      const presence = getMainWindowPresence();
+      if (presence) {
+        runArgs = {
+          ...runArgs,
+          prompt:
+            `${formatMainWindowPresenceSummary(presence)}\n\n` + runArgs.prompt
+        };
+      }
     }
     // Don't await: spawn returns immediately, streaming continues via events.
     void cliRun(win.webContents, runArgs).catch((error) => {
