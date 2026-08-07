@@ -42,6 +42,7 @@ import { cliCheck, listRuntimes } from "./cli/check.js";
 import { setSetting } from "./cli/settings.js";
 import { safeSendToWebContents } from "./cli/ipcSend.js";
 import { prepareAgentSelfCheckLogs } from "./debugLogExport.js";
+import { logMain } from "./debugLog.js";
 import { getMainWindowPresence } from "./uiPresence.js";
 
 const BUTLER_TOOL_PATH = "/freebuddy/butler-tool";
@@ -321,6 +322,14 @@ async function dispatchButlerAction(
   action: ButlerToolAction,
   params: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
+  if (action.startsWith("team_")) {
+    logMain().info("workflowTeams", "caller", {
+      caller: "butler",
+      op: action,
+      teamId: params.id ?? params.teamId,
+      pid: process.pid
+    });
+  }
   switch (action) {
     case "status_get": {
       const members = withCaller(binding, () => listCliMembers());
@@ -722,6 +731,15 @@ async function dispatchButlerAction(
     }
     case "team_list": {
       const teams = listWorkflowTeams();
+      for (const team of teams) {
+        if (team.roles.every((r) => (r.skillIds?.length ?? 0) === 0)) {
+          logMain().warn("workflowTeams", "team_list read empty skills", {
+            teamId: team.id,
+            pid: process.pid,
+            updatedAt: team.updatedAt
+          });
+        }
+      }
       return { teams: teams.map(publicTeam) };
     }
     case "team_get": {
@@ -729,6 +747,15 @@ async function dispatchButlerAction(
       const team = getWorkflowTeam(id);
       if (!team) {
         return { ok: false, error: "Team not found." };
+      }
+      const skillCounts = team.roles.map((r) => ({ id: r.id, n: r.skillIds?.length ?? 0 }));
+      if (skillCounts.every((s) => s.n === 0)) {
+        logMain().warn("workflowTeams", "team_get read empty skills", {
+          teamId: id,
+          pid: process.pid,
+          skillCounts,
+          updatedAt: team.updatedAt
+        });
       }
       return {
         team: {

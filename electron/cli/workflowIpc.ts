@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, type IpcMainInvokeEvent } from "electron";
 import { registerHandler } from "../invokeRegistry.js";
+import { logMain } from "../debugLog.js";
 
 import { listCliMembers } from "./members.js";
 import {
@@ -167,6 +168,7 @@ export function registerWorkflowIpc() {
   registerHandler(
     "workflowTeams:create",
     (_e, input: UpsertWorkflowTeamInput) => {
+      logMain().info("workflowTeams", "caller", { caller: "ipc", op: "create", pid: process.pid });
       const validation = validateWorkflowTeam(
         { ...input, createdAt: "", updatedAt: "" } as WorkflowTeam,
         workflowAgents()
@@ -179,6 +181,13 @@ export function registerWorkflowIpc() {
   registerHandler(
     "workflowTeams:update",
     (_e, args: { id: string; patch: UpdateWorkflowTeamPatch }) => {
+      logMain().info("workflowTeams", "caller", {
+        caller: "ipc",
+        op: "update",
+        teamId: args.id,
+        changedRoles: args.patch.roles !== undefined,
+        pid: process.pid
+      });
       const existing = getWorkflowTeam(args.id);
       if (!existing) return { ok: false as const, errors: ["team not found"] };
       const merged: WorkflowTeam = {
@@ -203,9 +212,13 @@ export function registerWorkflowIpc() {
   );
   registerHandler(
     "workflowTeams:delete",
-    (_e, id: string) => deleteWorkflowTeam(id)
+    (_e, id: string) => {
+      logMain().info("workflowTeams", "caller", { caller: "ipc", op: "delete", teamId: id, pid: process.pid });
+      return deleteWorkflowTeam(id);
+    }
   );
   registerHandler("workflowTeams:seedBuiltins", () => {
+    logMain().info("workflowTeams", "caller", { caller: "ipc", op: "seedBuiltins", pid: process.pid });
     seedBuiltinWorkflowTeams();
     return listWorkflowTeams();
   });
