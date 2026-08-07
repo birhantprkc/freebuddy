@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import { handleDraftRequest } from "./draftProtocol.js";
 import { startPreviewServer } from "./previewServer.js";
 import { startWebUIServer } from "./webUIServer.js";
 import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
+import { setButlerAppWindowGetter } from "./butlerToolService.js";
 import { ensureOwnerUser, getOwnerUser } from "./cli/users.js";
 import { bindConversationNotifier } from "./cli/conversations.js";
 import { applyOwnerBackfill } from "./cli/ownerBackfill.js";
@@ -34,6 +35,10 @@ import { initializeTelemetry, shutdownTelemetry } from "./telemetry.js";
 import { getFreshWindowsEnvironment } from "./cli/windowsEnv.js";
 import { initializeAgentUsageReconciler } from "./cli/usageReconciler.js";
 import { initDebugLog, logMain } from "./debugLog.js";
+import {
+  clearMainWindowPresence,
+  setMainWindowPresence
+} from "./uiPresence.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -204,6 +209,8 @@ async function injectShellPath() {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let isQuittingApp = false;
+let isShowingCloseConfirm = false;
 let butlerPetWindow: BrowserWindow | null = null;
 let butlerChatWindow: BrowserWindow | null = null;
 
@@ -553,11 +560,6 @@ function showButlerContextMenu() {
     },
     { type: "separator" },
     {
-      label: "隐藏聊天面板",
-      click: () => hideButlerChat()
-    },
-    { type: "separator" },
-    {
       label: "关闭宠物",
       click: () => updateButlerBuddyPreferences({ visible: false })
     },
@@ -585,6 +587,20 @@ function registerButlerBuddyWindowIpc() {
   ipcMain.on("butlerBuddy:beginDrag", startButlerPetDrag);
   ipcMain.on("butlerBuddy:endDrag", stopButlerPetDrag);
   ipcMain.on("butlerBuddy:openMenu", showButlerContextMenu);
+  ipcMain.on("freebuddy:uiPresence", (event, payload) => {
+    const win = mainWindow;
+    if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
+    setMainWindowPresence(payload);
+  });
+  ipcMain.on("freebuddy:themeBroadcast", (event, theme) => {
+    if (theme !== "system" && theme !== "light" && theme !== "dark") return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed() || win.webContents === event.sender) continue;
+      safeSendToWebContents(win.webContents, "freebuddy://appearance-changed", {
+        theme
+      });
+    }
+  });
   ipcMain.handle("butlerBuddy:getPreferences", () =>
     readButlerBuddyPreferences()
   );
@@ -625,8 +641,41 @@ function createWindow() {
     }
   });
 
+  mainWindow.on("close", (event) => {
+    if (isQuittingApp || process.platform !== "darwin" || isShowingCloseConfirm) {
+      return;
+    }
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) {
+      return;
+    }
+    event.preventDefault();
+    isShowingCloseConfirm = true;
+    void dialog
+      .showMessageBox(win, {
+        type: "warning",
+        buttons: ["退出", "取消"],
+        defaultId: 1,
+        cancelId: 1,
+        title: APP_NAME,
+        message: `退出 ${APP_NAME}？`,
+        detail: "关闭主窗口将退出应用程序及其桌面宠物，确定要退出吗？"
+      })
+      .then((result) => {
+        isShowingCloseConfirm = false;
+        if (result.response === 0) {
+          isQuittingApp = true;
+          app.quit();
+        }
+      })
+      .catch(() => {
+        isShowingCloseConfirm = false;
+      });
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
+    clearMainWindowPresence();
     closeButlerBuddyWindows();
   });
 
@@ -787,6 +836,9 @@ app.whenReady().then(async () => {
   setLocalInvokeWindowGetter(() =>
     mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
   );
+  setButlerAppWindowGetter(() =>
+    mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  );
   const remoteEnabled =
     getSetting("remote.enabled") === "1" || process.env.FB_REMOTE === "1";
   if (remoteEnabled) {
@@ -863,6 +915,7 @@ app.on("window-all-closed", () => {
 
 let telemetryShutdownStarted = false;
 app.on("before-quit", (event) => {
+  isQuittingApp = true;
   if (telemetryShutdownStarted) return;
   telemetryShutdownStarted = true;
   event.preventDefault();

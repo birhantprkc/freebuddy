@@ -1688,6 +1688,7 @@
     "inputPlaceholder": "发消息给 ButlerBuddy…",
     "inputAria": "发消息给 ButlerBuddy",
     "sendAria": "发送消息",
+    "stopAria": "停止生成",
     "clickToChat": "点击聊天",
     "openChatAria": "打开 ButlerBuddy 对话",
     "petTooltip": "点击聊天 · 拖动移动 · 右键更多"

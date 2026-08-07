@@ -2,11 +2,12 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app } from "electron";
+import { app, BrowserWindow } from "electron";
 
 import { getDataDir, getDb } from "./db.js";
 import { extractSkillArchive } from "./skillArchive.js";
 import { nextSkillEnabledFlag } from "./skillEnabled.js";
+import { safeSendToWebContents } from "./ipcSend.js";
 import {
   assertDestinationReadyForInstall,
   findExistingSkillForInstall,
@@ -27,6 +28,15 @@ import type {
 import { BUTLERBUDDY_SKILL_ID } from "./agentProfiles.js";
 
 export { nextSkillEnabledFlag } from "./skillEnabled.js";
+
+export function notifySkillsChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    safeSendToWebContents(win.webContents, "skills://changed", {
+      at: Date.now()
+    });
+  }
+}
 export {
   assertDestinationReadyForInstall,
   findExistingSkillForInstall,
@@ -592,6 +602,7 @@ function importSkillsFromDirectory(sourcePath: string): SkillImportResult {
       result.errors.push({ path: candidate, message: (error as Error).message });
     }
   }
+  if (result.imported.length > 0) notifySkillsChanged();
   return result;
 }
 
@@ -626,7 +637,9 @@ export function setSkillEnabled(id: string, enabled: boolean): SkillRecord | und
   }
   getDb().prepare("UPDATE skills SET enabled = ?, updated_at = ? WHERE id = ?")
     .run(enabled ? 1 : 0, new Date().toISOString(), id);
-  return getSkill(id);
+  const skill = getSkill(id);
+  if (skill) notifySkillsChanged();
+  return skill;
 }
 
 /** Explicit user trust after reviewing an untrusted market/imported skill. */
@@ -647,7 +660,9 @@ export function setSkillTrusted(id: string, trusted: boolean): SkillRecord | und
       .prepare("UPDATE skills SET trusted = 0, updated_at = ? WHERE id = ?")
       .run(now, id);
   }
-  return getSkill(id);
+  const updated = getSkill(id);
+  if (updated) notifySkillsChanged();
+  return updated;
 }
 
 export function deleteSkill(id: string): boolean {
@@ -675,6 +690,7 @@ export function deleteSkill(id: string): boolean {
     }
     databaseCommitted = true;
     if (movedToBackup) removePathBestEffort(backup);
+    notifySkillsChanged();
     return true;
   } catch (error) {
     if (

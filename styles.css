@@ -232,6 +232,36 @@ html[data-surface="butler-chat"] #root {
     0 8px 18px -12px rgba(15, 23, 42, 0.2);
 }
 
+[data-theme="dark"] .butler-chat-window {
+  color: var(--fb-text-primary);
+  background: rgba(17, 27, 45, 0.985);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 54px -24px rgba(0, 0, 0, 0.55),
+    0 8px 18px -12px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .butler-chat-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .butler-chat-bubble {
+  background: rgba(30, 41, 59, 0.95);
+  color: var(--fb-text-primary);
+}
+
+[data-theme="dark"] .butler-chat-row.role-user .butler-chat-bubble {
+  background: rgba(16, 185, 129, 0.22);
+}
+
+[data-theme="dark"] .butler-chat-composer {
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .butler-chat-composer textarea {
+  color: var(--fb-text-primary);
+}
+
 .butler-chat-header {
   display: flex;
   height: 48px;

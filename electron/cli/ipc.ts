@@ -51,6 +51,7 @@ import {
   listConversations,
   listMessage,
   listMessages,
+  notifyConversationsChanged,
   renameConversation,
   requireOwnedConversation,
   setConversationApprovalMode,
@@ -192,6 +193,11 @@ import {
   removeConversationContextReference
 } from "./conversationContext.js";
 import { applyAgentLanguagePreference } from "./agentLanguage.js";
+import { BUTLERBUDDY_AGENT_ID } from "./agentProfiles.js";
+import {
+  formatMainWindowPresenceSummary,
+  getMainWindowPresence
+} from "../uiPresence.js";
 import {
   connectCursorUsage,
   disconnectCursorUsage,
@@ -348,16 +354,6 @@ function attachmentCandidate(filePath: string) {
     extension,
     mimeType: attachmentMimeFromExtension(extension)
   };
-}
-
-const CONVERSATIONS_CHANGED_CHANNEL = "conversations://changed";
-
-function notifyConversationsChanged(): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    safeSendToWebContents(win.webContents, CONVERSATIONS_CHANGED_CHANNEL, {
-      at: Date.now()
-    });
-  }
 }
 
 export function registerCliIpc() {
@@ -725,6 +721,16 @@ export function registerCliIpc() {
         ),
         contextReferences
       };
+    }
+    if (runArgs.agentId === BUTLERBUDDY_AGENT_ID) {
+      const presence = getMainWindowPresence();
+      if (presence) {
+        runArgs = {
+          ...runArgs,
+          prompt:
+            `${formatMainWindowPresenceSummary(presence)}\n\n` + runArgs.prompt
+        };
+      }
     }
     // Don't await: spawn returns immediately, streaming continues via events.
     void cliRun(win.webContents, runArgs).catch((error) => {

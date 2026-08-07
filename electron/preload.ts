@@ -317,6 +317,25 @@ const window = {
     ipcRenderer.on("window:open-conversation", handler);
     return () => ipcRenderer.off("window:open-conversation", handler);
   },
+  onOpenView(
+    cb: (payload: {
+      view: string;
+      teamId?: string;
+      create?: boolean;
+    }) => void
+  ): () => void {
+    const handler = (
+      _e: IpcRendererEvent,
+      payload: { view?: string; teamId?: string; create?: boolean }
+    ) =>
+      cb({
+        view: payload?.view ?? "chat",
+        teamId: payload?.teamId,
+        create: payload?.create === true
+      });
+    ipcRenderer.on("freebuddy://open-view", handler);
+    return () => ipcRenderer.off("freebuddy://open-view", handler);
+  },
   onOpenSettings(cb: (tab: string) => void): () => void {
     const handler = (_e: IpcRendererEvent, payload: { tab?: string }) =>
       cb(payload?.tab ?? "cli");
@@ -328,6 +347,12 @@ const window = {
       cb(payload?.theme ?? "system");
     ipcRenderer.on("freebuddy://appearance-changed", handler);
     return () => ipcRenderer.off("freebuddy://appearance-changed", handler);
+  },
+  setUiPresence(snapshot: unknown): void {
+    ipcRenderer.send("freebuddy:uiPresence", snapshot);
+  },
+  broadcastTheme(theme: string): void {
+    ipcRenderer.send("freebuddy:themeBroadcast", theme);
   },
   notifyTask(payload: {
     kind: "success" | "failure";
@@ -516,7 +541,12 @@ const skills = {
     ipcRenderer.invoke("skills:installFromMarket", request),
   openMarketUrl: (url: string) => ipcRenderer.invoke("skills:openMarketUrl", url),
   resolveMarketHomepage: (args: unknown) =>
-    ipcRenderer.invoke("skills:resolveMarketHomepage", args)
+    ipcRenderer.invoke("skills:resolveMarketHomepage", args),
+  onChanged(cb: () => void): () => void {
+    const handler = () => cb();
+    ipcRenderer.on("skills://changed", handler);
+    return () => ipcRenderer.off("skills://changed", handler);
+  }
 };
 
 const plugins = {

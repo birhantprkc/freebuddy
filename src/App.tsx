@@ -33,6 +33,7 @@ import { AgentUsagePage } from "./components/Usage/AgentUsagePage";
 import { useCliExecutorStore } from "./store/cliExecutorStore";
 import { useConversationStore } from "./store/conversationStore";
 import { useSettingsStore } from "./store/settingsStore";
+import { useSkillStore } from "./store/skillStore";
 import { useUpdaterStore } from "./store/updaterStore";
 import { useDetailLayoutStore, selectDetailWidth, DETAIL_MIN_WIDTH } from "./store/detailLayoutStore";
 import { useNewTaskUiStore } from "./store/newTaskUiStore";
@@ -137,6 +138,13 @@ function App() {
   }, [refreshConversationList]);
 
   useEffect(() => {
+    const off = window.freebuddy?.skills?.onChanged?.(() => {
+      void useSkillStore.getState().load();
+    });
+    return () => off?.();
+  }, []);
+
+  useEffect(() => {
     const off = window.freebuddy?.cli?.onMessagesChanged?.((conversationId) => {
       const state = useConversationStore.getState();
       if (conversationId !== state.activeId) {
@@ -167,6 +175,8 @@ function App() {
 
   useEffect(() => {
     const off = window.freebuddy?.window?.onOpenConversation?.((conversationId) => {
+      setSettingsOpen(false);
+      setWorkspaceView("chat");
       void useConversationStore.getState().setActive(conversationId);
     });
     return () => {
@@ -187,7 +197,7 @@ function App() {
   useEffect(() => {
     const off = window.freebuddy?.window?.onAppearanceChanged?.((theme) => {
       if (theme === "system" || theme === "light" || theme === "dark") {
-        void useSettingsStore.getState().setTheme(theme);
+        void useSettingsStore.getState().setTheme(theme, { syncPeers: false });
       }
     });
     return () => {
@@ -353,6 +363,43 @@ function App() {
     const status = s.live[activeId]?.status;
     return status === "running" || status === "starting";
   });
+
+  useEffect(() => {
+    const member = members.find((m) => m.id === activeConversation?.agentId);
+    const snapshot = {
+      workspaceView,
+      settingsOpen,
+      settingsTab: settingsOpen ? settingsInitialTab : null,
+      activeConversation: activeConversation
+        ? {
+            id: activeConversation.id,
+            title: activeConversation.title,
+            agentId: activeConversation.agentId,
+            agentName:
+              member?.name ??
+              activeConversation.agentName ??
+              activeConversation.agentId
+          }
+        : null,
+      streaming: activeConversationRunning,
+      updatedAt: new Date().toISOString()
+    };
+    const timer = window.setTimeout(() => {
+      window.freebuddy?.window?.setUiPresence?.(snapshot);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    workspaceView,
+    settingsOpen,
+    settingsInitialTab,
+    activeConversation?.id,
+    activeConversation?.title,
+    activeConversation?.agentId,
+    activeConversation?.agentName,
+    activeConversationRunning,
+    members
+  ]);
+
   const activeWorkflowRunning = useWorkflowStore((s) =>
     Boolean(activeId && s.activeRuns.some((run) => run.conversationId === activeId))
   );
@@ -399,6 +446,31 @@ function App() {
     setWorkspaceView("usage");
     void setActive(undefined);
   };
+
+  useEffect(() => {
+    const off = window.freebuddy?.window?.onOpenView?.((payload) => {
+      if (payload.view === "scheduledTasks") {
+        openScheduledTasks();
+        return;
+      }
+      if (payload.view === "workflowTeams") {
+        openWorkflowTeams({
+          teamId: payload.teamId,
+          create: payload.create === true
+        });
+        return;
+      }
+      if (payload.view === "usage") {
+        openUsage();
+        return;
+      }
+      setSettingsOpen(false);
+      setWorkspaceView("chat");
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (activeId) setWorkspaceView("chat");

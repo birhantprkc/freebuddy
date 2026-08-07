@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import type { WebContents } from "electron";
+import { BrowserWindow, type WebContents } from "electron";
 
 import { waitForActiveBridgePort } from "./agentBridge.js";
 import type { AcpStdioMcpServer } from "./shared/draftToolProtocol.js";
@@ -31,13 +31,18 @@ import {
   listConversations,
   archiveConversation,
   deleteConversation,
-  getConversation
+  getConversation,
+  listMessages,
+  requireOwnedConversation,
+  notifyConversationsChanged,
+  type ConversationMessage
 } from "./cli/conversations.js";
 import { getDb } from "./cli/db.js";
 import { cliCheck, listRuntimes } from "./cli/check.js";
 import { setSetting } from "./cli/settings.js";
 import { safeSendToWebContents } from "./cli/ipcSend.js";
 import { prepareAgentSelfCheckLogs } from "./debugLogExport.js";
+import { getMainWindowPresence } from "./uiPresence.js";
 
 const BUTLER_TOOL_PATH = "/freebuddy/butler-tool";
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -52,6 +57,38 @@ interface ButlerToolBinding {
 
 const bindingsByToken = new Map<string, ButlerToolBinding>();
 const tokensByTaskSession = new Map<string, string>();
+
+// Pet/chat companions bind butler tools to their own webContents. UI shell
+// mutations (theme, settings) must still reach the main FreeBuddy window.
+let butlerAppWindowGetter: (() => BrowserWindow | null) | null = null;
+
+export function setButlerAppWindowGetter(
+  getter: () => BrowserWindow | null
+): void {
+  butlerAppWindowGetter = getter;
+}
+
+function resolveButlerAppWebContents(
+  fallback?: WebContents
+): WebContents | undefined {
+  const win = butlerAppWindowGetter?.() ?? null;
+  if (win && !win.isDestroyed()) {
+    return win.webContents;
+  }
+  if (fallback && !fallback.isDestroyed()) {
+    return fallback;
+  }
+  return undefined;
+}
+
+function focusButlerAppWindow(): boolean {
+  const win = butlerAppWindowGetter?.() ?? null;
+  if (!win || win.isDestroyed()) return false;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  return true;
+}
 
 type ButlerToolAction =
   | "status_get"
@@ -68,9 +105,12 @@ type ButlerToolAction =
   | "conversation_archive"
   | "conversation_delete"
   | "conversation_self_check"
+  | "conversation_messages"
   | "agent_check"
   | "settings_open"
   | "set_appearance"
+  | "conversation_open"
+  | "view_open"
   | "team_list"
   | "team_get"
   | "team_create"
@@ -105,9 +145,12 @@ function isButlerToolAction(value: unknown): value is ButlerToolAction {
     value === "conversation_archive" ||
     value === "conversation_delete" ||
     value === "conversation_self_check" ||
+    value === "conversation_messages" ||
     value === "agent_check" ||
     value === "settings_open" ||
     value === "set_appearance" ||
+    value === "conversation_open" ||
+    value === "view_open" ||
     value === "team_list" ||
     value === "team_get" ||
     value === "team_create" ||
@@ -138,6 +181,57 @@ function butlerMcpServerPath(): string {
 
 function withCaller<T>(binding: ButlerToolBinding, fn: () => T): T {
   return binding.userId ? runAsCaller(binding.userId, fn) : fn();
+}
+
+const MAX_MESSAGE_TEXT_CHARS = 4000;
+
+function extractMessageText(message: ConversationMessage): string {
+  if (message.role !== "assistant") {
+    return String(message.content ?? "");
+  }
+  try {
+    const parsed = JSON.parse(message.content) as unknown;
+    if (!Array.isArray(parsed)) {
+      return String(message.content ?? "");
+    }
+    return parsed
+      .flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const row = item as Record<string, unknown>;
+        const kind = String(row.kind ?? "");
+        if (kind === "text" || kind === "raw" || kind === "thinking") {
+          return [String(row.content ?? row.text ?? "")];
+        }
+        if (kind === "error") {
+          return [String(row.message ?? row.content ?? "")];
+        }
+        return [];
+      })
+      .filter((piece) => piece.trim().length > 0)
+      .join("\n\n");
+  } catch {
+    return String(message.content ?? "");
+  }
+}
+
+function publicConversationMessage(message: ConversationMessage) {
+  const fullText = extractMessageText(message).replace(
+    /data:[^;,\s]+;base64,[a-z0-9+/=]+/gi,
+    "[inline media removed]"
+  );
+  const truncated = fullText.length > MAX_MESSAGE_TEXT_CHARS;
+  return {
+    id: message.id,
+    role: message.role,
+    status: message.status,
+    createdAt: message.createdAt,
+    agentName: message.agentName,
+    text: truncated
+      ? `${fullText.slice(0, MAX_MESSAGE_TEXT_CHARS)}\n[truncated]`
+      : fullText,
+    truncated,
+    attachmentCount: message.attachments?.length ?? 0
+  };
 }
 
 function publicTask(task: ReturnType<typeof listScheduledTasks>[number]) {
@@ -256,7 +350,8 @@ async function dispatchButlerAction(
           lastCheckAt: rt.lastCheckAt
         })),
         scheduledTaskCount: taskCount,
-        teamCount
+        teamCount,
+        mainWindow: getMainWindowPresence()
       };
     }
     case "scheduled_task_list": {
@@ -403,11 +498,13 @@ async function dispatchButlerAction(
       const id = String(params.id ?? "");
       const archived = Boolean(params.archived);
       withCaller(binding, () => archiveConversation(id, archived));
+      notifyConversationsChanged();
       return { ok: true, id, archived };
     }
     case "conversation_delete": {
       const id = String(params.id ?? "");
       withCaller(binding, () => deleteConversation(id));
+      notifyConversationsChanged();
       return { ok: true, id };
     }
     case "conversation_self_check": {
@@ -431,6 +528,50 @@ async function dispatchButlerAction(
         hint: "Read README.txt, environment.json, logs/, and sessions/ under logDirectory, then produce a structured self-check report."
       };
     }
+    case "conversation_messages": {
+      const conversationId = String(params.conversationId ?? params.id ?? "").trim();
+      if (!conversationId) {
+        return { ok: false, error: "conversationId is required." };
+      }
+      const conv = withCaller(binding, () => requireOwnedConversation(conversationId));
+      if (!conv) {
+        return { ok: false, error: "Conversation not found." };
+      }
+      const all = withCaller(binding, () => listMessages(conversationId));
+      const roleFilter = String(params.role ?? "").trim();
+      const filtered =
+        roleFilter === "user" || roleFilter === "assistant" || roleFilter === "system"
+          ? all.filter((message) => message.role === roleFilter)
+          : all;
+      const limitRaw = Number(params.limit ?? 20);
+      const limit = Number.isFinite(limitRaw)
+        ? Math.min(40, Math.max(1, Math.floor(limitRaw)))
+        : 20;
+      const useTail = params.tail !== false && params.offset === undefined;
+      const offsetRaw = Number(params.offset ?? 0);
+      const offset = Number.isFinite(offsetRaw)
+        ? Math.max(0, Math.floor(offsetRaw))
+        : 0;
+      const start = useTail
+        ? Math.max(0, filtered.length - limit)
+        : Math.min(offset, filtered.length);
+      const page = filtered.slice(start, start + limit);
+      return {
+        ok: true,
+        conversation: {
+          id: conv.id,
+          title: conv.title,
+          agentId: conv.agentId,
+          agentName: conv.agentName
+        },
+        total: filtered.length,
+        offset: start,
+        limit,
+        tail: useTail,
+        hasMore: start + page.length < filtered.length || start > 0,
+        messages: page.map(publicConversationMessage)
+      };
+    }
     case "agent_check": {
       const adapter = String(params.adapter ?? "").trim();
       if (!adapter) {
@@ -441,11 +582,13 @@ async function dispatchButlerAction(
     }
     case "settings_open": {
       const tab = String(params.tab ?? "cli");
-      if (binding.webContents) {
-        safeSendToWebContents(binding.webContents, "freebuddy://open-settings", { tab });
-        return { ok: true, tab };
+      const target = resolveButlerAppWebContents(binding.webContents);
+      if (!target) {
+        return { ok: false, error: "No active window to open settings." };
       }
-      return { ok: false, error: "No active window to open settings." };
+      focusButlerAppWindow();
+      safeSendToWebContents(target, "freebuddy://open-settings", { tab });
+      return { ok: true, tab };
     }
     case "set_appearance": {
       const theme = String(params.theme ?? "").trim();
@@ -453,12 +596,129 @@ async function dispatchButlerAction(
         return { ok: false, error: "theme must be one of: system, light, dark." };
       }
       setSetting("theme", theme);
-      if (binding.webContents) {
-        safeSendToWebContents(binding.webContents, "freebuddy://appearance-changed", {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isDestroyed()) continue;
+        safeSendToWebContents(win.webContents, "freebuddy://appearance-changed", {
           theme
         });
       }
       return { ok: true, theme };
+    }
+    case "conversation_open": {
+      const id = String(params.id ?? "").trim();
+      const titleQuery = String(params.titleQuery ?? "").trim().toLowerCase();
+      const lastMessageStatus = String(params.lastMessageStatus ?? "").trim();
+      const archived =
+        params.archived === true ? true : params.archived === false ? false : false;
+
+      let conv =
+        id.length > 0
+          ? withCaller(binding, () => requireOwnedConversation(id))
+          : undefined;
+
+      if (!conv && (titleQuery || lastMessageStatus)) {
+        const conversations = withCaller(binding, () =>
+          listConversations({ archived })
+        );
+        const lastStatusById = new Map<string, string>();
+        if (conversations.length > 0 && lastMessageStatus) {
+          const ids = conversations.map((c) => c.id);
+          const placeholders = ids.map(() => "?").join(",");
+          const rows = getDb()
+            .prepare(
+              `SELECT conversation_id, status FROM (
+                 SELECT conversation_id, status,
+                   ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) AS rn
+                 FROM conversation_messages
+                 WHERE conversation_id IN (${placeholders})
+               ) WHERE rn = 1`
+            )
+            .all(...ids) as Array<{ conversation_id: string; status: string }>;
+          for (const row of rows) {
+            lastStatusById.set(row.conversation_id, row.status);
+          }
+        }
+        const matches = conversations.filter((c) => {
+          if (titleQuery && !c.title.toLowerCase().includes(titleQuery)) {
+            return false;
+          }
+          if (
+            lastMessageStatus &&
+            lastStatusById.get(c.id) !== lastMessageStatus
+          ) {
+            return false;
+          }
+          return Boolean(titleQuery || lastMessageStatus);
+        });
+        if (matches.length === 0) {
+          return { ok: false, error: "No matching conversation found." };
+        }
+        if (matches.length > 1) {
+          return {
+            ok: false,
+            error: "Multiple conversations matched; pass id to disambiguate.",
+            matches: matches.slice(0, 10).map((c) => ({
+              id: c.id,
+              title: c.title,
+              agentId: c.agentId,
+              agentName: c.agentName,
+              lastMessageStatus: lastStatusById.get(c.id)
+            }))
+          };
+        }
+        conv = matches[0];
+      }
+
+      if (!conv) {
+        return {
+          ok: false,
+          error: "Provide id, or titleQuery / lastMessageStatus to find a conversation."
+        };
+      }
+
+      const target = resolveButlerAppWebContents(binding.webContents);
+      if (!target) {
+        return { ok: false, error: "No active window to open conversation." };
+      }
+      focusButlerAppWindow();
+      safeSendToWebContents(target, "window:open-conversation", conv.id);
+      return {
+        ok: true,
+        id: conv.id,
+        title: conv.title,
+        agentId: conv.agentId,
+        agentName: conv.agentName
+      };
+    }
+    case "view_open": {
+      const view = String(params.view ?? "").trim();
+      if (
+        view !== "chat" &&
+        view !== "scheduledTasks" &&
+        view !== "workflowTeams" &&
+        view !== "usage"
+      ) {
+        return {
+          ok: false,
+          error: "view must be one of: chat, scheduledTasks, workflowTeams, usage."
+        };
+      }
+      const target = resolveButlerAppWebContents(binding.webContents);
+      if (!target) {
+        return { ok: false, error: "No active window to open view." };
+      }
+      const payload: Record<string, unknown> = { view };
+      if (view === "workflowTeams") {
+        if (typeof params.teamId === "string" && params.teamId.trim()) {
+          payload.teamId = params.teamId.trim();
+        }
+        if (params.create === true) {
+          payload.create = true;
+        }
+      }
+      focusButlerAppWindow();
+      safeSendToWebContents(target, "freebuddy://open-view", payload);
+      return { ok: true, ...payload };
     }
     case "team_list": {
       const teams = listWorkflowTeams();

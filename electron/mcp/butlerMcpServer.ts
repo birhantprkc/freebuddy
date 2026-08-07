@@ -86,7 +86,7 @@ export function createButlerMcpServer(): McpServer {
     {
       title: "Get FreeBuddy Status",
       description:
-        "List installed agents (id/name/adapter/enabled) and skills (id/name/source/enabled/trusted) in this FreeBuddy app. Read-only. Use to understand the current setup before recommending changes.",
+        "List installed agents (id/name/adapter/enabled), skills (id/name/source/enabled/trusted), adapter runtimes, scheduled-task/team counts, and mainWindow (current FreeBuddy UI presence: workspace view, settings tab, active conversation metadata, streaming). Read-only. Use to understand the current setup and what the user is looking at before recommending changes.",
       inputSchema: {},
       annotations: {
         readOnlyHint: true,
@@ -405,6 +405,57 @@ export function createButlerMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "freebuddy_conversation_messages",
+    {
+      title: "Read Conversation Messages",
+      description:
+        "Read a page of plain-text messages from a conversation the user owns. Defaults to the latest messages (tail). Use for summarizing or inspecting the main-window / listed conversation content. Does not include raw stream JSON or binary attachments.",
+      inputSchema: {
+        conversationId: z
+          .string()
+          .trim()
+          .min(1)
+          .describe("Conversation id to read."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(40)
+          .optional()
+          .default(20)
+          .describe("Max messages to return (1-40)."),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Start index from the beginning. When set, disables default tail mode."),
+        tail: z
+          .boolean()
+          .optional()
+          .describe("If true (default when offset omitted), return the latest messages."),
+        role: z
+          .enum(["user", "assistant", "system"])
+          .optional()
+          .describe("Optional role filter.")
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeButlerBridge("conversation_messages", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
     "freebuddy_conversation_archive",
     {
       title: "Archive or Unarchive a Conversation",
@@ -529,6 +580,76 @@ export function createButlerMcpServer(): McpServer {
     async (args) => {
       try {
         return toolResult(await invokeButlerBridge("settings_open", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "freebuddy_conversation_open",
+    {
+      title: "Open a Conversation in Main Window",
+      description:
+        "Focus the main FreeBuddy window and open a conversation in the chat view. Pass id for an exact open, or titleQuery / lastMessageStatus to find one (e.g. lastMessageStatus=failed). If multiple match, returns matches for disambiguation instead of opening.",
+      inputSchema: {
+        id: z.string().optional().describe("Exact conversation id to open."),
+        titleQuery: z
+          .string()
+          .optional()
+          .describe("Case-insensitive substring match against conversation title."),
+        lastMessageStatus: z
+          .string()
+          .optional()
+          .describe("Match latest message status, e.g. failed, done, running."),
+        archived: z
+          .boolean()
+          .optional()
+          .describe("Search archived conversations when using titleQuery/status filters.")
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeButlerBridge("conversation_open", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "freebuddy_view_open",
+    {
+      title: "Open a Main Workspace View",
+      description:
+        "Focus the main FreeBuddy window and switch to a workspace page. Views: chat, scheduledTasks, workflowTeams, usage. For workflowTeams, optional teamId selects a team and create=true opens the create flow.",
+      inputSchema: {
+        view: z
+          .enum(["chat", "scheduledTasks", "workflowTeams", "usage"])
+          .describe("Main workspace view to open."),
+        teamId: z
+          .string()
+          .optional()
+          .describe("Optional workflow team id when view=workflowTeams."),
+        create: z
+          .boolean()
+          .optional()
+          .describe("When view=workflowTeams, open the create-team flow.")
+      },
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeButlerBridge("view_open", args));
       } catch (error) {
         return toolError(error);
       }

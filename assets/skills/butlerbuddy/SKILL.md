@@ -41,7 +41,7 @@ After execution, report the verified result and the available undo path. Keep or
 
 When a `freebuddy-butler` tool service is available, prefer it over asking the user to navigate Settings manually. Current tools:
 
-- `freebuddy_status_get` — list installed agents, skills, adapter runtimes (installed/version/lastError), and counts of scheduled tasks and teams. Read-only. Inspect before recommending any setup change.
+- `freebuddy_status_get` — list installed agents, skills, adapter runtimes (installed/version/lastError), counts of scheduled tasks and teams, and `mainWindow` (current main FreeBuddy UI presence: view, settings, active conversation metadata, streaming). Read-only. Inspect before recommending any setup change.
 - `freebuddy_agent_check` — probe whether a CLI adapter runtime is installed (e.g. codex-acp). Read-only.
 - `freebuddy_scheduled_task_list` — list scheduled tasks (schedule, agent, enabled, last run). Read-only.
 - `freebuddy_scheduled_task_create` — create a scheduled task. Before calling, restate the title, prompt, agent, and schedule to the user and get explicit confirmation. Provide `agentId` from `freebuddy_status_get`; `timeLocal` is `HH:MM` 24h local time; `scheduleType` is one of once/manual/hourly/daily/weekdays/weekly/monthly.
@@ -53,10 +53,13 @@ When a `freebuddy-butler` tool service is available, prefer it over asking the u
 - `freebuddy_skill_trust` — mark an imported skill as trusted (or untrusted). Confirm first.
 - `freebuddy_skill_import` — import a skill from a local directory or archive path. Confirm the path first.
 - `freebuddy_conversation_list` — list conversations with last message status (running/done/failed/killed/sent). Read-only. Filter by lastMessageStatus='failed' to find failed ones.
+- `freebuddy_conversation_messages` — read plain-text messages for a conversation id (defaults to latest page). Use when summarizing or inspecting conversation content; presence/metadata alone is not enough.
 - `freebuddy_conversation_archive` — archive or unarchive a conversation. Confirm first.
 - `freebuddy_conversation_delete` — permanently delete a conversation. Destructive: restate the title and confirm first.
 - `freebuddy_conversation_self_check` — collect a (failed) conversation's full diagnostic logs into a temp directory and return its path. Then read README.txt/environment.json/logs/sessions under that path with your file tools and produce a structured self-check report. Do not modify files there.
 - `freebuddy_settings_open` — open a Settings tab for the user (general/cli/skills/plugins/feed/remote/about). Use when a change must be done manually.
+- `freebuddy_conversation_open` — focus the main window and open a conversation. Pass `id`, or find with `titleQuery` / `lastMessageStatus` (e.g. failed). If several match, ask the user which id to open.
+- `freebuddy_view_open` — focus the main window and switch to a workspace page (`chat` / `scheduledTasks` / `workflowTeams` / `usage`). For `workflowTeams`, optional `teamId` / `create` deep-link into the teams page.
 - `freebuddy_set_appearance` — switch the UI theme (system/light/dark). Applies immediately and live. Confirm with the user first.
 - `freebuddy_team_list` — list workflow teams (name/enabled/source/roles/policy). Read-only.
 - `freebuddy_team_get` — get one team's full details by id (roles with skillIds, policy, complete node/edge template). Read-only.
@@ -77,4 +80,16 @@ When a `freebuddy-butler` tool service is available, prefer it over asking the u
 - `freebuddy_team_delete` — delete a team by id. Destructive; built-in teams cannot be deleted. Confirm and restate the team name first.
 
 All mutations still go through the standard approval flow. If a needed tool is missing, explain the limitation and guide the user to the matching Settings surface.
+
+## Main window awareness
+
+ButlerBuddy prompts may include a one-line `[FreeBuddy main window] ...` summary describing what the user currently sees in the main FreeBuddy window (not the pet chat itself).
+
+- For questions like "where am I" or "what page is this", use that summary first.
+- Call `freebuddy_status_get` when you need the full `mainWindow` fields (ids, settings tab, updatedAt).
+- Presence is metadata only (view / settings / conversation id+title+agent / streaming). It does **not** include message bodies.
+- To read message content, call `freebuddy_conversation_messages` with the conversation id (from presence or `conversation_list` / `conversation_open` matches).
+- Do not invent or "summarize" conversation content from the presence line alone.
+- Never invent main-window state. If `mainWindow` is null, say the main window presence is unavailable.
+- The pet chat's own active thread is separate from `mainWindow.activeConversation`.
 

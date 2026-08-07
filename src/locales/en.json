@@ -1703,6 +1703,7 @@
     "inputPlaceholder": "Message ButlerBuddy…",
     "inputAria": "Message ButlerBuddy",
     "sendAria": "Send message",
+    "stopAria": "Stop generating",
     "clickToChat": "Click to chat",
     "openChatAria": "Open ButlerBuddy chat",
     "petTooltip": "Click to chat · Drag to move · Right-click for more"

@@ -21,7 +21,7 @@ import {
   searchSkillhub,
   verifySkillhubPackage
 } from "./skillMarketProviders/skillhub.js";
-import { installPreparedSkill, listSkills, parseSkillMarkdown } from "./skills.js";
+import { installPreparedSkill, listSkills, notifySkillsChanged, parseSkillMarkdown } from "./skills.js";
 import type {
   MarketInstallRequest,
   MarketInstallResult,
@@ -324,6 +324,7 @@ export async function installSkillFromMarket(
       }
     });
 
+    notifySkillsChanged();
     return { skill, updated };
   } finally {
     fs.rmSync(downloadRoot, { recursive: true, force: true });
