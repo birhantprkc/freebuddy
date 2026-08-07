@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,14 +37,19 @@ import { initializeAgentUsageReconciler } from "./cli/usageReconciler.js";
 import { initDebugLog, logMain } from "./debugLog.js";
 import {
   clearMainWindowPresence,
-  setMainWindowPresence
+  setMainWindowPresence,
+  getMainWindowPresence
 } from "./uiPresence.js";
+import { createAppTray, type TrayController } from "./tray.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
 app.setName(APP_NAME);
 app.setAppUserModelId("dev.freebuddy.app");
+if (process.platform === "darwin") {
+  app.setActivationPolicy("regular");
+}
 process.env.FB_APP_VERSION = APP_VERSION;
 app.setAboutPanelOptions({
   applicationName: APP_NAME,
@@ -85,6 +90,7 @@ app.on("open-url", (event, url) => {
 app.on("second-instance", (_event, argv) => {
   const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
   if (url) handleSchemeUrl(url);
+  revealMainWindow();
 });
 
 function resolveAppIconPath() {
@@ -95,6 +101,17 @@ function resolveAppIconPath() {
 
 function loadAppIcon() {
   const icon = nativeImage.createFromPath(resolveAppIconPath());
+  return icon.isEmpty() ? undefined : icon;
+}
+
+function resolveTrayIconPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "tray-icon.png")
+    : path.join(__dirname, "../assets/sidebar-logo.png");
+}
+
+function loadTrayIcon() {
+  const icon = nativeImage.createFromPath(resolveTrayIconPath());
   return icon.isEmpty() ? undefined : icon;
 }
 
@@ -210,7 +227,7 @@ async function injectShellPath() {
 
 let mainWindow: BrowserWindow | null = null;
 let isQuittingApp = false;
-let isShowingCloseConfirm = false;
+let trayController: TrayController | null = null;
 let butlerPetWindow: BrowserWindow | null = null;
 let butlerChatWindow: BrowserWindow | null = null;
 
@@ -590,7 +607,9 @@ function registerButlerBuddyWindowIpc() {
   ipcMain.on("freebuddy:uiPresence", (event, payload) => {
     const win = mainWindow;
     if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
-    setMainWindowPresence(payload);
+    if (setMainWindowPresence(payload)) {
+      applyUnreadBadge(getMainWindowPresence()?.unreadCount ?? 0);
+    }
   });
   ipcMain.on("freebuddy:themeBroadcast", (event, theme) => {
     if (theme !== "system" && theme !== "light" && theme !== "dark") return;
@@ -621,6 +640,51 @@ function windowChromeOptions() {
     : {};
 }
 
+function revealMainWindow() {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  win.moveTop();
+  win.focus();
+}
+
+function quitApp() {
+  isQuittingApp = true;
+  app.quit();
+}
+
+function applyUnreadBadge(count: number) {
+  // setBadgeCount is supported on macOS (Dock badge) and Linux (Unity launcher);
+  // it is unsupported on Windows, so guard it. On Windows the unread count is
+  // still surfaced via the tray tooltip and context-menu label.
+  if (process.platform !== "win32") {
+    app.setBadgeCount(count);
+  }
+  trayController?.setUnreadCount(count);
+}
+
+function createTrayForApp() {
+  trayController = createAppTray({
+    getMainWindow: () => mainWindow,
+    getIcon: () => loadAppIcon(),
+    getTrayIcon: () => loadTrayIcon(),
+    isPetVisible: () => readButlerBuddyPreferences().visible,
+    getUnreadCount: () => getMainWindowPresence()?.unreadCount ?? 0,
+    onNewConversation: () => {
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) return;
+      safeSendToWebContents(win.webContents, "window:new-conversation", undefined);
+    },
+    onTogglePet: () => {
+      const next = !readButlerBuddyPreferences().visible;
+      updateButlerBuddyPreferences({ visible: next });
+      trayController?.refresh();
+    },
+    onQuit: () => quitApp()
+  });
+}
+
 function createWindow() {
   const appIcon = loadAppIcon();
 
@@ -642,7 +706,7 @@ function createWindow() {
   });
 
   mainWindow.on("close", (event) => {
-    if (isQuittingApp || process.platform !== "darwin" || isShowingCloseConfirm) {
+    if (isQuittingApp) {
       return;
     }
     const win = mainWindow;
@@ -650,27 +714,7 @@ function createWindow() {
       return;
     }
     event.preventDefault();
-    isShowingCloseConfirm = true;
-    void dialog
-      .showMessageBox(win, {
-        type: "warning",
-        buttons: ["退出", "取消"],
-        defaultId: 1,
-        cancelId: 1,
-        title: APP_NAME,
-        message: `退出 ${APP_NAME}？`,
-        detail: "关闭主窗口将退出应用程序及其桌面宠物，确定要退出吗？"
-      })
-      .then((result) => {
-        isShowingCloseConfirm = false;
-        if (result.response === 0) {
-          isQuittingApp = true;
-          app.quit();
-        }
-      })
-      .catch(() => {
-        isShowingCloseConfirm = false;
-      });
+    win.hide();
   });
 
   mainWindow.on("closed", () => {
@@ -712,13 +756,9 @@ function createWindow() {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.flashFrame(false);
     }
-    if (process.platform === "darwin" && app.dock) {
-      app.dock.setBadge("");
-    }
   });
 
-  // The app menu is hidden (Menu.setApplicationMenu(null)) and we use
-  // titleBarStyle: "hiddenInset", so macOS' default Esc-to-leave-fullscreen
+  // With titleBarStyle: "hiddenInset", macOS' default Esc-to-leave-fullscreen
   // shortcut has no menu item to bind to. Restore it manually.
   mainWindow.webContents.on("before-input-event", (_event, input) => {
     if (
@@ -880,10 +920,17 @@ app.whenReady().then(async () => {
   });
   registerUpdaterIpc();
   const appIcon = loadAppIcon();
-  if (process.platform === "darwin" && app.dock && appIcon) {
-    app.dock.setIcon(appIcon);
+  if (process.platform === "darwin" && app.dock) {
+    void app.dock.show();
+    if (appIcon) {
+      app.dock.setIcon(appIcon);
+    }
   }
   createWindow();
+  if (process.platform === "darwin") {
+    app.focus();
+  }
+  createTrayForApp();
   const butlerPreferences = readButlerBuddyPreferences();
   const shortcutError = updateButlerShortcutRegistration(
     butlerPreferences.shortcutEnabled,
@@ -903,19 +950,22 @@ app.whenReady().then(async () => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
+    } else {
+      revealMainWindow();
     }
   });
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // The app lives in the tray. Only the tray's "Quit" entry or an explicit
+  // Cmd+Q / before-quit should terminate the process.
 });
 
 let telemetryShutdownStarted = false;
 app.on("before-quit", (event) => {
   isQuittingApp = true;
+  trayController?.destroy();
+  trayController = null;
   if (telemetryShutdownStarted) return;
   telemetryShutdownStarted = true;
   event.preventDefault();

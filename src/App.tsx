@@ -185,6 +185,15 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const off = window.freebuddy?.window?.onNewConversation?.(() => {
+      startNewTask();
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const off = window.freebuddy?.window?.onOpenSettings?.((tab) => {
       setSettingsInitialTab(tab as SettingsTab);
       setSettingsOpen(true);
@@ -353,6 +362,12 @@ function App() {
   }, []);
 
   const conversations = useConversationStore((s) => s.conversations);
+  const unreadCount = useConversationStore((s) =>
+    s.conversations.reduce(
+      (n, c) => n + (s.unreadConversations[c.id] ? 1 : 0),
+      0
+    )
+  );
   const members = useConversationStore((s) => s.members);
   const activeId = useConversationStore((s) => s.activeId);
   const setActive = useConversationStore((s) => s.setActive);
@@ -382,6 +397,7 @@ function App() {
           }
         : null,
       streaming: activeConversationRunning,
+      unreadCount,
       updatedAt: new Date().toISOString()
     };
     const timer = window.setTimeout(() => {
@@ -397,6 +413,7 @@ function App() {
     activeConversation?.agentId,
     activeConversation?.agentName,
     activeConversationRunning,
+    unreadCount,
     members
   ]);
 

@@ -20,6 +20,8 @@ extraResources:
     to: skills
   - from: assets/app-icon.png
     to: app-icon.png
+  - from: assets/sidebar-logo.png
+    to: tray-icon.png
   - from: .build/tokscale
     to: tokscale
 

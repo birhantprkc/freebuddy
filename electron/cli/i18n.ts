@@ -1,9 +1,12 @@
 type AppLocale = "en" | "zh-CN";
 
 const DICT: Record<string, Record<AppLocale, string>> = {
+  "menu.app.about": { en: "About", "zh-CN": "关于" },
+  "menu.app.hide": { en: "Hide", "zh-CN": "隐藏" },
+  "menu.app.hideOthers": { en: "Hide Others", "zh-CN": "隐藏其他" },
+  "menu.app.unhide": { en: "Show All", "zh-CN": "显示全部" },
+  "menu.app.quit": { en: "Quit", "zh-CN": "退出" },
   "menu.edit": { en: "Edit", "zh-CN": "编辑" },
-  "menu.view": { en: "View", "zh-CN": "视图" },
-  "menu.window": { en: "Window", "zh-CN": "窗口" },
   "dialog.supportedAttachments": { en: "Supported attachments", "zh-CN": "支持的附件" },
   "dialog.allFiles": { en: "All files", "zh-CN": "所有文件" },
   "main.fileLoadFailed": { en: "Failed to load file: {{message}}", "zh-CN": "加载文件失败：{{message}}" },

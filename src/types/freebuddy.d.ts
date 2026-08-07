@@ -284,6 +284,7 @@ declare global {
     onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
     onOpenConversation(cb: (conversationId: string) => void): () => void;
+    onNewConversation(cb: () => void): () => void;
     onOpenView(
       cb: (payload: {
         view: "chat" | "scheduledTasks" | "workflowTeams" | "usage" | string;
@@ -312,6 +313,7 @@ declare global {
         agentName: string;
       } | null;
       streaming: boolean;
+      unreadCount: number;
       updatedAt: string;
     }): void;
     broadcastTheme(theme: "system" | "light" | "dark" | string): void;
