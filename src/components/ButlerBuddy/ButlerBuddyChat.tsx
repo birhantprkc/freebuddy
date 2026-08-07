@@ -16,6 +16,7 @@ import type { ConversationMessage } from "@/services/cli/types";
 import { cliClient } from "@/services/cli/client";
 import { useCliExecutorStore } from "@/store/cliExecutorStore";
 import { useConversationStore } from "@/store/conversationStore";
+import { useSettingsStore } from "@/store/settingsStore";
 import type { ConfigOptionItem } from "@/store/sessionMetaUtils";
 import { mergeSessionMetaItems } from "@/store/sessionMetaUtils";
 
@@ -213,6 +214,22 @@ export function ButlerBuddyChat() {
     initializationStartedRef.current = true;
     void initializeConversation();
   }, [initializeConversation]);
+
+  const resolvedTheme = useSettingsStore((s) => s.resolvedTheme);
+
+  useEffect(() => {
+    void useSettingsStore.getState().load();
+    const off = window.freebuddy?.window?.onAppearanceChanged?.((theme) => {
+      if (theme === "system" || theme === "light" || theme === "dark") {
+        void useSettingsStore.getState().setTheme(theme, { syncPeers: false });
+      }
+    });
+    return () => off?.();
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+  }, [resolvedTheme]);
 
   useEffect(() => {
     if (!hasDesktopBridge) return;

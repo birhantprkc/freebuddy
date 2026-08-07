@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
-import type { BrowserWindow, WebContents } from "electron";
+import { BrowserWindow, type WebContents } from "electron";
 
 import { waitForActiveBridgePort } from "./agentBridge.js";
 import type { AcpStdioMcpServer } from "./shared/draftToolProtocol.js";
@@ -32,7 +32,8 @@ import {
   archiveConversation,
   deleteConversation,
   getConversation,
-  requireOwnedConversation
+  requireOwnedConversation,
+  notifyConversationsChanged
 } from "./cli/conversations.js";
 import { getDb } from "./cli/db.js";
 import { cliCheck, listRuntimes } from "./cli/check.js";
@@ -442,11 +443,13 @@ async function dispatchButlerAction(
       const id = String(params.id ?? "");
       const archived = Boolean(params.archived);
       withCaller(binding, () => archiveConversation(id, archived));
+      notifyConversationsChanged();
       return { ok: true, id, archived };
     }
     case "conversation_delete": {
       const id = String(params.id ?? "");
       withCaller(binding, () => deleteConversation(id));
+      notifyConversationsChanged();
       return { ok: true, id };
     }
     case "conversation_self_check": {
@@ -494,9 +497,9 @@ async function dispatchButlerAction(
         return { ok: false, error: "theme must be one of: system, light, dark." };
       }
       setSetting("theme", theme);
-      const target = resolveButlerAppWebContents(binding.webContents);
-      if (target) {
-        safeSendToWebContents(target, "freebuddy://appearance-changed", {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isDestroyed()) continue;
+        safeSendToWebContents(win.webContents, "freebuddy://appearance-changed", {
           theme
         });
       }
@@ -504,19 +507,82 @@ async function dispatchButlerAction(
     }
     case "conversation_open": {
       const id = String(params.id ?? "").trim();
-      if (!id) {
-        return { ok: false, error: "id is required." };
+      const titleQuery = String(params.titleQuery ?? "").trim().toLowerCase();
+      const lastMessageStatus = String(params.lastMessageStatus ?? "").trim();
+      const archived =
+        params.archived === true ? true : params.archived === false ? false : false;
+
+      let conv =
+        id.length > 0
+          ? withCaller(binding, () => requireOwnedConversation(id))
+          : undefined;
+
+      if (!conv && (titleQuery || lastMessageStatus)) {
+        const conversations = withCaller(binding, () =>
+          listConversations({ archived })
+        );
+        const lastStatusById = new Map<string, string>();
+        if (conversations.length > 0 && lastMessageStatus) {
+          const ids = conversations.map((c) => c.id);
+          const placeholders = ids.map(() => "?").join(",");
+          const rows = getDb()
+            .prepare(
+              `SELECT conversation_id, status FROM (
+                 SELECT conversation_id, status,
+                   ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) AS rn
+                 FROM conversation_messages
+                 WHERE conversation_id IN (${placeholders})
+               ) WHERE rn = 1`
+            )
+            .all(...ids) as Array<{ conversation_id: string; status: string }>;
+          for (const row of rows) {
+            lastStatusById.set(row.conversation_id, row.status);
+          }
+        }
+        const matches = conversations.filter((c) => {
+          if (titleQuery && !c.title.toLowerCase().includes(titleQuery)) {
+            return false;
+          }
+          if (
+            lastMessageStatus &&
+            lastStatusById.get(c.id) !== lastMessageStatus
+          ) {
+            return false;
+          }
+          return Boolean(titleQuery || lastMessageStatus);
+        });
+        if (matches.length === 0) {
+          return { ok: false, error: "No matching conversation found." };
+        }
+        if (matches.length > 1) {
+          return {
+            ok: false,
+            error: "Multiple conversations matched; pass id to disambiguate.",
+            matches: matches.slice(0, 10).map((c) => ({
+              id: c.id,
+              title: c.title,
+              agentId: c.agentId,
+              agentName: c.agentName,
+              lastMessageStatus: lastStatusById.get(c.id)
+            }))
+          };
+        }
+        conv = matches[0];
       }
-      const conv = withCaller(binding, () => requireOwnedConversation(id));
+
       if (!conv) {
-        return { ok: false, error: "Conversation not found." };
+        return {
+          ok: false,
+          error: "Provide id, or titleQuery / lastMessageStatus to find a conversation."
+        };
       }
+
       const target = resolveButlerAppWebContents(binding.webContents);
       if (!target) {
         return { ok: false, error: "No active window to open conversation." };
       }
       focusButlerAppWindow();
-      safeSendToWebContents(target, "window:open-conversation", id);
+      safeSendToWebContents(target, "window:open-conversation", conv.id);
       return {
         ok: true,
         id: conv.id,

@@ -540,9 +540,21 @@ export function createButlerMcpServer(): McpServer {
     {
       title: "Open a Conversation in Main Window",
       description:
-        "Focus the main FreeBuddy window and open an existing conversation by id in the chat view. Use after listing conversations when the user asks to jump to a specific thread. Confirm the conversation title with the user when ambiguous.",
+        "Focus the main FreeBuddy window and open a conversation in the chat view. Pass id for an exact open, or titleQuery / lastMessageStatus to find one (e.g. lastMessageStatus=failed). If multiple match, returns matches for disambiguation instead of opening.",
       inputSchema: {
-        id: z.string().describe("Conversation id to open.")
+        id: z.string().optional().describe("Exact conversation id to open."),
+        titleQuery: z
+          .string()
+          .optional()
+          .describe("Case-insensitive substring match against conversation title."),
+        lastMessageStatus: z
+          .string()
+          .optional()
+          .describe("Match latest message status, e.g. failed, done, running."),
+        archived: z
+          .boolean()
+          .optional()
+          .describe("Search archived conversations when using titleQuery/status filters.")
       },
       annotations: {
         destructiveHint: false,

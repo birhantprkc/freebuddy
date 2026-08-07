@@ -314,6 +314,7 @@ declare global {
       streaming: boolean;
       updatedAt: string;
     }): void;
+    broadcastTheme(theme: "system" | "light" | "dark" | string): void;
     notifyTask(payload: {
       kind: "success" | "failure";
       title: string;
@@ -408,6 +409,7 @@ declare global {
       version?: string;
       downloadsHint?: number;
     }): Promise<string | null>;
+    onChanged(cb: () => void): () => void;
   }
 
   interface FreebuddyPlugins {

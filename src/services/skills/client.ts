@@ -46,5 +46,8 @@ export const skillsClient = {
     ownerHandle?: string;
     version?: string;
     downloadsHint?: number;
-  }): Promise<string | null> => api().resolveMarketHomepage(args)
+  }): Promise<string | null> => api().resolveMarketHomepage(args),
+  onChanged(cb: () => void): () => void {
+    return api().onChanged(cb);
+  }
 };

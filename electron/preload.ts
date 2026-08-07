@@ -351,6 +351,9 @@ const window = {
   setUiPresence(snapshot: unknown): void {
     ipcRenderer.send("freebuddy:uiPresence", snapshot);
   },
+  broadcastTheme(theme: string): void {
+    ipcRenderer.send("freebuddy:themeBroadcast", theme);
+  },
   notifyTask(payload: {
     kind: "success" | "failure";
     title: string;
@@ -538,7 +541,12 @@ const skills = {
     ipcRenderer.invoke("skills:installFromMarket", request),
   openMarketUrl: (url: string) => ipcRenderer.invoke("skills:openMarketUrl", url),
   resolveMarketHomepage: (args: unknown) =>
-    ipcRenderer.invoke("skills:resolveMarketHomepage", args)
+    ipcRenderer.invoke("skills:resolveMarketHomepage", args),
+  onChanged(cb: () => void): () => void {
+    const handler = () => cb();
+    ipcRenderer.on("skills://changed", handler);
+    return () => ipcRenderer.off("skills://changed", handler);
+  }
 };
 
 const plugins = {

@@ -51,6 +51,7 @@ import {
   listConversations,
   listMessage,
   listMessages,
+  notifyConversationsChanged,
   renameConversation,
   requireOwnedConversation,
   setConversationApprovalMode,
@@ -353,16 +354,6 @@ function attachmentCandidate(filePath: string) {
     extension,
     mimeType: attachmentMimeFromExtension(extension)
   };
-}
-
-const CONVERSATIONS_CHANGED_CHANNEL = "conversations://changed";
-
-function notifyConversationsChanged(): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    safeSendToWebContents(win.webContents, CONVERSATIONS_CHANGED_CHANNEL, {
-      at: Date.now()
-    });
-  }
 }
 
 export function registerCliIpc() {

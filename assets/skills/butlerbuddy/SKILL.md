@@ -57,7 +57,7 @@ When a `freebuddy-butler` tool service is available, prefer it over asking the u
 - `freebuddy_conversation_delete` — permanently delete a conversation. Destructive: restate the title and confirm first.
 - `freebuddy_conversation_self_check` — collect a (failed) conversation's full diagnostic logs into a temp directory and return its path. Then read README.txt/environment.json/logs/sessions under that path with your file tools and produce a structured self-check report. Do not modify files there.
 - `freebuddy_settings_open` — open a Settings tab for the user (general/cli/skills/plugins/feed/remote/about). Use when a change must be done manually.
-- `freebuddy_conversation_open` — focus the main window and open an existing conversation by id in the chat view. Prefer listing conversations first when the user is vague; confirm the title when ambiguous.
+- `freebuddy_conversation_open` — focus the main window and open a conversation. Pass `id`, or find with `titleQuery` / `lastMessageStatus` (e.g. failed). If several match, ask the user which id to open.
 - `freebuddy_view_open` — focus the main window and switch to a workspace page (`chat` / `scheduledTasks` / `workflowTeams` / `usage`). For `workflowTeams`, optional `teamId` / `create` deep-link into the teams page.
 - `freebuddy_set_appearance` — switch the UI theme (system/light/dark). Applies immediately and live. Confirm with the user first.
 - `freebuddy_team_list` — list workflow teams (name/enabled/source/roles/policy). Read-only.

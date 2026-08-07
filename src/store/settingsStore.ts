@@ -29,7 +29,10 @@ interface SettingsState {
   butlerBuddyShortcutError?: "shortcutUnavailable";
   load(): Promise<void>;
   setLanguage(lng: LanguagePreference): Promise<void>;
-  setTheme(theme: ThemePreference): Promise<void>;
+  setTheme(
+    theme: ThemePreference,
+    options?: { syncPeers?: boolean }
+  ): Promise<void>;
   setTelemetryEnabled(enabled: boolean): Promise<void>;
   updateButlerBuddyPreferences(input: {
     visible?: boolean;
@@ -120,11 +123,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     }
   },
 
-  async setTheme(theme) {
+  async setTheme(theme, options) {
     const resolvedTheme = resolveThemePreference(theme, getSystemTheme());
     set({ theme, resolvedTheme });
     if (cliClient.isAvailable()) {
       await cliClient.setSetting("theme", theme);
+    }
+    if (options?.syncPeers !== false) {
+      window.freebuddy?.window?.broadcastTheme?.(theme);
     }
   },
 

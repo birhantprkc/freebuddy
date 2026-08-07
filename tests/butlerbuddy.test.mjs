@@ -258,3 +258,81 @@ test("Butler navigation tools can open a conversation or main workspace view", (
   assert.match(skill, /freebuddy_conversation_open/);
   assert.match(skill, /freebuddy_view_open/);
 });
+
+test("Butler mutations sync conversation list and skills UI across windows", () => {
+  const conversations = fs.readFileSync(
+    new URL("../electron/cli/conversations.ts", import.meta.url),
+    "utf8"
+  );
+  const skills = fs.readFileSync(
+    new URL("../electron/cli/skills.ts", import.meta.url),
+    "utf8"
+  );
+  const service = fs.readFileSync(
+    new URL("../electron/butlerToolService.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const app = fs.readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+
+  assert.match(conversations, /export function notifyConversationsChanged/);
+  assert.match(
+    service,
+    /case "conversation_archive":[\s\S]*?notifyConversationsChanged\(\)/
+  );
+  assert.match(
+    service,
+    /case "conversation_delete":[\s\S]*?notifyConversationsChanged\(\)/
+  );
+  assert.match(skills, /export function notifySkillsChanged/);
+  assert.match(skills, /notifySkillsChanged\(\)/);
+  assert.match(preload, /skills:\/\/changed/);
+  assert.match(app, /freebuddy\?\.skills\?\.onChanged/);
+});
+
+test("conversation_open supports fuzzy title and failed-status lookup", () => {
+  const service = fs.readFileSync(
+    new URL("../electron/butlerToolService.ts", import.meta.url),
+    "utf8"
+  );
+  const mcp = fs.readFileSync(
+    new URL("../electron/mcp/butlerMcpServer.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(
+    service,
+    /case "conversation_open":[\s\S]*?titleQuery[\s\S]*?lastMessageStatus/
+  );
+  assert.match(mcp, /titleQuery|lastMessageStatus/);
+});
+
+test("butler chat follows main FreeBuddy theme", () => {
+  const chat = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/ButlerBuddyChat.tsx", import.meta.url),
+    "utf8"
+  );
+  const service = fs.readFileSync(
+    new URL("../electron/butlerToolService.ts", import.meta.url),
+    "utf8"
+  );
+  const settings = fs.readFileSync(
+    new URL("../src/store/settingsStore.ts", import.meta.url),
+    "utf8"
+  );
+  const styles = fs.readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(chat, /useSettingsStore/);
+  assert.match(chat, /onAppearanceChanged/);
+  assert.match(chat, /dataset\.theme|data-theme/);
+  assert.match(service, /BrowserWindow\.getAllWindows[\s\S]*appearance-changed|appearance-changed[\s\S]*getAllWindows/);
+  assert.match(settings, /syncPeers|broadcastTheme/);
+  assert.match(preload, /broadcastTheme/);
+  assert.match(styles, /\[data-theme="dark"\][\s\S]*?\.butler-chat-window/);
+});

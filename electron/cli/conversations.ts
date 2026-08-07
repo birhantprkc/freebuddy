@@ -1,4 +1,5 @@
 import { getDb } from "./db.js";
+import { BrowserWindow } from "electron";
 import {
   discardManagedAttachmentIfUnreferenced,
   isManagedAttachmentPath
@@ -14,6 +15,7 @@ import {
   sourcePathForManagedWorkspace,
   type RemoteWorkspace
 } from "./remoteWorkspaces.js";
+import { safeSendToWebContents } from "./ipcSend.js";
 
 let notifyMessagesChangedHandler: ((conversationId: string) => void) | null = null;
 
@@ -21,6 +23,15 @@ export function bindConversationNotifier(
   fn: ((conversationId: string) => void) | null
 ): void {
   notifyMessagesChangedHandler = fn;
+}
+
+export function notifyConversationsChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    safeSendToWebContents(win.webContents, "conversations://changed", {
+      at: Date.now()
+    });
+  }
 }
 
 export interface ChatAttachment {

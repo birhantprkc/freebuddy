@@ -597,6 +597,15 @@ function registerButlerBuddyWindowIpc() {
     if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
     setMainWindowPresence(payload);
   });
+  ipcMain.on("freebuddy:themeBroadcast", (event, theme) => {
+    if (theme !== "system" && theme !== "light" && theme !== "dark") return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed() || win.webContents === event.sender) continue;
+      safeSendToWebContents(win.webContents, "freebuddy://appearance-changed", {
+        theme
+      });
+    }
+  });
   ipcMain.handle("butlerBuddy:getPreferences", () =>
     readButlerBuddyPreferences()
   );

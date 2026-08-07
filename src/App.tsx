@@ -33,6 +33,7 @@ import { AgentUsagePage } from "./components/Usage/AgentUsagePage";
 import { useCliExecutorStore } from "./store/cliExecutorStore";
 import { useConversationStore } from "./store/conversationStore";
 import { useSettingsStore } from "./store/settingsStore";
+import { useSkillStore } from "./store/skillStore";
 import { useUpdaterStore } from "./store/updaterStore";
 import { useDetailLayoutStore, selectDetailWidth, DETAIL_MIN_WIDTH } from "./store/detailLayoutStore";
 import { useNewTaskUiStore } from "./store/newTaskUiStore";
@@ -137,6 +138,13 @@ function App() {
   }, [refreshConversationList]);
 
   useEffect(() => {
+    const off = window.freebuddy?.skills?.onChanged?.(() => {
+      void useSkillStore.getState().load();
+    });
+    return () => off?.();
+  }, []);
+
+  useEffect(() => {
     const off = window.freebuddy?.cli?.onMessagesChanged?.((conversationId) => {
       const state = useConversationStore.getState();
       if (conversationId !== state.activeId) {
@@ -189,7 +197,7 @@ function App() {
   useEffect(() => {
     const off = window.freebuddy?.window?.onAppearanceChanged?.((theme) => {
       if (theme === "system" || theme === "light" || theme === "dark") {
-        void useSettingsStore.getState().setTheme(theme);
+        void useSettingsStore.getState().setTheme(theme, { syncPeers: false });
       }
     });
     return () => {
