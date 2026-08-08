@@ -61,7 +61,7 @@ function rowToTeam(r: any): WorkflowTeam {
 
 export function listWorkflowTeams(): WorkflowTeam[] {
   const rows = getDb()
-    .prepare("SELECT * FROM workflow_teams ORDER BY source DESC, created_at ASC")
+    .prepare("SELECT * FROM workflow_teams WHERE kind = 'workflow' OR kind IS NULL ORDER BY source DESC, created_at ASC")
     .all() as any[];
   return rows.map(rowToTeam);
 }

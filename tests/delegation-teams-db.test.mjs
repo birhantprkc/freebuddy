@@ -56,3 +56,60 @@ test("migration creates delegation_events table with expected columns", async (t
     assert.ok(indexes.includes("idx_delegation_events_run"), "idx_delegation_events_run index missing");
   });
 });
+
+test("delegation team CRUD round-trips roster, policy, entryRoleId", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { insertDelegationTeam, getDelegationTeam, listDelegationTeams, updateDelegationTeam, deleteDelegationTeam } =
+      await import("../dist-electron/cli/delegationTeams.js");
+
+    const roster = [
+      { id: "r-impl", label: "实现", agentId: "cli-codex-acp", capability: "写代码", canWrite: true },
+      { id: "r-rev", label: "评审", agentId: "cli-claude-agent-acp", capability: "审代码", canWrite: false }
+    ];
+    const created = insertDelegationTeam({
+      id: "team-del-1", name: "Impl+Review", enabled: true, source: "user",
+      entryRoleId: "r-impl", roster,
+      policy: {
+        allowWrites: true, requireApprovalBeforeDelegateWrite: true,
+        maxDepth: 3, delegateTimeoutMs: 600000, maxConcurrentDelegates: 1,
+        stopOnDelegateFailure: false
+      }
+    });
+    assert.equal(created.kind, "delegation");
+    assert.equal(created.entryRoleId, "r-impl");
+    assert.equal(created.roster.length, 2);
+
+    const fetched = getDelegationTeam("team-del-1");
+    assert.deepEqual(fetched?.roster, roster);
+
+    assert.ok(listDelegationTeams().some((x) => x.id === "team-del-1"));
+
+    updateDelegationTeam("team-del-1", { entryRoleId: "r-rev", name: "Renamed" });
+    assert.equal(getDelegationTeam("team-del-1")?.entryRoleId, "r-rev");
+    assert.equal(getDelegationTeam("team-del-1")?.name, "Renamed");
+
+    assert.equal(deleteDelegationTeam("team-del-1"), true);
+    assert.equal(getDelegationTeam("team-del-1"), undefined);
+  });
+});
+
+test("listWorkflowTeams excludes delegation teams", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { insertDelegationTeam } = await import("../dist-electron/cli/delegationTeams.js");
+    const { listWorkflowTeams } = await import("../dist-electron/cli/workflowTeams.js");
+
+    insertDelegationTeam({
+      id: "team-del-isolate", name: "Del", enabled: true, source: "user",
+      entryRoleId: "r-1", roster: [{ id: "r-1", label: "x", agentId: "a", capability: "y", canWrite: false }],
+      policy: {
+        allowWrites: true, requireApprovalBeforeDelegateWrite: false,
+        maxDepth: 2, delegateTimeoutMs: 1000, maxConcurrentDelegates: 1,
+        stopOnDelegateFailure: false
+      }
+    });
+    const ids = listWorkflowTeams().map((t) => t.id);
+    assert.ok(!ids.includes("team-del-isolate"), "delegation team leaked into workflow list");
+  });
+});
