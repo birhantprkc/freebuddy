@@ -834,6 +834,11 @@ export function migrate(db: DB) {
       "ALTER TABLE workflow_runs ADD COLUMN plan_version INTEGER NOT NULL DEFAULT 1"
     );
   }
+  if (!workflowRunCols.some((c) => c.name === "kind")) {
+    db.exec(
+      "ALTER TABLE workflow_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'workflow'"
+    );
+  }
 
   const workflowStepCols = db
     .prepare("PRAGMA table_info(workflow_steps)")
@@ -841,6 +846,40 @@ export function migrate(db: DB) {
   if (!workflowStepCols.some((c) => c.name === "tool_session_id")) {
     db.exec("ALTER TABLE workflow_steps ADD COLUMN tool_session_id TEXT");
   }
+
+  const workflowTeamCols = db
+    .prepare("PRAGMA table_info(workflow_teams)")
+    .all() as Array<{ name: string }>;
+  if (!workflowTeamCols.some((c) => c.name === "kind")) {
+    db.exec(
+      "ALTER TABLE workflow_teams ADD COLUMN kind TEXT NOT NULL DEFAULT 'workflow'"
+    );
+  }
+  if (!workflowTeamCols.some((c) => c.name === "delegation_meta_json")) {
+    db.exec(
+      "ALTER TABLE workflow_teams ADD COLUMN delegation_meta_json TEXT"
+    );
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS delegation_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+      parent_event_id TEXT,
+      agent_id TEXT,
+      agent_name TEXT,
+      role_label TEXT,
+      task_text TEXT,
+      depth INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      result_summary TEXT,
+      can_write INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT,
+      ended_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_delegation_events_run
+      ON delegation_events(run_id);
+  `);
 
   const scheduledTaskCols = db
     .prepare("PRAGMA table_info(scheduled_tasks)")
