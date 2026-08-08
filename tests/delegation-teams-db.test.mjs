@@ -160,3 +160,37 @@ test("createDelegationRun inserts a kind=delegation run row", async (t) => {
     assert.equal(run.teamId, "team-del-1");
   });
 });
+
+test("setDelegationRunStatus sets ended_at on terminal statuses", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, setDelegationRunStatus, getDelegationRun } =
+      await import("../dist-electron/cli/delegationRuns.js");
+    const id = createDelegationRun({ goal: "g", teamId: "t", teamSnapshotJson: "{}" });
+
+    setDelegationRunStatus(id, "blocked");
+    assert.equal(getDelegationRun(id)?.endedAt, null, "non-terminal status must not set ended_at");
+
+    setDelegationRunStatus(id, "partial");
+    assert.ok(getDelegationRun(id)?.endedAt, "terminal 'partial' must set ended_at");
+    assert.equal(getDelegationRun(id)?.status, "partial");
+  });
+});
+
+test("getDelegationRun returns undefined for unknown id and for non-delegation rows", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { getDb } = await import("../dist-electron/cli/db.js");
+
+    assert.equal(getDelegationRun("does-not-exist"), undefined);
+
+    // insert a plain workflow-kind run and ensure it is NOT returned by the delegation getter
+    const now = new Date().toISOString();
+    getDb().prepare(
+      `INSERT INTO workflow_runs (id, conversation_id, name, goal, status, template, loop_index, max_loops, plan_json, kind, created_at, updated_at)
+       VALUES (?, NULL, 'wf', 'g', 'completed', 'review-loop', 0, 1, '{}', 'workflow', ?, ?)`
+    ).run("wf-run-1", now, now);
+    assert.equal(getDelegationRun("wf-run-1"), undefined, "workflow-kind run leaked into delegation getter");
+  });
+});

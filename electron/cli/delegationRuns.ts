@@ -1,4 +1,5 @@
 import { getDb } from "./db.js";
+import type { WorkflowRunStatus } from "./workflowTypes.js";
 
 export interface CreateDelegationRunInput {
   goal: string;
@@ -13,7 +14,7 @@ export interface DelegationRunRow {
   kind: "delegation";
   conversationId: string | null;
   goal: string;
-  status: string;
+  status: WorkflowRunStatus;
   cwd: string | null;
   teamId: string | null;
   teamSnapshotJson: string | null;
@@ -67,11 +68,11 @@ export function getDelegationRun(id: string): DelegationRunRow | undefined {
   };
 }
 
-export function setDelegationRunStatus(id: string, status: string): void {
+export function setDelegationRunStatus(id: string, status: WorkflowRunStatus): void {
   const now = new Date().toISOString();
   getDb()
     .prepare(
       `UPDATE workflow_runs SET status = ?, updated_at = ?, ended_at = ? WHERE id = ? AND kind = 'delegation'`
     )
-    .run(status, now, ["completed", "failed", "killed"].includes(status) ? now : null, id);
+    .run(status, now, ["completed", "failed", "killed", "partial"].includes(status) ? now : null, id);
 }
