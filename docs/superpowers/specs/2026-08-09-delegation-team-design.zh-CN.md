@@ -132,8 +132,8 @@ interface DelegationPolicy {
 
 ### DB 落库（最小迁移）
 
-- `workflow_teams` 加列 `kind TEXT NOT NULL DEFAULT 'workflow'`；delegation 团队 `template_json = NULL`，roster 复用 `roles_json`，policy 进 `policy_json`，新增 `delegation_meta_json`（放 `{ entryRoleId }`，workflow 团队为 NULL）。
-- `workflow_runs` 同样加 `kind`；delegation run 的 `plan_json = NULL`，目标文本进 `delegation_meta_json`（`{ goal }`），`team_snapshot_json` 照旧存团队快照。
+- `workflow_teams` 加列 `kind TEXT NOT NULL DEFAULT 'workflow'`；delegation 团队的 `template_json` 存 `'{}'` 占位（该列 NOT NULL，避免重建表；delegation 读取器忽略它），roster 复用 `roles_json`，policy 进 `policy_json`，新增 `delegation_meta_json`（放 `{ entryRoleId }`，workflow 团队为 NULL）。
+- `workflow_runs` 同样加 `kind`；delegation run 的 `plan_json` 存 `'{}'` 占位（同上 NOT NULL 原因），目标文本复用既有的 `goal` 列（已 NOT NULL，不再单独加 run 级 `delegation_meta_json`），`team_snapshot_json` 照旧存团队快照。
 
 ### 委派事件表（新增）
 
