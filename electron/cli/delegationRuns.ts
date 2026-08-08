@@ -1,5 +1,6 @@
 import { getDb } from "./db.js";
 import type { WorkflowRunStatus } from "./workflowTypes.js";
+import type { DelegationEventStatus } from "./delegationTeamTypes.js";
 
 export interface CreateDelegationRunInput {
   goal: string;
@@ -75,4 +76,107 @@ export function setDelegationRunStatus(id: string, status: WorkflowRunStatus): v
       `UPDATE workflow_runs SET status = ?, updated_at = ?, ended_at = ? WHERE id = ? AND kind = 'delegation'`
     )
     .run(status, now, ["completed", "failed", "killed", "partial"].includes(status) ? now : null, id);
+}
+
+export interface DelegationEventRow {
+  id: string;
+  runId: string;
+  parentEventId: string | null;
+  agentId: string;
+  agentName: string;
+  roleLabel: string;
+  taskText: string;
+  depth: number;
+  status: DelegationEventStatus;
+  resultSummary: string | null;
+  canWrite: boolean;
+  startedAt: string | null;
+  endedAt: string | null;
+}
+
+function rowToEvent(r: any): DelegationEventRow {
+  return {
+    id: r.id,
+    runId: r.run_id,
+    parentEventId: r.parent_event_id,
+    agentId: r.agent_id,
+    agentName: r.agent_name,
+    roleLabel: r.role_label,
+    taskText: r.task_text,
+    depth: r.depth,
+    status: r.status,
+    resultSummary: r.result_summary,
+    canWrite: r.can_write === 1 || r.can_write === true,
+    startedAt: r.started_at,
+    endedAt: r.ended_at
+  };
+}
+
+export interface InsertDelegationEventInput {
+  runId: string;
+  parentEventId: string | null;
+  agentId: string;
+  agentName: string;
+  roleLabel: string;
+  taskText: string;
+  depth: number;
+  canWrite: boolean;
+  status: DelegationEventStatus;
+}
+
+export function insertDelegationEvent(input: InsertDelegationEventInput): string {
+  const id = `delevent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO delegation_events
+         (id, run_id, parent_event_id, agent_id, agent_name, role_label,
+          task_text, depth, status, result_summary, can_write, started_at, ended_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL)`
+    )
+    .run(
+      id, input.runId, input.parentEventId, input.agentId, input.agentName,
+      input.roleLabel, input.taskText, input.depth, input.status,
+      input.canWrite ? 1 : 0, now
+    );
+  return id;
+}
+
+export interface UpdateDelegationEventPatch {
+  status?: DelegationEventStatus;
+  resultSummary?: string | null;
+}
+
+export function updateDelegationEvent(
+  id: string,
+  patch: UpdateDelegationEventPatch
+): void {
+  const fields: string[] = [];
+  const params: any[] = [];
+  if (patch.status !== undefined) {
+    fields.push("status = ?");
+    params.push(patch.status);
+    if (["done", "failed", "timeout", "cancelled"].includes(patch.status)) {
+      fields.push("ended_at = ?");
+      params.push(new Date().toISOString());
+    }
+  }
+  if (patch.resultSummary !== undefined) {
+    fields.push("result_summary = ?");
+    params.push(patch.resultSummary);
+  }
+  if (fields.length === 0) return;
+  params.push(id);
+  getDb()
+    .prepare(`UPDATE delegation_events SET ${fields.join(", ")} WHERE id = ?`)
+    .run(...params);
+}
+
+export function listDelegationEvents(runId: string): DelegationEventRow[] {
+  const rows = getDb()
+    .prepare(
+      "SELECT * FROM delegation_events WHERE run_id = ? ORDER BY started_at ASC"
+    )
+    .all(runId) as any[];
+  return rows.map(rowToEvent);
 }

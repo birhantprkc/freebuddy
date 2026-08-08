@@ -194,3 +194,50 @@ test("getDelegationRun returns undefined for unknown id and for non-delegation r
     assert.equal(getDelegationRun("wf-run-1"), undefined, "workflow-kind run leaked into delegation getter");
   });
 });
+
+test("delegation events CRUD builds a parent-linked tree", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, insertDelegationEvent, updateDelegationEvent, listDelegationEvents } =
+      await import("../dist-electron/cli/delegationRuns.js");
+    const runId = createDelegationRun({
+      goal: "g", teamId: "t", teamSnapshotJson: "{}"
+    });
+
+    const root = insertDelegationEvent({
+      runId, parentEventId: null, agentId: "cli-codex-acp", agentName: "Codex",
+      roleLabel: "实现", taskText: "根任务", depth: 0, canWrite: true, status: "running"
+    });
+    const child = insertDelegationEvent({
+      runId, parentEventId: root, agentId: "cli-claude-agent-acp", agentName: "Claude",
+      roleLabel: "评审", taskText: "审 auth", depth: 1, canWrite: false, status: "running"
+    });
+
+    updateDelegationEvent(child, { status: "done", resultSummary: "LGTM" });
+
+    const events = listDelegationEvents(runId);
+    assert.equal(events.length, 2);
+    const childEvent = events.find((e) => e.id === child);
+    assert.equal(childEvent?.status, "done");
+    assert.equal(childEvent?.resultSummary, "LGTM");
+    assert.equal(childEvent?.parentEventId, root);
+    const rootEvent = events.find((e) => e.id === root);
+    assert.equal(rootEvent?.depth, 0);
+  });
+});
+
+test("delegation events cascade-delete with their run", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, insertDelegationEvent, listDelegationEvents } =
+      await import("../dist-electron/cli/delegationRuns.js");
+    const { getDb } = await import("../dist-electron/cli/db.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "t", teamSnapshotJson: "{}" });
+    insertDelegationEvent({
+      runId, parentEventId: null, agentId: "a", agentName: "A",
+      roleLabel: "x", taskText: "t", depth: 0, canWrite: false, status: "running"
+    });
+    getDb().prepare("DELETE FROM workflow_runs WHERE id = ?").run(runId);
+    assert.equal(listDelegationEvents(runId).length, 0);
+  });
+});
