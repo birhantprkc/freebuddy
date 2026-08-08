@@ -52,5 +52,7 @@ test("migration creates delegation_events table with expected columns", async (t
     ]) {
       assert.ok(cols.includes(name), `delegation_events.${name} missing`);
     }
+    const indexes = db.prepare("PRAGMA index_list('delegation_events')").all().map((i) => i.name);
+    assert.ok(indexes.includes("idx_delegation_events_run"), "idx_delegation_events_run index missing");
   });
 });

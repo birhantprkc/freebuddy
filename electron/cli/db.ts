@@ -864,7 +864,7 @@ export function migrate(db: DB) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS delegation_events (
       id TEXT PRIMARY KEY,
-      run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+      run_id TEXT NOT NULL,
       parent_event_id TEXT,
       agent_id TEXT,
       agent_name TEXT,
@@ -875,7 +875,8 @@ export function migrate(db: DB) {
       result_summary TEXT,
       can_write INTEGER NOT NULL DEFAULT 0,
       started_at TEXT,
-      ended_at TEXT
+      ended_at TEXT,
+      FOREIGN KEY(run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_delegation_events_run
       ON delegation_events(run_id);
