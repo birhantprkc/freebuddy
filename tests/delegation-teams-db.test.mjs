@@ -140,3 +140,23 @@ test("seedBuiltinDelegationTeams is idempotent and appears in list", async (t) =
     assert.deepEqual(impl?.skillIds, ["skill-debug"], "user skillIds not preserved on re-seed");
   });
 });
+
+test("createDelegationRun inserts a kind=delegation run row", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, getDelegationRun } =
+      await import("../dist-electron/cli/delegationRuns.js");
+    const id = createDelegationRun({
+      goal: "实现登录页",
+      cwd: "/repo",
+      teamId: "team-del-1",
+      teamSnapshotJson: JSON.stringify({ id: "team-del-1" })
+    });
+    const run = getDelegationRun(id);
+    assert.ok(run);
+    assert.equal(run.kind, "delegation");
+    assert.equal(run.goal, "实现登录页");
+    assert.equal(run.status, "running");
+    assert.equal(run.teamId, "team-del-1");
+  });
+});
