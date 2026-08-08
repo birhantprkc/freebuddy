@@ -26,6 +26,7 @@ import {
 } from "./cli/remoteControl.js";
 import { cleanupOrphanManagedAttachments } from "./cli/attachments.js";
 import { seedBuiltinWorkflowTeams } from "./cli/workflowTeams.js";
+import { seedBuiltinDelegationTeams } from "./cli/delegationTeams.js";
 import { seedBuiltinSkills } from "./cli/skills.js";
 import { initApplicationMenu, setupContextMenu } from "./menu.js";
 import { APP_NAME, APP_VERSION } from "./app-meta.js";
@@ -964,6 +965,7 @@ app.whenReady().then(async () => {
   cleanupOrphanManagedAttachments();
   seedBuiltinSkills();
   seedBuiltinWorkflowTeams();
+  seedBuiltinDelegationTeams();
   registerCliIpc();
   registerTaskNotificationIpc();
   registerButlerBuddyWindowIpc();
