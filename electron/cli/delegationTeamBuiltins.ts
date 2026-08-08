@@ -1,15 +1,6 @@
 import type { DelegationTeam } from "./delegationTeamTypes.js";
 import { defaultDelegationPolicy } from "./delegationTeamTypes.js";
 
-/**
- * Pick a reasonable default agent for a roster slot. Prefer the named member,
- * falling back to any enabled member so the builtin is usable out of the box.
- * (Mirrors the pickAgent() fallback philosophy from workflowTeamBuiltins.ts.)
- */
-export function defaultRosterAgentId(preferred: string, fallback: string): string {
-  return preferred || fallback;
-}
-
 export function builtinDelegationTeams(): DelegationTeam[] {
   return [
     {
@@ -25,7 +16,7 @@ export function builtinDelegationTeams(): DelegationTeam[] {
         {
           id: "r-impl",
           label: "实现",
-          agentId: defaultRosterAgentId("cli-codex-acp", "cli-codex-acp"),
+          agentId: "cli-codex-acp",
           capability:
             "实现功能、修改代码、跑构建与测试。明确需要写代码的子任务由本角色承担；遇到需要独立审查时委派给评审。",
           canWrite: true
@@ -33,7 +24,7 @@ export function builtinDelegationTeams(): DelegationTeam[] {
         {
           id: "r-rev",
           label: "评审",
-          agentId: defaultRosterAgentId("cli-claude-agent-acp", "cli-claude-agent-acp"),
+          agentId: "cli-claude-agent-acp",
           capability:
             "审查 diff、找 bugs 与风险、给改进建议。需要独立审查时委派给本角色。只读。",
           canWrite: false

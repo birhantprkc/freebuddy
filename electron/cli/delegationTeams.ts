@@ -9,6 +9,7 @@ import type {
 } from "./delegationTeamTypes.js";
 import { defaultDelegationPolicy } from "./delegationTeamTypes.js";
 import { builtinDelegationTeams } from "./delegationTeamBuiltins.js";
+import { auditTeamWrite } from "./workflowTeams.js";
 
 function notifyDelegationTeamsChanged(): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -166,10 +167,14 @@ export function seedBuiltinDelegationTeams(): void {
   for (const team of builtinDelegationTeams()) {
     const saved = getDelegationTeam(team.id);
     if (!saved) {
+      auditTeamWrite("seed-insert", team.id, team.roster as any, { reason: "missing" });
       insertDelegationTeam(team);
       continue;
     }
     if (saved.source !== "builtin") continue;
+    auditTeamWrite("seed-merge", team.id, mergeBuiltinRoster(saved, team) as any, {
+      savedSkillCounts: saved.roster.map((r) => ({ id: r.id, n: r.skillIds?.length ?? 0 }))
+    });
     updateDelegationTeam(team.id, {
       name: team.name,
       description: team.description,

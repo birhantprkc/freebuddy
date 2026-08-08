@@ -22,7 +22,7 @@ function notifyWorkflowTeamsChanged(): void {
  * key signal for the multi-process clobber scenario; skillCounts reveals whether
  * the write cleared or preserved per-role skills.
  */
-function auditTeamWrite(
+export function auditTeamWrite(
   action: string,
   teamId: string,
   roles: WorkflowTeamRole[] | undefined,

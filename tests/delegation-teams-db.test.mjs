@@ -129,7 +129,7 @@ test("seedBuiltinDelegationTeams is idempotent and appears in list", async (t) =
 
     // user customization preserved across re-seed
     const customized = team?.roster.map((r) =>
-      r.id === "r-impl" ? { ...r, agentId: "cli-claude-agent-acp" } : r
+      r.id === "r-impl" ? { ...r, agentId: "cli-claude-agent-acp", skillIds: ["skill-debug"] } : r
     );
     updateDelegationTeam("team-delegation-impl-review", { roster: customized });
 
@@ -137,5 +137,6 @@ test("seedBuiltinDelegationTeams is idempotent and appears in list", async (t) =
     const reseated = getDelegationTeam("team-delegation-impl-review");
     const impl = reseated?.roster.find((r) => r.id === "r-impl");
     assert.equal(impl?.agentId, "cli-claude-agent-acp", "user agent binding not preserved on re-seed");
+    assert.deepEqual(impl?.skillIds, ["skill-debug"], "user skillIds not preserved on re-seed");
   });
 });
