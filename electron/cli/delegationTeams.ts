@@ -1,5 +1,6 @@
 import { BrowserWindow } from "electron";
 import { getDb } from "./db.js";
+import { logMain } from "../debugLog.js";
 import { safeSendToWebContents } from "./ipcSend.js";
 import type {
   DelegationPolicy,
@@ -7,6 +8,7 @@ import type {
   DelegationTeam
 } from "./delegationTeamTypes.js";
 import { defaultDelegationPolicy } from "./delegationTeamTypes.js";
+import { builtinDelegationTeams } from "./delegationTeamBuiltins.js";
 
 function notifyDelegationTeamsChanged(): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -140,4 +142,43 @@ export function deleteDelegationTeam(id: string): boolean {
   getDb().prepare("DELETE FROM workflow_teams WHERE id = ? AND kind = 'delegation'").run(id);
   notifyDelegationTeamsChanged();
   return true;
+}
+
+function mergeBuiltinRoster(
+  saved: DelegationTeam,
+  builtin: DelegationTeam
+): DelegationRosterEntry[] {
+  const savedById = new Map(saved.roster.map((r) => [r.id, r]));
+  return builtin.roster.map((r) => {
+    const s = savedById.get(r.id);
+    return {
+      ...r,
+      agentId: s?.agentId ?? r.agentId,
+      ...(s?.model ? { model: s.model } : {}),
+      ...(s?.modelOptionId ? { modelOptionId: s.modelOptionId } : {}),
+      skillIds: s?.skillIds ?? r.skillIds
+    };
+  });
+}
+
+export function seedBuiltinDelegationTeams(): void {
+  logMain().info("delegationTeams", "seed builtins start", { pid: process.pid });
+  for (const team of builtinDelegationTeams()) {
+    const saved = getDelegationTeam(team.id);
+    if (!saved) {
+      insertDelegationTeam(team);
+      continue;
+    }
+    if (saved.source !== "builtin") continue;
+    updateDelegationTeam(team.id, {
+      name: team.name,
+      description: team.description,
+      icon: team.icon,
+      enabled: saved.enabled,
+      entryRoleId: team.entryRoleId,
+      roster: mergeBuiltinRoster(saved, team),
+      policy: { ...team.policy, ...saved.policy }
+    });
+  }
+  logMain().info("delegationTeams", "seed builtins done", { pid: process.pid });
 }

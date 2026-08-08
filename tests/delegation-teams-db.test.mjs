@@ -113,3 +113,29 @@ test("listWorkflowTeams excludes delegation teams", async (t) => {
     assert.ok(!ids.includes("team-del-isolate"), "delegation team leaked into workflow list");
   });
 });
+
+test("seedBuiltinDelegationTeams is idempotent and appears in list", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { seedBuiltinDelegationTeams, getDelegationTeam, listDelegationTeams, updateDelegationTeam } =
+      await import("../dist-electron/cli/delegationTeams.js");
+
+    seedBuiltinDelegationTeams();
+    const team = getDelegationTeam("team-delegation-impl-review");
+    assert.ok(team, "builtin delegation team missing after seed");
+    assert.equal(team?.source, "builtin");
+    assert.ok(team?.roster.length >= 2);
+    assert.ok(listDelegationTeams().some((x) => x.id === "team-delegation-impl-review"));
+
+    // user customization preserved across re-seed
+    const customized = team?.roster.map((r) =>
+      r.id === "r-impl" ? { ...r, agentId: "cli-claude-agent-acp" } : r
+    );
+    updateDelegationTeam("team-delegation-impl-review", { roster: customized });
+
+    seedBuiltinDelegationTeams();
+    const reseated = getDelegationTeam("team-delegation-impl-review");
+    const impl = reseated?.roster.find((r) => r.id === "r-impl");
+    assert.equal(impl?.agentId, "cli-claude-agent-acp", "user agent binding not preserved on re-seed");
+  });
+});
