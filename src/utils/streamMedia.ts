@@ -90,6 +90,19 @@ export type ImagePreviewRegistrar = (
   image: ExtractedInlineImage
 ) => string | undefined;
 
+function compactUnknownStreamValue(value: unknown): unknown {
+  if (value == null) return value;
+  if (typeof value === "string") return truncateStreamText(value);
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized.length > MAX_TEXT_STREAM_CHARS
+      ? truncateStreamText(serialized)
+      : value;
+  } catch {
+    return truncateStreamText(String(value));
+  }
+}
+
 function isToolImagePreview(item: CliStreamItem): boolean {
   return item.kind === "content-block" && item.blockType === "image";
 }
@@ -103,6 +116,9 @@ export function sanitizeStreamItems(
   for (const item of items) {
     if (item.kind === "tool-call") {
       const next: Extract<CliStreamItem, { kind: "tool-call" }> = { ...item };
+      if (next.input !== undefined) {
+        next.input = compactUnknownStreamValue(next.input);
+      }
       if (typeof next.output === "string" && next.output.length > 0) {
         const { text, images } = extractDataUrlImages(next.output);
         next.output = summarizeMediaText(text, images);
@@ -116,6 +132,27 @@ export function sanitizeStreamItems(
         ) as Extract<CliStreamItem, { kind: "tool-call" }>["toolOutputs"];
       }
       out.push(next);
+      continue;
+    }
+
+    if (item.kind === "file-edit") {
+      out.push({
+        ...item,
+        ...(typeof item.patch === "string"
+          ? { patch: truncateStreamText(item.patch) }
+          : {}),
+        ...(typeof item.oldText === "string"
+          ? { oldText: truncateStreamText(item.oldText) }
+          : {}),
+        ...(typeof item.newText === "string"
+          ? { newText: truncateStreamText(item.newText) }
+          : {})
+      });
+      continue;
+    }
+
+    if (item.kind === "command-output") {
+      out.push({ ...item, content: truncateStreamText(item.content) });
       continue;
     }
 

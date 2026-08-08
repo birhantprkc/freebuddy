@@ -717,6 +717,92 @@ test("appendItems upserts text and thinking chunks by messageId", async () => {
   ]);
 });
 
+test("appendItems bounds cumulative assistant chunks while retaining the latest tail", async () => {
+  const {
+    appendItems,
+    MAX_MERGED_ASSISTANT_CHARS
+  } = await loadConversationUtils();
+
+  let items = appendItems(
+    [
+      {
+        kind: "text",
+        role: "assistant",
+        content: "A".repeat(MAX_MERGED_ASSISTANT_CHARS - 100),
+        messageId: "msg-large"
+      }
+    ],
+    [
+      {
+        kind: "text",
+        role: "assistant",
+        content: "B".repeat(5_000),
+        append: true,
+        messageId: "msg-large"
+      }
+    ]
+  );
+
+  assert.ok(items[0].content.length <= MAX_MERGED_ASSISTANT_CHARS);
+  assert.ok(items[0].content.startsWith("A"));
+  assert.match(items[0].content, /stream truncated/);
+  assert.ok(items[0].content.endsWith("B".repeat(5_000)));
+
+  items = appendItems(items, [
+    {
+      kind: "text",
+      role: "assistant",
+      content: "C".repeat(5_000),
+      append: true,
+      messageId: "msg-large"
+    }
+  ]);
+
+  assert.ok(items[0].content.length <= MAX_MERGED_ASSISTANT_CHARS);
+  assert.ok(items[0].content.endsWith("C".repeat(5_000)));
+});
+
+test("appendItems coalesces a large batch of adjacent token chunks", async () => {
+  const {
+    appendItems,
+    MAX_MERGED_ASSISTANT_CHARS
+  } = await loadConversationUtils();
+  const chunks = Array.from({ length: 200 }, (_, index) => ({
+    kind: "text",
+    role: "assistant",
+    content: `token-${index}|`,
+    append: true,
+    messageId: "msg-batched"
+  }));
+  const items = appendItems(
+    [
+      {
+        kind: "text",
+        role: "assistant",
+        content: "A".repeat(MAX_MERGED_ASSISTANT_CHARS - 1_000),
+        messageId: "msg-batched"
+      }
+    ],
+    chunks
+  );
+
+  assert.equal(items.length, 1);
+  assert.ok(items[0].content.length <= MAX_MERGED_ASSISTANT_CHARS);
+  assert.ok(items[0].content.endsWith("token-199|"));
+});
+
+test("appendItems bounds cumulative command output", async () => {
+  const { appendItems, MAX_MERGED_OUTPUT_CHARS } = await loadConversationUtils();
+  const items = appendItems(
+    [{ kind: "command-output", content: "A".repeat(MAX_MERGED_OUTPUT_CHARS) }],
+    [{ kind: "command-output", content: "latest output", stream: undefined }]
+  );
+
+  assert.ok(items[0].content.length <= MAX_MERGED_OUTPUT_CHARS);
+  assert.match(items[0].content, /stream truncated/);
+  assert.ok(items[0].content.endsWith("latest output"));
+});
+
 test("appendItems upserts terminal embed snapshots by terminalId", async () => {
   const { appendItems } = await loadConversationUtils();
 

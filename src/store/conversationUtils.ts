@@ -14,18 +14,89 @@ type PlanItem = Extract<CliStreamItem, { kind: "plan" }>;
 type PlanEntry = PlanItem["entries"][number];
 type ToolCallItem = Extract<CliStreamItem, { kind: "tool-call" }>;
 
+/**
+ * These limits are applied after stream chunks are merged. The ingress guard in
+ * streamMedia.ts protects individual events, but an agent can emit thousands of
+ * individually-small chunks and otherwise grow one cumulative string without
+ * bound.
+ */
+export const MAX_MERGED_ASSISTANT_CHARS = 200_000;
+export const MAX_MERGED_OUTPUT_CHARS = 12_000;
+const MERGED_STREAM_TRUNCATION_MARKER = "\n… [stream truncated] …\n";
+
+function boundMergedStreamText(value: string, max: number): string {
+  if (value.length <= max) return value;
+  const available = Math.max(0, max - MERGED_STREAM_TRUNCATION_MARKER.length);
+  const headLength = Math.floor(available * 0.6);
+  const tailLength = available - headLength;
+  return (
+    value.slice(0, headLength) +
+    MERGED_STREAM_TRUNCATION_MARKER +
+    value.slice(-tailLength)
+  );
+}
+
+/** Append to an already-bounded stream while retaining its beginning and the
+ * latest tail. Once truncated, this avoids rebuilding the discarded middle on
+ * every subsequent chunk. */
+function appendBoundedStreamText(
+  current: string,
+  addition: string,
+  max: number
+): string {
+  if (current.length + addition.length <= max) return current + addition;
+
+  const markerIndex = current.indexOf(MERGED_STREAM_TRUNCATION_MARKER);
+  if (markerIndex < 0) {
+    return boundMergedStreamText(current + addition, max);
+  }
+
+  const available = Math.max(0, max - MERGED_STREAM_TRUNCATION_MARKER.length);
+  const headLength = Math.floor(available * 0.6);
+  const tailLength = available - headLength;
+  const head = current.slice(0, markerIndex).slice(0, headLength);
+  const previousTail = current.slice(
+    markerIndex + MERGED_STREAM_TRUNCATION_MARKER.length
+  );
+  return (
+    head +
+    MERGED_STREAM_TRUNCATION_MARKER +
+    (previousTail + addition).slice(-tailLength)
+  );
+}
+
 function mergeStreamText(
   prev: Extract<CliStreamItem, { kind: "text" }>,
   next: Extract<CliStreamItem, { kind: "text" }>
 ): Extract<CliStreamItem, { kind: "text" }> {
   if (next.append) {
-    return { ...prev, content: prev.content + next.content };
+    return {
+      ...prev,
+      content: appendBoundedStreamText(
+        prev.content,
+        next.content,
+        MAX_MERGED_ASSISTANT_CHARS
+      )
+    };
   }
   if (next.content === prev.content) return prev;
   if (next.content.startsWith(prev.content)) {
-    return { ...prev, content: next.content };
+    return {
+      ...prev,
+      content: boundMergedStreamText(
+        next.content,
+        MAX_MERGED_ASSISTANT_CHARS
+      )
+    };
   }
-  return { ...prev, ...next };
+  return {
+    ...prev,
+    ...next,
+    content: boundMergedStreamText(
+      next.content,
+      MAX_MERGED_ASSISTANT_CHARS
+    )
+  };
 }
 
 function mergeStreamThinking(
@@ -33,13 +104,33 @@ function mergeStreamThinking(
   next: Extract<CliStreamItem, { kind: "thinking" }>
 ): Extract<CliStreamItem, { kind: "thinking" }> {
   if (next.append) {
-    return { ...prev, content: prev.content + next.content };
+    return {
+      ...prev,
+      content: appendBoundedStreamText(
+        prev.content,
+        next.content,
+        MAX_MERGED_ASSISTANT_CHARS
+      )
+    };
   }
   if (next.content === prev.content) return prev;
   if (next.content.startsWith(prev.content)) {
-    return { ...prev, content: next.content };
+    return {
+      ...prev,
+      content: boundMergedStreamText(
+        next.content,
+        MAX_MERGED_ASSISTANT_CHARS
+      )
+    };
   }
-  return { ...prev, ...next };
+  return {
+    ...prev,
+    ...next,
+    content: boundMergedStreamText(
+      next.content,
+      MAX_MERGED_ASSISTANT_CHARS
+    )
+  };
 }
 
 export function collectStreamMessageIds(
@@ -273,13 +364,76 @@ function legacyTodoPlan(item: CliStreamItem): PlanItem | undefined {
   return undefined;
 }
 
+/**
+ * A main-process flush can contain hundreds of tiny token updates. Collapse
+ * adjacent append-only chunks before touching the already-large accumulated
+ * snapshot, otherwise one flush can rebuild the same 200k string hundreds of
+ * times.
+ */
+function coalesceIncomingItems(items: CliStreamItem[]): CliStreamItem[] {
+  const out: CliStreamItem[] = [];
+  for (const item of items) {
+    const last = out[out.length - 1];
+    if (
+      item.kind === "text" &&
+      item.append &&
+      last?.kind === "text" &&
+      last.role === item.role &&
+      last.messageId === item.messageId
+    ) {
+      out[out.length - 1] = {
+        ...last,
+        content: appendBoundedStreamText(
+          last.content,
+          item.content,
+          MAX_MERGED_ASSISTANT_CHARS
+        )
+      };
+      continue;
+    }
+    if (
+      item.kind === "thinking" &&
+      item.append &&
+      last?.kind === "thinking" &&
+      last.messageId === item.messageId
+    ) {
+      out[out.length - 1] = {
+        ...last,
+        content: appendBoundedStreamText(
+          last.content,
+          item.content,
+          MAX_MERGED_ASSISTANT_CHARS
+        )
+      };
+      continue;
+    }
+    if (
+      item.kind === "command-output" &&
+      last?.kind === "command-output" &&
+      last.stream === item.stream
+    ) {
+      out[out.length - 1] = {
+        ...last,
+        content: appendBoundedStreamText(
+          last.content,
+          `\n${item.content}`,
+          MAX_MERGED_OUTPUT_CHARS
+        )
+      };
+      continue;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
 export function appendItems(
   prev: CliStreamItem[],
   next: CliStreamItem[]
 ): CliStreamItem[] {
   if (!next.length) return prev;
   const out = [...prev];
-  for (const rawItem of next) {
+  for (const rawItem of coalesceIncomingItems(next)) {
     const item = legacyTodoPlan(rawItem) ?? rawItem;
     const last = out[out.length - 1];
     if (item.kind === "text" && item.messageId) {
@@ -324,12 +478,25 @@ export function appendItems(
       last.role === item.role
     ) {
       if (item.append) {
-        out[out.length - 1] = { ...last, content: last.content + item.content };
+        out[out.length - 1] = {
+          ...last,
+          content: appendBoundedStreamText(
+            last.content,
+            item.content,
+            MAX_MERGED_ASSISTANT_CHARS
+          )
+        };
         continue;
       }
       if (item.content === last.content) continue;
       if (item.content.startsWith(last.content)) {
-        out[out.length - 1] = { ...last, content: item.content };
+        out[out.length - 1] = {
+          ...last,
+          content: boundMergedStreamText(
+            item.content,
+            MAX_MERGED_ASSISTANT_CHARS
+          )
+        };
         continue;
       }
     }
@@ -339,12 +506,25 @@ export function appendItems(
       last.kind === "thinking"
     ) {
       if (item.append) {
-        out[out.length - 1] = { ...last, content: last.content + item.content };
+        out[out.length - 1] = {
+          ...last,
+          content: appendBoundedStreamText(
+            last.content,
+            item.content,
+            MAX_MERGED_ASSISTANT_CHARS
+          )
+        };
         continue;
       }
       if (item.content === last.content) continue;
       if (item.content.startsWith(last.content)) {
-        out[out.length - 1] = { ...last, content: item.content };
+        out[out.length - 1] = {
+          ...last,
+          content: boundMergedStreamText(
+            item.content,
+            MAX_MERGED_ASSISTANT_CHARS
+          )
+        };
         continue;
       }
     }
@@ -401,7 +581,11 @@ export function appendItems(
     ) {
       out[out.length - 1] = {
         ...last,
-        content: `${last.content}\n${item.content}`
+        content: appendBoundedStreamText(
+          last.content,
+          `\n${item.content}`,
+          MAX_MERGED_OUTPUT_CHARS
+        )
       };
       continue;
     }

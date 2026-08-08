@@ -33,6 +33,7 @@ import { useCliExecutorStore } from "./cliExecutorStore";
 import { useProjectStore } from "./projectStore";
 import {
   buildOrphanFollowupContext,
+  appendItems,
   collectStreamMessageIds,
   collectStreamAgentMessageIds,
   collectStreamContentSignatures,
@@ -1265,6 +1266,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } catch (err) {
       const msg = (err as Error)?.message || String(err);
       debugLogClient.error("chat", "agent run failed", { errorMessage: msg });
+      const failedItems = appendItems(
+        get().live[conversationId]?.items ?? [],
+        [{ kind: "error", message: msg }]
+      );
       set((s) => {
         const live = s.live[conversationId];
         if (!live) return s;
@@ -1273,19 +1278,52 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
             ...s.live,
             [conversationId]: {
               ...live,
+              items: failedItems,
               status: "failed",
               errorMessage: msg
             }
           }
         };
       });
-      await cliClient.updateMessage({
-        id: assistantMsgId,
-        status: "failed",
-        content: JSON.stringify([{ kind: "error", message: msg }])
-      });
+      const failedContent = JSON.stringify(failedItems);
       runCtxMap.get(taskSessionId)?.unsubscribe();
       runCtxMap.delete(taskSessionId);
+      set((s) => {
+        const nextLive = { ...s.live };
+        if (nextLive[conversationId]?.taskSessionId === taskSessionId) {
+          delete nextLive[conversationId];
+        }
+        const messageList = s.messages[conversationId] ?? [];
+        const messageIndex = messageList.findIndex(
+          (message) => message.id === assistantMsgId
+        );
+        if (messageIndex < 0) return { live: nextLive };
+        const updated = [...messageList];
+        updated[messageIndex] = {
+          ...updated[messageIndex],
+          status: "failed",
+          content: failedContent,
+          updatedAt: new Date().toISOString()
+        };
+        return {
+          live: nextLive,
+          messages: { ...s.messages, [conversationId]: updated }
+        };
+      });
+      try {
+        await cliClient.updateMessage({
+          id: assistantMsgId,
+          status: "failed",
+          content: failedContent
+        });
+      } catch (persistError) {
+        debugLogClient.error("chat", "failed to persist rejected agent run", {
+          conversationId,
+          taskSessionId,
+          errorMessage:
+            (persistError as Error)?.message || String(persistError)
+        });
+      }
     }
     } catch (err) {
       releaseClaimedLive();

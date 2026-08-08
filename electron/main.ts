@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, crashReporter, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,6 +55,11 @@ app.setAboutPanelOptions({
   applicationName: APP_NAME,
   applicationVersion: APP_VERSION,
   version: APP_VERSION
+});
+crashReporter.start({
+  productName: APP_NAME,
+  uploadToServer: false,
+  compress: false
 });
 
 const PROTOCOL = "freebuddy";
@@ -230,6 +235,52 @@ let isQuittingApp = false;
 let trayController: TrayController | null = null;
 let butlerPetWindow: BrowserWindow | null = null;
 let butlerChatWindow: BrowserWindow | null = null;
+
+const RENDERER_RECOVERY_WINDOW_MS = 60_000;
+const MAX_RENDERER_RECOVERIES_PER_WINDOW = 2;
+const rendererRecoveryAttempts: number[] = [];
+
+function rendererProcessMetrics() {
+  try {
+    return app.getAppMetrics().map((metric) => ({
+      pid: metric.pid,
+      type: metric.type,
+      memoryWorkingSetKb: metric.memory.workingSetSize,
+      memoryPeakWorkingSetKb: metric.memory.peakWorkingSetSize
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function recoverMainRenderer(win: BrowserWindow, reason: string): void {
+  if (reason !== "crashed" && reason !== "oom" && reason !== "memory-eviction") {
+    return;
+  }
+  const now = Date.now();
+  while (
+    rendererRecoveryAttempts.length > 0 &&
+    now - rendererRecoveryAttempts[0] > RENDERER_RECOVERY_WINDOW_MS
+  ) {
+    rendererRecoveryAttempts.shift();
+  }
+  if (rendererRecoveryAttempts.length >= MAX_RENDERER_RECOVERIES_PER_WINDOW) {
+    logMain().error("crash", "renderer auto-recovery suppressed", {
+      reason,
+      attempts: rendererRecoveryAttempts.length
+    });
+    return;
+  }
+  rendererRecoveryAttempts.push(now);
+  setTimeout(() => {
+    if (isQuittingApp || mainWindow !== win || win.isDestroyed()) return;
+    logMain().info("crash", "reloading main window after renderer crash", {
+      reason,
+      attempt: rendererRecoveryAttempts.length
+    });
+    win.webContents.reload();
+  }, 250);
+}
 
 const BUTLER_PET_SIZE = 108;
 const BUTLER_CHAT_WIDTH = 360;
@@ -726,8 +777,11 @@ function createWindow() {
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     logMain().error("crash", "render process gone", {
       reason: details.reason,
-      exitCode: details.exitCode
+      exitCode: details.exitCode,
+      processes: rendererProcessMetrics()
     });
+    const crashedWindow = mainWindow;
+    if (crashedWindow) recoverMainRenderer(crashedWindow, details.reason);
   });
   logMain().info("window", "main window created");
 

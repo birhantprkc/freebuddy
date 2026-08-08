@@ -60,14 +60,15 @@ type StreamItemEntry = Extract<CliEvent, { type: "items" }>["items"][number];
  * chunks, tool calls, ...) into a single event flushed on a short timer or
  * before any non-items event. ACP agents can emit hundreds of small updates
  * per second; without batching every chunk triggers a renderer state update,
- * a JSON.stringify of the whole turn, a React render, and (in workflow mode)
- * a synchronous DB write + full-message reload. Batching caps that to ~60
- * flushes/sec while preserving ordering relative to permission/done/error.
+ * a React render and (in workflow mode) a synchronous DB write + full-message
+ * reload. A 12.5 Hz visual update rate remains smooth for text streaming while
+ * preventing several concurrent agents from collectively driving hundreds of
+ * renderer updates per second.
  */
 function createItemsBatchingEmit(
   send: (e: CliEvent) => void
 ): (e: CliEvent) => void {
-  const FLUSH_MS = 16;
+  const FLUSH_MS = 80;
   const MAX_BUFFER = 200;
   let buffer: StreamItemEntry[] = [];
   let timer: ReturnType<typeof setTimeout> | null = null;
