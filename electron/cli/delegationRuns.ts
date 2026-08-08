@@ -1,6 +1,6 @@
 import { getDb } from "./db.js";
 import type { WorkflowRunStatus } from "./workflowTypes.js";
-import type { DelegationEventStatus } from "./delegationTeamTypes.js";
+import type { DelegationEvent, DelegationEventStatus } from "./delegationTeamTypes.js";
 
 export interface CreateDelegationRunInput {
   goal: string;
@@ -78,21 +78,7 @@ export function setDelegationRunStatus(id: string, status: WorkflowRunStatus): v
     .run(status, now, ["completed", "failed", "killed", "partial"].includes(status) ? now : null, id);
 }
 
-export interface DelegationEventRow {
-  id: string;
-  runId: string;
-  parentEventId: string | null;
-  agentId: string;
-  agentName: string;
-  roleLabel: string;
-  taskText: string;
-  depth: number;
-  status: DelegationEventStatus;
-  resultSummary: string | null;
-  canWrite: boolean;
-  startedAt: string | null;
-  endedAt: string | null;
-}
+export type DelegationEventRow = DelegationEvent;
 
 function rowToEvent(r: any): DelegationEventRow {
   return {
