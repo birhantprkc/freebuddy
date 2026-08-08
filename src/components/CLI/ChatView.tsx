@@ -948,10 +948,23 @@ export function ChatView({
       ? storeFrames[replayIndex]
       : undefined;
   const displayMessages = useMemo<ConversationMessage[]>(() => {
-    if (!replaying) return [...messages, ...previewMessages];
+    if (!replaying) {
+      const current = [...messages, ...previewMessages];
+      if (!live) return current;
+      const liveContent = JSON.stringify(live.items);
+      return current.map((message) =>
+        message.id === live.messageId
+          ? {
+              ...message,
+              status: live.status,
+              content: liveContent
+            }
+          : message
+      );
+    }
     if (!replayFrame) return [];
     return messages.slice(0, replayFrame.messageIndex + 1);
-  }, [replaying, replayFrame, messages, previewMessages]);
+  }, [replaying, replayFrame, messages, previewMessages, live]);
   const shareReferencesByMessageId = useMemo(
     () => assignShareReferencesToMessages(displayMessages, contextReferences),
     [displayMessages, contextReferences]

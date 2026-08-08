@@ -178,6 +178,33 @@ test("sanitizeStreamItems guards oversized text without any base64 marker", asyn
   assert.match(textItem.content, /truncated/);
 });
 
+test("sanitizeStreamItems caps oversized tool inputs and file edit payloads", async () => {
+  const { sanitizeStreamItems, MAX_TEXT_STREAM_CHARS } = await loadStreamMedia();
+  const big = "x".repeat(MAX_TEXT_STREAM_CHARS + 5_000);
+  const items = sanitizeStreamItems([
+    { kind: "tool-call", id: "large-input", tool: "edit", input: { text: big } },
+    {
+      kind: "file-edit",
+      path: "/tmp/large.txt",
+      action: "update",
+      patch: big,
+      oldText: big,
+      newText: big
+    },
+    { kind: "command-output", content: big }
+  ]);
+
+  const call = items[0];
+  const edit = items[1];
+  const output = items[2];
+  assert.equal(typeof call.input, "string");
+  assert.match(call.input, /truncated/);
+  assert.ok(edit.patch.length < big.length);
+  assert.ok(edit.oldText.length < big.length);
+  assert.ok(edit.newText.length < big.length);
+  assert.ok(output.content.length < big.length);
+});
+
 test("extractDataUrlImages fast-paths text without a base64 marker", async () => {
   const { extractDataUrlImages } = await loadStreamMedia();
   const input = "普通的分析文字，不含任何 data url。";

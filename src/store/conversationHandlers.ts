@@ -6,6 +6,7 @@ import type {
 } from "@/services/cli/parsers";
 import { getParser } from "@/services/cli/parsers";
 import { cliClient } from "@/services/cli/client";
+import { debugLogClient } from "@/services/debugLog";
 import {
   notifyTaskFinished,
   playTaskFailure,
@@ -272,22 +273,13 @@ export function handleStreamEvent(
       ] as CliStreamItem[]);
     }
 
-    // Mirror items into the assistant message snapshot in `messages`
-    // so the renderer (which reads from messages) can show progressive output.
-    const messageList = s.messages[conversationId] ?? [];
-    const msgIdx = messageList.findIndex((m) => m.id === live.messageId);
-    let messages = s.messages;
     let conversations = s.conversations;
-    if (msgIdx >= 0) {
-      const updated = [...messageList];
-      updated[msgIdx] = {
-        ...updated[msgIdx],
-        status,
-        content: JSON.stringify(nextItems),
-        updatedAt: new Date().toISOString()
-      };
-      messages = { ...s.messages, [conversationId]: updated };
-    }
+
+    // Keep progressive output only in `live`. ChatView projects the active
+    // live snapshot over its assistant message for display. Mirroring the same
+    // data into `messages` used to stringify and duplicate every background
+    // turn on every stream batch, which creates severe allocation pressure
+    // when several complex tasks run concurrently.
 
     if (e.type === "items") {
       const title = sessionTitleFromItems(e.items);
@@ -314,7 +306,6 @@ export function handleStreamEvent(
           capturedSessionId
         }
       },
-      messages,
       conversations
     };
   });
@@ -408,12 +399,7 @@ async function finalizeRun(
       : live.exitCode === 0
         ? "done"
         : "failed";
-
-  await cliClient.updateMessage({
-    id: live.messageId,
-    status: finalStatus,
-    content: JSON.stringify(live.items)
-  });
+  const finalContent = JSON.stringify(live.items);
 
   const ctx = runCtxMap.get(live.taskSessionId);
   ctx?.unsubscribe();
@@ -421,9 +407,40 @@ async function finalizeRun(
 
   set((s) => {
     const next = { ...s.live };
-    delete next[conversationId];
-    return { live: next };
+    if (next[conversationId]?.taskSessionId === live.taskSessionId) {
+      delete next[conversationId];
+    }
+    const messageList = s.messages[conversationId] ?? [];
+    const messageIndex = messageList.findIndex(
+      (message) => message.id === live.messageId
+    );
+    if (messageIndex < 0) return { live: next };
+    const updated = [...messageList];
+    updated[messageIndex] = {
+      ...updated[messageIndex],
+      status: finalStatus,
+      content: finalContent,
+      updatedAt: new Date().toISOString()
+    };
+    return {
+      live: next,
+      messages: { ...s.messages, [conversationId]: updated }
+    };
   });
+
+  try {
+    await cliClient.updateMessage({
+      id: live.messageId,
+      status: finalStatus,
+      content: finalContent
+    });
+  } catch (error) {
+    debugLogClient.error("chat", "failed to persist finalized agent message", {
+      conversationId,
+      taskSessionId: live.taskSessionId,
+      errorMessage: (error as Error)?.message || String(error)
+    });
+  }
 }
 
 export async function killConversation(
