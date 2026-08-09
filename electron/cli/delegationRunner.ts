@@ -14,10 +14,14 @@ const MAX_SUMMARY_CHARS = 12_000;
 
 export function summarizeDelegateOutput(items: unknown[]): string {
   const texts: string[] = [];
+  let toolCount = 0;
   for (const raw of items) {
-    const item = raw as { type?: string; text?: string };
-    if (item && item.type === "text" && typeof item.text === "string") {
-      texts.push(item.text);
+    const item = raw as { kind?: string; role?: string; content?: string };
+    if (!item || typeof item.kind !== "string") continue;
+    if (item.kind === "text" && item.role === "assistant" && typeof item.content === "string") {
+      texts.push(item.content);
+    } else if (item.kind === "tool-call") {
+      toolCount += 1;
     }
   }
   const joined = texts.join("").trim();
@@ -27,7 +31,6 @@ export function summarizeDelegateOutput(items: unknown[]): string {
     const tail = joined.slice(joined.length - Math.floor(MAX_SUMMARY_CHARS / 2));
     return `${head}\n…[truncated]…\n${tail}`;
   }
-  const toolCount = items.filter((i) => (i as { type?: string }).type === "tool_call").length;
   return toolCount > 0 ? `Completed ${toolCount} tool action${toolCount > 1 ? "s" : ""}.` : "(no output)";
 }
 
