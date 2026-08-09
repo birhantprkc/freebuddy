@@ -65,6 +65,16 @@ export interface CliRunArgs {
   skills?: SkillSnapshot[];
   announceSkills?: boolean;
   contextReferences?: ConversationContextPayload[];
+  /** When set, attach the freebuddy-delegate MCP so this agent can delegate in a delegation run. */
+  delegation?: DelegationCliContext;
+}
+
+export interface DelegationCliContext {
+  runId: string;
+  parentEventId: string;
+  depth: number;
+  selfAgentId: string;
+  selfLabel: string;
 }
 
 export type CliPermissionOptionKind =

@@ -74,6 +74,10 @@ import {
   registerButlerToolSession,
   unregisterButlerToolSession
 } from "../butlerToolService.js";
+import {
+  registerDelegateToolSession,
+  unregisterDelegateToolSession
+} from "../delegationToolService.js";
 import { BUTLERBUDDY_AGENT_ID } from "./agentProfiles.js";
 import {
   registerContextToolSession,
@@ -379,6 +383,7 @@ export async function runAcpAgent({
     unregisterBrowserToolSession(args.sessionId);
     unregisterSkillToolSession(args.sessionId);
     unregisterButlerToolSession(args.sessionId);
+    unregisterDelegateToolSession(args.sessionId);
     unregisterContextToolSession(args.sessionId);
     unregisterWorkspaceFsToolSession(args.sessionId);
     clearAuthenticationTerminalsForSession(args.sessionId);
@@ -1230,6 +1235,19 @@ export async function runAcpAgent({
           taskSessionId: args.sessionId,
           agentId: args.agentId,
           userId: getCallerUserId(),
+          webContents
+        })
+      );
+    }
+    if (args.delegation && !remoteIsolated) {
+      mcpServers.push(
+        await registerDelegateToolSession({
+          taskSessionId: args.sessionId,
+          runId: args.delegation.runId,
+          parentEventId: args.delegation.parentEventId,
+          depth: args.delegation.depth,
+          selfAgentId: args.delegation.selfAgentId,
+          selfLabel: args.delegation.selfLabel,
           webContents
         })
       );

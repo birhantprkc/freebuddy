@@ -9,6 +9,7 @@ import {
   updateDelegationEvent
 } from "./delegationRuns.js";
 import type { DelegationRosterEntry, DelegationPolicy } from "./delegationTeamTypes.js";
+import type { CLIAdapterId } from "./adapters.js";
 import { resolveSkillSnapshots } from "./skills.js";
 import { setDelegateDeps, type DelegateRunContext, type DelegateExecArgs, type DelegateExecResult } from "./delegationDispatch.js";
 import { buildDelegateTaskPrompt } from "./delegationPrompt.js";
@@ -107,7 +108,7 @@ export class DelegationRuntime {
         conversationId: ctx.conversationId,
         agentId: entry.agentId,
         agentName: resolved.agentName,
-        adapter: resolved.adapter as any,
+        adapter: resolved.adapter as CLIAdapterId,
         binary: resolved.binary,
         extraArgs: resolved.extraArgs,
         env: resolved.env,
@@ -117,7 +118,7 @@ export class DelegationRuntime {
         skills: resolveSkillSnapshots([...(entry.skillIds ?? []), DELEGATION_SKILL_ID]),
         announceSkills: true,
         delegation: { runId, parentEventId: rootEventId, depth: 0, selfAgentId: entry.id, selfLabel: entry.label }
-      } as any);
+      });
       const status = result.error ? "failed" : "done";
       updateDelegationEvent(rootEventId, { status, resultSummary: result.summary });
       setDelegationRunStatus(runId, status === "done" ? "completed" : "failed");
@@ -141,7 +142,7 @@ export class DelegationRuntime {
         conversationId: ctx.conversationId,
         agentId: args.teammate.agentId,
         agentName: resolved.agentName,
-        adapter: resolved.adapter as any,
+        adapter: resolved.adapter as CLIAdapterId,
         binary: resolved.binary,
         extraArgs: resolved.extraArgs,
         env: resolved.env,
@@ -150,9 +151,8 @@ export class DelegationRuntime {
         approvalMode: "auto",
         skills: resolveSkillSnapshots([...(args.teammate.skillIds ?? []), DELEGATION_SKILL_ID]),
         announceSkills: true,
-        delegation: { runId: args.runId, parentEventId: args.childEventId, depth: args.depth, selfAgentId: args.teammate.id, selfLabel: args.teammate.label },
-        signal: args.signal
-      } as any);
+        delegation: { runId: args.runId, parentEventId: args.childEventId, depth: args.depth, selfAgentId: args.teammate.id, selfLabel: args.teammate.label }
+      });
     } catch (err) {
       return { summary: "", exitCode: null, error: (err as Error).message };
     }
