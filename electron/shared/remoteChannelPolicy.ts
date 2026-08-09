@@ -132,9 +132,11 @@ const ALLOW = [
   "skills:searchMarket",
 
   // Workflows are scoped to the owning conversation inside the handlers.
+  "workflow:approveDelegateWrite",
   "workflow:approveGate",
   "workflow:continueImplementReview",
   "workflow:coordinatorPrompt",
+  "workflow:createDelegationRun",
   "workflow:createRun",
   "workflow:createTeamRun",
   "workflow:getRun",
