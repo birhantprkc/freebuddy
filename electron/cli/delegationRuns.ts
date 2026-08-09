@@ -8,7 +8,6 @@ export interface CreateDelegationRunInput {
   teamId: string;
   teamSnapshotJson: string;
   conversationId?: string;
-  id?: string;
 }
 
 export interface DelegationRunRow {
@@ -26,7 +25,7 @@ export interface DelegationRunRow {
 }
 
 export function createDelegationRun(input: CreateDelegationRunInput): string {
-  const id = input.id ?? `delrun_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = `delrun_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const now = new Date().toISOString();
   getDb()
     .prepare(

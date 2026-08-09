@@ -27,7 +27,9 @@ const policy = {
 };
 const ctx = { roster, policy, teamId: "team-1", cwd: "/repo" };
 const contextProvider = (_runId) => ctx;
-const binding = { token: "t", taskSessionId: "sess-entry", runId: "run-1", parentEventId: "evt-root", depth: 0, selfAgentId: "r-impl", selfLabel: "实现" };
+function makeBinding(runId, depth = 0) {
+  return { token: "t", taskSessionId: "sess-entry", runId, parentEventId: "evt-root", depth, selfAgentId: "r-impl", selfLabel: "实现" };
+}
 const writableOther = { id: "r-write2", label: "写2", agentId: "cli-write2", capability: "写代码2", canWrite: true };
 
 test("list_teammates returns roster minus self", async (t) => {
@@ -35,7 +37,8 @@ test("list_teammates returns roster minus self", async (t) => {
   await withDb(async () => {
     const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
     const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
-    createDelegationRun({ id: "run-1", goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
     const res = await runDelegateAction(binding, "list_teammates", {}, {
       contextProvider, executor: async () => { throw new Error("should not be called"); }, writeApproval: async () => true
     });
@@ -50,7 +53,8 @@ test("delegate happy path: inserts child event, calls executor, returns done sum
   await withDb(async () => {
     const { createDelegationRun, listDelegationEvents } = await import("../dist-electron/cli/delegationRuns.js");
     const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
-    createDelegationRun({ id: "run-1", goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
     let called = null;
     const res = await runDelegateAction(binding, "delegate", { teammate_id: "r-rev", task: "审 auth" }, {
       contextProvider,
@@ -64,7 +68,7 @@ test("delegate happy path: inserts child event, calls executor, returns done sum
     assert.equal(called.task, "审 auth");
     assert.equal(called.depth, 1);
     assert.equal(called.parentEventId, "evt-root");
-    const ev = listDelegationEvents("run-1").find((e) => e.id === res.event_id);
+    const ev = listDelegationEvents(runId).find((e) => e.id === res.event_id);
     assert.equal(ev.status, "done");
     assert.equal(ev.depth, 1);
     assert.equal(ev.parentEventId, "evt-root");
@@ -76,8 +80,8 @@ test("delegate at maxDepth returns failed without calling executor", async (t) =
   await withDb(async () => {
     const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
     const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
-    createDelegationRun({ id: "run-1", goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
-    const atMax = { ...binding, depth: 3 };
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const atMax = makeBinding(runId, 3);
     let execCalled = false;
     const res = await runDelegateAction(atMax, "delegate", { teammate_id: "r-rev", task: "x" }, {
       contextProvider, executor: async () => { execCalled = true; return { summary: "", exitCode: 0, error: null }; }, writeApproval: async () => true
@@ -93,7 +97,8 @@ test("delegate timeout: executor hanging -> timeout status, event timeout", asyn
   await withDb(async () => {
     const { createDelegationRun, listDelegationEvents } = await import("../dist-electron/cli/delegationRuns.js");
     const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
-    createDelegationRun({ id: "run-1", goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
     const shortCtx = { roster, policy: { ...policy, delegateTimeoutMs: 30 }, teamId: "team-1", cwd: "/repo" };
     const res = await runDelegateAction(binding, "delegate", { teammate_id: "r-rev", task: "x" }, {
       contextProvider: () => shortCtx,
@@ -101,7 +106,7 @@ test("delegate timeout: executor hanging -> timeout status, event timeout", asyn
       writeApproval: async () => true
     });
     assert.equal(res.status, "timeout");
-    const ev = listDelegationEvents("run-1").find((e) => e.id === res.event_id);
+    const ev = listDelegationEvents(runId).find((e) => e.id === res.event_id);
     assert.equal(ev.status, "timeout");
   });
 });
@@ -111,7 +116,8 @@ test("delegate executor failure -> failed status", async (t) => {
   await withDb(async () => {
     const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
     const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
-    createDelegationRun({ id: "run-1", goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
     const res = await runDelegateAction(binding, "delegate", { teammate_id: "r-rev", task: "x" }, {
       contextProvider,
       executor: async () => ({ summary: "", exitCode: 1, error: "boom" }),
@@ -126,7 +132,8 @@ test("allowWrites=false blocks writable teammate", async (t) => {
   await withDb(async () => {
     const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
     const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
-    createDelegationRun({ id: "run-1", goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
     const noWrite = { roster: [...roster, writableOther], policy: { ...policy, allowWrites: false }, teamId: "team-1", cwd: "/repo" };
     let execCalled = false;
     const res = await runDelegateAction(binding, "delegate", { teammate_id: "r-write2", task: "x" }, {
@@ -145,7 +152,8 @@ test("requireApprovalBeforeDelegateWrite: rejected -> failed, not executed", asy
   await withDb(async () => {
     const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
     const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
-    createDelegationRun({ id: "run-1", goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
     const apprCtx = { roster: [...roster, writableOther], policy: { ...policy, requireApprovalBeforeDelegateWrite: true }, teamId: "team-1", cwd: "/repo" };
     let execCalled = false;
     const res = await runDelegateAction(binding, "delegate", { teammate_id: "r-write2", task: "x" }, {
@@ -164,7 +172,8 @@ test("concurrency=1: two delegates from same run are serialized", async (t) => {
   await withDb(async () => {
     const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
     const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
-    createDelegationRun({ id: "run-1", goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
     const order = [];
     const makeExec = (tag) => async () => {
       order.push(`start ${tag}`);
@@ -179,5 +188,58 @@ test("concurrency=1: two delegates from same run are serialized", async (t) => {
     ]);
     assert.ok(order[0].startsWith("start") && order[1].startsWith("end") && order[2].startsWith("start"),
       `delegates not serialized: ${order.join(",")}`);
+  });
+});
+
+test("delegate to self returns failed without executor", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
+    let execCalled = false;
+    const res = await runDelegateAction(binding, "delegate", { teammate_id: "r-impl", task: "x" }, {
+      contextProvider,
+      executor: async () => { execCalled = true; return { summary: "", exitCode: 0, error: null }; },
+      writeApproval: async () => true
+    });
+    assert.equal(res.status, "failed");
+    assert.match(res.result, /self/);
+    assert.equal(execCalled, false);
+  });
+});
+
+test("unknown action returns ok:false error", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
+    const res = await runDelegateAction(binding, "bogus", {}, {
+      contextProvider,
+      executor: async () => { throw new Error("should not be called"); },
+      writeApproval: async () => true
+    });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /unknown action/);
+  });
+});
+
+test("result summary is truncated past the bound", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
+    const res = await runDelegateAction(binding, "delegate", { teammate_id: "r-rev", task: "x" }, {
+      contextProvider,
+      executor: async () => ({ summary: "x".repeat(20_000), exitCode: 0, error: null }),
+      writeApproval: async () => true
+    });
+    assert.ok(res.result.length <= 12_000 + 100, `result not truncated: ${res.result.length}`);
+    assert.match(res.result, /\[truncated\]/);
   });
 });

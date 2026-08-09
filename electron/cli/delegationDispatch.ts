@@ -72,27 +72,35 @@ function boundSummary(text: string): string {
   return `${head}\n…[truncated]…\n${tail}`;
 }
 
+// v1: delegates are serialized per run (concurrency = 1) regardless of
+// policy.maxConcurrentDelegates; honoring >1 is a future task.
 const mutexByRun = new Map<string, Promise<unknown>>();
 async function withRunMutex<T>(runId: string, fn: () => Promise<T>): Promise<T> {
   const prev = mutexByRun.get(runId) ?? Promise.resolve();
   let release!: () => void;
   const next = new Promise<void>((r) => (release = r));
-  mutexByRun.set(runId, prev.then(() => next));
+  mutexByRun.set(runId, next);
   await prev;
   try {
     return await fn();
   } finally {
     release();
+    if (mutexByRun.get(runId) === next) mutexByRun.delete(runId);
   }
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new DelegateTimeout()), ms);
-    })
-  ]);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return Promise.race([
+      p.finally(() => { if (timer) clearTimeout(timer); }),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new DelegateTimeout()), ms);
+      })
+    ]);
+  } finally {
+    // no-op; timer cleared via p.finally or when it fires
+  }
 }
 
 export async function runDelegateAction(
@@ -111,6 +119,12 @@ export async function runDelegateAction(
   }
 
   if (action === "delegate") {
+    // ok flag semantics: ok === true means the tool call succeeded (including
+    // when it returns a status: "failed" DECISION the agent must handle, e.g.
+    // teammate-not-found, depth-limit, policy rejection); ok === false means a
+    // transport/execution error (context missing, executor exception, timeout).
+    // This split is intentional so the agent can distinguish "the delegation
+    // itself ran but the sub-task failed" from "we could not delegate at all".
     const ctx = deps.contextProvider(binding.runId);
     if (!ctx) return { ok: false, error: "run context not found", status: "failed" };
     const teammateId = String(params.teammate_id ?? "");
