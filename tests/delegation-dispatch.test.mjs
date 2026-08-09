@@ -279,3 +279,40 @@ test("delegate aborts the executor signal on timeout", async (t) => {
     assert.ok(receivedSignal.aborted, "signal must be aborted on timeout");
   });
 });
+
+test("nested delegation does not deadlock (child agent delegates while parent delegate runs)", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, listDelegationEvents } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const parentBinding = makeBinding(runId); // taskSessionId "sess-entry", selfAgentId "r-impl", depth 0
+
+    // The parent delegates to r-rev; the r-rev agent (child) ITSELF delegates to r-impl (nested).
+    const childExec = async (args) => {
+      // args.depth === 1 (parent depth 0 + 1); args.childEventId is the r-rev event
+      const childBinding = {
+        token: "t2", taskSessionId: "sess-child", runId,
+        parentEventId: args.childEventId, depth: args.depth, selfAgentId: "r-rev", selfLabel: "评审"
+      };
+      const nested = await runDelegateAction(childBinding, "delegate", { teammate_id: "r-impl", task: "nested" }, {
+        contextProvider,
+        executor: async () => ({ summary: "nested-ok", exitCode: 0, error: null }),
+        writeApproval: async () => true
+      });
+      assert.equal(nested.status, "done", "nested delegate must complete (no deadlock)");
+      return { summary: "child-done", exitCode: 0, error: null };
+    };
+
+    // Race against a hard 3s deadline: if the per-run mutex deadlocks, this rejects.
+    const res = await Promise.race([
+      runDelegateAction(parentBinding, "delegate", { teammate_id: "r-rev", task: "parent" }, {
+        contextProvider, executor: childExec, writeApproval: async () => true
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("deadlock: nested delegate did not complete in 3s")), 3000))
+    ]);
+    assert.equal(res.status, "done");
+    // a depth-2 event (the nested delegate) exists
+    assert.ok(listDelegationEvents(runId).some((e) => e.depth === 2), "expected a depth-2 delegation event");
+  });
+});

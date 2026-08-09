@@ -74,8 +74,9 @@ function boundSummary(text: string): string {
   return `${head}\n…[truncated]…\n${tail}`;
 }
 
-// v1: delegates are serialized per run (concurrency = 1) regardless of
-// policy.maxConcurrentDelegates; honoring >1 is a future task.
+// A simple per-key mutex (opaque string key). In the delegate path the key is
+// the calling agent's session (see call site). Honoring
+// policy.maxConcurrentDelegates > 1 is a future task.
 const mutexByRun = new Map<string, Promise<unknown>>();
 async function withRunMutex<T>(runId: string, fn: () => Promise<T>): Promise<T> {
   const prev = mutexByRun.get(runId) ?? Promise.resolve();
@@ -163,7 +164,12 @@ export async function runDelegateAction(
     addInactivitySuppression(binding.taskSessionId);
     const controller = new AbortController();
     try {
-      return await withRunMutex(binding.runId, async () => {
+      // Serializes PARALLEL delegates from the SAME calling agent (keyed by
+      // taskSessionId), so an agent issuing two `delegate()` tool calls in one
+      // turn runs them one-at-a-time. It does NOT block nested delegates from
+      // child agents (different taskSessionId), which is what enables recursive
+      // delegation. (Keying on runId would deadlock the recursive tree.)
+      return await withRunMutex(binding.taskSessionId, async () => {
         try {
           const result = await withTimeout(
             deps.executor({
