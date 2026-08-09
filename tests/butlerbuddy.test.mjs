@@ -151,7 +151,7 @@ test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", ()
   assert.match(preload, /ipcRenderer\.send\("butlerBuddy:hideChat"\)/);
   assert.match(renderer, /surface === "butler-pet"/);
   assert.match(renderer, /surface === "butler-chat"/);
-  assert.match(pet, /butlerbuddy-pet\.png/);
+  assert.match(pet, /butlerbuddy\/states/);
 });
 
 test("ButlerBuddy preferences expose a global shortcut with conflict feedback", () => {
@@ -356,4 +356,206 @@ test("Butler can read a conversation's messages as plain text pages", () => {
   assert.match(service, /tail/);
   assert.match(mcp, /freebuddy_conversation_messages/);
   assert.match(skill, /freebuddy_conversation_messages/);
+});
+
+test("ButlerBuddy runtime state is owned by main and synchronized over a bounded IPC bridge", () => {
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const types = fs.readFileSync(
+    new URL("../src/types/freebuddy.d.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(main, /createButlerBuddyStateCoordinator/);
+  assert.match(main, /butlerBuddy:getRuntimeState/);
+  assert.match(main, /butlerBuddy:runtimeStateChanged/);
+  assert.match(main, /butlerBuddy:reportTaskResult/);
+  assert.match(
+    main,
+    /setMainWindowPresence\(payload\)[\s\S]*?setStreaming\(/
+  );
+  assert.match(main, /isButlerBuddyWindowSender/);
+  assert.match(main, /isButlerBuddyTaskResultSender/);
+  assert.match(main, /scheduleButlerBuddySleepBoundary/);
+  assert.match(main, /normalizeButlerBuddyTaskText/);
+  assert.match(main, /resolveButlerBuddyTaskPresence/);
+  assert.match(main, /taskText/);
+  assert.match(preload, /getRuntimeState/);
+  assert.match(preload, /onRuntimeStateChanged/);
+  assert.match(preload, /reportTaskResult/);
+  assert.match(types, /interface ButlerBuddyRuntimeState/);
+  assert.match(types, /ButlerBuddyVisualState/);
+  assert.match(types, /taskText\?: string/);
+});
+
+test("every completed task reaches ButlerBuddy before foreground notification suppression", () => {
+  const sounds = fs.readFileSync(
+    new URL("../src/utils/soundEffects.ts", import.meta.url),
+    "utf8"
+  );
+  const notifyBlock = sounds.slice(sounds.indexOf("export function notifyTaskFinished"));
+  const reportIndex = notifyBlock.indexOf("reportTaskResult");
+  const backgroundReturnIndex = notifyBlock.indexOf("if (!background) return");
+
+  assert.ok(reportIndex >= 0, "task result is reported to ButlerBuddy");
+  assert.ok(
+    reportIndex < backgroundReturnIndex,
+    "task result is reported before foreground notifications return early"
+  );
+  assert.match(notifyBlock, /reportTaskResult\?\.\(kind\)/);
+});
+
+test("the pet renderer subscribes to all five states and preserves click and drag behavior", () => {
+  const pet = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/ButlerBuddyPet.tsx", import.meta.url),
+    "utf8"
+  );
+  const styles = fs.readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  for (const state of [
+    "idle",
+    "working",
+    "celebrating",
+    "comforting",
+    "sleeping"
+  ]) {
+    assert.match(pet, new RegExp(`${state}:`));
+  }
+  assert.match(pet, /butlerbuddy\/states\/v2/);
+  assert.match(pet, /getRuntimeState/);
+  assert.match(pet, /onRuntimeStateChanged/);
+  assert.match(pet, /classifyPetPointerRelease/);
+  assert.match(pet, /classifyPetClick/);
+  assert.match(pet, /data-interaction/);
+  assert.match(pet, /butler-pet-task-bubble/);
+  assert.match(pet, /<button[\s\S]*?butler-pet-task-bubble/);
+  assert.match(pet, /openCurrentTask/);
+  assert.match(pet, /taskKind/);
+  assert.match(pet, /taskCount/);
+  assert.match(pet, /data-task-kind/);
+  assert.match(styles, /\.butler-pet-task-bubble[\s\S]*?pointer-events: auto/);
+  assert.match(pet, /runtimeState\.taskConversationId/);
+  assert.match(pet, /runtimeState\.taskText/);
+  assert.doesNotMatch(pet, /butler-pet-online/);
+  assert.doesNotMatch(pet, /setInterval/);
+  assert.match(styles, /butler-pet-task-track/);
+  assert.match(styles, /@keyframes butler-pet-task-scroll/);
+  assert.doesNotMatch(
+    styles,
+    /@keyframes butler-pet-(?:idle|working|celebrating|comforting|sleeping)/
+  );
+  assert.match(
+    styles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?butler-pet-art-motion[\s\S]*?butler-pet-task-track/
+  );
+});
+
+test("ButlerBuddy task bubble opens the authoritative running task in the main window", () => {
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const types = fs.readFileSync(
+    new URL("../src/types/freebuddy.d.ts", import.meta.url),
+    "utf8"
+  );
+  const app = fs.readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+
+  assert.match(main, /butlerBuddy:openCurrentTask/);
+  assert.match(main, /hideButlerChat\(\)[\s\S]*?revealMainWindow\(\)[\s\S]*?window:open-conversation/);
+  assert.match(main, /resolveButlerBuddyTaskPresence/);
+  assert.match(preload, /openCurrentTask.*butlerBuddy:openCurrentTask/);
+  assert.match(types, /openCurrentTask\(\): void/);
+  assert.match(types, /taskConversationId\?: string/);
+  assert.match(types, /taskKind\?: ButlerBuddyTaskKind/);
+  assert.match(types, /taskCount\?: number/);
+  assert.match(app, /runningTasks/);
+  assert.match(app, /runningConversationIds/);
+  assert.match(app, /completedUnreadTasks/);
+  assert.match(app, /markConversationCompletedUnread/);
+});
+
+test("five transparent state assets and reduced-motion posters ship within budget", () => {
+  const states = [
+    "idle",
+    "working",
+    "celebrating",
+    "comforting",
+    "sleeping"
+  ];
+  let totalBytes = 0;
+
+  for (const state of states) {
+    const webpUrl = new URL(
+      `../public/butlerbuddy/states/v2/${state}.webp`,
+      import.meta.url
+    );
+    const posterUrl = new URL(
+      `../public/butlerbuddy/states/v2/posters/${state}.png`,
+      import.meta.url
+    );
+    const webp = fs.readFileSync(webpUrl);
+    const poster = fs.readFileSync(posterUrl);
+    const bytes = fs.statSync(webpUrl).size;
+    totalBytes += bytes;
+
+    assert.equal(webp.subarray(0, 4).toString("ascii"), "RIFF");
+    assert.equal(webp.subarray(8, 12).toString("ascii"), "WEBP");
+    assert.ok(webp.includes(Buffer.from("ANIM")), `${state} is animated`);
+    const frameCount = webp.toString("latin1").match(/ANMF/g)?.length ?? 0;
+    assert.equal(frameCount, 7, `${state} contains the intended keyframe loop`);
+    assert.ok(bytes <= 500 * 1024, `${state} stays under 500 KB`);
+    assert.equal(poster.readUInt32BE(16), 512);
+    assert.equal(poster.readUInt32BE(20), 512);
+  }
+
+  assert.ok(totalBytes <= 3 * 1024 * 1024, "state asset set stays under 3 MB");
+});
+
+test("task receipts are recorded, opened from ButlerBuddy, and saved as PNG", () => {
+  const app = fs.readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  const dialog = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/TaskReceiptDialog.tsx", import.meta.url),
+    "utf8"
+  );
+  const sounds = fs.readFileSync(
+    new URL("../src/utils/soundEffects.ts", import.meta.url),
+    "utf8"
+  );
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const types = fs.readFileSync(
+    new URL("../src/types/freebuddy.d.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(app, /<TaskReceiptDialog \/>/);
+  assert.match(app, /onOpenTaskReceipt/);
+  assert.match(sounds, /recordCompletion/);
+  assert.match(dialog, /renderTaskReceiptPng/);
+  assert.match(dialog, /copyToClipboard/);
+  assert.match(main, /今日战报/);
+  assert.match(main, /window:open-task-receipt/);
+  assert.match(main, /window:save-image/);
+  assert.match(main, /dialog\.showSaveDialog/);
+  assert.match(preload, /onOpenTaskReceipt/);
+  assert.match(preload, /saveImage/);
+  assert.match(types, /onOpenTaskReceipt/);
+  assert.match(types, /saveImage/);
 });

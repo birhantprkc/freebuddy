@@ -144,7 +144,14 @@ export const useWorkflowStore = create<State>((set, get) => ({
         ["running", "paused", "blocked", "pending_approval"].includes(previousRun.status);
       const isFinished = ["completed", "partial", "failed", "killed"].includes(run.status);
       if (wasLive && isFinished && run.conversationId) {
-        useConversationStore.getState().markConversationUnread(run.conversationId);
+        if (run.status !== "killed") {
+          useConversationStore.getState().markConversationCompletedUnread(
+            run.conversationId,
+            run.status === "completed" || run.status === "partial"
+              ? "success"
+              : "failure"
+          );
+        }
       }
     }
     void get().loadActiveRuns();

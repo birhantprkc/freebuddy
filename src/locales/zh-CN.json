@@ -1669,6 +1669,34 @@
     "emptyNoWorkspace": "未选择工作区目录。选择一个工作目录即可预览 agent 的产出。",
     "emptyNoEntry": "尚未指向预览入口。让 agent 启动 dev server、创建页面、Markdown 文档或图片后，通过 bridge 自动指向这里。"
   },
+  "taskReceipt": {
+    "cardTitle": "今日任务收据",
+    "cardAria": "今日任务收据预览",
+    "completed": "已完成",
+    "itemUnit": "项",
+    "streak": "连续专注",
+    "dayUnit": "天",
+    "completionRate": "完成率",
+    "approved": "已验收",
+    "approvedAria": "ButlerBuddy 已验收",
+    "petAlt": "正在庆祝的 ButlerBuddy",
+    "emptyTask": "今天还没有完成任务",
+    "save": "保存图片",
+    "saving": "正在生成…",
+    "copy": "复制分享文案",
+    "closeAria": "关闭今日任务收据",
+    "shareText": "我和 ButlerBuddy 今天完成了 {{count}} 个任务，完成率 {{rate}}%，已经连续专注 {{streak}} 天。\n\n来自 FreeBuddy",
+    "saved": "任务收据已保存",
+    "savedWithPath": "任务收据已保存到 {{path}}",
+    "saveFailed": "保存失败：{{message}}",
+    "copied": "分享文案已复制",
+    "copyFailed": "复制分享文案失败",
+    "previewTasks": {
+      "quarterlyReport": "整理季度汇报",
+      "releaseConfig": "检查发布配置",
+      "userFeedback": "汇总用户反馈"
+    }
+  },
   "butler": {
     "previewUserMessage": "帮我看看为什么 Codex 连不上",
     "previewAssistantMessage": "我正在检查连接和 CLI 状态…",
@@ -1687,12 +1715,27 @@
     "loading": "正在唤醒 ButlerBuddy…",
     "emptyPrompt": "有什么需要我帮你管理的吗？",
     "typing": "正在回复…",
+    "runningTask": "正在处理：{{task}}",
+    "completedTask": "已完成：{{task}}",
+    "failedTask": "需要查看：{{task}}",
+    "openRunningTaskAria": "在主端打开任务：{{task}}，共 {{count}} 个任务运行中",
+    "openCompletedTaskAria": "在主端打开已完成任务：{{task}}，共 {{count}} 个完成未读任务",
+    "openFailedTaskAria": "在主端打开需要查看的任务：{{task}}，共 {{count}} 个完成未读任务",
     "inputPlaceholder": "发消息给 ButlerBuddy…",
     "inputAria": "发消息给 ButlerBuddy",
     "sendAria": "发送消息",
     "stopAria": "停止生成",
     "clickToChat": "点击聊天",
     "openChatAria": "打开 ButlerBuddy 对话",
-    "petTooltip": "点击聊天 · 拖动移动 · 右键更多"
+    "openChatStateAria": "打开 ButlerBuddy 对话，当前状态：{{state}}",
+    "petSurfaceAria": "ButlerBuddy 桌面宠物",
+    "petTooltip": "单击摸头并聊天 · 双击戳一戳 · 拖动移动 · 右键更多",
+    "states": {
+      "idle": "待机",
+      "working": "工作中",
+      "celebrating": "庆祝",
+      "comforting": "安慰",
+      "sleeping": "睡眠"
+    }
   }
 }

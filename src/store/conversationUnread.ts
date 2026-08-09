@@ -1,17 +1,55 @@
 const STORAGE_KEY = "freebuddy.conversations.unread.v1";
 
-export type UnreadConversationMap = Record<string, true>;
+export type UnreadConversationKind = "message" | "success" | "failure";
+
+export interface UnreadConversationEntry {
+  kind: UnreadConversationKind;
+  at: string;
+}
+
+export type UnreadConversationMap = Record<string, UnreadConversationEntry>;
+
+const LEGACY_UNREAD_AT = new Date(0).toISOString();
+const UNREAD_KINDS = new Set<UnreadConversationKind>([
+  "message",
+  "success",
+  "failure"
+]);
+
+function isUnreadEntry(value: unknown): value is UnreadConversationEntry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    UNREAD_KINDS.has(entry.kind as UnreadConversationKind) &&
+    typeof entry.at === "string" &&
+    entry.at.length > 0
+  );
+}
 
 export function loadUnreadConversations(): UnreadConversationMap {
   try {
     const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
     if (!raw) return {};
-    const ids = JSON.parse(raw);
-    if (!Array.isArray(ids)) return {};
+    const value = JSON.parse(raw);
+    if (Array.isArray(value)) {
+      return Object.fromEntries(
+        value
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
+          .map((id) => [
+            id,
+            {
+              kind: "message",
+              at: LEGACY_UNREAD_AT
+            } satisfies UnreadConversationEntry
+          ] as const)
+      );
+    }
+    if (!value || typeof value !== "object") return {};
     return Object.fromEntries(
-      ids
-        .filter((id): id is string => typeof id === "string" && id.length > 0)
-        .map((id) => [id, true] as const)
+      Object.entries(value).filter(
+        (entry): entry is [string, UnreadConversationEntry] =>
+          entry[0].length > 0 && isUnreadEntry(entry[1])
+      )
     );
   } catch {
     return {};
@@ -20,7 +58,7 @@ export function loadUnreadConversations(): UnreadConversationMap {
 
 export function persistUnreadConversations(unread: UnreadConversationMap): void {
   try {
-    globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(Object.keys(unread)));
+    globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(unread));
   } catch {
     // Unread state is a progressive enhancement; storage can be unavailable.
   }

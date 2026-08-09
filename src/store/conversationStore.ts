@@ -105,6 +105,10 @@ export interface ConversationState {
   setActive(id: string | undefined): Promise<void>;
   loadMessages(id: string, messageIds?: string[]): Promise<void>;
   markConversationUnread(id: string): void;
+  markConversationCompletedUnread(
+    id: string,
+    result: "success" | "failure"
+  ): void;
   markConversationRead(id: string): void;
 
   newConversation(input: {
@@ -685,7 +689,19 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (get().activeId === id || get().unreadConversations[id]) return;
     const unreadConversations: UnreadConversationMap = {
       ...get().unreadConversations,
-      [id]: true
+      [id]: { kind: "message", at: new Date().toISOString() }
+    };
+    persistUnreadConversations(unreadConversations);
+    set({ unreadConversations });
+  },
+
+  markConversationCompletedUnread(id, result) {
+    if (get().activeId === id) return;
+    const current = get().unreadConversations[id];
+    if (current?.kind === result) return;
+    const unreadConversations: UnreadConversationMap = {
+      ...get().unreadConversations,
+      [id]: { kind: result, at: new Date().toISOString() }
     };
     persistUnreadConversations(unreadConversations);
     set({ unreadConversations });

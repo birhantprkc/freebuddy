@@ -1,4 +1,5 @@
 import { debugLogClient } from "@/services/debugLog";
+import { useTaskReceiptStore } from "@/store/taskReceiptStore";
 
 const baseUrl = import.meta.env?.BASE_URL ?? "./";
 
@@ -67,8 +68,23 @@ export function notifyTaskFinished(
   kind: "success" | "failure",
   title: string,
   body?: string,
-  conversationId?: string
+  conversationId?: string,
+  receipt?: {
+    eventId: string;
+    taskTitle: string;
+    completedAt?: string;
+  }
 ): void {
+  if (receipt) {
+    useTaskReceiptStore.getState().recordCompletion({
+      id: receipt.eventId,
+      title: receipt.taskTitle,
+      result: kind,
+      completedAt: receipt.completedAt ?? new Date().toISOString(),
+      ...(conversationId ? { conversationId } : {})
+    });
+  }
+  window.freebuddy?.butlerBuddy?.reportTaskResult?.(kind);
   const documentHidden = typeof document !== "undefined" ? document.hidden : false;
   const background = isAppInBackground();
   debugLogClient.info("notification", "notifyTaskFinished evaluated", {

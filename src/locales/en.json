@@ -1684,6 +1684,34 @@
     "emptyNoWorkspace": "No workspace selected. Pick a working directory to preview the agent's output.",
     "emptyNoEntry": "No preview yet. Ask the agent to start a dev server, create a page, write a Markdown doc, or generate an image, then it will open here automatically."
   },
+  "taskReceipt": {
+    "cardTitle": "Today's Task Receipt",
+    "cardAria": "Today's task receipt preview",
+    "completed": "Completed",
+    "itemUnit": "tasks",
+    "streak": "Focus streak",
+    "dayUnit": "days",
+    "completionRate": "Completion rate",
+    "approved": "Approved",
+    "approvedAria": "Approved by ButlerBuddy",
+    "petAlt": "ButlerBuddy celebrating",
+    "emptyTask": "No completed tasks yet today",
+    "save": "Save image",
+    "saving": "Generating…",
+    "copy": "Copy share text",
+    "closeAria": "Close today's task receipt",
+    "shareText": "ButlerBuddy and I completed {{count}} tasks today with a {{rate}}% completion rate. We're on a {{streak}}-day focus streak.\n\nMade with FreeBuddy",
+    "saved": "Task receipt saved",
+    "savedWithPath": "Task receipt saved to {{path}}",
+    "saveFailed": "Couldn't save: {{message}}",
+    "copied": "Share text copied",
+    "copyFailed": "Couldn't copy the share text",
+    "previewTasks": {
+      "quarterlyReport": "Prepare the quarterly report",
+      "releaseConfig": "Review the release configuration",
+      "userFeedback": "Summarize user feedback"
+    }
+  },
   "butler": {
     "previewUserMessage": "Help me see why Codex won't connect",
     "previewAssistantMessage": "I'm checking the connection and CLI status…",
@@ -1702,12 +1730,27 @@
     "loading": "Waking ButlerBuddy…",
     "emptyPrompt": "What can I help you manage?",
     "typing": "Replying…",
+    "runningTask": "Working on: {{task}}",
+    "completedTask": "Completed: {{task}}",
+    "failedTask": "Needs attention: {{task}}",
+    "openRunningTaskAria": "Open task in the main app: {{task}}; {{count}} tasks running",
+    "openCompletedTaskAria": "Open completed task in the main app: {{task}}; {{count}} unread completed tasks",
+    "openFailedTaskAria": "Open task needing attention in the main app: {{task}}; {{count}} unread completed tasks",
     "inputPlaceholder": "Message ButlerBuddy…",
     "inputAria": "Message ButlerBuddy",
     "sendAria": "Send message",
     "stopAria": "Stop generating",
     "clickToChat": "Click to chat",
     "openChatAria": "Open ButlerBuddy chat",
-    "petTooltip": "Click to chat · Drag to move · Right-click for more"
+    "openChatStateAria": "Open ButlerBuddy chat, current state: {{state}}",
+    "petSurfaceAria": "ButlerBuddy desktop companion",
+    "petTooltip": "Click to pat and chat · Double-click to poke · Drag to move · Right-click for more",
+    "states": {
+      "idle": "Idle",
+      "working": "Working",
+      "celebrating": "Celebrating",
+      "comforting": "Comforting",
+      "sleeping": "Sleeping"
+    }
   }
 }

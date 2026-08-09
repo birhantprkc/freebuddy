@@ -285,6 +285,7 @@ declare global {
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
     onOpenConversation(cb: (conversationId: string) => void): () => void;
     onNewConversation(cb: () => void): () => void;
+    onOpenTaskReceipt(cb: () => void): () => void;
     onOpenView(
       cb: (payload: {
         view: "chat" | "scheduledTasks" | "workflowTeams" | "usage" | string;
@@ -313,6 +314,16 @@ declare global {
         agentName: string;
       } | null;
       streaming: boolean;
+      runningTasks: Array<{
+        id: string;
+        title: string;
+      }>;
+      completedUnreadTasks: Array<{
+        id: string;
+        title: string;
+        result: "success" | "failure";
+        completedAt: string;
+      }>;
       unreadCount: number;
       updatedAt: string;
     }): void;
@@ -323,6 +334,10 @@ declare global {
       body?: string;
       conversationId?: string;
     }): Promise<void>;
+    saveImage(payload: {
+      dataUrl: string;
+      suggestedName?: string;
+    }): Promise<{ path?: string }>;
   }
 
   interface FreebuddySession {
@@ -337,12 +352,35 @@ declare global {
     error?: "shortcutUnavailable";
   }
 
-  interface FreebuddyButlerBuddy {    toggleChat(): void;
+  type ButlerBuddyVisualState =
+    | "idle"
+    | "working"
+    | "celebrating"
+    | "comforting"
+    | "sleeping";
+
+  type ButlerBuddyTaskKind = "running" | "completed" | "failure";
+
+  interface ButlerBuddyRuntimeState {
+    visualState: ButlerBuddyVisualState;
+    since: string;
+    transientUntil?: string;
+    taskText?: string;
+    taskConversationId?: string;
+    taskKind?: ButlerBuddyTaskKind;
+    taskCount?: number;
+  }
+
+  interface FreebuddyButlerBuddy {
+    toggleChat(): void;
     hideChat(): void;
     beginDrag(): void;
     endDrag(): void;
     openMenu(): void;
+    openCurrentTask(): void;
     getPreferences(): Promise<ButlerBuddyPreferences>;
+    getRuntimeState(): Promise<ButlerBuddyRuntimeState | undefined>;
+    reportTaskResult(result: "success" | "failure"): void;
     updatePreferences(input: {
       visible?: boolean;
       shortcutEnabled?: boolean;
@@ -351,6 +389,9 @@ declare global {
     onNewConversation(cb: () => void): () => void;
     onPreferencesChanged(
       cb: (prefs: ButlerBuddyPreferences) => void
+    ): () => void;
+    onRuntimeStateChanged(
+      cb: (state: ButlerBuddyRuntimeState) => void
     ): () => void;
   }
 

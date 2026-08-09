@@ -1,4 +1,5 @@
-import { app, BrowserWindow, crashReporter, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
+import { app, BrowserWindow, crashReporter, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
+import type { WebContents } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,9 +39,16 @@ import { initDebugLog, logMain } from "./debugLog.js";
 import {
   clearMainWindowPresence,
   setMainWindowPresence,
-  getMainWindowPresence
+  getMainWindowPresence,
+  resolveButlerBuddyTaskPresence,
+  type ButlerBuddyTaskKind
 } from "./uiPresence.js";
 import { createAppTray, type TrayController } from "./tray.js";
+import {
+  createButlerBuddyStateCoordinator,
+  millisecondsUntilNextButlerBuddySleepBoundary,
+  normalizeButlerBuddyTaskText
+} from "./butlerBuddyState.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -235,6 +243,14 @@ let isQuittingApp = false;
 let trayController: TrayController | null = null;
 let butlerPetWindow: BrowserWindow | null = null;
 let butlerChatWindow: BrowserWindow | null = null;
+const butlerBuddyStateCoordinator = createButlerBuddyStateCoordinator();
+let butlerBuddySleepBoundaryTimer: ReturnType<typeof setTimeout> | null = null;
+let butlerBuddyTask: {
+  conversationId: string;
+  taskText?: string;
+  taskKind: ButlerBuddyTaskKind;
+  taskCount: number;
+} | null = null;
 
 const RENDERER_RECOVERY_WINDOW_MS = 60_000;
 const MAX_RENDERER_RECOVERIES_PER_WINDOW = 2;
@@ -318,6 +334,68 @@ function readButlerBuddyPreferences(): ButlerBuddyPreferences {
       globalShortcut.isRegistered(shortcut),
     error: butlerShortcutError
   };
+}
+
+function windowOwnsWebContents(
+  win: BrowserWindow | null,
+  sender: WebContents
+): boolean {
+  return Boolean(win && !win.isDestroyed() && win.webContents === sender);
+}
+
+function isButlerBuddyWindowSender(sender: WebContents): boolean {
+  return (
+    windowOwnsWebContents(mainWindow, sender) ||
+    windowOwnsWebContents(butlerPetWindow, sender) ||
+    windowOwnsWebContents(butlerChatWindow, sender)
+  );
+}
+
+function isButlerBuddyTaskResultSender(sender: WebContents): boolean {
+  return (
+    windowOwnsWebContents(mainWindow, sender) ||
+    windowOwnsWebContents(butlerChatWindow, sender)
+  );
+}
+
+function getButlerBuddyRuntimeState() {
+  const snapshot = butlerBuddyStateCoordinator.getState();
+  return butlerBuddyTask
+    ? {
+        ...snapshot,
+        taskConversationId: butlerBuddyTask.conversationId,
+        taskKind: butlerBuddyTask.taskKind,
+        taskCount: butlerBuddyTask.taskCount,
+        ...(butlerBuddyTask.taskText
+          ? { taskText: butlerBuddyTask.taskText }
+          : {})
+      }
+    : snapshot;
+}
+
+function broadcastButlerBuddyRuntimeState(): void {
+  const snapshot = getButlerBuddyRuntimeState();
+  for (const win of [butlerPetWindow, butlerChatWindow]) {
+    if (!win || win.isDestroyed()) continue;
+    safeSendToWebContents(
+      win.webContents,
+      "butlerBuddy:runtimeStateChanged",
+      snapshot
+    );
+  }
+}
+
+butlerBuddyStateCoordinator.subscribe(broadcastButlerBuddyRuntimeState);
+
+function scheduleButlerBuddySleepBoundary(): void {
+  if (butlerBuddySleepBoundaryTimer !== null) {
+    clearTimeout(butlerBuddySleepBoundaryTimer);
+  }
+  butlerBuddySleepBoundaryTimer = setTimeout(() => {
+    butlerBuddySleepBoundaryTimer = null;
+    butlerBuddyStateCoordinator.refresh();
+    scheduleButlerBuddySleepBoundary();
+  }, Math.max(1_000, millisecondsUntilNextButlerBuddySleepBoundary()));
 }
 
 function companionWebPreferences() {
@@ -628,6 +706,17 @@ function showButlerContextMenu() {
     },
     { type: "separator" },
     {
+      label: "今日战报…",
+      click: () => {
+        hideButlerChat();
+        revealMainWindow();
+        const win = mainWindow;
+        if (!win || win.isDestroyed()) return;
+        safeSendToWebContents(win.webContents, "window:open-task-receipt", undefined);
+      }
+    },
+    { type: "separator" },
+    {
       label: "关闭宠物",
       click: () => updateButlerBuddyPreferences({ visible: false })
     },
@@ -655,11 +744,53 @@ function registerButlerBuddyWindowIpc() {
   ipcMain.on("butlerBuddy:beginDrag", startButlerPetDrag);
   ipcMain.on("butlerBuddy:endDrag", stopButlerPetDrag);
   ipcMain.on("butlerBuddy:openMenu", showButlerContextMenu);
+  ipcMain.on("butlerBuddy:openCurrentTask", (event) => {
+    if (!isButlerBuddyWindowSender(event.sender)) return;
+    const conversationId = butlerBuddyTask?.conversationId;
+    if (!conversationId) return;
+    hideButlerChat();
+    revealMainWindow();
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) return;
+    safeSendToWebContents(
+      win.webContents,
+      "window:open-conversation",
+      conversationId
+    );
+  });
   ipcMain.on("freebuddy:uiPresence", (event, payload) => {
     const win = mainWindow;
     if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
     if (setMainWindowPresence(payload)) {
-      applyUnreadBadge(getMainWindowPresence()?.unreadCount ?? 0);
+      const presence = getMainWindowPresence();
+      const previousState = butlerBuddyStateCoordinator.getState();
+      const resolvedTask = presence
+        ? resolveButlerBuddyTaskPresence(presence)
+        : null;
+      const nextTask = resolvedTask
+        ? {
+            conversationId: resolvedTask.conversationId,
+            taskText: normalizeButlerBuddyTaskText(resolvedTask.taskText),
+            taskKind: resolvedTask.taskKind,
+            taskCount: resolvedTask.taskCount
+          }
+        : null;
+      const taskChanged =
+        butlerBuddyTask?.conversationId !== nextTask?.conversationId ||
+        butlerBuddyTask?.taskText !== nextTask?.taskText ||
+        butlerBuddyTask?.taskKind !== nextTask?.taskKind ||
+        butlerBuddyTask?.taskCount !== nextTask?.taskCount;
+      butlerBuddyTask = nextTask;
+      butlerBuddyStateCoordinator.setStreaming(
+        Boolean(presence?.runningTasks.length)
+      );
+      if (
+        taskChanged &&
+        previousState === butlerBuddyStateCoordinator.getState()
+      ) {
+        broadcastButlerBuddyRuntimeState();
+      }
+      applyUnreadBadge(presence?.unreadCount ?? 0);
     }
   });
   ipcMain.on("freebuddy:themeBroadcast", (event, theme) => {
@@ -674,6 +805,14 @@ function registerButlerBuddyWindowIpc() {
   ipcMain.handle("butlerBuddy:getPreferences", () =>
     readButlerBuddyPreferences()
   );
+  ipcMain.handle("butlerBuddy:getRuntimeState", (event) => {
+    if (!isButlerBuddyWindowSender(event.sender)) return undefined;
+    return getButlerBuddyRuntimeState();
+  });
+  ipcMain.on("butlerBuddy:reportTaskResult", (event, result: unknown) => {
+    if (!isButlerBuddyTaskResultSender(event.sender)) return;
+    butlerBuddyStateCoordinator.reportTaskResult(result);
+  });
   ipcMain.handle(
     "butlerBuddy:updatePreferences",
     (_event, input: Partial<
@@ -771,6 +910,8 @@ function createWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
     clearMainWindowPresence();
+    butlerBuddyTask = null;
+    butlerBuddyStateCoordinator.setStreaming(false);
     closeButlerBuddyWindows();
   });
 
@@ -845,7 +986,46 @@ type TaskNotificationPayload = {
   conversationId?: string;
 };
 
+type SaveReceiptImagePayload = {
+  dataUrl: string;
+  suggestedName?: string;
+};
+
 function registerTaskNotificationIpc(): void {
+  ipcMain.handle(
+    "window:save-image",
+    async (event, payload: SaveReceiptImagePayload) => {
+      const win = mainWindow;
+      if (
+        !win ||
+        win.isDestroyed() ||
+        event.sender !== win.webContents ||
+        !payload ||
+        typeof payload.dataUrl !== "string" ||
+        !payload.dataUrl.startsWith("data:image/png;base64,") ||
+        payload.dataUrl.length > 12_000_000
+      ) {
+        throw new Error("Invalid receipt image");
+      }
+      const image = nativeImage.createFromDataURL(payload.dataUrl);
+      if (image.isEmpty()) throw new Error("Receipt image is empty");
+      const suggested =
+        typeof payload.suggestedName === "string"
+          ? path.basename(payload.suggestedName).replace(/[^\w.\-\u4e00-\u9fff]+/g, "-")
+          : "FreeBuddy-task-receipt.png";
+      const fileName = suggested.toLowerCase().endsWith(".png")
+        ? suggested
+        : `${suggested}.png`;
+      const result = await dialog.showSaveDialog(win, {
+        title: "保存今日任务收据",
+        defaultPath: path.join(app.getPath("pictures"), fileName),
+        filters: [{ name: "PNG Image", extensions: ["png"] }]
+      });
+      if (result.canceled || !result.filePath) return {};
+      await fs.promises.writeFile(result.filePath, image.toPNG());
+      return { path: result.filePath };
+    }
+  );
   ipcMain.handle("window:notify", (_event, payload: TaskNotificationPayload) => {
     const win = mainWindow;
     if (!win || win.isDestroyed()) return;
@@ -906,6 +1086,7 @@ function registerTaskNotificationIpc(): void {
 
 app.whenReady().then(async () => {
   initDebugLog();
+  scheduleButlerBuddySleepBoundary();
   logMain().info("main", "app ready", {
     version: app.getVersion(),
     electron: process.versions.electron,
@@ -1018,6 +1199,11 @@ app.on("window-all-closed", () => {
 let telemetryShutdownStarted = false;
 app.on("before-quit", (event) => {
   isQuittingApp = true;
+  if (butlerBuddySleepBoundaryTimer !== null) {
+    clearTimeout(butlerBuddySleepBoundaryTimer);
+    butlerBuddySleepBoundaryTimer = null;
+  }
+  butlerBuddyStateCoordinator.dispose();
   trayController?.destroy();
   trayController = null;
   if (telemetryShutdownStarted) return;
