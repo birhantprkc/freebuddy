@@ -315,11 +315,12 @@ export function handleStreamEvent(
     useAuthenticationStore.getState().removeForConversation(conversationId);
     const live = get().live[conversationId];
     const reason = live?.status === "killed" ? "killed" : "done";
-    if (reason === "done" && get().activeId !== conversationId) {
-      get().markConversationUnread(conversationId);
-    }
     if (reason !== "killed") {
       const success = (e.exitCode ?? 0) === 0;
+      get().markConversationCompletedUnread(
+        conversationId,
+        success ? "success" : "failure"
+      );
       const conversationTitle =
         get().conversations.find((c) => c.id === conversationId)?.title ??
         i18next.t("conversations.untitled");
@@ -329,7 +330,13 @@ export function handleStreamEvent(
           "success",
           i18next.t("notifications.taskSucceededTitle"),
           i18next.t("notifications.taskSucceededBody", { title: conversationTitle }),
-          conversationId
+          conversationId,
+          {
+            eventId:
+              live?.taskSessionId ??
+              `${conversationId}:${live?.messageId ?? new Date().toISOString()}`,
+            taskTitle: conversationTitle
+          }
         );
       } else {
         playTaskFailure(true);
@@ -337,7 +344,13 @@ export function handleStreamEvent(
           "failure",
           i18next.t("notifications.taskFailedTitle"),
           i18next.t("notifications.taskFailedBody", { title: conversationTitle }),
-          conversationId
+          conversationId,
+          {
+            eventId:
+              live?.taskSessionId ??
+              `${conversationId}:${live?.messageId ?? new Date().toISOString()}`,
+            taskTitle: conversationTitle
+          }
         );
       }
     }

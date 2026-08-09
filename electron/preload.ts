@@ -322,6 +322,11 @@ const window = {
     ipcRenderer.on("window:new-conversation", handler);
     return () => ipcRenderer.off("window:new-conversation", handler);
   },
+  onOpenTaskReceipt(cb: () => void): () => void {
+    const handler = () => cb();
+    ipcRenderer.on("window:open-task-receipt", handler);
+    return () => ipcRenderer.off("window:open-task-receipt", handler);
+  },
   onOpenView(
     cb: (payload: {
       view: string;
@@ -366,6 +371,12 @@ const window = {
     conversationId?: string;
   }): Promise<void> {
     return ipcRenderer.invoke("window:notify", payload);
+  },
+  saveImage(payload: {
+    dataUrl: string;
+    suggestedName?: string;
+  }): Promise<{ path?: string }> {
+    return ipcRenderer.invoke("window:save-image", payload);
   }
 };
 
@@ -377,13 +388,33 @@ type ButlerBuddyPreferencesPayload = {
   error?: "shortcutUnavailable";
 };
 
+type ButlerBuddyRuntimeStatePayload = {
+  visualState:
+    | "idle"
+    | "working"
+    | "celebrating"
+    | "comforting"
+    | "sleeping";
+  since: string;
+  transientUntil?: string;
+  taskText?: string;
+  taskConversationId?: string;
+  taskKind?: "running" | "completed" | "failure";
+  taskCount?: number;
+};
+
 const butlerBuddy = {
   toggleChat: () => ipcRenderer.send("butlerBuddy:toggleChat"),
   hideChat: () => ipcRenderer.send("butlerBuddy:hideChat"),
   beginDrag: () => ipcRenderer.send("butlerBuddy:beginDrag"),
   endDrag: () => ipcRenderer.send("butlerBuddy:endDrag"),
   openMenu: () => ipcRenderer.send("butlerBuddy:openMenu"),
+  openCurrentTask: () => ipcRenderer.send("butlerBuddy:openCurrentTask"),
   getPreferences: () => ipcRenderer.invoke("butlerBuddy:getPreferences"),
+  getRuntimeState: (): Promise<ButlerBuddyRuntimeStatePayload | undefined> =>
+    ipcRenderer.invoke("butlerBuddy:getRuntimeState"),
+  reportTaskResult: (result: "success" | "failure") =>
+    ipcRenderer.send("butlerBuddy:reportTaskResult", result),
   updatePreferences: (input: {
     visible?: boolean;
     shortcutEnabled?: boolean;
@@ -403,6 +434,16 @@ const butlerBuddy = {
     ) => cb(prefs);
     ipcRenderer.on("butlerBuddy:preferencesChanged", handler);
     return () => ipcRenderer.off("butlerBuddy:preferencesChanged", handler);
+  },
+  onRuntimeStateChanged(
+    cb: (state: ButlerBuddyRuntimeStatePayload) => void
+  ): () => void {
+    const handler = (
+      _event: IpcRendererEvent,
+      state: ButlerBuddyRuntimeStatePayload
+    ) => cb(state);
+    ipcRenderer.on("butlerBuddy:runtimeStateChanged", handler);
+    return () => ipcRenderer.off("butlerBuddy:runtimeStateChanged", handler);
   }
 };
 
