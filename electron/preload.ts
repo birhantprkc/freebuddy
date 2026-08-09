@@ -472,6 +472,10 @@ const workflow = {
     ipcRenderer.invoke("workflow:previewTeamRun", input),
   createTeamRun: (input: unknown) =>
     ipcRenderer.invoke("workflow:createTeamRun", input),
+  createDelegationRun: (input: unknown) =>
+    ipcRenderer.invoke("workflow:createDelegationRun", input),
+  approveDelegateWrite: (input: unknown) =>
+    ipcRenderer.invoke("workflow:approveDelegateWrite", input),
   onStepMessage(
     conversationId: string,
     cb: (event: { type: "appended" | "updated"; messageId: string }) => void

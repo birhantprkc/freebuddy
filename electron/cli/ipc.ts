@@ -128,6 +128,7 @@ import {
 import { tMain } from "./i18n.js";
 import { setApplicationMenuForLanguage } from "../menu.js";
 import { registerWorkflowIpc } from "./workflowIpc.js";
+import { registerDelegationIpc } from "./delegationIpc.js";
 import { readCodexUsage } from "./codexUsage.js";
 import {
   deleteSkill,
@@ -1289,5 +1290,6 @@ export function registerCliIpc() {
   );
 
   registerWorkflowIpc();
+  registerDelegationIpc();
   registerScheduledTaskIpc();
 }
