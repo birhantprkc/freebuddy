@@ -186,10 +186,10 @@ export class DelegationRuntime {
 export function recoverInterruptedDelegationRuns(): number {
   const now = new Date().toISOString();
   const rows = getDb()
-    .prepare("SELECT id FROM workflow_runs WHERE kind = 'delegation' AND status = 'running'")
+    .prepare("SELECT id FROM workflow_runs WHERE kind = 'delegation' AND status IN ('running','blocked')")
     .all() as Array<{ id: string }>;
   const update = getDb()
-    .prepare("UPDATE workflow_runs SET status = 'failed', summary = COALESCE(summary, 'Interrupted by app restart.'), updated_at = ? WHERE id = ? AND status = 'running'");
+    .prepare("UPDATE workflow_runs SET status = 'failed', summary = COALESCE(summary, 'Interrupted by app restart.'), updated_at = ? WHERE id = ? AND status IN ('running','blocked')");
   for (const row of rows) update.run(now, row.id);
   return rows.length;
 }

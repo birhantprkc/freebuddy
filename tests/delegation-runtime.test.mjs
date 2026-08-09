@@ -91,3 +91,20 @@ test("recoverInterruptedDelegationRuns marks running delegation runs as failed",
     assert.equal(recoverInterruptedDelegationRuns(), 0);
   });
 });
+
+test("recoverInterruptedDelegationRuns sweeps both running and blocked delegation runs", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime, recoverInterruptedDelegationRuns } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { createDelegationRun, setDelegationRunStatus, getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    // ensure the global runtime's setDelegateDeps doesn't interfere; recovery is a pure-DB fn
+    new DelegationRuntime({ webContents: undefined, resolveAgent: () => undefined, runAgent: async () => ({ summary: "", exitCode: 0, error: null }) });
+    const runningId = createDelegationRun({ goal: "g1", teamId: "t", teamSnapshotJson: "{}" });
+    const blockedId = createDelegationRun({ goal: "g2", teamId: "t", teamSnapshotJson: "{}" });
+    setDelegationRunStatus(blockedId, "blocked");
+    const n = recoverInterruptedDelegationRuns();
+    assert.ok(n >= 2);
+    assert.equal(getDelegationRun(runningId)?.status, "failed");
+    assert.equal(getDelegationRun(blockedId)?.status, "failed");
+  });
+});
