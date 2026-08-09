@@ -56,7 +56,7 @@ import {
   type CliRunArgs,
   type Running
 } from "./runtimeShared.js";
-import { isInactivitySuppressed } from "./inactivitySuppression.js";
+import { isInactivitySuppressed, removeInactivitySuppression } from "./inactivitySuppression.js";
 import { killProcessTree } from "./process-kill.js";
 import {
   registerDraftToolSession,
@@ -372,6 +372,7 @@ export async function runAcpAgent({
     if (finished) return;
     finished = true;
     disarmInactivityTimer();
+    removeInactivitySuppression(args.sessionId);
     terminalManager.dispose();
     running.delete(args.sessionId);
     unregisterDraftToolSession(args.sessionId);
