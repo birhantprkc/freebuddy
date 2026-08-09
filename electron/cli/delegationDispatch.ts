@@ -32,6 +32,8 @@ export interface DelegateExecArgs {
   childEventId: string;
   parentEventId: string;
   depth: number;
+  /** Aborted when the delegate exceeds its timeout (so the real executor can kill the child). */
+  signal?: AbortSignal;
 }
 
 export interface DelegateExecResult {
@@ -89,18 +91,14 @@ async function withRunMutex<T>(runId: string, fn: () => Promise<T>): Promise<T> 
   }
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => void): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
-  try {
-    return Promise.race([
-      p.finally(() => { if (timer) clearTimeout(timer); }),
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new DelegateTimeout()), ms);
-      })
-    ]);
-  } finally {
-    // no-op; timer cleared via p.finally or when it fires
-  }
+  return Promise.race([
+    p.finally(() => { if (timer) clearTimeout(timer); }),
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => { onTimeout?.(); reject(new DelegateTimeout()); }, ms);
+    })
+  ]);
 }
 
 export async function runDelegateAction(
@@ -163,15 +161,18 @@ export async function runDelegateAction(
     });
 
     addInactivitySuppression(binding.taskSessionId);
+    const controller = new AbortController();
     try {
       return await withRunMutex(binding.runId, async () => {
         try {
           const result = await withTimeout(
             deps.executor({
               teammate, task, runId: binding.runId, teamId: ctx.teamId, cwd: ctx.cwd,
-              childEventId, parentEventId: binding.parentEventId, depth: childDepth
+              childEventId, parentEventId: binding.parentEventId, depth: childDepth,
+              signal: controller.signal
             }),
-            ctx.policy.delegateTimeoutMs
+            ctx.policy.delegateTimeoutMs,
+            () => controller.abort()
           );
           const status: "done" | "failed" = result.error ? "failed" : "done";
           updateDelegationEvent(childEventId, {
@@ -186,6 +187,7 @@ export async function runDelegateAction(
           };
         } catch (err) {
           if (err instanceof DelegateTimeout) {
+            controller.abort();
             updateDelegationEvent(childEventId, { status: "timeout", resultSummary: "委派超时" });
             return { ok: false, status: "timeout", result: "delegate exceeded timeout", event_id: childEventId };
           }

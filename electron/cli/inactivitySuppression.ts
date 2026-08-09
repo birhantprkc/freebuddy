@@ -1,17 +1,19 @@
-const suppressed = new Set<string>();
+const refsBySession = new Map<string, number>();
 
 export function addInactivitySuppression(sessionId: string): void {
-  suppressed.add(sessionId);
+  refsBySession.set(sessionId, (refsBySession.get(sessionId) ?? 0) + 1);
 }
 
 export function removeInactivitySuppression(sessionId: string): void {
-  suppressed.delete(sessionId);
+  const next = (refsBySession.get(sessionId) ?? 0) - 1;
+  if (next <= 0) refsBySession.delete(sessionId);
+  else refsBySession.set(sessionId, next);
 }
 
 export function isInactivitySuppressed(sessionId: string): boolean {
-  return suppressed.has(sessionId);
+  return (refsBySession.get(sessionId) ?? 0) > 0;
 }
 
 export function clearInactivitySuppression(): void {
-  suppressed.clear();
+  refsBySession.clear();
 }

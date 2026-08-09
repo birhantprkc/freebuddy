@@ -243,3 +243,39 @@ test("result summary is truncated past the bound", async (t) => {
     assert.match(res.result, /\[truncated\]/);
   });
 });
+
+test("delegate passes a live AbortSignal to the executor, not aborted on success", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    let receivedSignal = null;
+    const res = await runDelegateAction(makeBinding(runId), "delegate", { teammate_id: "r-rev", task: "x" }, {
+      contextProvider,
+      executor: async (args) => { receivedSignal = args.signal; return { summary: "ok", exitCode: 0, error: null }; },
+      writeApproval: async () => true
+    });
+    assert.equal(res.status, "done");
+    assert.ok(receivedSignal instanceof AbortSignal);
+    assert.equal(receivedSignal.aborted, false);
+  });
+});
+
+test("delegate aborts the executor signal on timeout", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const shortCtx = { roster, policy: { ...policy, delegateTimeoutMs: 30 }, teamId: "team-1", cwd: "/repo" };
+    let receivedSignal = null;
+    const res = await runDelegateAction(makeBinding(runId), "delegate", { teammate_id: "r-rev", task: "x" }, {
+      contextProvider: () => shortCtx,
+      executor: (args) => { receivedSignal = args.signal; return new Promise(() => {}); },
+      writeApproval: async () => true
+    });
+    assert.equal(res.status, "timeout");
+    assert.ok(receivedSignal.aborted, "signal must be aborted on timeout");
+  });
+});
