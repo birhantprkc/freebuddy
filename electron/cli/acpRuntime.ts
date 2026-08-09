@@ -56,6 +56,7 @@ import {
   type CliRunArgs,
   type Running
 } from "./runtimeShared.js";
+import { isInactivitySuppressed } from "./inactivitySuppression.js";
 import { killProcessTree } from "./process-kill.js";
 import {
   registerDraftToolSession,
@@ -308,6 +309,10 @@ export async function runAcpAgent({
     });
 
   const onInactivityExpired = async () => {
+    if (args.sessionId && isInactivitySuppressed(args.sessionId)) {
+      inactivityFired = false;
+      return;
+    }
     if (finished) return;
     const alive = await probeAgentLiveness();
     if (finished) return;
@@ -340,6 +345,10 @@ export async function runAcpAgent({
   };
 
   const armInactivityTimer = () => {
+    if (args.sessionId && isInactivitySuppressed(args.sessionId)) {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      return;
+    }
     if (INACTIVITY_TIMEOUT_MS <= 0) return;
     if (inactivityTimer) clearTimeout(inactivityTimer);
     if (finished || inactivityFired) return;
