@@ -145,6 +145,20 @@ test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", ()
   assert.match(main, /surface: "butler-pet" \| "butler-chat"/);
   assert.match(main, /alwaysOnTop: true/);
   assert.match(main, /transparent: true/);
+  assert.equal(
+    main.match(
+      /type: process\.platform === "darwin" \? "panel" : undefined/g
+    )?.length,
+    2,
+    "pet and mini chat use macOS panels above full-screen Spaces"
+  );
+  assert.equal(
+    main.match(
+      /setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\)/g
+    )?.length,
+    2,
+    "pet and mini chat remain visible across macOS workspaces"
+  );
   assert.match(main, /startButlerPetDrag|applyButlerPetDrag/);
   assert.match(main, /butlerDragChatOrigin/);
   assert.match(preload, /ipcRenderer\.send\("butlerBuddy:toggleChat"\)/);

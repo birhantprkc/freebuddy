@@ -628,6 +628,7 @@ function createButlerBuddyWindows() {
   butlerChatWindow = new BrowserWindow({
     width: BUTLER_CHAT_WIDTH,
     height: BUTLER_CHAT_HEIGHT,
+    type: process.platform === "darwin" ? "panel" : undefined,
     show: false,
     frame: false,
     transparent: true,
@@ -657,6 +658,7 @@ function createButlerBuddyWindows() {
 
   butlerPetWindow = new BrowserWindow({
     ...initialButlerPetBounds(),
+    type: process.platform === "darwin" ? "panel" : undefined,
     show: false,
     frame: false,
     transparent: true,
