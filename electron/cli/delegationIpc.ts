@@ -37,14 +37,11 @@ export function registerDelegationIpc(): void {
 
   registerHandler(
     "workflow:createDelegationRun",
-    async (
-      event,
-      input: { teamId: string; goal: string; cwd?: string; conversationId?: string }
-    ) => {
+    (event, input: { teamId: string; goal: string; cwd?: string; conversationId?: string }) => {
       const team = getDelegationTeam(input.teamId);
       if (!team) return { ok: false as const, error: "team not found" };
       const rt = ensureDelegationRuntime(event);
-      const runId = await rt.start({
+      const runId = rt.prepareRun({
         goal: input.goal,
         teamId: input.teamId,
         teamSnapshot: {
@@ -55,6 +52,7 @@ export function registerDelegationIpc(): void {
         cwd: input.cwd,
         conversationId: input.conversationId
       });
+      void rt.runEntry(runId, input.goal);
       return { ok: true as const, runId };
     }
   );

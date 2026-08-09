@@ -83,25 +83,21 @@ export class DelegationRuntime {
     return runId;
   }
 
-  async start(input: {
-    goal: string; teamId: string;
-    teamSnapshot: { roster: DelegationRosterEntry[]; policy: DelegationPolicy; entryRoleId: string };
-    cwd?: string; conversationId?: string;
-  }): Promise<string> {
-    const runId = this.prepareRun(input);
-    const ctx = this.contexts.get(runId)!;
+  async runEntry(runId: string, goal: string): Promise<void> {
+    const ctx = this.contexts.get(runId);
+    if (!ctx) return;
     const entry = ctx.roster.find((r) => r.id === ctx.entryRoleId) ?? ctx.roster[0];
     const rootEventId = insertDelegationEvent({
       runId, parentEventId: null, agentId: entry.agentId, agentName: entry.label,
-      roleLabel: entry.label, taskText: input.goal, depth: 0, canWrite: entry.canWrite, status: "running"
+      roleLabel: entry.label, taskText: goal, depth: 0, canWrite: entry.canWrite, status: "running"
     });
     const resolved = this.deps.resolveAgent(entry.agentId);
     if (!resolved) {
       updateDelegationEvent(rootEventId, { status: "failed", resultSummary: `agent not found: ${entry.agentId}` });
       setDelegationRunStatus(runId, "failed");
-      return runId;
+      return;
     }
-    const prompt = buildDelegateTaskPrompt(input.goal, ctx.roster, entry.id, 0, ctx.policy.maxDepth);
+    const prompt = buildDelegateTaskPrompt(goal, ctx.roster, entry.id, 0, ctx.policy.maxDepth);
     try {
       const result = await this.deps.runAgent({
         sessionId: `del-${runId}`,
@@ -126,6 +122,15 @@ export class DelegationRuntime {
       updateDelegationEvent(rootEventId, { status: "failed", resultSummary: (err as Error).message });
       setDelegationRunStatus(runId, "failed");
     }
+  }
+
+  async start(input: {
+    goal: string; teamId: string;
+    teamSnapshot: { roster: DelegationRosterEntry[]; policy: DelegationPolicy; entryRoleId: string };
+    cwd?: string; conversationId?: string;
+  }): Promise<string> {
+    const runId = this.prepareRun(input);
+    await this.runEntry(runId, input.goal);
     return runId;
   }
 

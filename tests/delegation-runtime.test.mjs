@@ -77,6 +77,27 @@ test("run start creates run row + root event and spawns entry via runAgent", asy
   });
 });
 
+test("prepareRun returns runId immediately; runEntry spawns the entry agent", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { listDelegationEvents } = await import("../dist-electron/cli/delegationRuns.js");
+    let spawned = null;
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({ adapter: "codex-acp", agentName: "Codex", skillIds: [] }),
+      runAgent: async (args) => { spawned = args; return { summary: "done", exitCode: 0, error: null }; }
+    });
+    const runId = rt.prepareRun({ goal: "实现X", teamId: "t", teamSnapshot: snap, cwd: "/r" });
+    // prepareRun returned immediately without spawning
+    assert.equal(spawned, null);
+    await rt.runEntry(runId, "实现X");
+    assert.equal(spawned.agentId, "cli-codex-acp");
+    assert.equal(spawned.delegation.depth, 0);
+    assert.ok(listDelegationEvents(runId).some((e) => e.depth === 0));
+  });
+});
+
 test("recoverInterruptedDelegationRuns marks running delegation runs as failed", async (t) => {
   if (!bindingAvailable) { t.skip(); return; }
   await withDb(async () => {
