@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -2125,7 +2126,7 @@ export function ChatView({
             }}
           />
         )}
-        {displayMessages.map((m) => {
+        {displayMessages.map((m, idx) => {
           const partial =
             replayPartial && replayPartial.messageId === m.id
               ? replayPartial
@@ -2134,24 +2135,42 @@ export function ChatView({
             (m.agentId ? membersById.get(m.agentId) : undefined) ??
             (m.agentName ? membersByName.get(m.agentName) : undefined);
           const shareReferences = shareReferencesByMessageId.get(m.id);
+          const prevMessage = idx > 0 ? displayMessages[idx - 1] : undefined;
+          const showHandoff =
+            !!prevMessage &&
+            prevMessage.role === "assistant" &&
+            m.role === "assistant" &&
+            !!prevMessage.roleLabel &&
+            !!m.roleLabel &&
+            prevMessage.roleLabel !== m.roleLabel;
           return (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              adapter={m.adapter ?? messageMember?.cli.adapter ?? conv?.adapter}
-              agentName={m.agentName ?? messageMember?.name ?? conv?.agentName}
-              agentIconKey={messageMember?.avatar}
-              blockLimit={partial?.blockLimit}
-              typingChars={partial?.typingChars}
-              afterContent={
-                shareReferences && shareReferences.length > 0 ? (
-                  <SharedConversationReferences
-                    references={shareReferences}
-                    conversations={conversations}
-                  />
-                ) : undefined
-              }
-            />
+            <Fragment key={m.id}>
+              {showHandoff && (
+                <div className="delegation-handoff">
+                  <span className="delegation-handoff-rule" />
+                  <span className="delegation-handoff-text">
+                    {t("workflow.delegation.handoffTo", { defaultValue: "交接给" })} {m.roleLabel}
+                  </span>
+                  <span className="delegation-handoff-rule" />
+                </div>
+              )}
+              <MessageBubble
+                message={m}
+                adapter={m.adapter ?? messageMember?.cli.adapter ?? conv?.adapter}
+                agentName={m.agentName ?? messageMember?.name ?? conv?.agentName}
+                agentIconKey={messageMember?.avatar}
+                blockLimit={partial?.blockLimit}
+                typingChars={partial?.typingChars}
+                afterContent={
+                  shareReferences && shareReferences.length > 0 ? (
+                    <SharedConversationReferences
+                      references={shareReferences}
+                      conversations={conversations}
+                    />
+                  ) : undefined
+                }
+              />
+            </Fragment>
           );
         })}
         {activeRun?.conversationId === conv.id &&

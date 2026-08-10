@@ -16140,6 +16140,25 @@ button.ghost:focus-visible,
   /* Mirrors .workflow-run-panel; declared separately so delegation-only styles
      can evolve without affecting workflow runs. */
 }
+.delegation-handoff {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 12% 4px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.delegation-handoff-rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: rgba(128, 128, 128, 0.35);
+}
+.delegation-handoff-text {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--color-secondary, #8a8a8a);
+  white-space: nowrap;
+}
 .delegation-run-tree {
   flex: 1 1 auto;
   min-height: 0;

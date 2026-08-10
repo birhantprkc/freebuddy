@@ -1474,6 +1474,7 @@
       }
     },
     "delegation": {
+      "handoffTo": "handoff to",
       "editorTitle": "Self-organizing delegation team",
       "overview": "Overview",
       "namePlaceholder": "Team name",
