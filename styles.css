@@ -16136,6 +16136,146 @@ button.ghost:focus-visible,
   overflow-y: auto;
   padding: 0 14px 14px;
 }
+.delegation-run-panel {
+  /* Mirrors .workflow-run-panel; declared separately so delegation-only styles
+     can evolve without affecting workflow runs. */
+}
+.delegation-run-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.delegation-run-tree-empty,
+.delegation-run-loading {
+  padding: 8px 14px 14px;
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+}
+.delegation-run-error {
+  margin: 4px 14px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #991b1b;
+  background: #fee2e2;
+  border-radius: 6px;
+}
+.delegation-run-approval {
+  align-items: center;
+  gap: 8px;
+}
+.delegation-run-approval-label {
+  font-size: 12px;
+  color: var(--fb-text);
+}
+.delegation-event-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--fb-border);
+  background: var(--fb-panel-bg);
+}
+.delegation-event-row.live {
+  border-color: var(--fb-brand, #10b981);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.12);
+}
+.delegation-event-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.delegation-event-agent {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fb-text);
+}
+.delegation-event-role {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+}
+.delegation-event-duration {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+.delegation-event-toggle {
+  margin-left: auto;
+  font-size: 11px;
+  background: transparent;
+  border: none;
+  color: var(--fb-brand, #10b981);
+  cursor: pointer;
+  padding: 0;
+}
+.delegation-event-status {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-alt, #f3f4f6);
+  color: var(--muted, #6b7280);
+  font-weight: 500;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.delegation-event-status.running {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--fb-brand, #10b981);
+}
+.delegation-event-status.failed,
+.delegation-event-status.timeout {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.delegation-event-status.cancelled {
+  background: #fef3c7;
+  color: #92400e;
+}
+.delegation-event-status.done {
+  background: #dcfce7;
+  color: #166534;
+}
+.delegation-event-task {
+  font-size: 12px;
+  color: var(--fb-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.delegation-event-result {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px dashed var(--fb-border);
+  padding-top: 4px;
+  margin-top: 2px;
+}
+.delegation-event-timing {
+  font-size: 10px;
+  color: var(--muted, #6b7280);
+  font-variant-numeric: tabular-nums;
+}
+.new-task-delegation-run {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.new-task-delegation-run-close {
+  align-self: flex-end;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--fb-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: var(--fb-text);
+}
 .workflow-steps-antd .ant-steps {
   font-family: var(--fb-font);
 }

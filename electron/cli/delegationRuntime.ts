@@ -186,6 +186,11 @@ export class DelegationRuntime {
     }
     pending.resolve(approved);
   }
+
+  stopRun(runId: string): void {
+    setDelegationRunStatus(runId, "killed");
+    // v1: status-only. Full multi-agent kill (cancelling live ACP sessions) is a documented fast-follow.
+  }
 }
 
 export function recoverInterruptedDelegationRuns(): number {

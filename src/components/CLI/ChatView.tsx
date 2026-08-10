@@ -18,6 +18,7 @@ import { useWorkflowStore } from "@/store/workflowStore";
 import { useWorkflowTeamStore } from "@/store/workflowTeamStore";
 import { useDelegationTeamStore } from "@/store/delegationStore";
 import { delegationClient } from "@/services/delegation/client";
+import { DelegationRunPanel } from "../Workflows/DelegationRunPanel";
 import { useNewTaskUiStore } from "@/store/newTaskUiStore";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
 import { useProjectStore } from "@/store/projectStore";
@@ -601,6 +602,7 @@ export function ChatView({
   const newTaskConfigProbeGenerationRef = useRef(0);
   const [permissionMode, setPermissionMode] = useState<"auto" | "ask">("auto");
   const [preflightMsg, setPreflightMsg] = useState<string | null>(null);
+  const [activeDelegationRunId, setActiveDelegationRunId] = useState<string | null>(null);
   const [contextReferences, setContextReferences] = useState<
     ConversationContextReference[]
   >([]);
@@ -1616,6 +1618,7 @@ export function ChatView({
           if (!res.ok) {
             throw new Error(res.error);
           }
+          setActiveDelegationRunId(res.runId);
           setNewTaskDraft("");
           setNewTaskPendingAttachments((prev) =>
             detachAttachmentsForSend(attachmentsToSend, prev)
@@ -1924,6 +1927,7 @@ export function ChatView({
         if (!res.ok) {
           throw new Error(res.error);
         }
+        setActiveDelegationRunId(res.runId);
         setNewTaskDraft("");
         setNewTaskPendingAttachments([]);
         clearTeamPreview();
@@ -2070,6 +2074,8 @@ export function ChatView({
           setRequestedTeamId(teamId);
         }}
         sendLocked={newTaskSendLock}
+        activeDelegationRunId={activeDelegationRunId}
+        onClearDelegationRun={() => setActiveDelegationRunId(null)}
         onSubmit={() => void onCreateAndSend()}
       />
     );
@@ -2472,6 +2478,8 @@ function NewTaskHome({
   onAttachmentPaste,
   onTaskMode,
   onTeam,
+  activeDelegationRunId,
+  onClearDelegationRun,
   onSubmit
 }: {
   draft: string;
@@ -2512,6 +2520,8 @@ function NewTaskHome({
   onAttachmentPaste: (event: ClipboardEvent) => void;
   onTaskMode: (value: "normal" | "team") => void;
   onTeam: (id: string) => void;
+  activeDelegationRunId: string | null;
+  onClearDelegationRun: () => void;
   onSubmit: () => void;
 }) {
   const { t } = useTranslation();
@@ -2781,6 +2791,19 @@ function NewTaskHome({
 
         {preflightMsg && <div className="preflight-warn new-task-warn">{preflightMsg}</div>}
       </section>
+
+      {activeDelegationRunId && (
+        <div className="new-task-delegation-run">
+          <DelegationRunPanel runId={activeDelegationRunId} />
+          <button
+            type="button"
+            className="new-task-delegation-run-close"
+            onClick={onClearDelegationRun}
+          >
+            {t("common.close")}
+          </button>
+        </div>
+      )}
       <NewTaskUnreadConversations />
       </div>
       {workspacePickerOpen && (

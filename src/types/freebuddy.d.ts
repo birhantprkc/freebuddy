@@ -582,6 +582,10 @@ declare global {
     deleteTeam(id: string): Promise<boolean>;
     getRun(id: string): Promise<unknown>;
     listEvents(runId: string): Promise<unknown[]>;
+    listPendingApprovals(
+      runId: string
+    ): Promise<Array<{ approvalId: string; runId: string }>>;
+    stopRun(runId: string): Promise<boolean>;
     onChanged(cb: () => void): () => void;
   }
 

@@ -538,6 +538,9 @@ const delegation = {
   deleteTeam: (id: string) => ipcRenderer.invoke("delegation:deleteTeam", id),
   getRun: (id: string) => ipcRenderer.invoke("delegation:getRun", id),
   listEvents: (runId: string) => ipcRenderer.invoke("delegation:listEvents", runId),
+  listPendingApprovals: (runId: string) =>
+    ipcRenderer.invoke("delegation:listPendingApprovals", runId),
+  stopRun: (runId: string) => ipcRenderer.invoke("delegation:stopRun", runId),
   onChanged: (cb: () => void): (() => void) => {
     const channel = "delegationTeams://changed";
     const listener = () => cb();

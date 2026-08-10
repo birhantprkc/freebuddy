@@ -91,6 +91,16 @@ export const delegationClient = {
     return api().listEvents(runId);
   },
 
+  listPendingApprovals(
+    runId: string
+  ): Promise<Array<{ approvalId: string; runId: string }>> {
+    return api().listPendingApprovals(runId);
+  },
+
+  stopRun(runId: string): Promise<boolean> {
+    return api().stopRun(runId);
+  },
+
   onChanged(cb: () => void): (() => void) | undefined {
     return window.freebuddy?.delegation?.onChanged?.(cb);
   }

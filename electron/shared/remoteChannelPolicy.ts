@@ -165,7 +165,9 @@ const ALLOW = [
   "delegation:getRun",
   "delegation:getTeam",
   "delegation:listEvents",
+  "delegation:listPendingApprovals",
   "delegation:listTeams",
+  "delegation:stopRun",
   "delegation:updateTeam"
 ] as const;
 

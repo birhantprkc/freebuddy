@@ -67,4 +67,20 @@ export function registerDelegationIpc(): void {
       return true;
     }
   );
+
+  registerHandler(
+    "delegation:listPendingApprovals",
+    (event, runId: string) =>
+      ensureDelegationRuntime(event)
+        .listPendingApprovals()
+        .filter((p) => p.runId === runId)
+  );
+
+  registerHandler(
+    "delegation:stopRun",
+    (event, runId: string) => {
+      ensureDelegationRuntime(event).stopRun(runId);
+      return true;
+    }
+  );
 }
