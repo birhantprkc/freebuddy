@@ -1,6 +1,8 @@
 import type { WebContents } from "electron";
+import { randomUUID } from "node:crypto";
 import { cliRun } from "./runtime.js";
 import type { CliRunArgs } from "./runtimeShared.js";
+import { appendMessage, updateMessage } from "./conversations.js";
 
 export interface DelegateRunResult {
   summary: string;
@@ -39,16 +41,65 @@ export function createDelegateAgentRunner(webContents: WebContents | undefined):
     const collected: unknown[] = [];
     let exitCode: number | null = null;
     let errored: string | null = null;
-    await cliRun(webContents as WebContents, args, (e) => {
-      if (e.type === "items") {
-        const items = (e as { items?: unknown[] }).items;
-        if (items?.length) collected.push(...items);
-      } else if (e.type === "done") {
-        exitCode = (e as { exitCode: number }).exitCode;
-      } else if (e.type === "error") {
-        errored = (e as { message: string }).message;
+
+    // When a conversation is present, mirror workflowRuntime.executeStep: post
+    // a placeholder assistant message (taskId links it to the live cli://
+    // stream), stream collected items into it on a debounce, then flip the
+    // status once cliRun settles. Without a conversationId we harvest only.
+    const conversationId = args.conversationId;
+    let messageId: string | undefined;
+    let flushTimer: NodeJS.Timeout | undefined;
+    const scheduleFlush = () => {
+      if (flushTimer) return;
+      flushTimer = setTimeout(() => {
+        flushTimer = undefined;
+        if (messageId) updateMessage({ id: messageId, content: JSON.stringify(collected) });
+      }, 300);
+    };
+
+    if (conversationId) {
+      messageId = randomUUID();
+      appendMessage({
+        id: messageId,
+        conversationId,
+        role: "assistant",
+        status: "running",
+        content: "[]",
+        taskId: args.sessionId,
+        agentId: args.agentId,
+        agentName: args.agentName,
+        adapter: args.adapter,
+        roleLabel: args.roleLabel
+      });
+    }
+
+    try {
+      await cliRun(webContents as WebContents, args, (e) => {
+        if (e.type === "items") {
+          const items = (e as { items?: unknown[] }).items;
+          if (items?.length) {
+            collected.push(...items);
+            if (messageId) scheduleFlush();
+          }
+        } else if (e.type === "done") {
+          exitCode = (e as { exitCode: number }).exitCode;
+        } else if (e.type === "error") {
+          errored = (e as { message: string }).message;
+        }
+      });
+    } finally {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = undefined;
       }
-    });
+      if (messageId) {
+        updateMessage({
+          id: messageId,
+          content: JSON.stringify(collected),
+          status: errored ? "failed" : "done"
+        });
+      }
+    }
     return {
       summary: summarizeDelegateOutput(collected),
       exitCode,

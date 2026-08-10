@@ -67,6 +67,8 @@ export interface CliRunArgs {
   contextReferences?: ConversationContextPayload[];
   /** When set, attach the freebuddy-delegate MCP so this agent can delegate in a delegation run. */
   delegation?: DelegationCliContext;
+  /** Capsule label for the in-chat assistant bubble (e.g. step/title). */
+  roleLabel?: string;
 }
 
 export interface DelegationCliContext {
