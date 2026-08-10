@@ -1460,6 +1460,9 @@
     },
     "delegation": {
       "handoffTo": "交接给",
+      "teamTitle": "团队",
+      "entry": "入口",
+      "readonly": "只读",
       "editorTitle": "自组织委派团队",
       "overview": "概览",
       "namePlaceholder": "团队名称",
