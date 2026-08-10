@@ -16,7 +16,7 @@ import { createDelegateAgentRunner } from "./delegationRunner.js";
 
 let runtime: DelegationRuntime | null = null;
 
-function ensureDelegationRuntime(event: IpcMainInvokeEvent): DelegationRuntime {
+export function ensureDelegationRuntime(event: IpcMainInvokeEvent): DelegationRuntime {
   if (runtime) return runtime;
   const win = BrowserWindow.fromWebContents(event.sender);
   runtime = new DelegationRuntime({

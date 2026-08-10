@@ -128,7 +128,7 @@ import {
 import { tMain } from "./i18n.js";
 import { setApplicationMenuForLanguage } from "../menu.js";
 import { registerWorkflowIpc } from "./workflowIpc.js";
-import { registerDelegationIpc } from "./delegationIpc.js";
+import { registerDelegationIpc, ensureDelegationRuntime } from "./delegationIpc.js";
 import { registerDelegationTeamIpc } from "./delegationTeamIpc.js";
 import {
   getDelegationRunByConversation,
@@ -712,6 +712,7 @@ export function registerCliIpc() {
       try {
         const delRun = getDelegationRunByConversation(conversation.id);
         if (delRun?.teamId) {
+          ensureDelegationRuntime(event);
           const team = getDelegationTeam(delRun.teamId);
           if (team) {
             const events = listDelegationEvents(delRun.id);

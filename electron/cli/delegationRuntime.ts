@@ -4,11 +4,13 @@ import { safeSendToWebContents } from "./ipcSend.js";
 import { getDb } from "./db.js";
 import {
   createDelegationRun,
+  getDelegationRun,
   setDelegationRunStatus,
   insertDelegationEvent,
   updateDelegationEvent
 } from "./delegationRuns.js";
 import type { DelegationRosterEntry, DelegationPolicy } from "./delegationTeamTypes.js";
+import { getDelegationTeam } from "./delegationTeams.js";
 import type { CLIAdapterId } from "./adapters.js";
 import { resolveSkillSnapshots } from "./skills.js";
 import { setDelegateDeps, type DelegateRunContext, type DelegateExecArgs, type DelegateExecResult } from "./delegationDispatch.js";
@@ -62,9 +64,30 @@ export class DelegationRuntime {
   }
 
   getContext(runId: string): DelegateRunContext | undefined {
-    const ctx = this.contexts.get(runId);
+    let ctx = this.contexts.get(runId);
+    if (!ctx) {
+      ctx = this.loadContextFromDb(runId);
+    }
     if (!ctx) return undefined;
     return { roster: ctx.roster, policy: ctx.policy, teamId: ctx.teamId, cwd: ctx.cwd };
+  }
+
+  private loadContextFromDb(runId: string): RunContext | undefined {
+    const run = getDelegationRun(runId);
+    if (!run?.teamId) return undefined;
+    const team = getDelegationTeam(run.teamId);
+    if (!team) return undefined;
+    const ctx: RunContext = {
+      runId,
+      teamId: run.teamId,
+      roster: team.roster,
+      policy: team.policy,
+      entryRoleId: team.entryRoleId,
+      cwd: run.cwd ?? undefined,
+      conversationId: run.conversationId ?? undefined
+    };
+    this.contexts.set(runId, ctx);
+    return ctx;
   }
 
   prepareRun(input: {
