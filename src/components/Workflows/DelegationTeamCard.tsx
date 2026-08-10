@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { delegationClient } from "@/services/delegation/client";
 import type { DelegationTeam } from "@/services/workflowTeams/types";
 import { useConversationStore } from "@/store/conversationStore";
+import { AgentAvatar } from "../CLI/AgentAvatar";
 
 export function DelegationTeamCard({
   conversationId
@@ -38,6 +39,8 @@ export function DelegationTeamCard({
 
   const memberName = (agentId: string): string =>
     members.find((m) => m.id === agentId)?.name ?? agentId;
+  const memberAdapter = (agentId: string): string | undefined =>
+    members.find((m) => m.id === agentId)?.cli.adapter;
 
   return (
     <section className="side-card delegation-roster-card">
@@ -50,12 +53,16 @@ export function DelegationTeamCard({
           const isEntry = r.id === team.entryRoleId;
           return (
             <div key={r.id} className="agent-lockup delegation-roster-member">
-              <div
-                className={`agent-avatar${isEntry ? " entry" : ""}`}
-                style={isEntry ? { background: "var(--fb-brand-gradient)" } : { background: "rgba(128,128,128,0.2)" }}
-              >
-                <span>{r.label.slice(0, 2).toUpperCase()}</span>
-              </div>
+              <AgentAvatar
+                adapter={memberAdapter(r.agentId)}
+                agentId={r.agentId}
+                className="agent-avatar"
+                fallback={
+                  <div className="agent-avatar" style={{ background: "rgba(128,128,128,0.2)" }}>
+                    <span>{r.label.slice(0, 2).toUpperCase()}</span>
+                  </div>
+                }
+              />
               <div>
                 <strong>
                   {r.label}
