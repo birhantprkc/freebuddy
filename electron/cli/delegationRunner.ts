@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { cliRun } from "./runtime.js";
 import type { CliRunArgs } from "./runtimeShared.js";
 import { appendMessage, updateMessage } from "./conversations.js";
+import { safeSendToWebContents } from "./ipcSend.js";
 
 export interface DelegateRunResult {
   summary: string;
@@ -49,11 +50,25 @@ export function createDelegateAgentRunner(webContents: WebContents | undefined):
     const conversationId = args.conversationId;
     let messageId: string | undefined;
     let flushTimer: NodeJS.Timeout | undefined;
+
+    const broadcastMsg = (type: "appended" | "updated") => {
+      if (messageId && conversationId) {
+        safeSendToWebContents(webContents, `workflow://message/${conversationId}`, {
+          type,
+          conversationId,
+          messageId
+        });
+      }
+    };
+
     const scheduleFlush = () => {
       if (flushTimer) return;
       flushTimer = setTimeout(() => {
         flushTimer = undefined;
-        if (messageId) updateMessage({ id: messageId, content: JSON.stringify(collected) });
+        if (messageId) {
+          updateMessage({ id: messageId, content: JSON.stringify(collected) });
+          broadcastMsg("updated");
+        }
       }, 300);
     };
 
@@ -71,6 +86,7 @@ export function createDelegateAgentRunner(webContents: WebContents | undefined):
         adapter: args.adapter,
         roleLabel: args.roleLabel
       });
+      broadcastMsg("appended");
     }
 
     try {
@@ -98,6 +114,7 @@ export function createDelegateAgentRunner(webContents: WebContents | undefined):
           content: JSON.stringify(collected),
           status: errored ? "failed" : "done"
         });
+        broadcastMsg("updated");
       }
     }
     return {
