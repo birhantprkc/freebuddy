@@ -5,12 +5,6 @@ import { delegationClient } from "@/services/delegation/client";
 import type { DelegationTeam } from "@/services/workflowTeams/types";
 import { useConversationStore } from "@/store/conversationStore";
 
-/**
- * Shown in the third column (DetailColumn) for a delegation conversation.
- * Loads the team linked to the conversation's delegation run and renders a
- * compact roster card (role / agent / read-write / capability / entry marker).
- * Renders nothing for non-delegation conversations.
- */
 export function DelegationTeamCard({
   conversationId
 }: {
@@ -46,33 +40,31 @@ export function DelegationTeamCard({
     members.find((m) => m.id === agentId)?.name ?? agentId;
 
   return (
-    <div className="delegation-team-card">
-      <div className="delegation-team-card-title">
-        {t("workflow.delegation.teamTitle", { defaultValue: "团队" })}：{team.name}
+    <section className="side-card delegation-roster-card">
+      <div className="side-card-header">
+        <span>{t("workflow.delegation.teamTitle", { defaultValue: "团队" })}：{team.name}</span>
+        <strong>{team.roster.length}</strong>
       </div>
-      <div className="delegation-team-roster">
+      <div className="delegation-roster-body">
         {team.roster.map((r) => (
-          <div key={r.id} className="delegation-team-member">
-            <div className="delegation-team-member-head">
-              <span className="delegation-team-member-label">{r.label}</span>
+          <div key={r.id} className="delegation-roster-member">
+            <div className="delegation-roster-member-head">
+              <span className="delegation-roster-member-label">{r.label}</span>
               {r.id === team.entryRoleId && (
-                <span className="delegation-team-member-entry">
+                <span className="delegation-roster-member-tag entry">
                   {t("workflow.delegation.entry", { defaultValue: "入口" })}
                 </span>
               )}
-              <span
-                className={`delegation-team-member-flag${r.canWrite ? " w" : " ro"}`}
-              >
+              <span className={`delegation-roster-member-tag${r.canWrite ? " w" : " ro"}`}>
                 {r.canWrite
                   ? t("workflow.delegation.canWrite")
                   : t("workflow.delegation.readonly", { defaultValue: "只读" })}
               </span>
             </div>
-            <div className="delegation-team-member-agent">{memberName(r.agentId)}</div>
-            <div className="delegation-team-member-cap">{r.capability}</div>
+            <div className="delegation-roster-member-agent">{memberName(r.agentId)}</div>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
