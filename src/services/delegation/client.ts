@@ -26,6 +26,20 @@ export interface UpdateDelegationTeamPatch {
   policy?: DelegationPolicy;
 }
 
+export interface DelegationRunRow {
+  id: string;
+  kind: "delegation";
+  conversationId: string | null;
+  goal: string;
+  status: string;
+  cwd: string | null;
+  teamId: string | null;
+  teamSnapshotJson: string | null;
+  createdAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+}
+
 function api() {
   const delegation = window.freebuddy?.delegation;
   if (!delegation) throw new Error("delegation bridge unavailable");
@@ -88,6 +102,12 @@ export const delegationClient = {
 
   getRun(id: string): Promise<unknown> {
     return api().getRun(id);
+  },
+
+  getRunByConversation(
+    conversationId: string
+  ): Promise<DelegationRunRow | undefined> {
+    return api().getRunByConversation(conversationId);
   },
 
   listEvents(runId: string): Promise<unknown[]> {

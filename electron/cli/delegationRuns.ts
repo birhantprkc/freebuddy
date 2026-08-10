@@ -69,6 +69,30 @@ export function getDelegationRun(id: string): DelegationRunRow | undefined {
   };
 }
 
+export function getDelegationRunByConversation(
+  conversationId: string
+): DelegationRunRow | undefined {
+  const r = getDb()
+    .prepare(
+      "SELECT * FROM workflow_runs WHERE kind = 'delegation' AND conversation_id = ? ORDER BY created_at DESC LIMIT 1"
+    )
+    .get(conversationId) as any;
+  if (!r) return undefined;
+  return {
+    id: r.id,
+    kind: "delegation",
+    conversationId: r.conversation_id,
+    goal: r.goal,
+    status: r.status,
+    cwd: r.cwd,
+    teamId: r.team_id,
+    teamSnapshotJson: r.team_snapshot_json,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    endedAt: r.ended_at
+  };
+}
+
 export function setDelegationRunStatus(id: string, status: WorkflowRunStatus): void {
   const now = new Date().toISOString();
   getDb()

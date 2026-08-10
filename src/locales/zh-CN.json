@@ -1481,6 +1481,7 @@
       "writeApproval": "写权限",
       "runTitle": "委派运行",
       "approve": "批准",
+      "reject": "拒绝",
       "approvePrompt": "一个队友请求写权限。",
       "loading": "加载中…",
       "noActivity": "暂无委派活动。",

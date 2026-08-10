@@ -163,6 +163,7 @@ const ALLOW = [
   "delegation:createTeam",
   "delegation:deleteTeam",
   "delegation:getRun",
+  "delegation:getRunByConversation",
   "delegation:getTeam",
   "delegation:listEvents",
   "delegation:listPendingApprovals",

@@ -64,6 +64,7 @@ import type {
   DelegationRosterEntry,
   DelegationPolicy
 } from "@/services/workflowTeams/types";
+import type { DelegationRunRow } from "@/services/delegation/client";
 import type {
   AddFeedSourceInput,
   FeedItem,
@@ -584,6 +585,9 @@ declare global {
     ): Promise<DelegationTeam | undefined>;
     deleteTeam(id: string): Promise<boolean>;
     getRun(id: string): Promise<unknown>;
+    getRunByConversation(
+      conversationId: string
+    ): Promise<DelegationRunRow | undefined>;
     listEvents(runId: string): Promise<unknown[]>;
     listPendingApprovals(
       runId: string

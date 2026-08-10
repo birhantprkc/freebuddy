@@ -537,6 +537,8 @@ const delegation = {
     ipcRenderer.invoke("delegation:updateTeam", { id, patch }),
   deleteTeam: (id: string) => ipcRenderer.invoke("delegation:deleteTeam", id),
   getRun: (id: string) => ipcRenderer.invoke("delegation:getRun", id),
+  getRunByConversation: (conversationId: string) =>
+    ipcRenderer.invoke("delegation:getRunByConversation", conversationId),
   listEvents: (runId: string) => ipcRenderer.invoke("delegation:listEvents", runId),
   listPendingApprovals: (runId: string) =>
     ipcRenderer.invoke("delegation:listPendingApprovals", runId),

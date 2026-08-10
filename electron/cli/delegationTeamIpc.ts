@@ -8,7 +8,7 @@ import {
   type UpsertDelegationTeamInput,
   type UpdateDelegationTeamPatch
 } from "./delegationTeams.js";
-import { getDelegationRun, listDelegationEvents } from "./delegationRuns.js";
+import { getDelegationRun, getDelegationRunByConversation, listDelegationEvents } from "./delegationRuns.js";
 
 export function registerDelegationTeamIpc(): void {
   registerHandler("delegation:listTeams", () => listDelegationTeams());
@@ -23,6 +23,9 @@ export function registerDelegationTeamIpc(): void {
   );
   registerHandler("delegation:deleteTeam", (_e, id: string) => deleteDelegationTeam(id));
   registerHandler("delegation:getRun", (_e, runId: string) => getDelegationRun(runId));
+  registerHandler("delegation:getRunByConversation", (_e, conversationId: string) =>
+    getDelegationRunByConversation(conversationId)
+  );
   registerHandler("delegation:listEvents", (_e, runId: string) =>
     listDelegationEvents(runId)
   );

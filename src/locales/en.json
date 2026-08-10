@@ -1496,6 +1496,7 @@
       "writeApproval": "Write approval",
       "runTitle": "Delegation run",
       "approve": "Approve",
+      "reject": "Reject",
       "approvePrompt": "A teammate is requesting write access.",
       "loading": "Loading…",
       "noActivity": "No delegation activity yet.",

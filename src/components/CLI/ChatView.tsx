@@ -68,6 +68,7 @@ import { MessageBubble } from "./MessageBubble";
 import { AgentAvatar } from "./AgentAvatar";
 import { CodeWhipOverlay } from "./CodeWhipOverlay";
 import { DelegationTeamPreviewCard } from "../Workflows/DelegationTeamPreviewCard";
+import { DelegationApprovalCard } from "../Workflows/DelegationApprovalCard";
 import { useReplayStore } from "@/store/replayStore";
 import { parseSlashDraft, SlashCommandMenu } from "./SlashCommandMenu";
 import {
@@ -2184,6 +2185,8 @@ export function ChatView({
       </div>
 
       {preflightMsg && <div className="preflight-warn">{preflightMsg}</div>}
+
+      {conv && <DelegationApprovalCard conversationId={conv.id} />}
 
       <div
         className={`chat-composer${replaying ? " replay-disabled" : ""}${chatAttachmentImport.dragActive ? " attachment-drop-active" : ""}`}
