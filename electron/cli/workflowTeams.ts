@@ -68,7 +68,7 @@ export function listWorkflowTeams(): WorkflowTeam[] {
 
 export function getWorkflowTeam(id: string): WorkflowTeam | undefined {
   const row = getDb()
-    .prepare("SELECT * FROM workflow_teams WHERE id = ?")
+    .prepare("SELECT * FROM workflow_teams WHERE id = ? AND (kind = 'workflow' OR kind IS NULL)")
     .get(id) as any;
   return row ? rowToTeam(row) : undefined;
 }

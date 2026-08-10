@@ -203,3 +203,40 @@ export interface WorkflowTeamPreview {
   maxLoops: number;
   plan: WorkflowPlan;
 }
+
+export interface DelegationRosterEntry {
+  id: string;
+  label: string;
+  agentId: string;
+  model?: string;
+  modelOptionId?: string;
+  capability: string;
+  canWrite: boolean;
+  skillIds?: string[];
+}
+export interface DelegationPolicy {
+  allowWrites: boolean;
+  requireApprovalBeforeDelegateWrite: boolean;
+  maxDepth: number;
+  delegateTimeoutMs: number;
+  maxConcurrentDelegates: number;
+  stopOnDelegateFailure: boolean;
+}
+export interface DelegationTeam {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  enabled: boolean;
+  source: "builtin" | "user";
+  kind: "delegation";
+  entryRoleId: string;
+  roster: DelegationRosterEntry[];
+  policy: DelegationPolicy;
+  createdAt: string;
+  updatedAt: string;
+}
+export type AnyTeam = WorkflowTeam | DelegationTeam;
+export function isDelegationTeam(t: AnyTeam): t is DelegationTeam {
+  return (t as DelegationTeam).kind === "delegation";
+}
