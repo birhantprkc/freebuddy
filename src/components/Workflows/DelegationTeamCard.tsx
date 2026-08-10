@@ -43,16 +43,20 @@ export function DelegationTeamCard({
     members.find((m) => m.id === agentId)?.cli.adapter;
 
   return (
-    <section className="side-card delegation-roster-card">
-      <div className="side-card-header">
-        <span>{team.name}</span>
-        <strong>{team.roster.length}</strong>
-      </div>
-      <div className="delegation-roster-body">
-        {team.roster.map((r) => {
-          const isEntry = r.id === team.entryRoleId;
-          return (
-            <div key={r.id} className="agent-lockup delegation-roster-member">
+    <div className="delegation-roster-stack">
+      {team.roster.map((r) => {
+        const isEntry = r.id === team.entryRoleId;
+        const badge = [
+          r.canWrite ? t("workflow.delegation.canWrite") : t("workflow.delegation.readonly", { defaultValue: "只读" }),
+          isEntry ? t("workflow.delegation.entry", { defaultValue: "入口" }) : ""
+        ].filter(Boolean).join(" · ");
+        return (
+          <section key={r.id} className="side-card">
+            <div className="side-card-header">
+              <span>{r.label}</span>
+              <strong>{badge}</strong>
+            </div>
+            <div className="agent-lockup">
               <AgentAvatar
                 adapter={memberAdapter(r.agentId)}
                 agentId={r.agentId}
@@ -64,30 +68,13 @@ export function DelegationTeamCard({
                 }
               />
               <div>
-                <strong>
-                  {r.label}
-                  {isEntry && (
-                    <span className="delegation-roster-tag entry" style={{ marginLeft: 6 }}>
-                      {t("workflow.delegation.entry", { defaultValue: "入口" })}
-                    </span>
-                  )}
-                </strong>
-                <small className="muted">
-                  {memberName(r.agentId)}
-                  <span
-                    className={`delegation-roster-tag${r.canWrite ? " w" : " ro"}`}
-                    style={{ marginLeft: 6 }}
-                  >
-                    {r.canWrite
-                      ? t("workflow.delegation.canWrite")
-                      : t("workflow.delegation.readonly", { defaultValue: "只读" })}
-                  </span>
-                </small>
+                <strong>{memberName(r.agentId)}</strong>
+                <small className="muted">{r.capability}</small>
               </div>
             </div>
-          );
-        })}
-      </div>
-    </section>
+          </section>
+        );
+      })}
+    </div>
   );
 }
