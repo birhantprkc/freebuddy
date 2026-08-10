@@ -729,6 +729,7 @@ export function registerCliIpc() {
                   selfAgentId: entry.id,
                   selfLabel: entry.label
                 },
+                roleLabel: entry.label,
                 prompt: buildDelegateTaskPrompt(
                   runArgs.prompt,
                   team.roster,
