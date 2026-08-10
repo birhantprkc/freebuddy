@@ -529,6 +529,25 @@ const workflowTeams = {
   }
 };
 
+const delegation = {
+  listTeams: () => ipcRenderer.invoke("delegation:listTeams"),
+  getTeam: (id: string) => ipcRenderer.invoke("delegation:getTeam", id),
+  createTeam: (input: unknown) => ipcRenderer.invoke("delegation:createTeam", input),
+  updateTeam: (id: string, patch: unknown) =>
+    ipcRenderer.invoke("delegation:updateTeam", { id, patch }),
+  deleteTeam: (id: string) => ipcRenderer.invoke("delegation:deleteTeam", id),
+  getRun: (id: string) => ipcRenderer.invoke("delegation:getRun", id),
+  listEvents: (runId: string) => ipcRenderer.invoke("delegation:listEvents", runId),
+  onChanged: (cb: () => void): (() => void) => {
+    const channel = "delegationTeams://changed";
+    const listener = () => cb();
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.off(channel, listener);
+    };
+  }
+};
+
 const skills = {
   list: () => ipcRenderer.invoke("skills:list"),
   import: (sourcePath: string) => ipcRenderer.invoke("skills:import", sourcePath),
@@ -675,6 +694,7 @@ contextBridge.exposeInMainWorld("freebuddy", {
   cli,
   workflow,
   workflowTeams,
+  delegation,
   skills,
   settings,
   plugins,

@@ -157,7 +157,16 @@ const ALLOW = [
   "workflowTeams:get",
   "workflowTeams:list",
   "workflowTeams:seedBuiltins",
-  "workflowTeams:update"
+  "workflowTeams:update",
+
+  // Delegation team CRUD and run/event reads (scoped like workflow teams).
+  "delegation:createTeam",
+  "delegation:deleteTeam",
+  "delegation:getRun",
+  "delegation:getTeam",
+  "delegation:listEvents",
+  "delegation:listTeams",
+  "delegation:updateTeam"
 ] as const;
 
 const ADMIN_ONLY = [
