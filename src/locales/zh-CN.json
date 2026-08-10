@@ -17,7 +17,8 @@
     "saved": "已保存",
     "copy": "复制",
     "copied": "已复制",
-    "copyFailed": "复制失败"
+    "copyFailed": "复制失败",
+    "remove": "移除"
   },
   "remote": {
     "title": "共享访问",
@@ -1456,6 +1457,35 @@
           "report": "报告"
         }
       }
+    },
+    "delegation": {
+      "editorTitle": "自组织委派团队",
+      "overview": "概览",
+      "namePlaceholder": "团队名称",
+      "descriptionPlaceholder": "描述（可选）",
+      "roster": "花名册",
+      "labelPlaceholder": "角色名",
+      "agentPlaceholder": "选择 agent",
+      "capabilityPlaceholder": "能力描述：什么子任务该委派给它",
+      "canWrite": "可写",
+      "addRosterEntry": "添加花名册",
+      "entryAgent": "入口 agent",
+      "policy": "策略",
+      "maxDepth": "最大深度",
+      "timeoutMin": "超时(分)",
+      "allowWrites": "允许写",
+      "requireApprovalBeforeDelegateWrite": "写前审批",
+      "stopOnDelegateFailure": "失败即停",
+      "kindBadge": "自组织",
+      "newTeam": "新建自组织团队",
+      "writeApproval": "写权限",
+      "runTitle": "委派运行",
+      "approve": "批准",
+      "approvePrompt": "一个队友请求写权限。",
+      "loading": "加载中…",
+      "noActivity": "暂无委派活动。",
+      "details": "详情",
+      "hide": "收起"
     }
   },
   "updater": {

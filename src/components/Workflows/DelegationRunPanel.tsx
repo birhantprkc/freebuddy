@@ -171,11 +171,11 @@ export function DelegationRunPanel({ runId }: DelegationRunPanelProps) {
       <section className="side-card workflow-run-panel delegation-run-panel">
         <div className="workflow-run-header">
           <div className="workflow-run-title">
-            <strong>Delegation run</strong>
+            <strong>{t("workflow.delegation.runTitle")}</strong>
           </div>
         </div>
         <div className="delegation-run-loading">
-          {error ?? "Loading…"}
+          {error ?? t("workflow.delegation.loading")}
         </div>
       </section>
     );
@@ -225,7 +225,7 @@ export function DelegationRunPanel({ runId }: DelegationRunPanelProps) {
       {blocked && (
         <div className="workflow-run-actions delegation-run-approval">
           <span className="delegation-run-approval-label">
-            A teammate is requesting write access.
+            {t("workflow.delegation.approvePrompt")}
           </span>
           <button
             type="button"
@@ -233,7 +233,7 @@ export function DelegationRunPanel({ runId }: DelegationRunPanelProps) {
             disabled={!activeApproval || resolving}
             onClick={() => void onResolveApproval(true)}
           >
-            Approve
+            {t("workflow.delegation.approve")}
           </button>
           <button
             type="button"

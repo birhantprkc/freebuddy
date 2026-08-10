@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export interface DelegationEventView {
   id: string;
@@ -16,8 +17,6 @@ export interface DelegationEventView {
 interface DelegationRunTreeProps {
   events: DelegationEventView[];
 }
-
-const TERMINAL_STATUSES = new Set(["done", "failed", "timeout", "cancelled"]);
 
 function statusBadgeClass(status: string): string {
   return `delegation-event-status ${status}`;
@@ -52,6 +51,7 @@ function durationLabel(startedAt: string | null, endedAt: string | null): string
 }
 
 function DelegationEventRow({ event }: { event: DelegationEventView }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const hasDetails = Boolean(event.resultSummary || event.taskText.length > 120);
   const duration = durationLabel(event.startedAt, event.endedAt);
@@ -67,7 +67,7 @@ function DelegationEventRow({ event }: { event: DelegationEventView }) {
         <span className="delegation-event-agent">{event.agentName}</span>
         <span className="delegation-event-role">{event.roleLabel}</span>
         <span className={statusBadgeClass(event.status)}>
-          {TERMINAL_STATUSES.has(event.status) ? event.status : event.status}
+          {event.status}
         </span>
         {duration && <span className="delegation-event-duration">{duration}</span>}
         {hasDetails && (
@@ -77,7 +77,7 @@ function DelegationEventRow({ event }: { event: DelegationEventView }) {
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
           >
-            {expanded ? "Hide" : "Details"}
+            {expanded ? t("workflow.delegation.hide") : t("workflow.delegation.details")}
           </button>
         )}
       </div>
@@ -91,8 +91,9 @@ function DelegationEventRow({ event }: { event: DelegationEventView }) {
 }
 
 export function DelegationRunTree({ events }: DelegationRunTreeProps) {
+  const { t } = useTranslation();
   if (events.length === 0) {
-    return <div className="delegation-run-tree-empty">No delegation activity yet.</div>;
+    return <div className="delegation-run-tree-empty">{t("workflow.delegation.noActivity")}</div>;
   }
   // Events arrive ordered by started_at ASC (parent before children). Indent by
   // the row's own depth field, which the runtime sets when inserting each event.

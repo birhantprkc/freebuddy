@@ -17,7 +17,8 @@
     "saved": "Saved",
     "copy": "Copy",
     "copied": "Copied",
-    "copyFailed": "Failed to copy"
+    "copyFailed": "Failed to copy",
+    "remove": "Remove"
   },
   "status": {
     "running": "Running",
@@ -1471,6 +1472,35 @@
           "report": "Report"
         }
       }
+    },
+    "delegation": {
+      "editorTitle": "Self-organizing delegation team",
+      "overview": "Overview",
+      "namePlaceholder": "Team name",
+      "descriptionPlaceholder": "Description (optional)",
+      "roster": "Roster",
+      "labelPlaceholder": "Role name",
+      "agentPlaceholder": "Select agent",
+      "capabilityPlaceholder": "Capability: what subtasks should be delegated to it",
+      "canWrite": "Can write",
+      "addRosterEntry": "Add roster entry",
+      "entryAgent": "Entry agent",
+      "policy": "Policy",
+      "maxDepth": "Max depth",
+      "timeoutMin": "Timeout (min)",
+      "allowWrites": "Allow writes",
+      "requireApprovalBeforeDelegateWrite": "Approve before write",
+      "stopOnDelegateFailure": "Stop on failure",
+      "kindBadge": "Self-organizing",
+      "newTeam": "New delegation team",
+      "writeApproval": "Write approval",
+      "runTitle": "Delegation run",
+      "approve": "Approve",
+      "approvePrompt": "A teammate is requesting write access.",
+      "loading": "Loading…",
+      "noActivity": "No delegation activity yet.",
+      "details": "Details",
+      "hide": "Hide"
     }
   },
   "updater": {
