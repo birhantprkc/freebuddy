@@ -374,7 +374,7 @@ test("ChatView uses a non-writing summary role for team follow-up conversations"
   assert.match(src, /!role\.canWrite/);
   assert.doesNotMatch(src, /team\.roles\[0\]\?\.agentId/);
   assert.match(src, /const teamMember = teamConversationMember\(team, members\)/);
-  assert.match(src, /teams\.find\(\(tt\) => tt\.id === pendingTeamPreview\.teamId\)/);
+  assert.match(src, /allTeams\.find\(\(tt\) => tt\.id === pendingTeamPreview\.teamId\)/);
   assert.match(src, /member: teamMember/);
 });
 
