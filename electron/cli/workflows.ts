@@ -187,7 +187,8 @@ export function listWorkflowRunsByConversation(
   if (!callerOwnsConversation(conversationId)) return [];
   const rows = getDb()
     .prepare(
-      `SELECT * FROM workflow_runs WHERE conversation_id = ?
+      `SELECT * FROM workflow_runs
+        WHERE conversation_id = ? AND (kind = 'workflow' OR kind IS NULL)
        ORDER BY created_at DESC`
     )
     .all(conversationId) as any[];
@@ -199,6 +200,7 @@ export function listActiveWorkflowRuns(): WorkflowRunRow[] {
     .prepare(
       `SELECT * FROM workflow_runs
        WHERE status IN ('running','paused','blocked','pending_approval')
+         AND (kind = 'workflow' OR kind IS NULL)
        ORDER BY created_at DESC`
     )
     .all() as any[];
@@ -210,7 +212,10 @@ export function listActiveWorkflowRuns(): WorkflowRunRow[] {
 export function recoverInterruptedWorkflowRuns(): number {
   const now = new Date().toISOString();
   const rows = getDb()
-    .prepare(`SELECT id FROM workflow_runs WHERE status = 'running'`)
+    .prepare(
+      `SELECT id FROM workflow_runs
+        WHERE status = 'running' AND (kind = 'workflow' OR kind IS NULL)`
+    )
     .all() as Array<{ id: string }>;
 
   const updateRunningSteps = getDb().prepare(
