@@ -71,7 +71,10 @@ export const delegationClient = {
     goal: string;
     cwd?: string;
     conversationId?: string;
-  }): Promise<{ ok: true; runId: string } | { ok: false; error: string }> {
+  }): Promise<
+    | { ok: true; runId: string; conversationId: string }
+    | { ok: false; error: string }
+  > {
     return wfApi().createDelegationRun(input);
   },
 

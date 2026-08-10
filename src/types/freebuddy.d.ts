@@ -489,7 +489,10 @@ declare global {
       goal: string;
       cwd?: string;
       conversationId?: string;
-    }): Promise<{ ok: true; runId: string } | { ok: false; error: string }>;
+    }): Promise<
+      | { ok: true; runId: string; conversationId: string }
+      | { ok: false; error: string }
+    >;
     approveDelegateWrite(input: {
       runId: string;
       approvalId: string;
