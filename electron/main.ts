@@ -49,6 +49,25 @@ import {
   millisecondsUntilNextButlerBuddySleepBoundary,
   normalizeButlerBuddyTaskText
 } from "./butlerBuddyState.js";
+import {
+  applyButlerBuddyEntertainmentTransition,
+  broadcastButlerBuddyPreferences,
+  BUTLER_PET_ARCADE_HEIGHT,
+  BUTLER_PET_ARCADE_WIDTH,
+  BUTLER_PET_SIZE,
+  calculateButlerBuddyEntertainmentBounds,
+  persistButlerBuddyEntertainmentChange
+} from "./butlerBuddyEntertainment.js";
+import {
+  displayChangedForScreenBall,
+  disposeScreenBallSession,
+  isCurrentScreenBallSession,
+  snapshotScreenBallDisplay,
+  shouldCaptureScreenBallPointer,
+  type ScreenBallDisplaySnapshot,
+  type ScreenBallHitRegion,
+  type ScreenBallSession
+} from "./butlerBuddyScreenBall.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -243,6 +262,12 @@ let isQuittingApp = false;
 let trayController: TrayController | null = null;
 let butlerPetWindow: BrowserWindow | null = null;
 let butlerChatWindow: BrowserWindow | null = null;
+let butlerScreenBallWindow: BrowserWindow | null = null;
+let butlerScreenBallSession: ScreenBallSession | null = null;
+let butlerScreenBallHitRegions: ScreenBallHitRegion[] = [];
+let butlerScreenBallMouseCapture: boolean | null = null;
+let butlerScreenBallPointerTimer: ReturnType<typeof setInterval> | null = null;
+let butlerScreenBallSessionSequence = 0;
 const butlerBuddyStateCoordinator = createButlerBuddyStateCoordinator();
 let butlerBuddySleepBoundaryTimer: ReturnType<typeof setTimeout> | null = null;
 let butlerBuddyTask: {
@@ -298,13 +323,14 @@ function recoverMainRenderer(win: BrowserWindow, reason: string): void {
   }, 250);
 }
 
-const BUTLER_PET_SIZE = 108;
 const BUTLER_CHAT_WIDTH = 360;
 const BUTLER_CHAT_HEIGHT = 420;
 const BUTLER_WINDOW_GAP = 6;
 const BUTLER_VISIBLE_SETTING = "butlerbuddy.visible";
 const BUTLER_SHORTCUT_ENABLED_SETTING = "butlerbuddy.shortcut.enabled";
 const BUTLER_SHORTCUT_SETTING = "butlerbuddy.shortcut";
+const BUTLER_ENTERTAINMENT_ENABLED_SETTING =
+  "butlerbuddy.entertainment.enabled";
 const BUTLER_DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
 
 type ButlerBuddyPreferences = {
@@ -312,6 +338,7 @@ type ButlerBuddyPreferences = {
   shortcutEnabled: boolean;
   shortcut: string;
   shortcutRegistered: boolean;
+  entertainmentEnabled: boolean;
   error?: "shortcutUnavailable";
 };
 
@@ -324,10 +351,13 @@ function readButlerBuddyPreferences(): ButlerBuddyPreferences {
     getSetting(BUTLER_SHORTCUT_ENABLED_SETTING) !== "false";
   const shortcut =
     getSetting(BUTLER_SHORTCUT_SETTING)?.trim() || BUTLER_DEFAULT_SHORTCUT;
+  const entertainmentEnabled =
+    getSetting(BUTLER_ENTERTAINMENT_ENABLED_SETTING) === "true";
   return {
     visible,
     shortcutEnabled,
     shortcut,
+    entertainmentEnabled,
     shortcutRegistered:
       shortcutEnabled &&
       registeredButlerShortcut === shortcut &&
@@ -349,6 +379,10 @@ function isButlerBuddyWindowSender(sender: WebContents): boolean {
     windowOwnsWebContents(butlerPetWindow, sender) ||
     windowOwnsWebContents(butlerChatWindow, sender)
   );
+}
+
+function isButlerScreenBallWindowSender(sender: WebContents): boolean {
+  return windowOwnsWebContents(butlerScreenBallWindow, sender);
 }
 
 function isButlerBuddyTaskResultSender(sender: WebContents): boolean {
@@ -409,27 +443,211 @@ function companionWebPreferences() {
 
 function loadCompanionSurface(
   win: BrowserWindow,
-  surface: "butler-pet" | "butler-chat"
+  surface: "butler-pet" | "butler-chat" | "butler-screen-ball"
 ) {
+  const entertainmentEnabled =
+    surface === "butler-pet" &&
+    readButlerBuddyPreferences().entertainmentEnabled;
   if (isDev) {
     const url = new URL(process.env.VITE_DEV_SERVER_URL as string);
     url.searchParams.set("surface", surface);
+    if (entertainmentEnabled) url.searchParams.set("entertainment", "1");
     void win.loadURL(url.toString());
     return;
   }
   void win.loadFile(path.join(__dirname, "../dist/index.html"), {
-    query: { surface }
+    query: {
+      surface,
+      ...(entertainmentEnabled ? { entertainment: "1" } : {})
+    }
   });
 }
 
-function initialButlerPetBounds() {
-  const workArea = screen.getPrimaryDisplay().workArea;
+function currentButlerScreenBallDisplay(): ScreenBallDisplaySnapshot | null {
+  const pet = butlerPetWindow;
+  if (!pet || pet.isDestroyed()) return null;
+  return snapshotScreenBallDisplay(screen.getDisplayMatching(pet.getBounds()));
+}
+
+function currentButlerScreenBallSessionPayload() {
+  if (!butlerScreenBallSession) return null;
+  const pet = butlerPetWindow;
+  const petBounds = pet && !pet.isDestroyed() ? pet.getBounds() : null;
+  const display = butlerScreenBallSession.display;
   return {
+    sessionId: butlerScreenBallSession.id,
+    display,
+    petOrigin: petBounds
+      ? {
+          x: petBounds.x + petBounds.width / 2 - display.x,
+          y: petBounds.y + petBounds.height / 2 - display.y
+        }
+      : {
+          x: display.width / 2,
+          y: display.height - 48
+        }
+  };
+}
+
+function sendButlerScreenBallSession(): void {
+  const win = butlerScreenBallWindow;
+  const payload = currentButlerScreenBallSessionPayload();
+  if (!win || win.isDestroyed() || !payload) return;
+  safeSendToWebContents(win.webContents, "butlerBuddy:screenBallSession", payload);
+}
+
+function setButlerScreenBallMouseCapture(capture: boolean): void {
+  const win = butlerScreenBallWindow;
+  if (!win || win.isDestroyed()) return;
+  if (butlerScreenBallMouseCapture === capture) return;
+  butlerScreenBallMouseCapture = capture;
+  win.setIgnoreMouseEvents(!capture, { forward: true });
+}
+
+function pollButlerScreenBallPointer(): void {
+  const win = butlerScreenBallWindow;
+  if (!win || win.isDestroyed() || !butlerScreenBallSession) return;
+  const point = screen.getCursorScreenPoint();
+  const capture = shouldCaptureScreenBallPointer(butlerScreenBallHitRegions, point);
+  setButlerScreenBallMouseCapture(capture);
+}
+
+function stopButlerScreenBallPointerPolling(): void {
+  if (butlerScreenBallPointerTimer !== null) {
+    clearInterval(butlerScreenBallPointerTimer);
+    butlerScreenBallPointerTimer = null;
+  }
+}
+
+function startButlerScreenBallPointerPolling(): void {
+  stopButlerScreenBallPointerPolling();
+  butlerScreenBallPointerTimer = setInterval(
+    pollButlerScreenBallPointer,
+    1000 / 30
+  );
+  pollButlerScreenBallPointer();
+}
+
+function closeButlerScreenBallWindow(): void {
+  stopButlerScreenBallPointerPolling();
+  butlerScreenBallHitRegions = [];
+  butlerScreenBallMouseCapture = null;
+  const win = butlerScreenBallWindow;
+  butlerScreenBallWindow = null;
+  butlerScreenBallSession = disposeScreenBallSession(butlerScreenBallSession);
+  if (win && !win.isDestroyed()) win.close();
+}
+
+function restartButlerScreenBallSession(
+  display = currentButlerScreenBallDisplay()
+): void {
+  if (!display || !butlerPetWindow || butlerPetWindow.isDestroyed()) {
+    closeButlerScreenBallWindow();
+    return;
+  }
+  butlerScreenBallSessionSequence += 1;
+  butlerScreenBallHitRegions = [];
+  butlerScreenBallMouseCapture = null;
+  butlerScreenBallSession = {
+    id: `screen-ball-${Date.now()}-${butlerScreenBallSessionSequence}`,
+    display
+  };
+  const bounds = {
+    x: display.x,
+    y: display.y,
+    width: display.width,
+    height: display.height
+  };
+  const existing = butlerScreenBallWindow;
+  if (!existing || existing.isDestroyed()) {
+    const win = new BrowserWindow({
+      ...bounds,
+      type: process.platform === "darwin" ? "panel" : undefined,
+      show: false,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      focusable: false,
+      hasShadow: false,
+      backgroundColor: "#00000000",
+      webPreferences: companionWebPreferences()
+    });
+    butlerScreenBallWindow = win;
+    win.setAlwaysOnTop(true, "floating");
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    win.setIgnoreMouseEvents(true, { forward: true });
+    win.on("closed", () => {
+      if (butlerScreenBallWindow === win) {
+        butlerScreenBallWindow = null;
+        butlerScreenBallSession = null;
+        stopButlerScreenBallPointerPolling();
+      }
+    });
+    win.webContents.on("render-process-gone", () => {
+      if (butlerScreenBallWindow === win) closeButlerScreenBallWindow();
+    });
+    loadCompanionSurface(win, "butler-screen-ball");
+    win.once("ready-to-show", () => {
+      if (butlerScreenBallWindow !== win || win.isDestroyed()) return;
+      win.showInactive();
+      sendButlerScreenBallSession();
+    });
+  } else {
+    existing.setBounds(bounds, false);
+    sendButlerScreenBallSession();
+  }
+  startButlerScreenBallPointerPolling();
+}
+
+function startButlerScreenBallGame(): void {
+  const preferences = readButlerBuddyPreferences();
+  if (!preferences.visible) return;
+  if (preferences.entertainmentEnabled) {
+    updateButlerBuddyPreferences({ entertainmentEnabled: false });
+  }
+  restartButlerScreenBallSession();
+}
+
+function updateButlerScreenBallDisplayAfterDrag(): void {
+  if (!butlerScreenBallSession) return;
+  const display = currentButlerScreenBallDisplay();
+  if (!display) {
+    closeButlerScreenBallWindow();
+    return;
+  }
+  if (displayChangedForScreenBall(butlerScreenBallSession.display, display)) {
+    restartButlerScreenBallSession(display);
+    return;
+  }
+  if (!butlerScreenBallWindow || butlerScreenBallWindow.isDestroyed()) return;
+  butlerScreenBallWindow.setBounds(
+    { x: display.x, y: display.y, width: display.width, height: display.height },
+    false
+  );
+  butlerScreenBallSession = { ...butlerScreenBallSession, display };
+  sendButlerScreenBallSession();
+}
+
+function initialButlerPetBounds(entertainmentEnabled = false) {
+  const workArea = screen.getPrimaryDisplay().workArea;
+  const normalBounds = {
     width: BUTLER_PET_SIZE,
     height: BUTLER_PET_SIZE,
     x: workArea.x + workArea.width - BUTLER_PET_SIZE - 18,
     y: workArea.y + Math.round((workArea.height - BUTLER_PET_SIZE) / 2)
   };
+  if (!entertainmentEnabled) return normalBounds;
+  return calculateButlerBuddyEntertainmentBounds(
+    normalBounds,
+    workArea,
+    true,
+    false
+  );
 }
 
 function syncButlerChatPosition() {
@@ -514,6 +732,7 @@ function stopButlerPetDrag() {
     clearInterval(butlerDragTimer);
     butlerDragTimer = null;
   }
+  updateButlerScreenBallDisplayAfterDrag();
 }
 
 function toggleButlerChat() {
@@ -573,17 +792,39 @@ function applyButlerBuddyVisibility(visible: boolean) {
     pet.showInactive();
     return;
   }
+  closeButlerScreenBallWindow();
   hideButlerChat();
   pet.hide();
 }
 
+function applyButlerBuddyEntertainmentMode(
+  enabled: boolean,
+  previousEnabled: boolean
+) {
+  applyButlerBuddyEntertainmentTransition({
+    enabled,
+    previousEnabled,
+    pet: butlerPetWindow,
+    getWorkArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
+    hideChat: hideButlerChat,
+    syncChatPosition: syncButlerChatPosition
+  });
+}
+
 function updateButlerBuddyPreferences(
-  input: Partial<Pick<ButlerBuddyPreferences, "visible" | "shortcutEnabled" | "shortcut">>
+  input: Partial<
+    Pick<
+      ButlerBuddyPreferences,
+      "visible" | "shortcutEnabled" | "shortcut" | "entertainmentEnabled"
+    >
+  >
 ): ButlerBuddyPreferences {
   const current = readButlerBuddyPreferences();
   const nextVisible = input.visible ?? current.visible;
   const nextEnabled = input.shortcutEnabled ?? current.shortcutEnabled;
   const nextShortcut = input.shortcut?.trim() || current.shortcut;
+  const nextEntertainmentEnabled =
+    input.entertainmentEnabled ?? current.entertainmentEnabled;
   const shortcutChanged =
     nextEnabled !== current.shortcutEnabled || nextShortcut !== current.shortcut;
 
@@ -599,19 +840,30 @@ function updateButlerBuddyPreferences(
     applyButlerBuddyVisibility(nextVisible);
   }
 
+  persistButlerBuddyEntertainmentChange({
+    enabled: nextEntertainmentEnabled,
+    previousEnabled: current.entertainmentEnabled,
+    persist: (enabled) =>
+      setSetting(BUTLER_ENTERTAINMENT_ENABLED_SETTING, String(enabled)),
+    applyTransition: applyButlerBuddyEntertainmentMode
+  });
+  if (nextEntertainmentEnabled) closeButlerScreenBallWindow();
+
   const result = readButlerBuddyPreferences();
   // Push the new preferences to the main window so the settings toggle stays
   // in sync when the change originated from the main process (e.g. the pet's
   // right-click "关闭宠物" menu). Renderer-initiated updates already reflect
   // the IPC return value; this broadcast is idempotent for them.
-  const win = mainWindow;
-  if (win && !win.isDestroyed()) {
-    safeSendToWebContents(win.webContents, "butlerBuddy:preferencesChanged", result);
-  }
+  broadcastButlerBuddyPreferences(
+    [mainWindow, butlerPetWindow, butlerChatWindow],
+    result,
+    safeSendToWebContents
+  );
   return result;
 }
 
 function closeButlerBuddyWindows() {
+  closeButlerScreenBallWindow();
   if (butlerChatWindow && !butlerChatWindow.isDestroyed()) {
     butlerChatWindow.close();
   }
@@ -656,8 +908,9 @@ function createButlerBuddyWindows() {
     });
   }
 
+  const butlerPreferences = readButlerBuddyPreferences();
   butlerPetWindow = new BrowserWindow({
-    ...initialButlerPetBounds(),
+    ...initialButlerPetBounds(butlerPreferences.entertainmentEnabled),
     type: process.platform === "darwin" ? "panel" : undefined,
     show: false,
     frame: false,
@@ -676,6 +929,7 @@ function createButlerBuddyWindows() {
   butlerPetWindow.setAlwaysOnTop(true, "floating");
   butlerPetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   butlerPetWindow.on("closed", () => {
+    closeButlerScreenBallWindow();
     hideButlerChat();
     butlerPetWindow = null;
   });
@@ -688,6 +942,9 @@ function createButlerBuddyWindows() {
 }
 
 function showButlerContextMenu() {
+  const entertainmentEnabled =
+    readButlerBuddyPreferences().entertainmentEnabled;
+  const screenBallActive = Boolean(butlerScreenBallSession);
   const menu = Menu.buildFromTemplate([
     {
       label: "新会话",
@@ -705,6 +962,21 @@ function showButlerContextMenu() {
           undefined
         );
       }
+    },
+    { type: "separator" },
+    {
+      label: entertainmentEnabled ? "结束小窗弹球" : "开启小窗弹球",
+      click: () =>
+        updateButlerBuddyPreferences({
+          entertainmentEnabled: !entertainmentEnabled
+        })
+    },
+    {
+      label: screenBallActive ? "结束全屏弹球" : "开启全屏弹球",
+      click: () =>
+        screenBallActive
+          ? closeButlerScreenBallWindow()
+          : startButlerScreenBallGame()
     },
     { type: "separator" },
     {
@@ -746,6 +1018,101 @@ function registerButlerBuddyWindowIpc() {
   ipcMain.on("butlerBuddy:beginDrag", startButlerPetDrag);
   ipcMain.on("butlerBuddy:endDrag", stopButlerPetDrag);
   ipcMain.on("butlerBuddy:openMenu", showButlerContextMenu);
+  ipcMain.on("butlerBuddy:startScreenBall", (event) => {
+    if (
+      !isButlerBuddyWindowSender(event.sender) &&
+      !isButlerScreenBallWindowSender(event.sender)
+    ) {
+      return;
+    }
+    startButlerScreenBallGame();
+  });
+  ipcMain.on("butlerBuddy:stopScreenBall", (event) => {
+    if (
+      !isButlerBuddyWindowSender(event.sender) &&
+      !isButlerScreenBallWindowSender(event.sender)
+    ) {
+      return;
+    }
+    closeButlerScreenBallWindow();
+  });
+  ipcMain.handle("butlerBuddy:getScreenBallSession", (event) => {
+    if (!isButlerScreenBallWindowSender(event.sender)) return null;
+    return currentButlerScreenBallSessionPayload();
+  });
+  ipcMain.on(
+    "butlerBuddy:screenBallHitRegions",
+    (event, regions: unknown) => {
+      if (!isButlerScreenBallWindowSender(event.sender)) return;
+      if (!Array.isArray(regions)) return;
+      butlerScreenBallHitRegions = regions
+        .slice(0, 8)
+        .filter((region): region is ScreenBallHitRegion => {
+          if (!region || typeof region !== "object") return false;
+          const value = region as Partial<ScreenBallHitRegion>;
+          return (
+            typeof value.id === "string" &&
+            typeof value.x === "number" &&
+            typeof value.y === "number" &&
+            typeof value.width === "number" &&
+            typeof value.height === "number" &&
+            (value.kind === "ball" || value.kind === "control") &&
+            Number.isFinite(value.x) &&
+            Number.isFinite(value.y) &&
+            Number.isFinite(value.width) &&
+            Number.isFinite(value.height)
+          );
+        });
+      pollButlerScreenBallPointer();
+    }
+  );
+  ipcMain.on(
+    "butlerBuddy:screenBallPointer",
+    (event, point: { x?: unknown; y?: unknown }) => {
+      if (!isButlerScreenBallWindowSender(event.sender)) return;
+      if (
+        typeof point?.x !== "number" ||
+        typeof point.y !== "number" ||
+        !Number.isFinite(point.x) ||
+        !Number.isFinite(point.y)
+      ) {
+        return;
+      }
+      setButlerScreenBallMouseCapture(
+        shouldCaptureScreenBallPointer(butlerScreenBallHitRegions, {
+          x: point.x,
+          y: point.y
+        })
+      );
+    }
+  );
+  ipcMain.on(
+    "butlerBuddy:screenBallHit",
+    (event, payload: { sessionId?: unknown; ballId?: unknown }) => {
+      if (!isButlerScreenBallWindowSender(event.sender)) return;
+      if (
+        typeof payload?.sessionId !== "string" ||
+        typeof payload.ballId !== "string" ||
+        !isCurrentScreenBallSession(butlerScreenBallSession, payload.sessionId)
+      ) {
+        return;
+      }
+      safeSendToWebContents(
+        butlerScreenBallWindow?.webContents,
+        "butlerBuddy:screenBallHitAccepted",
+        { sessionId: payload.sessionId, ballId: payload.ballId }
+      );
+    }
+  );
+  ipcMain.on("butlerBuddy:screenBallClose", (event, sessionId: unknown) => {
+    if (!isButlerScreenBallWindowSender(event.sender)) return;
+    if (
+      typeof sessionId === "string" &&
+      isCurrentScreenBallSession(butlerScreenBallSession, sessionId)
+    ) {
+      closeButlerScreenBallWindow();
+    }
+  });
   ipcMain.on("butlerBuddy:openCurrentTask", (event) => {
     if (!isButlerBuddyWindowSender(event.sender)) return;
     const conversationId = butlerBuddyTask?.conversationId;
@@ -817,9 +1184,15 @@ function registerButlerBuddyWindowIpc() {
   });
   ipcMain.handle(
     "butlerBuddy:updatePreferences",
-    (_event, input: Partial<
-      Pick<ButlerBuddyPreferences, "visible" | "shortcutEnabled" | "shortcut">
-    >) => updateButlerBuddyPreferences(input)
+    (
+      _event,
+      input: Partial<
+        Pick<
+          ButlerBuddyPreferences,
+          "visible" | "shortcutEnabled" | "shortcut" | "entertainmentEnabled"
+        >
+      >
+    ) => updateButlerBuddyPreferences(input)
   );
 }
 
@@ -1164,6 +1537,17 @@ app.whenReady().then(async () => {
     }
   }
   createWindow();
+  screen.on("display-metrics-changed", () => {
+    updateButlerScreenBallDisplayAfterDrag();
+  });
+  screen.on("display-removed", () => {
+    if (!butlerScreenBallSession) return;
+    const display = currentButlerScreenBallDisplay();
+    if (!display) closeButlerScreenBallWindow();
+    else if (displayChangedForScreenBall(butlerScreenBallSession.display, display)) {
+      restartButlerScreenBallSession(display);
+    }
+  });
   if (process.platform === "darwin") {
     app.focus();
   }
@@ -1201,6 +1585,7 @@ app.on("window-all-closed", () => {
 let telemetryShutdownStarted = false;
 app.on("before-quit", (event) => {
   isQuittingApp = true;
+  closeButlerScreenBallWindow();
   if (butlerBuddySleepBoundaryTimer !== null) {
     clearTimeout(butlerBuddySleepBoundaryTimer);
     butlerBuddySleepBoundaryTimer = null;

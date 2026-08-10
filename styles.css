@@ -115,10 +115,13 @@ button {
 
 html[data-surface="butler-pet"],
 html[data-surface="butler-chat"],
+html[data-surface="butler-screen-ball"],
 html[data-surface="butler-pet"] body,
 html[data-surface="butler-chat"] body,
+html[data-surface="butler-screen-ball"] body,
 html[data-surface="butler-pet"] #root,
-html[data-surface="butler-chat"] #root {
+html[data-surface="butler-chat"] #root,
+html[data-surface="butler-screen-ball"] #root {
   color-scheme: light;
   background: transparent;
 }
@@ -129,6 +132,23 @@ html[data-surface="butler-chat"] #root {
   height: 100%;
   overflow: hidden;
   background: transparent;
+}
+
+.butler-pet-surface[data-entertainment="true"]::before {
+  position: absolute;
+  inset: 7px;
+  content: "";
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.54);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 50% 108%, rgba(16, 185, 129, 0.16), transparent 36%),
+    radial-gradient(circle at 12% 14%, rgba(56, 189, 248, 0.1), transparent 26%),
+    rgba(248, 250, 252, 0.88);
+  box-shadow:
+    0 22px 48px -30px rgba(15, 23, 42, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(14px);
 }
 
 .butler-pet-button {
@@ -148,6 +168,19 @@ html[data-surface="butler-chat"] #root {
   cursor: grab;
   touch-action: none;
   filter: drop-shadow(0 12px 12px rgba(15, 23, 42, 0.18));
+}
+
+.butler-pet-surface[data-entertainment="true"] .butler-pet-button {
+  left: calc(50% - 34px);
+  top: auto;
+  bottom: 12px;
+  z-index: 8;
+  width: 68px;
+  height: 68px;
+}
+
+.butler-pet-surface[data-entertainment="true"] .butler-pet-actor {
+  animation: butler-pet-arcade-launch 0.9s ease-in-out infinite;
 }
 
 .butler-pet-button:active {
@@ -237,6 +270,627 @@ html[data-surface="butler-chat"] #root {
   }
   76% {
     transform: translateY(1px) scale(1.015, 0.985);
+  }
+}
+
+.butler-pet-arcade {
+  position: absolute;
+  inset: 7px;
+  overflow: hidden;
+  border-radius: 26px;
+  font-family: var(--fb-chat-font);
+}
+
+.butler-pet-arcade-score {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 10;
+  display: inline-flex;
+  min-width: 70px;
+  height: 27px;
+  align-items: center;
+  gap: 5px;
+  justify-content: center;
+  padding: 0 9px;
+  color: #334155;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 18px -13px rgba(15, 23, 42, 0.62);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.butler-pet-arcade-score strong {
+  color: #0f172a;
+  font-family: var(--fb-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.butler-pet-arcade-fever {
+  position: absolute;
+  left: 87px;
+  top: 10px;
+  z-index: 10;
+  width: 166px;
+  height: 27px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow:
+    0 7px 16px -12px rgba(15, 23, 42, 0.68),
+    inset 0 0 0 1px rgba(100, 116, 139, 0.16);
+}
+
+.butler-pet-arcade-fever > span {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  min-width: 4px;
+  height: 4px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #34d399, #5eead4);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
+  transition: width 0.18s ease-out;
+}
+
+.butler-pet-arcade-fever strong {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #047857;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-shadow: none;
+}
+
+.butler-pet-arcade-timer {
+  position: absolute;
+  right: 42px;
+  top: 10px;
+  z-index: 10;
+  display: inline-flex;
+  width: 43px;
+  height: 27px;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+  color: #059669;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 18px -13px rgba(15, 23, 42, 0.62);
+  font-variant-numeric: tabular-nums;
+}
+
+.butler-pet-arcade-timer strong {
+  font-family: var(--fb-mono);
+  font-size: 13px;
+}
+
+.butler-pet-arcade-timer span {
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.butler-pet-arcade-timer[data-urgent="true"] {
+  color: #ef4444;
+  animation: butler-pet-arcade-timer-pulse 0.72s ease-in-out infinite;
+}
+
+.butler-pet-arcade-close {
+  position: absolute;
+  right: 8px;
+  top: 10px;
+  z-index: 11;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #64748b;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 18px -12px rgba(15, 23, 42, 0.6);
+}
+
+.butler-pet-arcade-close:hover {
+  color: #0f172a;
+  border-color: rgba(16, 185, 129, 0.36);
+  background: #ffffff;
+  transform: scale(1.05);
+}
+
+.butler-pet-arcade-close:focus-visible,
+.butler-pet-arcade-ball:focus-visible,
+.butler-pet-arcade-weak-point:focus-visible,
+.butler-pet-arcade-result button:focus-visible {
+  outline: 3px solid rgba(16, 185, 129, 0.3);
+  outline-offset: 2px;
+}
+
+.butler-pet-arcade-boss {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.butler-pet-arcade-boss-health {
+  position: absolute;
+  left: 50%;
+  top: 44px;
+  display: flex;
+  width: 146px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transform: translateX(-50%);
+}
+
+.butler-pet-arcade-boss-health > span {
+  color: #312e81;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.butler-pet-arcade-boss-health > div {
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.72);
+  box-shadow: 0 4px 10px -6px rgba(15, 23, 42, 0.68);
+}
+
+.butler-pet-arcade-boss-health i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fb7185, #f97316);
+  transition: width 0.18s ease-out;
+}
+
+.butler-pet-arcade-boss-stage {
+  position: absolute;
+  left: 50%;
+  top: 59px;
+  width: 136px;
+  height: 136px;
+  transform: translateX(-50%);
+  animation: butler-pet-arcade-boss-enter 0.42s cubic-bezier(0.2, 0.9, 0.28, 1.25) both;
+}
+
+.butler-pet-arcade-boss-stage[data-ultimate-hit="true"] {
+  animation: butler-pet-arcade-boss-ultimate 0.62s ease-out both;
+}
+
+.butler-pet-arcade-boss-stage > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 11px 14px rgba(67, 56, 202, 0.24));
+  pointer-events: none;
+  user-select: none;
+}
+
+.butler-pet-arcade-weak-point {
+  position: absolute;
+  z-index: 7;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  color: #fff7ed;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(0.84);
+  transition:
+    opacity 0.16s ease,
+    filter 0.16s ease,
+    transform 0.16s ease;
+}
+
+.butler-pet-arcade-weak-point[data-position="0"] {
+  left: 20%;
+  top: 29%;
+}
+
+.butler-pet-arcade-weak-point[data-position="1"] {
+  left: 80%;
+  top: 29%;
+}
+
+.butler-pet-arcade-weak-point[data-position="2"] {
+  left: 50%;
+  top: 83%;
+}
+
+.butler-pet-arcade-weak-point > img {
+  width: 100%;
+  height: 100%;
+  filter: hue-rotate(-115deg) saturate(1.65) drop-shadow(0 0 6px rgba(249, 115, 22, 0.8));
+  pointer-events: none;
+}
+
+.butler-pet-arcade-weak-point > svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 1px 2px rgba(194, 65, 12, 0.65));
+  pointer-events: none;
+}
+
+.butler-pet-arcade-weak-point:disabled {
+  opacity: 0.34;
+  cursor: default;
+  filter: saturate(0.38);
+}
+
+.butler-pet-arcade-weak-point[data-active="true"] {
+  opacity: 1;
+  cursor: crosshair;
+  filter: saturate(1.18);
+  transform: translate(-50%, -50%) scale(1.08);
+  animation: butler-pet-arcade-weak-point 0.76s ease-in-out infinite;
+}
+
+.butler-pet-arcade-damage {
+  position: absolute;
+  right: -22px;
+  top: 34px;
+  z-index: 8;
+  color: #ef4444;
+  font-family: var(--fb-mono);
+  font-size: 18px;
+  font-weight: 900;
+  text-shadow:
+    0 2px 0 #ffffff,
+    0 0 10px rgba(248, 113, 113, 0.6);
+  animation: butler-pet-arcade-damage 0.7s ease-out both;
+  pointer-events: none;
+}
+
+.butler-pet-arcade-streak {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  width: 26px;
+  height: 56px;
+  opacity: 0.42;
+  pointer-events: none;
+  transform: translateX(-50%);
+  background: linear-gradient(to top, rgba(16, 185, 129, 0.26), transparent);
+  clip-path: polygon(42% 100%, 58% 100%, 100% 0, 0 0);
+  filter: blur(6px);
+  animation: butler-pet-arcade-streak 0.9s ease-in-out infinite;
+}
+
+.butler-pet-arcade-ball {
+  --arcade-ball-hue: 160;
+  --arcade-ball-shift: 0deg;
+  position: absolute;
+  z-index: 4;
+  min-width: 26px;
+  max-width: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: crosshair;
+  transform: translate(-50%, -50%);
+  transition: filter 0.12s ease;
+  will-change: left, top;
+}
+
+.butler-pet-arcade-ball > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter:
+    hue-rotate(var(--arcade-ball-shift))
+    saturate(1.2)
+    drop-shadow(0 6px 5px hsla(var(--arcade-ball-hue), 64%, 32%, 0.28));
+  pointer-events: none;
+  user-select: none;
+}
+
+.butler-pet-arcade-ball > svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  color: #fff7c2;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 1px 2px rgba(180, 83, 9, 0.7));
+  pointer-events: none;
+}
+
+.butler-pet-arcade-ball[data-kind="gold"] > img {
+  filter:
+    hue-rotate(-115deg)
+    saturate(1.7)
+    drop-shadow(0 0 9px rgba(245, 158, 11, 0.66));
+}
+
+.butler-pet-arcade-ball:hover {
+  filter: brightness(1.08) saturate(1.1);
+  transform: translate(-50%, -50%) scale(1.13);
+}
+
+.butler-pet-arcade-ball:active {
+  transform: translate(-50%, -50%) scale(0.86);
+}
+
+.butler-pet-arcade-burst {
+  --arcade-ball-hue: 160;
+  --arcade-ball-shift: 0deg;
+  position: absolute;
+  z-index: 8;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: butler-pet-arcade-burst 0.55s ease-out both;
+}
+
+.butler-pet-arcade-burst img {
+  width: 100%;
+  height: 100%;
+  filter:
+    hue-rotate(var(--arcade-ball-shift))
+    saturate(1.35)
+    drop-shadow(0 0 10px hsla(var(--arcade-ball-hue), 82%, 55%, 0.72));
+}
+
+.butler-pet-arcade-burst strong {
+  position: absolute;
+  left: 52%;
+  top: -3px;
+  color: hsl(var(--arcade-ball-hue), 78%, 38%);
+  font-family: var(--fb-mono);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 0 #ffffff,
+    0 0 5px rgba(255, 255, 255, 0.9);
+}
+
+.butler-pet-arcade-chain {
+  position: absolute;
+  right: 16px;
+  top: 66px;
+  z-index: 9;
+  color: #10b981;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-shadow:
+    0 2px 0 #ffffff,
+    0 0 12px rgba(52, 211, 153, 0.72);
+  transform: rotate(5deg);
+  animation: butler-pet-arcade-chain 0.72s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  pointer-events: none;
+}
+
+.butler-pet-arcade-ultimate {
+  --arcade-ultimate-progress: 0deg;
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  z-index: 7;
+  display: flex;
+  width: 88px;
+  height: 68px;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  padding-bottom: 2px;
+  color: #047857;
+  border-radius: 50%;
+  background: conic-gradient(
+    from -90deg,
+    rgba(52, 211, 153, 0.9) 0 var(--arcade-ultimate-progress),
+    rgba(148, 163, 184, 0.2) var(--arcade-ultimate-progress) 360deg
+  );
+  box-shadow:
+    inset 0 0 0 4px rgba(255, 255, 255, 0.8),
+    0 0 12px rgba(16, 185, 129, 0.2);
+  font-size: 7px;
+  font-weight: 900;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.butler-pet-arcade-ultimate[data-ready="true"] {
+  color: #ffffff;
+  background: rgba(16, 185, 129, 0.92);
+  box-shadow:
+    inset 0 0 0 5px rgba(255, 255, 255, 0.88),
+    0 0 22px rgba(16, 185, 129, 0.7);
+  animation: butler-pet-arcade-ultimate-ready 0.7s ease-in-out infinite;
+}
+
+.butler-pet-button[data-ultimate-ready="true"] {
+  cursor: crosshair;
+  filter: drop-shadow(0 0 13px rgba(16, 185, 129, 0.72));
+}
+
+.butler-pet-arcade-result {
+  position: absolute;
+  left: 50%;
+  top: 72px;
+  z-index: 12;
+  display: flex;
+  width: 184px;
+  min-height: 102px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 13px;
+  color: #334155;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 20px 38px -24px rgba(15, 23, 42, 0.72);
+  transform: translateX(-50%);
+  animation: butler-pet-arcade-result 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+
+.butler-pet-arcade-result > strong {
+  color: #059669;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.butler-pet-arcade-result > span {
+  font-family: var(--fb-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.butler-pet-arcade-result button {
+  display: inline-flex;
+  height: 29px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 11px;
+  color: #ffffff;
+  border: 0;
+  border-radius: 999px;
+  background: #10b981;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.butler-pet-arcade-result button:hover {
+  background: #059669;
+  transform: translateY(-1px);
+}
+
+@keyframes butler-pet-arcade-launch {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  48% {
+    transform: translateY(-3px) scale(0.98, 1.025);
+  }
+}
+
+@keyframes butler-pet-arcade-streak {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: translateX(-50%) scaleY(0.68);
+  }
+  46% {
+    opacity: 0.62;
+    transform: translateX(-50%) scaleY(1);
+  }
+}
+
+@keyframes butler-pet-arcade-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.38);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -65%) scale(1.65);
+  }
+}
+
+@keyframes butler-pet-arcade-timer-pulse {
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes butler-pet-arcade-boss-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.68) rotate(-8deg);
+  }
+}
+
+@keyframes butler-pet-arcade-boss-ultimate {
+  0% {
+    filter: brightness(1);
+    transform: translateX(-50%) scale(1);
+  }
+  28% {
+    filter: brightness(1.8);
+    transform: translateX(-50%) scale(1.12) rotate(4deg);
+  }
+  100% {
+    filter: brightness(1);
+    transform: translateX(-50%) scale(0.96);
+  }
+}
+
+@keyframes butler-pet-arcade-weak-point {
+  50% {
+    transform: translate(-50%, -50%) scale(1.22);
+  }
+}
+
+@keyframes butler-pet-arcade-damage {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.72);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-18px) scale(1.08);
+  }
+}
+
+@keyframes butler-pet-arcade-chain {
+  from {
+    opacity: 0;
+    transform: rotate(5deg) scale(0.55);
+  }
+  28% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: rotate(2deg) translateY(-10px) scale(1.08);
+  }
+}
+
+@keyframes butler-pet-arcade-ultimate-ready {
+  50% {
+    transform: translateX(-50%) scale(1.04);
+  }
+}
+
+@keyframes butler-pet-arcade-result {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.8) translateY(8px);
   }
 }
 
@@ -391,9 +1045,33 @@ html[data-surface="butler-chat"] #root {
   }
 
   .butler-pet-task-bubble,
-  .butler-pet-task-track {
+  .butler-pet-task-track,
+  .butler-pet-arcade-streak,
+  .butler-pet-arcade-burst,
+  .butler-pet-surface[data-entertainment="true"] .butler-pet-actor {
     animation: none !important;
     transform: none !important;
+  }
+
+  .butler-pet-arcade-streak,
+  .butler-pet-arcade-burst {
+    display: none;
+  }
+
+  .butler-pet-arcade-boss-stage,
+  .butler-pet-arcade-weak-point,
+  .butler-pet-arcade-damage,
+  .butler-pet-arcade-chain,
+  .butler-pet-arcade-ultimate,
+  .butler-pet-arcade-timer,
+  .butler-pet-arcade-result {
+    animation: none !important;
+  }
+
+  .butler-pet-arcade-ball,
+  .butler-pet-arcade-fever > span,
+  .butler-pet-arcade-boss-health i {
+    transition: none !important;
   }
 
   .butler-pet-task-track {
@@ -15646,6 +16324,248 @@ button.ghost:focus-visible,
   background: var(--fb-border);
 }
 
+.butler-settings-game-button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 11px;
+  color: var(--fb-brand-strong, #047857);
+  border: 1px solid color-mix(in srgb, var(--fb-brand) 32%, var(--fb-border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--fb-brand) 8%, var(--fb-panel-bg));
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.butler-settings-game-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fb-brand) 14%, var(--fb-panel-bg));
+  transform: translateY(-1px);
+}
+
+.butler-settings-game-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+/* The full-display game is transparent by default. The main process toggles
+ * OS-level mouse capture only while the cursor is over one of these controls,
+ * so empty areas never steal clicks from the app underneath. */
+.butler-screen-ball-surface {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  color: #0f172a;
+  background: transparent;
+  font-family: var(--fb-chat-font);
+  pointer-events: none;
+}
+
+.butler-screen-ball-surface button {
+  pointer-events: auto;
+}
+
+.butler-screen-ball-launcher {
+  position: absolute;
+  z-index: 2;
+  width: 70px;
+  height: 70px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.butler-screen-ball-launcher::before {
+  position: absolute;
+  inset: 7px;
+  content: "";
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.38), transparent 68%);
+  filter: blur(5px);
+}
+
+.butler-screen-ball-launcher span {
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 3px;
+  height: 30px;
+  border-radius: 99px;
+  background: linear-gradient(to top, rgba(16, 185, 129, 0), rgba(16, 185, 129, 0.34));
+  transform: translateX(-50%);
+}
+
+.butler-screen-ball-launcher img {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 14px rgba(15, 23, 42, 0.24));
+  user-select: none;
+}
+
+.butler-screen-ball-hud {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.84);
+  box-shadow: 0 16px 34px -24px rgba(15, 23, 42, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+}
+
+.butler-screen-ball-stat {
+  display: grid;
+  min-width: 64px;
+  gap: 2px;
+  padding: 2px 8px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.butler-screen-ball-stat + .butler-screen-ball-stat {
+  border-left: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.butler-screen-ball-stat strong {
+  color: #0f172a;
+  font-family: var(--fb-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.butler-screen-ball-close {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  padding: 0;
+  color: #64748b;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.butler-screen-ball-close:hover {
+  color: #0f172a;
+  background: #fff;
+  transform: scale(1.05);
+}
+
+.butler-screen-ball-ball {
+  position: absolute;
+  z-index: 5;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, #ecfeff 0 8%, #5eead4 28%, #06b6a5 64%, #0f766e 100%);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.56), 0 0 20px rgba(45, 212, 191, 0.78), 0 12px 20px -10px rgba(15, 118, 110, 0.82);
+  cursor: crosshair;
+  transform: translate(-50%, -50%);
+  transition: filter 0.12s ease, transform 0.12s ease;
+  will-change: left, top;
+}
+
+.butler-screen-ball-ball > span {
+  position: absolute;
+  inset: 25%;
+  border: 2px solid rgba(255, 255, 255, 0.68);
+  border-radius: 50%;
+  box-shadow: inset 0 0 6px rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+}
+
+.butler-screen-ball-ball:hover {
+  filter: brightness(1.1) saturate(1.08);
+  transform: translate(-50%, -50%) scale(1.16);
+}
+
+.butler-screen-ball-ball:active {
+  transform: translate(-50%, -50%) scale(0.86);
+}
+
+.butler-screen-ball-result {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 12;
+  display: flex;
+  width: min(310px, calc(100vw - 32px));
+  min-height: 156px;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 9px;
+  padding: 22px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 28px 58px -32px rgba(15, 23, 42, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(18px);
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.butler-screen-ball-result strong {
+  color: #047857;
+  font-size: 21px;
+  font-weight: 850;
+}
+
+.butler-screen-ball-result span {
+  color: #64748b;
+  font-family: var(--fb-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.butler-screen-ball-result button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  padding: 0 13px;
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #10b981, #14b8a6);
+  box-shadow: 0 10px 18px -11px rgba(5, 150, 105, 0.8);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.butler-screen-ball-result button:hover {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+.butler-screen-ball-close:focus-visible,
+.butler-screen-ball-ball:focus-visible,
+.butler-screen-ball-result button:focus-visible {
+  outline: 3px solid rgba(16, 185, 129, 0.32);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .butler-screen-ball-ball,
+  .butler-screen-ball-close,
+  .butler-screen-ball-result button {
+    transition: none;
+  }
+}
+
 .butler-settings-switch {
   position: relative;
   display: inline-flex;
@@ -15693,6 +16613,11 @@ button.ghost:focus-visible,
 
 .butler-settings-switch input:focus-visible + span {
   box-shadow: 0 0 0 3px var(--fb-brand-glow);
+}
+
+.butler-settings-switch:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .butler-shortcut-editor {

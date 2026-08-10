@@ -385,6 +385,7 @@ type ButlerBuddyPreferencesPayload = {
   shortcutEnabled: boolean;
   shortcut: string;
   shortcutRegistered: boolean;
+  entertainmentEnabled: boolean;
   error?: "shortcutUnavailable";
 };
 
@@ -403,6 +404,21 @@ type ButlerBuddyRuntimeStatePayload = {
   taskCount?: number;
 };
 
+type ButlerBuddyScreenBallSessionPayload = {
+  sessionId: string;
+  display: { id: number | string; x: number; y: number; width: number; height: number };
+  petOrigin: { x: number; y: number };
+};
+
+type ButlerBuddyScreenBallHitRegionPayload = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  kind: "ball" | "control";
+};
+
 const butlerBuddy = {
   toggleChat: () => ipcRenderer.send("butlerBuddy:toggleChat"),
   hideChat: () => ipcRenderer.send("butlerBuddy:hideChat"),
@@ -410,6 +426,39 @@ const butlerBuddy = {
   endDrag: () => ipcRenderer.send("butlerBuddy:endDrag"),
   openMenu: () => ipcRenderer.send("butlerBuddy:openMenu"),
   openCurrentTask: () => ipcRenderer.send("butlerBuddy:openCurrentTask"),
+  startScreenBall: () => ipcRenderer.send("butlerBuddy:startScreenBall"),
+  stopScreenBall: () => ipcRenderer.send("butlerBuddy:stopScreenBall"),
+  getScreenBallSession: (): Promise<ButlerBuddyScreenBallSessionPayload | null> =>
+    ipcRenderer.invoke("butlerBuddy:getScreenBallSession"),
+  publishScreenBallHitRegions: (
+    regions: ButlerBuddyScreenBallHitRegionPayload[]
+  ) => ipcRenderer.send("butlerBuddy:screenBallHitRegions", regions),
+  reportScreenBallPointer: (x: number, y: number) =>
+    ipcRenderer.send("butlerBuddy:screenBallPointer", { x, y }),
+  reportScreenBallHit: (sessionId: string, ballId: string) =>
+    ipcRenderer.send("butlerBuddy:screenBallHit", { sessionId, ballId }),
+  closeScreenBall: (sessionId: string) =>
+    ipcRenderer.send("butlerBuddy:screenBallClose", sessionId),
+  onScreenBallSession(
+    cb: (payload: ButlerBuddyScreenBallSessionPayload) => void
+  ): () => void {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: ButlerBuddyScreenBallSessionPayload
+    ) => cb(payload);
+    ipcRenderer.on("butlerBuddy:screenBallSession", handler);
+    return () => ipcRenderer.off("butlerBuddy:screenBallSession", handler);
+  },
+  onScreenBallHitAccepted(
+    cb: (payload: { sessionId: string; ballId: string }) => void
+  ): () => void {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: { sessionId: string; ballId: string }
+    ) => cb(payload);
+    ipcRenderer.on("butlerBuddy:screenBallHitAccepted", handler);
+    return () => ipcRenderer.off("butlerBuddy:screenBallHitAccepted", handler);
+  },
   getPreferences: () => ipcRenderer.invoke("butlerBuddy:getPreferences"),
   getRuntimeState: (): Promise<ButlerBuddyRuntimeStatePayload | undefined> =>
     ipcRenderer.invoke("butlerBuddy:getRuntimeState"),
@@ -419,6 +468,7 @@ const butlerBuddy = {
     visible?: boolean;
     shortcutEnabled?: boolean;
     shortcut?: string;
+    entertainmentEnabled?: boolean;
   }) => ipcRenderer.invoke("butlerBuddy:updatePreferences", input),
   onNewConversation(cb: () => void): () => void {
     const handler = () => cb();

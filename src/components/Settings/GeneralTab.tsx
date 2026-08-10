@@ -1,6 +1,8 @@
 import {
   AlertCircle,
   Check,
+  Crosshair,
+  Gamepad2,
   Keyboard,
   PawPrint,
   RotateCcw
@@ -93,6 +95,9 @@ export function GeneralTab() {
   const shortcutRegistered = useSettingsStore(
     (s) => s.butlerBuddyShortcutRegistered
   );
+  const entertainmentEnabled = useSettingsStore(
+    (s) => s.butlerBuddyEntertainmentEnabled
+  );
   const shortcutError = useSettingsStore((s) => s.butlerBuddyShortcutError);
   const updateButler = useSettingsStore(
     (s) => s.updateButlerBuddyPreferences
@@ -163,6 +168,52 @@ export function GeneralTab() {
               />
               <span aria-hidden="true" />
             </label>
+          </div>
+
+          <div className="butler-settings-divider" />
+
+          <div className="butler-settings-row">
+            <span className="butler-settings-row-icon" aria-hidden="true">
+              <Gamepad2 size={18} strokeWidth={1.8} />
+            </span>
+            <div className="butler-settings-copy">
+              <strong>{t("general.butlerEntertainment")}</strong>
+              <small>{t("general.butlerEntertainmentDescription")}</small>
+            </div>
+            <label className="butler-settings-switch">
+              <input
+                type="checkbox"
+                checked={entertainmentEnabled}
+                disabled={!butlerVisible}
+                onChange={(event) =>
+                  void updateButler({
+                    entertainmentEnabled: event.target.checked
+                  })
+                }
+                aria-label={t("general.butlerEntertainment")}
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+
+          <div className="butler-settings-divider" />
+
+          <div className="butler-settings-row">
+            <span className="butler-settings-row-icon" aria-hidden="true">
+              <Crosshair size={18} strokeWidth={1.8} />
+            </span>
+            <div className="butler-settings-copy">
+              <strong>{t("general.butlerScreenBall")}</strong>
+              <small>{t("general.butlerScreenBallDescription")}</small>
+            </div>
+            <button
+              type="button"
+              className="butler-settings-game-button"
+              disabled={!butlerVisible}
+              onClick={() => window.freebuddy?.butlerBuddy?.startScreenBall()}
+            >
+              {t("general.butlerScreenBallStart")}
+            </button>
           </div>
 
           <div className="butler-settings-divider" />

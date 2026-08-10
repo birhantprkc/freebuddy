@@ -142,22 +142,22 @@ test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", ()
   );
 
   assert.match(main, /function createButlerBuddyWindows\(\)/);
-  assert.match(main, /surface: "butler-pet" \| "butler-chat"/);
+  assert.match(main, /surface: "butler-pet" \| "butler-chat" \| "butler-screen-ball"/);
   assert.match(main, /alwaysOnTop: true/);
   assert.match(main, /transparent: true/);
   assert.equal(
     main.match(
       /type: process\.platform === "darwin" \? "panel" : undefined/g
     )?.length,
-    2,
-    "pet and mini chat use macOS panels above full-screen Spaces"
+    3,
+    "pet, mini chat, and the screen-ball overlay use macOS panels above full-screen Spaces"
   );
   assert.equal(
     main.match(
       /setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\)/g
     )?.length,
-    2,
-    "pet and mini chat remain visible across macOS workspaces"
+    3,
+    "pet, mini chat, and the screen-ball overlay remain visible across macOS workspaces"
   );
   assert.match(main, /startButlerPetDrag|applyButlerPetDrag/);
   assert.match(main, /butlerDragChatOrigin/);
@@ -165,6 +165,7 @@ test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", ()
   assert.match(preload, /ipcRenderer\.send\("butlerBuddy:hideChat"\)/);
   assert.match(renderer, /surface === "butler-pet"/);
   assert.match(renderer, /surface === "butler-chat"/);
+  assert.match(renderer, /surface === "butler-screen-ball"/);
   assert.match(pet, /butlerbuddy\/states/);
 });
 
@@ -189,6 +190,89 @@ test("ButlerBuddy preferences expose a global shortcut with conflict feedback", 
   assert.match(settings, /butler-shortcut-recorder/);
   assert.match(settings, /butlerShortcutUnavailable/);
   assert.match(settings, /DEFAULT_BUTLER_SHORTCUT/);
+});
+
+test("ButlerBuddy entertainment mode expands the pet arena and stays synchronized", () => {
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const types = fs.readFileSync(
+    new URL("../src/types/freebuddy.d.ts", import.meta.url),
+    "utf8"
+  );
+  const settings = fs.readFileSync(
+    new URL("../src/components/Settings/GeneralTab.tsx", import.meta.url),
+    "utf8"
+  );
+  const pet = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/ButlerBuddyPet.tsx", import.meta.url),
+    "utf8"
+  );
+  const styles = fs.readFileSync(
+    new URL("../styles.css", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(main, /BUTLER_ENTERTAINMENT_ENABLED_SETTING/);
+  assert.match(main, /applyButlerBuddyEntertainmentMode/);
+  assert.match(main, /entertainmentEnabled/);
+  assert.match(main, /开启小窗弹球/);
+  assert.match(main, /结束小窗弹球/);
+  assert.match(main, /开启全屏弹球/);
+  assert.match(main, /结束全屏弹球/);
+  assert.match(preload, /entertainmentEnabled\?: boolean/);
+  assert.match(types, /entertainmentEnabled: boolean/);
+  assert.match(settings, /butlerEntertainment/);
+  assert.match(settings, /butlerScreenBall/);
+  assert.match(pet, /onPreferencesChanged/);
+  const refreshShortcutHint = pet.slice(
+    pet.indexOf("const refreshShortcutHint"),
+    pet.indexOf("useEffect(refreshShortcutHint")
+  );
+  assert.doesNotMatch(refreshShortcutHint, /setEntertainmentEnabled/);
+  assert.match(pet, /spawnPetArcadeBall/);
+  assert.match(pet, /hitPetArcadeBall/);
+  assert.match(pet, /butler-pet-arcade-score/);
+  const arcadeBallStyles = styles.slice(
+    styles.indexOf(".butler-pet-arcade-ball {"),
+    styles.indexOf(".butler-pet-arcade-ball:hover")
+  );
+  assert.match(
+    arcadeBallStyles,
+    /transition:\s*filter\s+/,
+    "per-frame ball positions must not inherit the global button transition"
+  );
+  assert.doesNotMatch(arcadeBallStyles, /transition:\s*all/);
+});
+
+test("ButlerBuddy full-screen ball mode uses guarded IPC and transparent hit regions", () => {
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const renderer = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/ButlerBuddyScreenBall.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(main, /setIgnoreMouseEvents\(true, \{ forward: true \}\)/);
+  assert.match(main, /butlerBuddy:screenBallHitRegions/);
+  assert.match(main, /isButlerScreenBallWindowSender/);
+  assert.match(main, /displayChangedForScreenBall/);
+  assert.match(preload, /screenBallHit/);
+  assert.match(preload, /screenBallPointer/);
+  assert.match(preload, /onScreenBallSession/);
+  assert.match(renderer, /publishScreenBallHitRegions/);
+  assert.match(renderer, /onPointerDown/);
+  assert.match(renderer, /screenBallReplay/);
 });
 test("the ButlerBuddy popover is a persisted real conversation, not a fake panel", () => {
   const chat = fs.readFileSync(

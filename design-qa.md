@@ -52,6 +52,60 @@ final result: passed
 
 ---
 
+# ButlerBuddy 狂热突袭 design QA
+
+- Source visual truth: `/Users/hongbin9/.codex/generated_images/019fe968-4981-7e03-9bbd-1200b3295f6f/exec-74e103b8-e3de-4471-ad42-9ba759b51b65.png`
+- Browser-rendered implementation screenshot: `/tmp/freebuddy-arcade-implementation.png`
+- Combined comparison: `/tmp/freebuddy-arcade-design-qa.png`
+- Viewport: 360 x 300 CSS px and 360 x 300 screenshot pixels at 1x
+- Density normalization: the 1374 x 1145 source was normalized to the production window's 360 x 300 aspect and density before comparison
+- State: light theme, entertainment enabled, ten-second Boss climax, active first weak point
+
+## Full-view comparison evidence
+
+The source and implementation were inspected together at the same 360 x 300 frame. The implementation preserves the reference hierarchy: score at upper left, fever meter in the center, countdown and close action at upper right, boss name and health immediately below, a large violet boss in the playfield, colored glass targets around it, and the pet-centered ultimate meter at the bottom.
+
+## Focused region comparison evidence
+
+The combined comparison places the normalized source on the left and the live implementation on the right. The final render matches the source's soft translucent shell, mint-green progress language, orange-red boss health, violet boss palette, luminous cyan/pink/gold targets, and compact HUD rhythm. Live ball positions intentionally differ because they are physics-driven; the same spatial density and readable separation are retained.
+
+## Required fidelity surfaces
+
+- Fonts and typography: the existing FreeBuddy font stack is retained; compact numeric HUD labels, centered boss title, and bold combo/result copy remain legible in the 360 px window.
+- Spacing and layout rhythm: the 8 px top HUD, 6 px inter-control gaps, centered boss region, and pet-aligned ultimate meter leave the moving target field unobstructed.
+- Colors and visual tokens: existing neutral surface and mint brand tokens are combined with the approved violet boss, cyan/pink targets, gold rare-target accent, and orange-red danger bar.
+- Image quality and asset fidelity: the boss and orb are dedicated transparent raster assets at `public/butlerbuddy/arcade/boss.png` and `public/butlerbuddy/arcade/orb.png`; no CSS-drawn substitute or placeholder is used.
+- Copy and content: score, fever/combo, countdown, boss name, chain feedback, ultimate charge, victory/timeout, final score, and replay are localized in Simplified Chinese and English.
+
+## Findings
+
+No actionable P0, P1, or P2 visual or interaction difference remains for the approved combined direction.
+
+## Primary interactions tested
+
+- Sampled every live ball's bounds twice across 500 ms and confirmed positions changed independently instead of remaining stacked on the pet.
+- Hit a gold target and confirmed the score changed from 0 to 120.
+- Triggered a three-target same-color chain and confirmed `+20`, `+40`, `+80`, and `3 连锁!` feedback.
+- Filled fever early, entered the Boss phase, hit all four rotating weak points, reached the 100% ultimate state, clicked the pet, and confirmed `故障清除!` with a 1144-point result.
+- Replayed after timeout and victory; the round state reset correctly.
+- Checked the full browser journey for warnings and errors: none.
+- Automated tests cover physics, scoring, chains, fever/timed Boss entry, weak points, ultimate victory, thirty-second timeout, preference persistence, and Electron window resizing.
+
+## Comparison history
+
+1. The original implementation inherited a global `transition: all`, causing updated ball coordinates to restart every frame and visually stack near the pet.
+2. Motion was restricted to the intended filter transition; runtime position samples now show large independent changes over 500 ms.
+3. The single-ball loop was expanded into the approved combined hunt, chain, boss, weak-point, ultimate, victory, timeout, and replay flow.
+4. A final side-by-side comparison found the hierarchy and visual language aligned; victory now clears residual balls so the result card stays quiet.
+
+## Follow-up polish
+
+- P3: sound and haptic-style audio cues could add another layer of game feel, but were excluded from this visual and interaction pass.
+
+final result: passed
+
+---
+
 # Agent self-check export design QA
 
 - Source visual truth: `C:\Users\Morefine\.codex\generated_images\019fd22c-698f-7d93-991a-6f7c065756dc\exec-f5fc3830-031d-4bd6-bc03-1da984d4dfb5.png`
@@ -543,5 +597,46 @@ No actionable P0, P1, or P2 header mismatch remains.
 ## Follow-up polish
 
 - P3: The model picker is a non-interactive fallback in the browser preview because live options come from the Electron adapter bridge; the production desktop picker retains its existing interaction.
+
+final result: passed
+
+---
+
+# ButlerBuddy arcade compact-hierarchy correction design QA
+
+- User-reported implementation screenshot: `/Users/hongbin9/Documents/freebuddy/artifacts/product-design/butlerbuddy-arcade-audit/01-before.png`
+- Revised stable Boss screenshot: `/Users/hongbin9/Documents/freebuddy/artifacts/product-design/butlerbuddy-arcade-audit/04-boss-stable-after.png`
+- Combined same-size comparison: `/Users/hongbin9/Documents/freebuddy/artifacts/product-design/butlerbuddy-arcade-audit/05-before-after.png`
+- Viewport: 360 x 300 CSS px; the 720 x 600 Retina source was normalized to 360 x 300 before comparison
+- State: light theme, Boss phase, weak points and moving balls visible
+
+## Comparison evidence
+
+The user screenshot and revised implementation were inspected together at the same aspect ratio and scale. The earlier composition placed the saturated fever fill, oversized Boss, foreground balls, oversized ultimate ring, and pet on one vertical axis. The revised composition uses a quiet white fever capsule with a thin progress edge, a smaller elevated Boss, balls behind the Boss, and a smaller bottom-anchored pet/ultimate unit with visible separation between the two characters.
+
+## Required fidelity surfaces
+
+- Typography and HUD: score, fever, countdown, boss label, and health remain legible while using less height and lower saturation.
+- Layout rhythm: the Boss ends above the pet/ultimate region instead of intersecting it; the playfield regains negative space.
+- Layering: moving balls no longer cover the Boss face or obscure weak-point state.
+- Background treatment: increased opacity and blur suppress underlying desktop text and dividers without making the surface fully opaque.
+- Asset fidelity: the existing generated transparent Boss and orb assets are retained without distortion.
+
+## Findings
+
+No actionable P0, P1, or P2 crowding, overlap, or hierarchy issue remains in the revised Boss state.
+
+## Interaction checks
+
+- Hunt and Boss phases rendered at the production 360 x 300 CSS viewport.
+- Ball movement, chain feedback, weak points, ultimate region, countdown, and close control remained present after the layout change.
+- Browser console warnings/errors: none.
+- Automated physics and interaction contracts remain green.
+
+## Comparison history
+
+1. User capture identified the oversized, center-stacked composition as visually uncomfortable.
+2. HUD, Boss, moving targets, pet, ultimate ring, and backdrop were compacted as one hierarchy pass.
+3. The final same-size comparison confirms the characters no longer collide and moving targets no longer obscure the Boss face.
 
 final result: passed
