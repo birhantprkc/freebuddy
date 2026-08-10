@@ -59,7 +59,10 @@ import type {
   WorkflowTeamPreview,
   WorkflowTeamRole,
   WorkflowTeamPolicy,
-  WorkflowTemplate2
+  WorkflowTemplate2,
+  DelegationTeam,
+  DelegationRosterEntry,
+  DelegationPolicy
 } from "@/services/workflowTeams/types";
 import type {
   AddFeedSourceInput,
@@ -481,6 +484,17 @@ declare global {
       | { ok: true; run: WorkflowRunRow }
       | { ok: false; errors: string[] }
     >;
+    createDelegationRun(input: {
+      teamId: string;
+      goal: string;
+      cwd?: string;
+      conversationId?: string;
+    }): Promise<{ ok: true; runId: string } | { ok: false; error: string }>;
+    approveDelegateWrite(input: {
+      runId: string;
+      approvalId: string;
+      approved: boolean;
+    }): Promise<boolean>;
     onStepMessage(
       conversationId: string,
       cb: (event: {
@@ -536,6 +550,38 @@ declare global {
     >;
     delete(id: string): Promise<boolean>;
     seedBuiltins(): Promise<WorkflowTeam[]>;
+    onChanged(cb: () => void): () => void;
+  }
+
+  interface FreebuddyDelegation {
+    listTeams(): Promise<DelegationTeam[]>;
+    getTeam(id: string): Promise<DelegationTeam | undefined>;
+    createTeam(input: {
+      id: string;
+      name: string;
+      description?: string;
+      icon?: string;
+      enabled: boolean;
+      source: "builtin" | "user";
+      entryRoleId: string;
+      roster: DelegationRosterEntry[];
+      policy: DelegationPolicy;
+    }): Promise<DelegationTeam>;
+    updateTeam(
+      id: string,
+      patch: {
+        name?: string;
+        description?: string | null;
+        icon?: string | null;
+        enabled?: boolean;
+        entryRoleId?: string;
+        roster?: DelegationRosterEntry[];
+        policy?: DelegationPolicy;
+      }
+    ): Promise<DelegationTeam | undefined>;
+    deleteTeam(id: string): Promise<boolean>;
+    getRun(id: string): Promise<unknown>;
+    listEvents(runId: string): Promise<unknown[]>;
     onChanged(cb: () => void): () => void;
   }
 
@@ -727,6 +773,7 @@ declare global {
     cli: FreebuddyCli;
     workflow: FreebuddyWorkflow;
     workflowTeams: FreebuddyWorkflowTeams;
+    delegation: FreebuddyDelegation;
     skills: FreebuddySkills;
     plugins: FreebuddyPlugins;
     scheduledTasks: FreebuddyScheduledTasks;

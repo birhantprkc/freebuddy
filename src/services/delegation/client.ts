@@ -1,0 +1,97 @@
+import type {
+  DelegationTeam,
+  DelegationRosterEntry,
+  DelegationPolicy
+} from "@/services/workflowTeams/types";
+
+export interface UpsertDelegationTeamInput {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  enabled: boolean;
+  source: "builtin" | "user";
+  entryRoleId: string;
+  roster: DelegationRosterEntry[];
+  policy: DelegationPolicy;
+}
+
+export interface UpdateDelegationTeamPatch {
+  name?: string;
+  description?: string | null;
+  icon?: string | null;
+  enabled?: boolean;
+  entryRoleId?: string;
+  roster?: DelegationRosterEntry[];
+  policy?: DelegationPolicy;
+}
+
+function api() {
+  const delegation = window.freebuddy?.delegation;
+  if (!delegation) throw new Error("delegation bridge unavailable");
+  return delegation;
+}
+
+function wfApi() {
+  const wf = window.freebuddy?.workflow;
+  if (!wf) throw new Error("workflow bridge unavailable");
+  return wf;
+}
+
+export const delegationClient = {
+  isAvailable(): boolean {
+    return Boolean(window.freebuddy?.delegation);
+  },
+
+  list(): Promise<DelegationTeam[]> {
+    return api().listTeams();
+  },
+
+  get(id: string): Promise<DelegationTeam | undefined> {
+    return api().getTeam(id);
+  },
+
+  create(input: UpsertDelegationTeamInput): Promise<DelegationTeam> {
+    return api().createTeam(input);
+  },
+
+  update(
+    id: string,
+    patch: UpdateDelegationTeamPatch
+  ): Promise<DelegationTeam | undefined> {
+    return api().updateTeam(id, patch);
+  },
+
+  delete(id: string): Promise<boolean> {
+    return api().deleteTeam(id);
+  },
+
+  createRun(input: {
+    teamId: string;
+    goal: string;
+    cwd?: string;
+    conversationId?: string;
+  }): Promise<{ ok: true; runId: string } | { ok: false; error: string }> {
+    return wfApi().createDelegationRun(input);
+  },
+
+  approveWrite(input: {
+    runId: string;
+    approvalId: string;
+    approved: boolean;
+  }): Promise<boolean> {
+    return wfApi().approveDelegateWrite(input);
+  },
+
+  getRun(id: string): Promise<unknown> {
+    return api().getRun(id);
+  },
+
+  listEvents(runId: string): Promise<unknown[]> {
+    return api().listEvents(runId);
+  },
+
+  onChanged(cb: () => void): (() => void) | undefined {
+    return window.freebuddy?.delegation?.onChanged?.(cb);
+  }
+};
