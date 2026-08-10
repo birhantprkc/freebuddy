@@ -42,28 +42,44 @@ export function DelegationTeamCard({
   return (
     <section className="side-card delegation-roster-card">
       <div className="side-card-header">
-        <span>{t("workflow.delegation.teamTitle", { defaultValue: "团队" })}：{team.name}</span>
+        <span>{team.name}</span>
         <strong>{team.roster.length}</strong>
       </div>
       <div className="delegation-roster-body">
-        {team.roster.map((r) => (
-          <div key={r.id} className="delegation-roster-member">
-            <div className="delegation-roster-member-head">
-              <span className="delegation-roster-member-label">{r.label}</span>
-              {r.id === team.entryRoleId && (
-                <span className="delegation-roster-member-tag entry">
-                  {t("workflow.delegation.entry", { defaultValue: "入口" })}
-                </span>
-              )}
-              <span className={`delegation-roster-member-tag${r.canWrite ? " w" : " ro"}`}>
-                {r.canWrite
-                  ? t("workflow.delegation.canWrite")
-                  : t("workflow.delegation.readonly", { defaultValue: "只读" })}
-              </span>
+        {team.roster.map((r) => {
+          const isEntry = r.id === team.entryRoleId;
+          return (
+            <div key={r.id} className="agent-lockup delegation-roster-member">
+              <div
+                className={`agent-avatar${isEntry ? " entry" : ""}`}
+                style={isEntry ? { background: "var(--fb-brand-gradient)" } : { background: "rgba(128,128,128,0.2)" }}
+              >
+                <span>{r.label.slice(0, 2).toUpperCase()}</span>
+              </div>
+              <div>
+                <strong>
+                  {r.label}
+                  {isEntry && (
+                    <span className="delegation-roster-tag entry" style={{ marginLeft: 6 }}>
+                      {t("workflow.delegation.entry", { defaultValue: "入口" })}
+                    </span>
+                  )}
+                </strong>
+                <small className="muted">
+                  {memberName(r.agentId)}
+                  <span
+                    className={`delegation-roster-tag${r.canWrite ? " w" : " ro"}`}
+                    style={{ marginLeft: 6 }}
+                  >
+                    {r.canWrite
+                      ? t("workflow.delegation.canWrite")
+                      : t("workflow.delegation.readonly", { defaultValue: "只读" })}
+                  </span>
+                </small>
+              </div>
             </div>
-            <div className="delegation-roster-member-agent">{memberName(r.agentId)}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
