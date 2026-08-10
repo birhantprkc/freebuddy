@@ -103,6 +103,7 @@ export class DelegationRuntime {
       const result = await this.deps.runAgent({
         sessionId: `del-${runId}`,
         conversationId: ctx.conversationId,
+        roleLabel: entry.label,
         agentId: entry.agentId,
         agentName: resolved.agentName,
         adapter: resolved.adapter as CLIAdapterId,
@@ -146,6 +147,7 @@ export class DelegationRuntime {
       return await this.deps.runAgent({
         sessionId: `del-${args.runId}-${args.childEventId}`,
         conversationId: ctx.conversationId,
+        roleLabel: args.teammate.label,
         agentId: args.teammate.agentId,
         agentName: resolved.agentName,
         adapter: resolved.adapter as CLIAdapterId,
