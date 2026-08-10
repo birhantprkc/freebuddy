@@ -1,34 +1,55 @@
 import { useTranslation } from "react-i18next";
 
-import type { WorkflowTeam } from "@/services/workflowTeams/types";
+import type { AnyTeam } from "@/services/workflowTeams/types";
 import {
+  isDelegationTeam,
   workflowTeamDescription,
   workflowTeamName
 } from "@/services/workflowTeams/types";
 import { useWorkflowTeamStore } from "@/store/workflowTeamStore";
+import { useDelegationTeamStore } from "@/store/delegationStore";
 
 export function WorkflowTeamList({
   teams,
   onNew,
+  onNewDelegation,
   onEdit
 }: {
-  teams: WorkflowTeam[];
+  teams: AnyTeam[];
   onNew: () => void;
-  onEdit: (team: WorkflowTeam) => void;
+  onNewDelegation: () => void;
+  onEdit: (team: AnyTeam) => void;
 }) {
   const { t } = useTranslation();
-  const update = useWorkflowTeamStore((s) => s.update);
-  const remove = useWorkflowTeamStore((s) => s.remove);
+  const wfUpdate = useWorkflowTeamStore((s) => s.update);
+  const wfRemove = useWorkflowTeamStore((s) => s.remove);
+  const delUpdate = useDelegationTeamStore((s) => s.update);
+  const delRemove = useDelegationTeamStore((s) => s.remove);
+
+  const toggleEnabled = (team: AnyTeam) => {
+    if (isDelegationTeam(team)) {
+      void delUpdate(team.id, { enabled: !team.enabled });
+    } else {
+      void wfUpdate(team.id, { enabled: !team.enabled });
+    }
+  };
+
+  const removeTeam = (team: AnyTeam) => {
+    if (isDelegationTeam(team)) {
+      void delRemove(team.id);
+    } else {
+      void wfRemove(team.id);
+    }
+  };
 
   return (
     <div className="workflow-team-list">
       <div className="workflow-team-list-actions">
-        <button
-          type="button"
-          className="primary"
-          onClick={onNew}
-        >
+        <button type="button" className="primary" onClick={onNew}>
           + {t("workflow.newTeam")}
+        </button>
+        <button type="button" onClick={onNewDelegation}>
+          + {t("workflow.delegation.newTeam")}
         </button>
       </div>
       {teams.length === 0 ? (
@@ -36,13 +57,25 @@ export function WorkflowTeamList({
       ) : (
         <ul className="workflow-team-list-items">
           {teams.map((team) => {
-            const name = workflowTeamName(team, t);
-            const description = workflowTeamDescription(team, t);
+            const name = isDelegationTeam(team)
+              ? team.name
+              : workflowTeamName(team, t);
+            const description = isDelegationTeam(team)
+              ? team.description
+              : workflowTeamDescription(team, t);
+            const memberCount = isDelegationTeam(team)
+              ? team.roster.length
+              : team.roles.length;
             return (
               <li key={team.id} className="workflow-team-card">
                 <div className="workflow-team-card-main">
                   <div className="workflow-team-card-title">
                     <strong>{name}</strong>
+                    {isDelegationTeam(team) && (
+                      <span className="workflow-team-badge user">
+                        {t("workflow.delegation.kindBadge")}
+                      </span>
+                    )}
                     <span
                       className={
                         team.source === "builtin"
@@ -65,30 +98,46 @@ export function WorkflowTeamList({
                   )}
                   <div className="workflow-team-card-meta">
                     <span>
-                      {team.roles.length} {t("workflow.teamRoles").toLowerCase()}
+                      {memberCount} {t("workflow.teamRoles").toLowerCase()}
                     </span>
                     <span>·</span>
-                    <span>
-                      {team.policy.allowWrites
-                        ? t("workflow.allowWrites")
-                        : t("workflow.allowWrites") + ": " + t("workflow.denied")}
-                    </span>
-                    <span>·</span>
-                    <span>
-                      {t("workflow.maxLoops")} {team.policy.maxLoops}
-                    </span>
+                    {isDelegationTeam(team) ? (
+                      <>
+                        <span>
+                          {t("workflow.delegation.maxDepth")}{" "}
+                          {team.policy.maxDepth}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          {team.policy.allowWrites
+                            ? t("workflow.allowWrites")
+                            : t("workflow.allowWrites") +
+                              ": " +
+                              t("workflow.denied")}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>
+                          {team.policy.allowWrites
+                            ? t("workflow.allowWrites")
+                            : t("workflow.allowWrites") +
+                              ": " +
+                              t("workflow.denied")}
+                        </span>
+                        <span>·</span>
+                        <span>
+                          {t("workflow.maxLoops")} {team.policy.maxLoops}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="workflow-team-card-actions">
                   <button type="button" onClick={() => onEdit(team)}>
                     {t("common.edit")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void update(team.id, { enabled: !team.enabled })
-                    }
-                  >
+                  <button type="button" onClick={() => toggleEnabled(team)}>
                     {team.enabled
                       ? t("workflow.disableTeam")
                       : t("workflow.enableTeam")}
@@ -99,7 +148,7 @@ export function WorkflowTeamList({
                       className="danger"
                       onClick={() => {
                         if (window.confirm(t("workflow.confirmDeleteTeam"))) {
-                          void remove(team.id);
+                          removeTeam(team);
                         }
                       }}
                     >
