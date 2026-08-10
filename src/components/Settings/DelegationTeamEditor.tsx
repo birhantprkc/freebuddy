@@ -102,6 +102,13 @@ export function DelegationTeamEditor({
       setErrors([t("workflow.teamNameRequired")]);
       return;
     }
+    const invalidRoster =
+      roster.length === 0 ||
+      roster.some((r) => !r.label.trim() || !r.agentId.trim());
+    if (invalidRoster) {
+      setErrors([t("workflow.delegation.errors.invalidRoster")]);
+      return;
+    }
     const trimmedName = name.trim();
     const trimmedDescription = description.trim();
     const finalEntryRoleId = roster.some((r) => r.id === entryRoleId)

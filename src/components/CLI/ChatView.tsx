@@ -2673,7 +2673,7 @@ function NewTaskHome({
                     .map((tt) => (
                       <option key={tt.id} value={tt.id}>
                         {isDelegationTeam(tt)
-                          ? `${tt.name}（自组织）`
+                          ? `${tt.name}（${t("workflow.delegation.kindBadge")}）`
                           : workflowTeamName(tt, t)}
                       </option>
                     ))}

@@ -52,6 +52,7 @@ interface PendingApproval {
 export class DelegationRuntime {
   private contexts = new Map<string, RunContext>();
   private pendingApprovals: PendingApproval[] = [];
+  private killedRunIds = new Set<string>();
   constructor(private deps: DelegationRuntimeDeps) {
     setDelegateDeps({
       contextProvider: (runId) => this.getContext(runId),
@@ -117,10 +118,10 @@ export class DelegationRuntime {
       });
       const status = result.error ? "failed" : "done";
       updateDelegationEvent(rootEventId, { status, resultSummary: result.summary });
-      setDelegationRunStatus(runId, status === "done" ? "completed" : "failed");
+      if (!this.killedRunIds.has(runId)) setDelegationRunStatus(runId, status === "done" ? "completed" : "failed");
     } catch (err) {
       updateDelegationEvent(rootEventId, { status: "failed", resultSummary: (err as Error).message });
-      setDelegationRunStatus(runId, "failed");
+      if (!this.killedRunIds.has(runId)) setDelegationRunStatus(runId, "failed");
     }
   }
 
@@ -188,6 +189,7 @@ export class DelegationRuntime {
   }
 
   stopRun(runId: string): void {
+    this.killedRunIds.add(runId);
     setDelegationRunStatus(runId, "killed");
     // v1: status-only. Full multi-agent kill (cancelling live ACP sessions) is a documented fast-follow.
   }

@@ -1500,7 +1500,10 @@
       "loading": "Loading…",
       "noActivity": "No delegation activity yet.",
       "details": "Details",
-      "hide": "Hide"
+      "hide": "Hide",
+      "errors": {
+        "invalidRoster": "Roster needs at least one entry, each with a label and an agent"
+      }
     }
   },
   "updater": {

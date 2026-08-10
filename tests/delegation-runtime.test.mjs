@@ -129,3 +129,25 @@ test("recoverInterruptedDelegationRuns sweeps both running and blocked delegatio
     assert.equal(getDelegationRun(blockedId)?.status, "failed");
   });
 });
+
+test("stopRun kills: a completing runEntry must not overwrite killed status", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    let releaseAgent;
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({ adapter: "codex-acp", agentName: "Codex", skillIds: [] }),
+      runAgent: () => new Promise((resolve) => { releaseAgent = () => resolve({ summary: "done", exitCode: 0, error: null }); })
+    });
+    const runId = rt.prepareRun({ goal: "实现X", teamId: "t", teamSnapshot: snap, cwd: "/r" });
+    const entryPromise = rt.runEntry(runId, "实现X");
+    // runAgent is now pending; stop the run, then let the agent finish successfully.
+    rt.stopRun(runId);
+    assert.equal(getDelegationRun(runId).status, "killed");
+    releaseAgent();
+    await entryPromise;
+    assert.equal(getDelegationRun(runId).status, "killed");
+  });
+});
