@@ -69,7 +69,10 @@ export function DelegationTeamCard({
               />
               <div>
                 <strong>{memberName(r.agentId)}</strong>
-                <small className="muted">{r.capability}</small>
+                <small className="muted">
+                  {r.model ? `${r.model} · ` : ""}
+                  {r.capability}
+                </small>
               </div>
             </div>
           </section>
