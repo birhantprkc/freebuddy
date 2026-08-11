@@ -273,6 +273,11 @@ test("ButlerBuddy full-screen ball mode uses guarded IPC and transparent hit reg
   assert.match(renderer, /publishScreenBallHitRegions/);
   assert.match(renderer, /onPointerDown/);
   assert.match(renderer, /screenBallReplay/);
+  assert.doesNotMatch(
+    renderer,
+    /butler-screen-ball-launcher|butlerbuddy-pet\.png/,
+    "the full-display overlay must not render a second pet"
+  );
 });
 test("the ButlerBuddy popover is a persisted real conversation, not a fake panel", () => {
   const chat = fs.readFileSync(

@@ -1,6 +1,5 @@
 import { RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import {
   advanceScreenBallState,
@@ -29,7 +28,6 @@ type HitRegion = {
 
 const SPAWN_INTERVAL_MS = 900;
 const HIT_PADDING = 10;
-const petImageUrl = `${import.meta.env.BASE_URL}butlerbuddy-pet.png`;
 const CLOCK_ORIGIN =
   typeof performance.timeOrigin === "number"
     ? performance.timeOrigin
@@ -220,10 +218,6 @@ export function ButlerBuddyScreenBall() {
 
   if (!session || !state) return null;
   const remainingSeconds = remainingScreenBallSeconds(state, monotonicNow());
-  const launcherStyle = {
-    left: `${session.petOrigin.x}px`,
-    top: `${session.petOrigin.y}px`
-  } as CSSProperties;
 
   const close = () => bridge?.closeScreenBall?.(session.sessionId);
   const replay = () => bridge?.startScreenBall?.();
@@ -233,10 +227,6 @@ export function ButlerBuddyScreenBall() {
 
   return (
     <main className="butler-screen-ball-surface" aria-label={t("butler.screenBallSurfaceAria")}>
-      <div className="butler-screen-ball-launcher" style={launcherStyle} aria-hidden="true">
-        <span />
-        <img src={petImageUrl} alt="" draggable={false} />
-      </div>
       <section className="butler-screen-ball-hud" aria-live="polite">
         <div className="butler-screen-ball-stat">
           <span>{t("butler.screenBallScore")}</span>

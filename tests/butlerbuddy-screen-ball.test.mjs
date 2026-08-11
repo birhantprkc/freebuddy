@@ -48,6 +48,27 @@ test("screen-ball spawning is deterministic and capped at three active balls", a
   );
 });
 
+test("spawned balls launch into a readable full-screen arc", async () => {
+  const {
+    advanceScreenBallState,
+    createScreenBallArcadeState,
+    spawnScreenBall
+  } = await loadScreenBallModule();
+  const startedAt = 1_000;
+  let state = createScreenBallArcadeState({
+    at: startedAt,
+    bounds: { left: 0, top: 0, right: 1_440, bottom: 900 },
+    origin: { x: 720, y: 720 }
+  });
+  state = spawnScreenBall(state, { at: startedAt, random: () => 0.25 });
+  const [spawned] = state.balls;
+  const lifted = advanceScreenBallState(state, 350, startedAt + 350).balls[0];
+
+  assert.ok(spawned.vy < -450, "the launch should have enough upward velocity");
+  assert.ok(Math.abs(spawned.vx) > 60, "the launch should travel across the display");
+  assert.ok(lifted.y < spawned.y - 120, "the ball should visibly rise before falling");
+});
+
 test("balls reflect from left, right, and top edges", async () => {
   const { advanceScreenBallState, createScreenBallArcadeState } =
     await loadScreenBallModule();

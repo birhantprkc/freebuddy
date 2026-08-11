@@ -14,8 +14,11 @@ export const SCREEN_BALL_ROUND_DURATION_MS = 180_000;
 export const SCREEN_BALL_COMBO_WINDOW_MS = 1_200;
 export const SCREEN_BALL_DEFAULT_WIDTH = 100;
 export const SCREEN_BALL_DEFAULT_HEIGHT = 100;
-export const SCREEN_BALL_DEFAULT_RADIUS = 6;
-export const SCREEN_BALL_GRAVITY = 38;
+export const SCREEN_BALL_DEFAULT_RADIUS = 9;
+// The game spans a whole display, so small arcade-scale velocities make the
+// projectile look stuck to the pet.  These values produce a clear, casual arc
+// of roughly 250–370 px while keeping the flight short enough to click.
+export const SCREEN_BALL_GRAVITY = 520;
 export const SCREEN_BALL_BOUNCE_DAMPING = 0.82;
 export const SCREEN_BALL_MIN_SCORE = 10;
 export const SCREEN_BALL_MAX_SCORE = 100;
@@ -295,8 +298,8 @@ export function spawnScreenBall(
 
   const radius = SCREEN_BALL_DEFAULT_RADIUS;
   const origin = normalizeOrigin(suppliedOrigin, state.spawnOrigin);
-  const horizontalSpeed = -22 + randomValue(random) * 44;
-  const verticalSpeed = -46 - randomValue(random) * 12;
+  const horizontalSpeed = -180 + randomValue(random) * 360;
+  const verticalSpeed = -520 - randomValue(random) * 120;
   const ball: ScreenBall = {
     id: `screen-ball-${state.nextBallId}`,
     x: origin.x,
