@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { delegationClient } from "@/services/delegation/client";
 
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -107,7 +108,15 @@ export function WorkspacePanel({
   const status = displayLive?.status ?? "ready";
   const isLive = status === "running" || status === "starting";
 
-  const isTeamRun = !!displayRun && displayRun.conversationId === activeId;
+  const [isDelegationConv, setIsDelegationConv] = useState(false);
+  useEffect(() => {
+    if (!activeId) { setIsDelegationConv(false); return; }
+    delegationClient.getRunByConversation(activeId)
+      .then((r) => setIsDelegationConv(!!r))
+      .catch(() => setIsDelegationConv(false));
+  }, [activeId]);
+
+  const isTeamRun = (!!displayRun && displayRun.conversationId === activeId) || isDelegationConv;
   const isTeamLive =
     !replayFrame &&
     isTeamRun &&
