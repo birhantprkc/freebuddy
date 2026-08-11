@@ -21,38 +21,41 @@ export function DelegationTeamCard({
   const [activeAgentId, setActiveAgentId] = useState<string | undefined>(undefined);
   const [modelsByAgent, setModelsByAgent] = useState<Record<string, string>>({});
 
-  // Probe each member's cached model config (option id="model")
+  // Extract model per agent from the conversation's streamed config-options
+  // items — same mechanism as WorkspacePanel's sessionConfigSummary.
   useEffect(() => {
     if (!team) return;
     let cancelled = false;
     (async () => {
-      const entries = await Promise.all(
-        team.roster.map(async (r) => {
-          try {
-            const member = members.find((m) => m.id === r.agentId);
-            if (!member) return [r.agentId, r.model ?? ""] as const;
-            const options = await cliClient.getCachedSessionConfigOptions({
-              agentId: r.agentId,
-              adapter: member.cli.adapter as any,
-              binary: member.cli.binary,
-              extraArgs: member.cli.extraArgs,
-              env: member.cli.env
-            });
-            const modelOpt = options.find((o) => o.id === "model");
-            return [r.agentId, r.model ?? modelOpt?.currentLabel ?? modelOpt?.currentValue ?? ""] as const;
-          } catch {
-            return [r.agentId, r.model ?? ""] as const;
-          }
-        })
-      );
-      if (!cancelled) {
+      try {
+        const messages = await cliClient.listMessages(conversationId);
+        if (cancelled) return;
         const map: Record<string, string> = {};
-        for (const [id, model] of entries) map[id] = model;
-        setModelsByAgent(map);
+        for (const msg of messages) {
+          if (msg.role !== "assistant" || !msg.agentId) continue;
+          try {
+            const items = JSON.parse(msg.content);
+            if (!Array.isArray(items)) continue;
+            for (const item of items) {
+              if (item.kind === "config-options" && Array.isArray(item.options)) {
+                const modelOpt = item.options.find((o: any) => o.id === "model");
+                if (modelOpt?.currentLabel || modelOpt?.currentValue) {
+                  map[msg.agentId] = modelOpt.currentLabel ?? modelOpt.currentValue;
+                }
+              }
+            }
+          } catch {}
+        }
+        for (const r of team.roster) {
+          if (r.model && !map[r.agentId]) map[r.agentId] = r.model;
+        }
+        if (!cancelled) setModelsByAgent(map);
+      } catch {
+        if (!cancelled) setModelsByAgent({});
       }
     })();
     return () => { cancelled = true; };
-  }, [team, members]);
+  }, [team, conversationId]);
 
   useEffect(() => {
     let cancelled = false;
