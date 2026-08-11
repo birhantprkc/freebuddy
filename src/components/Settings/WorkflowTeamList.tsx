@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Dropdown } from "antd";
 
 import type { AnyTeam } from "@/services/workflowTeams/types";
 import {
@@ -45,12 +46,21 @@ export function WorkflowTeamList({
   return (
     <div className="workflow-team-list">
       <div className="workflow-team-list-actions">
-        <button type="button" className="primary" onClick={onNew}>
-          + {t("workflow.newTeam")}
-        </button>
-        <button type="button" className="primary" onClick={onNewDelegation}>
-          + {t("workflow.delegation.newTeam")}
-        </button>
+        <Dropdown
+          menu={{
+            items: [
+              { key: "workflow", label: t("workflow.newTeam") },
+              { key: "delegation", label: t("workflow.delegation.newTeam") }
+            ],
+            onClick: ({ key }) =>
+              key === "delegation" ? onNewDelegation() : onNew()
+          }}
+          trigger={["click"]}
+        >
+          <button type="button" className="primary">
+            + {t("workflow.newTeam")} ▾
+          </button>
+        </Dropdown>
       </div>
       {teams.length === 0 ? (
         <p className="muted">{t("workflow.noTeams")}</p>
