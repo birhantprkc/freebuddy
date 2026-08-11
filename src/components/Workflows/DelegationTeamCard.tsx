@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { delegationClient } from "@/services/delegation/client";
+import { cliClient } from "@/services/cli/client";
 import type { DelegationTeam } from "@/services/workflowTeams/types";
 import { useConversationStore } from "@/store/conversationStore";
 import { AgentAvatar } from "../CLI/AgentAvatar";
@@ -18,6 +19,37 @@ export function DelegationTeamCard({
   const liveStatus = useConversationStore((s) => s.live[conversationId]?.status);
   const [team, setTeam] = useState<DelegationTeam | undefined>(undefined);
   const [activeAgentId, setActiveAgentId] = useState<string | undefined>(undefined);
+  const [modelsByAgent, setModelsByAgent] = useState<Record<string, string>>({});
+
+  // Probe each member's cached model config (option id="model")
+  useEffect(() => {
+    if (!team) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        team.roster.map(async (r) => {
+          try {
+            const adapter = members.find((m) => m.id === r.agentId)?.cli.adapter;
+            if (!adapter) return [r.agentId, r.model ?? ""] as const;
+            const options = await cliClient.getCachedSessionConfigOptions({
+              agentId: r.agentId,
+              adapter: adapter as any
+            });
+            const modelOpt = options.find((o) => o.id === "model");
+            return [r.agentId, r.model ?? modelOpt?.currentLabel ?? modelOpt?.currentValue ?? ""] as const;
+          } catch {
+            return [r.agentId, r.model ?? ""] as const;
+          }
+        })
+      );
+      if (!cancelled) {
+        const map: Record<string, string> = {};
+        for (const [id, model] of entries) map[id] = model;
+        setModelsByAgent(map);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [team, members]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,7 +151,7 @@ export function DelegationTeamCard({
               <div>
                 <strong>{memberName(r.agentId)}</strong>
                 <small className="muted">
-                  {r.model ? `${r.model} · ` : ""}
+                  {modelsByAgent[r.agentId] ? `${modelsByAgent[r.agentId]} · ` : ""}
                   {r.capability}
                 </small>
               </div>
