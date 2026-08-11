@@ -2149,7 +2149,7 @@ export function ChatView({
                 <div className="delegation-handoff">
                   <span className="delegation-handoff-rule" />
                   <span className="delegation-handoff-text">
-                    {t("workflow.delegation.handoffTo", { defaultValue: "交接给" })} {m.roleLabel}
+                    {t("workflow.delegation.handoffTo", { defaultValue: "handoff to" })} {m.roleLabel}
                   </span>
                   <span className="delegation-handoff-rule" />
                 </div>

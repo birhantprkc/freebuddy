@@ -49,8 +49,8 @@ export function WorkflowTeamList({
         <Dropdown
           menu={{
             items: [
-              { key: "workflow", label: t("workflow.teamKindWorkflow", { defaultValue: "工作流团队" }) },
-              { key: "delegation", label: t("workflow.delegation.teamKindDelegation", { defaultValue: "自组织团队" }) }
+              { key: "workflow", label: t("workflow.teamKindWorkflow", { defaultValue: "Workflow team" }) },
+              { key: "delegation", label: t("workflow.delegation.teamKindDelegation", { defaultValue: "Self-organizing team" }) }
             ],
             onClick: ({ key }) =>
               key === "delegation" ? onNewDelegation() : onNew()

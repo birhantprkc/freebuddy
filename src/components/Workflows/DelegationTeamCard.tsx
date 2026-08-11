@@ -126,11 +126,11 @@ export function DelegationTeamCard({
         const badge = isActive
           ? t("status.running")
           : isEntry
-            ? t("workflow.delegation.entry", { defaultValue: "入口" })
+            ? t("workflow.delegation.entry", { defaultValue: "entry" })
             : "";
         const rwLabel = r.canWrite
           ? t("workflow.delegation.canWrite")
-          : t("workflow.delegation.readonly", { defaultValue: "只读" });
+          : t("workflow.delegation.readonly", { defaultValue: "read-only" });
 
         return (
           <section

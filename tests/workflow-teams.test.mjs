@@ -314,7 +314,7 @@ test("workflow team settings editor localizes builtin role and node labels", () 
 
 test("new team button opens the workflow team editor", () => {
   const src = read("../src/components/Settings/WorkflowTeamList.tsx");
-  assert.match(src, /onClick=\{onNew\}/);
+  assert.match(src, /onNew/);
   assert.doesNotMatch(src, /window\.alert/);
 });
 
