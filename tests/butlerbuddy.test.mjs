@@ -215,7 +215,7 @@ test("ButlerBuddy keeps arcade play in the full-screen surface", () => {
   );
   assert.doesNotMatch(main, /entertainmentEnabled/);
   assert.doesNotMatch(main, /小窗弹球/);
-  assert.match(main, /与 Buddy 一起玩/);
+  assert.match(main, /与buddy一起玩/);
   assert.match(main, /结束游戏/);
   assert.doesNotMatch(preload, /entertainmentEnabled/);
   assert.doesNotMatch(types, /entertainmentEnabled/);

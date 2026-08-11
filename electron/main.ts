@@ -910,7 +910,7 @@ function showButlerContextMenu() {
     },
     { type: "separator" },
     {
-      label: screenBallActive ? "结束游戏" : "与 Buddy 一起玩",
+      label: screenBallActive ? "结束游戏" : "与buddy一起玩",
       click: () =>
         screenBallActive
           ? closeButlerScreenBallWindow()
