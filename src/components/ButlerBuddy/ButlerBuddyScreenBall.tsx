@@ -62,6 +62,7 @@ const HIT_PADDING = 10;
 const SWIPE_HIT_PADDING = 14;
 const BURST_DURATION_MS = 520;
 const SCREEN_BALL_SOUND_STORAGE_KEY = "freebuddy.screenBallSoundEnabled";
+const SCREEN_BALL_ORB_ASSET = `${import.meta.env.BASE_URL}butlerbuddy/arcade/orb.png`;
 const CLOCK_ORIGIN =
   typeof performance.timeOrigin === "number"
     ? performance.timeOrigin
@@ -559,7 +560,12 @@ export function ButlerBuddyScreenBall() {
             submitHit(ball.id);
           }}
         >
-          <span />
+          <img
+            className="butler-screen-ball-orb"
+            src={SCREEN_BALL_ORB_ASSET}
+            alt=""
+            draggable={false}
+          />
         </button>
       ))}
       {bursts.map((burst) => (
