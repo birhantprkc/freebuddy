@@ -350,6 +350,10 @@ declare global {
     shortcut: string;
     shortcutRegistered: boolean;
     error?: "shortcutUnavailable";
+    mainWindowShortcutEnabled: boolean;
+    mainWindowShortcut: string;
+    mainWindowShortcutRegistered: boolean;
+    mainWindowShortcutError?: "shortcutUnavailable";
   }
 
   type ButlerBuddyVisualState =
@@ -378,6 +382,33 @@ declare global {
     endDrag(): void;
     openMenu(): void;
     openCurrentTask(): void;
+    startScreenBall(): void;
+    stopScreenBall(): void;
+    getScreenBallSession(): Promise<{
+      sessionId: string;
+      display: { id: number | string; x: number; y: number; width: number; height: number };
+      petOrigin: { x: number; y: number };
+    } | null>;
+    publishScreenBallHitRegions(regions: Array<{
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      kind: "ball" | "control";
+    }>): void;
+    reportScreenBallPointer(x: number, y: number): void;
+    reportScreenBallHit(sessionId: string, ballId: string): void;
+    closeScreenBall(sessionId: string): void;
+    onScreenBallSession(cb: (payload: {
+      sessionId: string;
+      display: { id: number | string; x: number; y: number; width: number; height: number };
+      petOrigin: { x: number; y: number };
+    }) => void): () => void;
+    onScreenBallHitAccepted(cb: (payload: {
+      sessionId: string;
+      ballId: string;
+    }) => void): () => void;
     getPreferences(): Promise<ButlerBuddyPreferences>;
     getRuntimeState(): Promise<ButlerBuddyRuntimeState | undefined>;
     reportTaskResult(result: "success" | "failure"): void;
@@ -385,6 +416,8 @@ declare global {
       visible?: boolean;
       shortcutEnabled?: boolean;
       shortcut?: string;
+      mainWindowShortcutEnabled?: boolean;
+      mainWindowShortcut?: string;
     }): Promise<ButlerBuddyPreferences>;
     onNewConversation(cb: () => void): () => void;
     onPreferencesChanged(

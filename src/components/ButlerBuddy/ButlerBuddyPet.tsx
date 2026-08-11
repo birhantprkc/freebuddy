@@ -13,7 +13,6 @@ import {
   isPetInteractionCoolingDown,
   PET_SINGLE_CLICK_DELAY_MS
 } from "./petInteractions";
-
 const stateAssetBase = `${import.meta.env.BASE_URL}butlerbuddy/states/v2`;
 const PET_STATE_ASSETS: Record<
   ButlerBuddyVisualState,
@@ -142,7 +141,6 @@ export function ButlerBuddyPet() {
     0,
     (runtimeState.taskCount ?? 1) - 1
   );
-
   const beginDrag = () => window.freebuddy?.butlerBuddy?.beginDrag?.();
   const endDrag = () => window.freebuddy?.butlerBuddy?.endDrag?.();
 
@@ -307,7 +305,10 @@ export function ButlerBuddyPet() {
   };
 
   return (
-    <div className="butler-pet-surface" aria-label={t("butler.petSurfaceAria")}>
+    <div
+      className="butler-pet-surface"
+      aria-label={t("butler.petSurfaceAria")}
+    >
       <button
         type="button"
         className="butler-pet-button"

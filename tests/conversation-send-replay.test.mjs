@@ -119,6 +119,7 @@ async function loadConversationStoreHarness() {
     export const latestSessionInfoFromMessages = () => undefined;
     export const loadUnreadConversations = () => ({});
     export const persistUnreadConversations = () => undefined;
+    export const isAppInBackground = () => false;
     export const debugLogClient = {
       info: () => undefined,
       warn: () => undefined,

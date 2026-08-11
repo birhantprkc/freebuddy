@@ -142,22 +142,22 @@ test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", ()
   );
 
   assert.match(main, /function createButlerBuddyWindows\(\)/);
-  assert.match(main, /surface: "butler-pet" \| "butler-chat"/);
+  assert.match(main, /surface: "butler-pet" \| "butler-chat" \| "butler-screen-ball"/);
   assert.match(main, /alwaysOnTop: true/);
   assert.match(main, /transparent: true/);
   assert.equal(
     main.match(
       /type: process\.platform === "darwin" \? "panel" : undefined/g
     )?.length,
-    2,
-    "pet and mini chat use macOS panels above full-screen Spaces"
+    3,
+    "pet, mini chat, and the screen-ball overlay use macOS panels above full-screen Spaces"
   );
   assert.equal(
     main.match(
       /setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\)/g
     )?.length,
-    2,
-    "pet and mini chat remain visible across macOS workspaces"
+    3,
+    "pet, mini chat, and the screen-ball overlay remain visible across macOS workspaces"
   );
   assert.match(main, /startButlerPetDrag|applyButlerPetDrag/);
   assert.match(main, /butlerDragChatOrigin/);
@@ -165,6 +165,7 @@ test("ButlerBuddy exposes an always-on-top pet and lightweight chat surface", ()
   assert.match(preload, /ipcRenderer\.send\("butlerBuddy:hideChat"\)/);
   assert.match(renderer, /surface === "butler-pet"/);
   assert.match(renderer, /surface === "butler-chat"/);
+  assert.match(renderer, /surface === "butler-screen-ball"/);
   assert.match(pet, /butlerbuddy\/states/);
 });
 
@@ -184,11 +185,99 @@ test("ButlerBuddy preferences expose a global shortcut with conflict feedback", 
 
   assert.match(main, /CommandOrControl\+Shift\+Space/);
   assert.match(main, /globalShortcut\.register\(shortcut, toggleButlerChat\)/);
+  assert.match(main, /CommandOrControl\+Shift\+M/);
+  assert.match(main, /globalShortcut\.register\(shortcut, revealMainWindow\)/);
+  assert.match(main, /label:\s*"显示主窗口"/);
   assert.match(main, /butlerBuddy:updatePreferences/);
   assert.match(preload, /butlerBuddy:getPreferences/);
   assert.match(settings, /butler-shortcut-recorder/);
   assert.match(settings, /butlerShortcutUnavailable/);
   assert.match(settings, /DEFAULT_BUTLER_SHORTCUT/);
+  assert.match(settings, /DEFAULT_BUTLER_MAIN_WINDOW_SHORTCUT/);
+  assert.match(settings, /butlerMainWindowShortcut/);
+});
+
+test("ButlerBuddy keeps arcade play in the full-screen surface", () => {
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const types = fs.readFileSync(
+    new URL("../src/types/freebuddy.d.ts", import.meta.url),
+    "utf8"
+  );
+  const settings = fs.readFileSync(
+    new URL("../src/components/Settings/GeneralTab.tsx", import.meta.url),
+    "utf8"
+  );
+  const pet = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/ButlerBuddyPet.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.doesNotMatch(main, /entertainmentEnabled/);
+  assert.doesNotMatch(main, /小窗弹球/);
+  assert.match(main, /和buddy一起玩/);
+  assert.match(main, /结束游戏/);
+  assert.doesNotMatch(preload, /entertainmentEnabled/);
+  assert.doesNotMatch(types, /entertainmentEnabled/);
+  assert.doesNotMatch(settings, /butlerEntertainment/);
+  assert.match(settings, /butlerScreenBall/);
+  assert.doesNotMatch(pet, /petArcade|butler-pet-arcade|entertainmentEnabled/);
+});
+
+test("ButlerBuddy full-screen ball mode uses guarded IPC and transparent hit regions", () => {
+  const main = fs.readFileSync(
+    new URL("../electron/main.ts", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  const renderer = fs.readFileSync(
+    new URL("../src/components/ButlerBuddy/ButlerBuddyScreenBall.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(main, /setIgnoreMouseEvents\(true, \{ forward: true \}\)/);
+  assert.match(main, /butlerBuddy:screenBallHitRegions/);
+  assert.match(main, /isButlerScreenBallWindowSender/);
+  assert.match(main, /displayChangedForScreenBall/);
+  assert.match(preload, /screenBallHit/);
+  assert.match(preload, /screenBallPointer/);
+  assert.match(preload, /onScreenBallSession/);
+  assert.match(renderer, /publishScreenBallHitRegions/);
+  assert.match(renderer, /onPointerDown/);
+  assert.match(renderer, /screenBallIntersectsSegment/);
+  assert.match(renderer, /maxScreenBallCount/);
+  assert.match(renderer, /spawnScreenBallVolley/);
+  assert.match(renderer, /screenBallVolleySize/);
+  assert.match(renderer, /screenBallLevel/);
+  assert.match(renderer, /screenBallBombHit/);
+  assert.match(renderer, /butlerbuddy\/arcade\/orb\.png/);
+  assert.match(renderer, /SCREEN_BALL_VISUAL_SCALE/);
+  assert.match(renderer, /butler-screen-ball-ball--\$\{/);
+  assert.match(renderer, /butler-screen-ball-result--bomb/);
+  assert.match(renderer, /butler-screen-ball-burst/);
+  assert.match(renderer, /butler-screen-ball-swipe-trail/);
+  assert.match(renderer, /screenBallSwipeHint/);
+  assert.doesNotMatch(
+    renderer,
+    /const isSwiping = \(event\.buttons & 1\)/,
+    "forwarded mouse movement must not require a button flag"
+  );
+  assert.match(renderer, /screenBallReplay/);
+  assert.match(renderer, /screen-ball-sound/);
+  assert.match(renderer, /AudioContext/);
+  assert.match(renderer, /screenBallSoundEnabled/);
+  assert.doesNotMatch(
+    renderer,
+    /butler-screen-ball-launcher|butlerbuddy-pet\.png/,
+    "the full-display overlay must not render a second pet"
+  );
 });
 test("the ButlerBuddy popover is a persisted real conversation, not a fake panel", () => {
   const chat = fs.readFileSync(

@@ -58,3 +58,26 @@ test("unread conversation storage migrates legacy ids and persists completion me
     else globalThis.localStorage = previousStorage;
   }
 });
+
+test("active conversations in background/unfocused windows are marked as unread", () => {
+  const store = fs.readFileSync(
+    new URL("../src/store/conversationStore.ts", import.meta.url),
+    "utf8"
+  );
+  const app = fs.readFileSync(
+    new URL("../src/App.tsx", import.meta.url),
+    "utf8"
+  );
+  const appFocus = fs.readFileSync(
+    new URL("../src/utils/appFocus.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(appFocus, /export function isAppInBackground/);
+  assert.match(appFocus, /window\.addEventListener\("blur"/);
+  assert.match(appFocus, /window\.addEventListener\("focus"/);
+  assert.match(store, /get\(\)\.activeId === id && !isAppInBackground\(\)/);
+  assert.match(app, /window\.addEventListener\("focus", handleFocus\)/);
+  assert.match(app, /state\.markConversationRead\(state\.activeId\)/);
+});
+

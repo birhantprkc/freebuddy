@@ -59,6 +59,7 @@ import {
   persistUnreadConversations,
   type UnreadConversationMap
 } from "./conversationUnread";
+import { isAppInBackground } from "@/utils/appFocus";
 
 function resolveWorkspaceRootsForConversation(conv: Conversation): string[] {
   if (conv.projectId) {
@@ -686,7 +687,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   markConversationUnread(id) {
-    if (get().activeId === id || get().unreadConversations[id]) return;
+    if ((get().activeId === id && !isAppInBackground()) || get().unreadConversations[id]) return;
     const unreadConversations: UnreadConversationMap = {
       ...get().unreadConversations,
       [id]: { kind: "message", at: new Date().toISOString() }
@@ -696,7 +697,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   markConversationCompletedUnread(id, result) {
-    if (get().activeId === id) return;
+    if (get().activeId === id && !isAppInBackground()) return;
     const current = get().unreadConversations[id];
     if (current?.kind === result) return;
     const unreadConversations: UnreadConversationMap = {
