@@ -910,7 +910,7 @@ function showButlerContextMenu() {
     },
     { type: "separator" },
     {
-      label: screenBallActive ? "结束全屏弹球" : "开启全屏弹球",
+      label: screenBallActive ? "结束游戏" : "与 Buddy 一起玩",
       click: () =>
         screenBallActive
           ? closeButlerScreenBallWindow()
