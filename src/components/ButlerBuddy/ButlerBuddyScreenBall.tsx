@@ -33,6 +33,14 @@ type BurstEffect = {
   y: number;
 };
 
+type SwipeTrailSegment = {
+  id: string;
+  x: number;
+  y: number;
+  length: number;
+  angle: number;
+};
+
 type SwipePointer = {
   pointerId: number;
   sessionId: string;
@@ -78,12 +86,15 @@ export function ButlerBuddyScreenBall() {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [state, setState] = useState<ScreenBallArcadeState | null>(null);
   const [bursts, setBursts] = useState<BurstEffect[]>([]);
+  const [trailSegments, setTrailSegments] = useState<SwipeTrailSegment[]>([]);
   const sessionRef = useRef<SessionPayload | null>(null);
   const stateRef = useRef<ScreenBallArcadeState | null>(null);
   const hitRegionsRef = useRef<HitRegion[]>([]);
   const swipeRef = useRef<SwipePointer | null>(null);
   const burstTimersRef = useRef<Set<number>>(new Set());
   const burstSequenceRef = useRef(0);
+  const trailSequenceRef = useRef(0);
+  const trailClearTimerRef = useRef<number | null>(null);
   const publishTimerRef = useRef<number | null>(null);
   const lastSpawnAtRef = useRef(0);
   const frameRef = useRef<number | null>(null);
@@ -116,6 +127,18 @@ export function ButlerBuddyScreenBall() {
       setBursts((current) => current.filter((burst) => burst.id !== id));
     }, BURST_DURATION_MS);
     burstTimersRef.current.add(timer);
+  };
+
+  const emitSwipeTrail = (segment: Omit<SwipeTrailSegment, "id">) => {
+    const id = `screen-ball-trail-${trailSequenceRef.current++}`;
+    setTrailSegments((current) => [...current, { ...segment, id }].slice(-14));
+    if (trailClearTimerRef.current !== null) {
+      window.clearTimeout(trailClearTimerRef.current);
+    }
+    trailClearTimerRef.current = window.setTimeout(() => {
+      trailClearTimerRef.current = null;
+      setTrailSegments([]);
+    }, 180);
   };
 
   useEffect(() => {
@@ -172,8 +195,7 @@ export function ButlerBuddyScreenBall() {
       bridge?.reportScreenBallPointer?.(event.screenX, event.screenY);
       const currentSession = sessionRef.current;
       const currentState = stateRef.current;
-      const isSwiping = (event.buttons & 1) === 1;
-      if (!isSwiping || !currentSession || !currentState || currentState.phase !== "playing") {
+      if (!currentSession || !currentState || currentState.phase !== "playing") {
         swipeRef.current = null;
         return;
       }
@@ -195,6 +217,17 @@ export function ButlerBuddyScreenBall() {
         x: point.x - currentSession.display.x,
         y: point.y - currentSession.display.y
       };
+      const deltaX = end.x - start.x;
+      const deltaY = end.y - start.y;
+      const length = Math.hypot(deltaX, deltaY);
+      if (length >= 1) {
+        emitSwipeTrail({
+          x: start.x,
+          y: start.y,
+          length,
+          angle: Math.atan2(deltaY, deltaX)
+        });
+      }
       for (const ball of currentState.balls) {
         if (
           !previous.hitIds.has(ball.id) &&
@@ -322,6 +355,10 @@ export function ButlerBuddyScreenBall() {
       }
       for (const timer of burstTimersRef.current) window.clearTimeout(timer);
       burstTimersRef.current.clear();
+      if (trailClearTimerRef.current !== null) {
+        window.clearTimeout(trailClearTimerRef.current);
+        trailClearTimerRef.current = null;
+      }
       swipeRef.current = null;
     },
     []
@@ -401,6 +438,19 @@ export function ButlerBuddyScreenBall() {
             />
           ))}
         </span>
+      ))}
+      {trailSegments.map((segment) => (
+        <span
+          key={segment.id}
+          className="butler-screen-ball-swipe-trail"
+          style={{
+            left: `${segment.x}px`,
+            top: `${segment.y}px`,
+            width: `${segment.length}px`,
+            transform: `rotate(${segment.angle}rad)`
+          }}
+          aria-hidden="true"
+        />
       ))}
       {state.phase !== "playing" && (
         <section className="butler-screen-ball-result" role="status">

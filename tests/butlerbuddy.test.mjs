@@ -274,7 +274,13 @@ test("ButlerBuddy full-screen ball mode uses guarded IPC and transparent hit reg
   assert.match(renderer, /onPointerDown/);
   assert.match(renderer, /screenBallIntersectsSegment/);
   assert.match(renderer, /butler-screen-ball-burst/);
+  assert.match(renderer, /butler-screen-ball-swipe-trail/);
   assert.match(renderer, /screenBallSwipeHint/);
+  assert.doesNotMatch(
+    renderer,
+    /const isSwiping = \(event\.buttons & 1\)/,
+    "forwarded mouse movement must not require a button flag"
+  );
   assert.match(renderer, /screenBallReplay/);
   assert.doesNotMatch(
     renderer,
