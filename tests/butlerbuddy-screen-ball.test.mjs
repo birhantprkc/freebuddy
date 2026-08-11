@@ -96,6 +96,74 @@ test("screen-ball swipes support a larger swarm and segment hits", async () => {
   );
 });
 
+test("difficulty levels increase pace, active targets, and ball colors", async () => {
+  const {
+    createScreenBallArcadeState,
+    maxScreenBallCount,
+    screenBallColorForLevel,
+    screenBallLevelForScore,
+    screenBallSpawnIntervalMs,
+    spawnScreenBall
+  } = await loadScreenBallModule();
+  assert.equal(screenBallLevelForScore(0), 1);
+  assert.equal(screenBallLevelForScore(400), 2);
+  assert.equal(screenBallLevelForScore(3_000), 5);
+  assert.equal(maxScreenBallCount(1), 6);
+  assert.equal(maxScreenBallCount(5), 10);
+  assert.ok(screenBallSpawnIntervalMs(5) < screenBallSpawnIntervalMs(1));
+  assert.equal(screenBallColorForLevel(1), "mint");
+  assert.equal(screenBallColorForLevel(3), "violet");
+  assert.equal(screenBallColorForLevel(5), "coral");
+
+  const base = createScreenBallArcadeState({
+    at: 1_000,
+    bounds: { left: 0, top: 0, right: 1_440, bottom: 900 },
+    origin: { x: 720, y: 720 }
+  });
+  const levelOne = spawnScreenBall(base, { at: 1_000, random: () => 0.25 });
+  const levelTwo = spawnScreenBall(
+    { ...base, score: 400, level: 2 },
+    { at: 1_000, random: () => 0.25 }
+  );
+  assert.equal(levelTwo.balls[0].color, "sky");
+  assert.ok(Math.abs(levelTwo.balls[0].vx) > Math.abs(levelOne.balls[0].vx));
+
+  const bomb = spawnScreenBall(
+    { ...base, score: 400, level: 2, nextBallId: 7 },
+    { at: 1_000, random: () => 0.5 }
+  );
+  assert.equal(bomb.balls[0].kind, "bomb");
+});
+
+test("slicing a black bomb immediately ends the round", async () => {
+  const { createScreenBallArcadeState, hitScreenBall } =
+    await loadScreenBallModule();
+  const state = {
+    ...createScreenBallArcadeState({
+      at: 1_000,
+      bounds: { left: 0, top: 0, right: 600, bottom: 500 },
+      origin: { x: 300, y: 400 }
+    }),
+    balls: [
+      {
+        id: "black-bomb",
+        kind: "bomb",
+        color: "bomb",
+        x: 200,
+        y: 180,
+        vx: 0,
+        vy: 0,
+        radius: 14,
+        createdAt: 1_000
+      }
+    ]
+  };
+  const ended = hitScreenBall(state, "black-bomb", 1_200);
+  assert.equal(ended.phase, "settled");
+  assert.equal(ended.terminalReason, "bomb-hit");
+  assert.deepEqual(ended.balls, []);
+});
+
 test("balls reflect from left, right, and top edges", async () => {
   const { advanceScreenBallState, createScreenBallArcadeState } =
     await loadScreenBallModule();

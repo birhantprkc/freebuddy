@@ -8,9 +8,11 @@
  * also gives callers a useful no-op signal.
  */
 
-// Six active balls keeps the full-display mode lively without turning the
-// screen into an unreadable wall of targets.
+// Six active balls is the level-one baseline; later levels add targets while
+// capping the swarm at ten so the full-display mode stays readable.
 export const SCREEN_BALL_MAX_BALLS = 6;
+export const SCREEN_BALL_ABSOLUTE_MAX_BALLS = 10;
+export const SCREEN_BALL_LEVEL_THRESHOLDS = [0, 400, 1_000, 1_800, 3_000] as const;
 export const SCREEN_BALL_MISS_LIMIT = 10;
 export const SCREEN_BALL_ROUND_DURATION_MS = 180_000;
 export const SCREEN_BALL_COMBO_WINDOW_MS = 1_200;
@@ -27,6 +29,9 @@ export const SCREEN_BALL_MAX_SCORE = 100;
 export const SCREEN_BALL_REACTION_WINDOW_MS = 5_000;
 export const SCREEN_BALL_COMBO_STEP = 0.25;
 
+export type ScreenBallKind = "ball" | "bomb";
+export type ScreenBallColor = "mint" | "sky" | "violet" | "amber" | "coral" | "bomb";
+
 /** Compatibility aliases make the constants pleasant to consume alongside
  * the existing petArcade module. */
 export const SCREEN_BALL_ARCADE_MAX_BALLS = SCREEN_BALL_MAX_BALLS;
@@ -41,6 +46,7 @@ export type ScreenBallArcadePhase = "playing" | "settled" | "stopped";
 export type ScreenBallTerminalReason =
   | "miss-limit"
   | "perfect-finish"
+  | "bomb-hit"
   | "stopped";
 
 export interface ScreenBallOrigin {
@@ -68,6 +74,8 @@ export interface ScreenBall {
   vy: number;
   radius: number;
   createdAt: number;
+  kind?: ScreenBallKind;
+  color?: ScreenBallColor;
 }
 
 export interface ScreenBallArcadeState {
@@ -78,6 +86,7 @@ export interface ScreenBallArcadeState {
   reason: ScreenBallTerminalReason | null;
   balls: ScreenBall[];
   score: number;
+  level: number;
   missed: number;
   /** Alias used by the screen HUD and by the product wording. */
   misses: number;
@@ -166,6 +175,34 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+export function screenBallLevelForScore(score: number): number {
+  const safeScore = Math.max(0, finiteNumber(score, 0));
+  let level = 1;
+  for (let index = 0; index < SCREEN_BALL_LEVEL_THRESHOLDS.length; index += 1) {
+    if (safeScore >= SCREEN_BALL_LEVEL_THRESHOLDS[index]) level = index + 1;
+  }
+  return level;
+}
+
+export function maxScreenBallCount(level: number): number {
+  const safeLevel = Math.max(1, Math.floor(finiteNumber(level, 1)));
+  return Math.min(
+    SCREEN_BALL_ABSOLUTE_MAX_BALLS,
+    SCREEN_BALL_MAX_BALLS + Math.max(0, safeLevel - 1)
+  );
+}
+
+export function screenBallSpawnIntervalMs(level: number): number {
+  const safeLevel = Math.max(1, Math.floor(finiteNumber(level, 1)));
+  return Math.max(300, 600 - (safeLevel - 1) * 75);
+}
+
+export function screenBallColorForLevel(level: number): ScreenBallColor {
+  const colors: ScreenBallColor[] = ["mint", "sky", "violet", "amber", "coral"];
+  const index = Math.max(0, Math.min(colors.length - 1, Math.floor(finiteNumber(level, 1)) - 1));
+  return colors[index];
+}
+
 function normalizeBounds(
   value?: ScreenBallArcadeOptions["bounds"] | ScreenBallBounds,
   fallback: ScreenBallBounds = {
@@ -215,6 +252,17 @@ function effectiveMisses(state: ScreenBallArcadeState): number {
   // spelling.  Treat either one as authoritative when a caller has supplied a
   // state snapshot from another boundary.
   return Math.max(0, state.missed, state.misses);
+}
+
+function effectiveLevel(state: ScreenBallArcadeState): number {
+  return Math.max(
+    screenBallLevelForScore(state.score),
+    Math.min(5, Math.floor(finiteNumber(state.level, 1)))
+  );
+}
+
+function isBomb(ball: ScreenBall): boolean {
+  return ball.kind === "bomb" || ball.color === "bomb";
 }
 
 function withTerminal(
@@ -271,6 +319,7 @@ export function createScreenBallArcadeState(
     reason: null,
     balls: [],
     score: 0,
+    level: 1,
     missed: 0,
     misses: 0,
     reactionTimes,
@@ -327,7 +376,7 @@ function parseSpawnArgs(
   };
 }
 
-/** Add one ball while preserving the three-ball cap. */
+/** Add one ball while preserving the level-scaled active-ball cap. */
 export function spawnScreenBall(
   state: ScreenBallArcadeState,
   atOrOptions: number | ScreenBallSpawnOptions = Date.now(),
@@ -344,12 +393,20 @@ export function spawnScreenBall(
   if (effectiveMisses(state) >= SCREEN_BALL_MISS_LIMIT) {
     return withTerminal(state, "miss-limit", at);
   }
-  if (state.balls.length >= SCREEN_BALL_MAX_BALLS) return state;
+  const level = effectiveLevel(state);
+  if (state.balls.length >= maxScreenBallCount(level)) return state;
 
   const radius = SCREEN_BALL_DEFAULT_RADIUS;
   const origin = normalizeOrigin(suppliedOrigin, state.spawnOrigin);
-  const horizontalSpeed = -180 + randomValue(random) * 360;
-  const verticalSpeed = -520 - randomValue(random) * 120;
+  const horizontalRange = 360 + (level - 1) * 70;
+  const verticalBase = 520 + (level - 1) * 50;
+  const verticalSpread = 120 + (level - 1) * 15;
+  const bombRoll = randomValue(random);
+  const isBombSpawn =
+    level >= 2 && (state.nextBallId % 7 === 0 || bombRoll >= 0.97);
+  const horizontalSpeed =
+    -horizontalRange / 2 + randomValue(random) * horizontalRange;
+  const verticalSpeed = -verticalBase - randomValue(random) * verticalSpread;
   const ball: ScreenBall = {
     id: `screen-ball-${state.nextBallId}`,
     x: origin.x,
@@ -357,10 +414,13 @@ export function spawnScreenBall(
     vx: horizontalSpeed,
     vy: verticalSpeed,
     radius,
-    createdAt: at
+    createdAt: at,
+    kind: isBombSpawn ? "bomb" : "ball",
+    color: isBombSpawn ? "bomb" : screenBallColorForLevel(level)
   };
   return {
     ...state,
+    level,
     balls: [...state.balls, ball],
     nextBallId: state.nextBallId + 1
   };
@@ -547,6 +607,10 @@ export function hitScreenBall(
   const target = state.balls.find((ball) => ball.id === ballId);
   if (!target) return state;
 
+  if (isBomb(target)) {
+    return withTerminal(state, "bomb-hit", now);
+  }
+
   const reactionTime = Math.max(0, now - target.createdAt);
   const inComboWindow =
     state.lastHitAt !== null &&
@@ -557,10 +621,12 @@ export function hitScreenBall(
     reactionTimes.reduce((total, sample) => total + sample, 0) /
     reactionTimes.length;
   const score = scoreForScreenBallReaction(reactionTime, combo);
+  const nextScore = state.score + score;
   return {
     ...state,
     balls: state.balls.filter((ball) => ball.id !== ballId),
-    score: state.score + score,
+    score: nextScore,
+    level: Math.max(effectiveLevel(state), screenBallLevelForScore(nextScore)),
     reactionTimes,
     reactionSamples: reactionTimes,
     averageReactionTime,

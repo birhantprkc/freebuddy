@@ -16452,6 +16452,43 @@ button.ghost:focus-visible,
   will-change: left, top;
 }
 
+.butler-screen-ball-ball--sky {
+  background: radial-gradient(circle at 36% 30%, #eff6ff 0 8%, #93c5fd 28%, #3b82f6 64%, #1d4ed8 100%);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.56), 0 0 20px rgba(59, 130, 246, 0.8), 0 12px 20px -10px rgba(30, 64, 175, 0.82);
+}
+
+.butler-screen-ball-ball--violet {
+  background: radial-gradient(circle at 36% 30%, #faf5ff 0 8%, #d8b4fe 28%, #8b5cf6 64%, #6d28d9 100%);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.56), 0 0 22px rgba(139, 92, 246, 0.85), 0 12px 20px -10px rgba(76, 29, 149, 0.84);
+}
+
+.butler-screen-ball-ball--amber {
+  background: radial-gradient(circle at 36% 30%, #fffbeb 0 8%, #fde68a 28%, #f59e0b 64%, #b45309 100%);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.56), 0 0 22px rgba(245, 158, 11, 0.86), 0 12px 20px -10px rgba(146, 64, 14, 0.84);
+}
+
+.butler-screen-ball-ball--coral {
+  background: radial-gradient(circle at 36% 30%, #fff1f2 0 8%, #fda4af 28%, #f43f5e 64%, #be123c 100%);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.56), 0 0 24px rgba(244, 63, 94, 0.88), 0 12px 20px -10px rgba(159, 18, 57, 0.88);
+}
+
+.butler-screen-ball-ball--bomb {
+  background: radial-gradient(circle at 36% 30%, #475569 0 7%, #111827 30%, #020617 70%, #000 100%);
+  box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.55), 0 0 24px rgba(15, 23, 42, 0.9), 0 12px 20px -10px rgba(0, 0, 0, 0.95);
+}
+
+.butler-screen-ball-ball--bomb::after {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #facc15;
+  content: "ϟ";
+  font-size: 18px;
+  font-weight: 900;
+  text-shadow: 0 0 8px #f59e0b;
+}
+
 .butler-screen-ball-ball > span {
   position: absolute;
   inset: 25%;
@@ -16514,6 +16551,21 @@ button.ghost:focus-visible,
   background: linear-gradient(to top, rgba(13, 148, 136, 0.14), #5eead4 42%, #ffffff);
   box-shadow: 0 0 7px rgba(45, 212, 191, 0.84);
   transform-origin: 50% 2px;
+}
+
+.butler-screen-ball-burst--bomb::before {
+  background: radial-gradient(circle, #fff7ed 0 10%, #facc15 28%, #ef4444 58%, #111827 76%, transparent 78%);
+  box-shadow: 0 0 24px rgba(239, 68, 68, 0.95), 0 0 40px rgba(250, 204, 21, 0.72);
+}
+
+.butler-screen-ball-burst--bomb::after {
+  border-color: rgba(248, 113, 113, 0.92);
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.76);
+}
+
+.butler-screen-ball-burst--bomb > i {
+  background: linear-gradient(to top, rgba(17, 24, 39, 0.16), #facc15 42%, #fff7ed);
+  box-shadow: 0 0 9px rgba(248, 113, 113, 0.9);
 }
 
 .butler-screen-ball-swipe-trail {
@@ -16605,6 +16657,10 @@ button.ghost:focus-visible,
   color: #047857;
   font-size: 21px;
   font-weight: 850;
+}
+
+.butler-screen-ball-result--bomb strong {
+  color: #b91c1c;
 }
 
 .butler-screen-ball-result span {

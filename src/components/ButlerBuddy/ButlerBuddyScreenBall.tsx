@@ -5,9 +5,10 @@ import {
   advanceScreenBallState,
   createScreenBallArcadeState,
   hitScreenBall,
+  maxScreenBallCount,
   remainingScreenBallSeconds,
-  SCREEN_BALL_MAX_BALLS,
   screenBallIntersectsSegment,
+  screenBallSpawnIntervalMs,
   spawnScreenBall,
   type ScreenBallArcadeState
 } from "./screenBallArcade";
@@ -31,6 +32,7 @@ type BurstEffect = {
   id: string;
   x: number;
   y: number;
+  kind: "ball" | "bomb";
 };
 
 type SwipeTrailSegment = {
@@ -51,7 +53,6 @@ type SwipePointer = {
 
 type ScreenPointerStart = Pick<globalThis.PointerEvent, "pointerId" | "screenX" | "screenY">;
 
-const SPAWN_INTERVAL_MS = 600;
 const HIT_PADDING = 10;
 const SWIPE_HIT_PADDING = 14;
 const BURST_DURATION_MS = 420;
@@ -119,9 +120,10 @@ export function ButlerBuddyScreenBall() {
     }
   };
 
-  const emitBurst = (ball: { x: number; y: number }) => {
+  const emitBurst = (ball: { x: number; y: number; kind?: string }) => {
     const id = `screen-ball-burst-${burstSequenceRef.current++}`;
-    setBursts((current) => [...current, { id, x: ball.x, y: ball.y }].slice(-12));
+    const kind: BurstEffect["kind"] = ball.kind === "bomb" ? "bomb" : "ball";
+    setBursts((current) => [...current, { id, x: ball.x, y: ball.y, kind }].slice(-12));
     const timer = window.setTimeout(() => {
       burstTimersRef.current.delete(timer);
       setBursts((current) => current.filter((burst) => burst.id !== id));
@@ -284,8 +286,8 @@ export function ButlerBuddyScreenBall() {
         let next = advanceScreenBallState(current, elapsed, at);
         if (
           next.phase === "playing" &&
-          next.balls.length < SCREEN_BALL_MAX_BALLS &&
-          at - lastSpawnAtRef.current >= SPAWN_INTERVAL_MS
+          next.balls.length < maxScreenBallCount(next.level) &&
+          at - lastSpawnAtRef.current >= screenBallSpawnIntervalMs(next.level)
         ) {
           next = spawnScreenBall(next, {
             at,
@@ -378,6 +380,10 @@ export function ButlerBuddyScreenBall() {
           <strong>{state.score}</strong>
         </div>
         <div className="butler-screen-ball-stat">
+          <span>{t("butler.screenBallLevel")}</span>
+          <strong>{state.level}</strong>
+        </div>
+        <div className="butler-screen-ball-stat">
           <span>{t("butler.screenBallMisses")}</span>
           <strong>{state.missed}/10</strong>
         </div>
@@ -406,14 +412,16 @@ export function ButlerBuddyScreenBall() {
         <button
           key={ball.id}
           type="button"
-          className="butler-screen-ball-ball"
+          className={`butler-screen-ball-ball butler-screen-ball-ball--${ball.color ?? "mint"}`}
           style={{
             left: `${ball.x}px`,
             top: `${ball.y}px`,
             width: `${ball.radius * 2}px`,
             height: `${ball.radius * 2}px`
           }}
-          aria-label={t("butler.screenBallBallAria")}
+          aria-label={t(
+            ball.kind === "bomb" ? "butler.screenBallBombAria" : "butler.screenBallBallAria"
+          )}
           onPointerDown={(event) => {
             beginSwipe(event, ball.id);
             event.preventDefault();
@@ -427,7 +435,9 @@ export function ButlerBuddyScreenBall() {
       {bursts.map((burst) => (
         <span
           key={burst.id}
-          className="butler-screen-ball-burst"
+          className={`butler-screen-ball-burst ${
+            burst.kind === "bomb" ? "butler-screen-ball-burst--bomb" : ""
+          }`}
           style={{ left: `${burst.x}px`, top: `${burst.y}px` }}
           aria-hidden="true"
         >
@@ -453,11 +463,18 @@ export function ButlerBuddyScreenBall() {
         />
       ))}
       {state.phase !== "playing" && (
-        <section className="butler-screen-ball-result" role="status">
+        <section
+          className={`butler-screen-ball-result ${
+            state.terminalReason === "bomb-hit" ? "butler-screen-ball-result--bomb" : ""
+          }`}
+          role="status"
+        >
           <strong>
             {t(
               state.terminalReason === "miss-limit"
                 ? "butler.screenBallMissLimit"
+                : state.terminalReason === "bomb-hit"
+                  ? "butler.screenBallBombHit"
                 : state.terminalReason === "stopped"
                   ? "butler.screenBallStopped"
                   : "butler.screenBallPerfect"
