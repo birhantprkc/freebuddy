@@ -8,17 +8,25 @@ import {
   setDelegationRunStatus,
   insertDelegationEvent,
   updateDelegationEvent,
-  getDelegationEvent,
-  listPendingChildEvents,
-  isTerminalDelegationStatus
+  listDelegationEvents
 } from "./delegationRuns.js";
-import type { DelegationRosterEntry, DelegationPolicy, DelegationEvent, DelegationEventStatus } from "./delegationTeamTypes.js";
+import type {
+  DelegationRosterEntry,
+  DelegationPolicy,
+  DelegationEventStatus
+} from "./delegationTeamTypes.js";
 import { getDelegationTeam } from "./delegationTeams.js";
 import type { CLIAdapterId } from "./adapters.js";
 import { resolveSkillSnapshots } from "./skills.js";
-import { setDelegateDeps, type DelegateRunContext, type DelegateExecArgs, type DelegateExecResult } from "./delegationDispatch.js";
-import { buildDelegateTaskPrompt, buildDelegateWakePrompt } from "./delegationPrompt.js";
+import {
+  setDelegateDeps,
+  type DelegateRunContext,
+  type DelegateExecArgs,
+  type DelegateExecResult
+} from "./delegationDispatch.js";
+import { buildDelegateTaskPrompt } from "./delegation/protocol/text.js";
 import type { DelegateAgentRunner } from "./delegationRunner.js";
+import { DelegationOrchestrator } from "./delegation/bus/orchestrator.js";
 
 export const DELEGATION_SKILL_ID = "delegation";
 
@@ -63,6 +71,8 @@ interface RunContext {
   entryRoleId: string;
   cwd?: string;
   conversationId?: string;
+  orchestrator?: DelegationOrchestrator;
+  rootEventId?: string;
 }
 
 interface PendingApproval {
@@ -76,43 +86,44 @@ export class DelegationRuntime {
   private contexts = new Map<string, RunContext>();
   private pendingApprovals: PendingApproval[] = [];
   private killedRunIds = new Set<string>();
-  private eventWaiters = new Map<string, Array<(e: DelegationEvent | undefined) => void>>();
+
   constructor(private deps: DelegationRuntimeDeps) {
     setDelegateDeps({
       contextProvider: (runId) => this.getContext(runId),
       executor: (args) => this.executor(args),
       writeApproval: (binding, teammate) => this.requestWriteApproval(binding.runId, teammate),
-      onSettle: (id) => this.onEventSettled(id)
+      onSettle: (id) => {
+        const evtRun = this.findRunIdForEvent(id);
+        if (evtRun) {
+          this.contexts.get(evtRun)?.orchestrator?.onEventSettled(id);
+          const child = this.contexts
+            .get(evtRun)
+            ?.orchestrator?.state?.nodes[id];
+          if (child) {
+            // leaf started tracking already handled at enqueue/start
+          }
+        }
+      },
+      onChildEnqueued: ({ runId, childEventId, parentEventId, depth }) => {
+        this.contexts.get(runId)?.orchestrator?.noteChildEnqueued({
+          childEventId,
+          parentEventId,
+          depth
+        });
+      }
     });
   }
 
-  /** Resolve when a delegation event reaches a terminal status. */
-  private awaitEventSettle(eventId: string): Promise<DelegationEvent | undefined> {
-    const existing = getDelegationEvent(eventId);
-    if (existing && isTerminalDelegationStatus(existing.status)) {
-      return Promise.resolve(existing);
+  private findRunIdForEvent(eventId: string): string | undefined {
+    for (const [runId, ctx] of this.contexts) {
+      if (ctx.orchestrator?.state?.nodes[eventId]) return runId;
     }
-    return new Promise((resolve) => {
-      const arr = this.eventWaiters.get(eventId) ?? [];
-      arr.push(resolve);
-      this.eventWaiters.set(eventId, arr);
-    });
-  }
-
-  private onEventSettled(eventId: string): void {
-    const evt = getDelegationEvent(eventId);
-    const waiters = this.eventWaiters.get(eventId);
-    if (waiters) {
-      this.eventWaiters.delete(eventId);
-      for (const resolve of waiters) resolve(evt);
+    // Fallback: scan DB via list for known contexts
+    for (const runId of this.contexts.keys()) {
+      const events = listDelegationEvents(runId);
+      if (events.some((e) => e.id === eventId)) return runId;
     }
-  }
-
-  /** Wait for the first of the given pending events to settle. */
-  private raceAnySettle(eventIds: string[]): Promise<DelegationEvent | undefined> {
-    if (eventIds.length === 0) throw new Error("raceAnySettle: empty id list");
-    if (eventIds.length === 1) return this.awaitEventSettle(eventIds[0]!);
-    return Promise.race(eventIds.map((id) => this.awaitEventSettle(id)));
+    return undefined;
   }
 
   getContext(runId: string): DelegateRunContext | undefined {
@@ -142,19 +153,73 @@ export class DelegationRuntime {
     return ctx;
   }
 
+  private ensureOrchestrator(ctx: RunContext): DelegationOrchestrator {
+    if (ctx.orchestrator) return ctx.orchestrator;
+    const orch = new DelegationOrchestrator({
+      runId: ctx.runId,
+      roster: ctx.roster,
+      policy: ctx.policy,
+      entryRoleId: ctx.entryRoleId,
+      spawnTurn: async (args) => {
+        const agent =
+          ctx.roster.find((r) => r.id === args.selfAgentId) ??
+          ctx.roster.find((r) => r.id === ctx.entryRoleId) ??
+          ctx.roster[0]!;
+        const resolvedAgent = this.deps.resolveAgent(agent.agentId);
+        if (!resolvedAgent) {
+          return { summary: "", error: `agent not found: ${agent.agentId}` };
+        }
+        const scope =
+          args.depth === 0
+            ? delegationEntryScope(ctx.runId)
+            : delegationEventScope(ctx.runId, args.nodeId);
+        const sessionId =
+          args.depth === 0
+            ? `del-${ctx.runId}`
+            : `del-${ctx.runId}-${args.nodeId}`;
+        const turn = await this.runAgentTurn({
+          ctx,
+          agent,
+          resolved: resolvedAgent,
+          scope,
+          sessionId,
+          parentEventId: args.nodeId,
+          depth: args.depth,
+          prompt: args.prompt
+        });
+        return { summary: turn.summary, error: turn.error };
+      }
+    });
+    ctx.orchestrator = orch;
+    return orch;
+  }
+
   prepareRun(input: {
-    goal: string; teamId: string;
-    teamSnapshot: { roster: DelegationRosterEntry[]; policy: DelegationPolicy; entryRoleId: string };
-    cwd?: string; conversationId?: string;
+    goal: string;
+    teamId: string;
+    teamSnapshot: {
+      roster: DelegationRosterEntry[];
+      policy: DelegationPolicy;
+      entryRoleId: string;
+    };
+    cwd?: string;
+    conversationId?: string;
   }): string {
     const runId = createDelegationRun({
-      goal: input.goal, cwd: input.cwd, teamId: input.teamId,
-      teamSnapshotJson: JSON.stringify(input.teamSnapshot), conversationId: input.conversationId
+      goal: input.goal,
+      cwd: input.cwd,
+      teamId: input.teamId,
+      teamSnapshotJson: JSON.stringify(input.teamSnapshot),
+      conversationId: input.conversationId
     });
     this.contexts.set(runId, {
-      runId, teamId: input.teamId, roster: input.teamSnapshot.roster,
-      policy: input.teamSnapshot.policy, entryRoleId: input.teamSnapshot.entryRoleId,
-      cwd: input.cwd, conversationId: input.conversationId
+      runId,
+      teamId: input.teamId,
+      roster: input.teamSnapshot.roster,
+      policy: input.teamSnapshot.policy,
+      entryRoleId: input.teamSnapshot.entryRoleId,
+      cwd: input.cwd,
+      conversationId: input.conversationId
     });
     return runId;
   }
@@ -164,61 +229,140 @@ export class DelegationRuntime {
     if (!ctx) return;
     const entry = ctx.roster.find((r) => r.id === ctx.entryRoleId) ?? ctx.roster[0];
     const rootEventId = insertDelegationEvent({
-      runId, parentEventId: null, agentId: entry.agentId, agentName: entry.label,
-      roleLabel: entry.label, taskText: goal, depth: 0, canWrite: entry.canWrite, status: "running"
+      runId,
+      parentEventId: null,
+      agentId: entry.agentId,
+      agentName: entry.label,
+      roleLabel: entry.label,
+      taskText: goal,
+      depth: 0,
+      canWrite: entry.canWrite,
+      status: "running"
     });
+    ctx.rootEventId = rootEventId;
     const resolved = this.deps.resolveAgent(entry.agentId);
     if (!resolved) {
-      updateDelegationEvent(rootEventId, { status: "failed", resultSummary: `agent not found: ${entry.agentId}` });
+      updateDelegationEvent(rootEventId, {
+        status: "failed",
+        resultSummary: `agent not found: ${entry.agentId}`
+      });
       setDelegationRunStatus(runId, "failed");
       return;
     }
-    let prompt = buildDelegateTaskPrompt(goal, ctx.roster, entry.id, 0, ctx.policy.maxDepth);
-    let lastError: string | null = null;
-    let lastSummary = "";
+
+    const orch = this.ensureOrchestrator(ctx);
+    orch.bindEntry(rootEventId);
+
+    const prompt = buildDelegateTaskPrompt(
+      goal,
+      ctx.roster,
+      entry.id,
+      0,
+      ctx.policy.maxDepth
+    );
+
     try {
-      while (!this.killedRunIds.has(runId)) {
-        const turn = await this.runAgentTurn({
-          ctx, agent: entry, resolved,
-          scope: delegationEntryScope(runId),
-          sessionId: `del-${runId}`,
-          parentEventId: rootEventId,
-          depth: 0,
-          prompt
+      const result = await orch.runNodeLoop({
+        nodeId: rootEventId,
+        depth: 0,
+        selfAgentId: entry.id,
+        selfLabel: entry.label,
+        initialPrompt: prompt,
+        kind: "task"
+      });
+      if (this.killedRunIds.has(runId)) {
+        updateDelegationEvent(rootEventId, {
+          status: "cancelled",
+          resultSummary: result.error ?? result.summary
         });
-        lastError = turn.error;
-        lastSummary = turn.summary ?? "";
-        if (this.killedRunIds.has(runId)) break;
-        // Park: if the entry still has outstanding delegates, wait for one to settle,
-        // then resume the entry with that result. Otherwise its turn is truly complete.
-        const pending = listPendingChildEvents(runId, rootEventId);
-        if (pending.length === 0) break;
-        const settled = await this.raceAnySettle(pending.map((e) => e.id));
-        if (this.killedRunIds.has(runId)) break;
-        prompt = buildDelegateWakePrompt(
-          {
-            taskText: settled?.taskText ?? "",
-            roleLabel: settled?.roleLabel ?? "",
-            status: settled?.status ?? "done",
-            resultSummary: settled?.resultSummary ?? ""
-          },
-          ctx.roster, entry.id, 0, ctx.policy.maxDepth
-        );
+        return;
       }
-      const status: DelegationEventStatus = this.killedRunIds.has(runId)
-        ? "cancelled"
-        : lastError ? "failed" : "done";
-      updateDelegationEvent(rootEventId, { status, resultSummary: lastError ?? lastSummary });
+      // Orchestrator already marks run/node terminal via FSM effects when appropriate.
+      // Ensure root event has a summary if still running-ish.
+      const status: DelegationEventStatus = result.error ? "failed" : "done";
+      updateDelegationEvent(rootEventId, {
+        status,
+        resultSummary: result.error ?? result.summary
+      });
       if (!this.killedRunIds.has(runId)) {
-        setDelegationRunStatus(runId, status === "done" ? "completed" : status === "cancelled" ? "killed" : "failed");
+        const run = getDelegationRun(runId);
+        if (run && run.status === "running") {
+          setDelegationRunStatus(
+            runId,
+            status === "done" ? "completed" : "failed"
+          );
+        }
       }
     } catch (err) {
-      updateDelegationEvent(rootEventId, { status: "failed", resultSummary: (err as Error).message });
+      updateDelegationEvent(rootEventId, {
+        status: "failed",
+        resultSummary: (err as Error).message
+      });
       if (!this.killedRunIds.has(runId)) setDelegationRunStatus(runId, "failed");
     }
   }
 
-  /** Run exactly one agent turn (one ACP session/prompt). Shared by entry and delegates. */
+  /**
+   * Conversation follow-up on an existing delegation run.
+   * Reopens completed/failed runs and drives entry park/wake via the bus.
+   */
+  async followUp(runId: string, userPrompt: string): Promise<void> {
+    let ctx = this.contexts.get(runId);
+    if (!ctx) ctx = this.loadContextFromDb(runId);
+    if (!ctx) throw new Error("delegation run not found");
+
+    this.killedRunIds.delete(runId);
+    const entry = ctx.roster.find((r) => r.id === ctx!.entryRoleId) ?? ctx.roster[0];
+    const events = listDelegationEvents(runId);
+    let root = events.find((e) => e.depth === 0);
+    if (!root) {
+      const rootEventId = insertDelegationEvent({
+        runId,
+        parentEventId: null,
+        agentId: entry.agentId,
+        agentName: entry.label,
+        roleLabel: entry.label,
+        taskText: userPrompt,
+        depth: 0,
+        canWrite: entry.canWrite,
+        status: "running"
+      });
+      root = listDelegationEvents(runId).find((e) => e.id === rootEventId)!;
+    }
+    ctx.rootEventId = root.id;
+
+    const orch = this.ensureOrchestrator(ctx);
+    if (!orch.state) orch.bindEntry(root.id);
+
+    // Reset root to running for the follow-up turn.
+    updateDelegationEvent(root.id, { status: "running", resultSummary: null });
+
+    const prompt = buildDelegateTaskPrompt(
+      userPrompt,
+      ctx.roster,
+      entry.id,
+      0,
+      ctx.policy.maxDepth
+    );
+
+    const result = await orch.followUp({
+      entryNodeId: root.id,
+      entry,
+      prompt
+    });
+
+    if (this.killedRunIds.has(runId)) return;
+    const status: DelegationEventStatus = result.error ? "failed" : "done";
+    updateDelegationEvent(root.id, {
+      status,
+      resultSummary: result.error ?? result.summary
+    });
+    const run = getDelegationRun(runId);
+    if (run && (run.status === "running" || run.status === "blocked")) {
+      setDelegationRunStatus(runId, status === "done" ? "completed" : "failed");
+    }
+  }
+
   private async runAgentTurn(opts: {
     ctx: RunContext;
     agent: DelegationRosterEntry;
@@ -247,7 +391,10 @@ export class DelegationRuntime {
         cwd: opts.ctx.cwd,
         approvalMode: "auto",
         ...(modelOverride ? { configOptionOverrides: modelOverride } : {}),
-        skills: resolveSkillSnapshots([...(opts.agent.skillIds ?? []), DELEGATION_SKILL_ID]),
+        skills: resolveSkillSnapshots([
+          ...(opts.agent.skillIds ?? []),
+          DELEGATION_SKILL_ID
+        ]),
         announceSkills: true,
         delegation: {
           runId: opts.ctx.runId,
@@ -264,9 +411,15 @@ export class DelegationRuntime {
   }
 
   async start(input: {
-    goal: string; teamId: string;
-    teamSnapshot: { roster: DelegationRosterEntry[]; policy: DelegationPolicy; entryRoleId: string };
-    cwd?: string; conversationId?: string;
+    goal: string;
+    teamId: string;
+    teamSnapshot: {
+      roster: DelegationRosterEntry[];
+      policy: DelegationPolicy;
+      entryRoleId: string;
+    };
+    cwd?: string;
+    conversationId?: string;
   }): Promise<string> {
     const runId = this.prepareRun(input);
     await this.runEntry(runId, input.goal);
@@ -280,29 +433,58 @@ export class DelegationRuntime {
     }
     const resolved = this.deps.resolveAgent(args.teammate.agentId);
     if (!resolved) {
-      return { summary: "", exitCode: null, error: `agent not resolved: ${args.teammate.agentId}` };
+      return {
+        summary: "",
+        exitCode: null,
+        error: `agent not resolved: ${args.teammate.agentId}`
+      };
     }
-    let prompt = buildDelegateTaskPrompt(args.task, ctx.roster, args.teammate.id, args.depth, ctx.policy.maxDepth);
+
+    const orch = this.ensureOrchestrator(ctx);
+    orch.noteChildEnqueued({
+      childEventId: args.childEventId,
+      parentEventId: args.parentEventId,
+      depth: args.depth
+    });
+    orch.noteChildStarted(args.childEventId);
+
+    const { buildDelegateWakePrompt } = await import("./delegation/protocol/text.js");
+    const { listPendingChildEvents } = await import("./delegationRuns.js");
+
+    let prompt = buildDelegateTaskPrompt(
+      args.task,
+      ctx.roster,
+      args.teammate.id,
+      args.depth,
+      ctx.policy.maxDepth
+    );
     let lastError: string | null = null;
     let lastSummary = "";
+
     while (!this.killedRunIds.has(args.runId)) {
       const turn = await this.runAgentTurn({
-        ctx, agent: args.teammate, resolved,
-        scope: delegationEventScope(args.runId, args.childEventId),
-        sessionId: `del-${args.runId}-${args.childEventId}`,
+        ctx,
+        agent: args.teammate,
+        resolved,
+        scope: delegationEventScope(ctx.runId, args.childEventId),
+        sessionId: `del-${ctx.runId}-${args.childEventId}`,
         parentEventId: args.childEventId,
         depth: args.depth,
         prompt
       });
       lastError = turn.error;
       lastSummary = turn.summary ?? "";
-      if (this.killedRunIds.has(args.runId)) { lastError = lastError ?? "killed"; break; }
-      // Park: if this delegate spawned sub-delegates that are still running, wait for
-      // one to settle and resume the teammate with its result. Otherwise the delegate is done.
+      if (this.killedRunIds.has(args.runId)) {
+        lastError = lastError ?? "killed";
+        break;
+      }
       const pending = listPendingChildEvents(args.runId, args.childEventId);
       if (pending.length === 0) break;
-      const settled = await this.raceAnySettle(pending.map((e) => e.id));
-      if (this.killedRunIds.has(args.runId)) { lastError = lastError ?? "killed"; break; }
+      const settled = await orch.raceAnySettle(pending.map((e) => e.id));
+      if (this.killedRunIds.has(args.runId)) {
+        lastError = lastError ?? "killed";
+        break;
+      }
       prompt = buildDelegateWakePrompt(
         {
           taskText: settled?.taskText ?? "",
@@ -310,7 +492,10 @@ export class DelegationRuntime {
           status: settled?.status ?? "done",
           resultSummary: settled?.resultSummary ?? ""
         },
-        ctx.roster, args.teammate.id, args.depth, ctx.policy.maxDepth
+        ctx.roster,
+        args.teammate.id,
+        args.depth,
+        ctx.policy.maxDepth
       );
     }
     return { summary: lastSummary, exitCode: null, error: lastError };
@@ -319,14 +504,21 @@ export class DelegationRuntime {
   requestWriteApproval(runId: string, teammate: DelegationRosterEntry): Promise<boolean> {
     const approvalId = randomUUID();
     setDelegationRunStatus(runId, "blocked");
-    safeSendToWebContents(this.deps.webContents, `delegation://approval/${runId}`, { runId, approvalId, teammate });
+    safeSendToWebContents(this.deps.webContents, `delegation://approval/${runId}`, {
+      runId,
+      approvalId,
+      teammate
+    });
     return new Promise<boolean>((resolve) => {
       this.pendingApprovals.push({ approvalId, runId, teammate, resolve });
     });
   }
 
   listPendingApprovals(): Array<{ approvalId: string; runId: string }> {
-    return this.pendingApprovals.map((p) => ({ approvalId: p.approvalId, runId: p.runId }));
+    return this.pendingApprovals.map((p) => ({
+      approvalId: p.approvalId,
+      runId: p.runId
+    }));
   }
 
   resolveWriteApproval(approvalId: string, approved: boolean): void {
@@ -342,22 +534,24 @@ export class DelegationRuntime {
 
   stopRun(runId: string): void {
     this.killedRunIds.add(runId);
+    this.contexts.get(runId)?.orchestrator?.markKilled();
     setDelegationRunStatus(runId, "killed");
-    // v1: status-only. Full multi-agent kill (cancelling live ACP sessions) is a documented fast-follow.
   }
 }
 
 export function recoverInterruptedDelegationRuns(): number {
   const now = new Date().toISOString();
   const rows = getDb()
-    .prepare("SELECT id FROM workflow_runs WHERE kind = 'delegation' AND status IN ('running','blocked')")
+    .prepare(
+      "SELECT id FROM workflow_runs WHERE kind = 'delegation' AND status IN ('running','blocked')"
+    )
     .all() as Array<{ id: string }>;
-  const update = getDb()
-    .prepare("UPDATE workflow_runs SET status = 'failed', summary = COALESCE(summary, 'Interrupted by app restart.'), updated_at = ? WHERE id = ? AND status IN ('running','blocked')");
-  // Orphaned delegate events (the in-memory queue is lost on restart): mark any
-  // still pending (queued) or running delegate events of interrupted runs failed.
-  const sweepEvents = getDb()
-    .prepare(`UPDATE delegation_events SET status = 'failed', result_summary = COALESCE(result_summary, 'Interrupted by app restart.'), ended_at = ? WHERE status IN ('pending','running')`);
+  const update = getDb().prepare(
+    "UPDATE workflow_runs SET status = 'failed', summary = COALESCE(summary, 'Interrupted by app restart.'), updated_at = ? WHERE id = ? AND status IN ('running','blocked')"
+  );
+  const sweepEvents = getDb().prepare(
+    `UPDATE delegation_events SET status = 'failed', result_summary = COALESCE(result_summary, 'Interrupted by app restart.'), ended_at = ? WHERE status IN ('pending','running')`
+  );
   for (const row of rows) update.run(now, row.id);
   sweepEvents.run(now);
   return rows.length;

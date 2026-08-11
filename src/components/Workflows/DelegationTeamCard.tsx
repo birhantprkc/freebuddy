@@ -19,6 +19,7 @@ export function DelegationTeamCard({
   const liveStatus = useConversationStore((s) => s.live[conversationId]?.status);
   const [team, setTeam] = useState<DelegationTeam | undefined>(undefined);
   const [activeAgentId, setActiveAgentId] = useState<string | undefined>(undefined);
+  const [runStatus, setRunStatus] = useState<string | undefined>(undefined);
   const [modelsByAgent, setModelsByAgent] = useState<Record<string, string>>({});
 
   // Extract model per agent from the conversation's streamed config-options
@@ -65,17 +66,22 @@ export function DelegationTeamCard({
       try {
         const run = await delegationClient.getRunByConversation(conversationId);
         if (!run || !run.teamId) {
-          if (!cancelled) { setTeam(undefined); setActiveAgentId(undefined); }
+          if (!cancelled) {
+            setTeam(undefined);
+            setActiveAgentId(undefined);
+            setRunStatus(undefined);
+          }
           return;
         }
+        if (!cancelled) setRunStatus(run.status);
         if (!team) {
           const loaded = await delegationClient.get(run.teamId);
           if (!cancelled) setTeam(loaded ?? undefined);
         }
 
-        // Determine the active agent:
-        // 1. If a child event (depth>0) is "running" → that child is active
-        // 2. Else if the conversation is live → the entry agent is active
+        // Determine the active agent from run + events (bus is source of truth):
+        // 1. Child event (depth>0) "running" → that child
+        // 2. Else if run is running/blocked → entry is active (turning or parked)
         const events = await delegationClient.listEvents(run.id);
         if (cancelled) return;
         const runningChild = events.find(
@@ -84,12 +90,17 @@ export function DelegationTeamCard({
         if (runningChild?.agentId) {
           setActiveAgentId(runningChild.agentId);
         } else {
-          const isLive = liveStatus === "running" || liveStatus === "starting";
+          const runLive = run.status === "running" || run.status === "blocked";
+          const isLive =
+            runLive || liveStatus === "running" || liveStatus === "starting";
           const entry = team?.roster.find((r) => r.id === team.entryRoleId) ?? team?.roster[0];
           setActiveAgentId(isLive && entry ? entry.agentId : undefined);
         }
       } catch {
-        if (!cancelled) setActiveAgentId(undefined);
+        if (!cancelled) {
+          setActiveAgentId(undefined);
+          setRunStatus(undefined);
+        }
       }
     };
 
@@ -118,16 +129,41 @@ export function DelegationTeamCard({
   const memberAdapter = (agentId: string): string | undefined =>
     members.find((m) => m.id === agentId)?.cli.adapter;
 
+  const runBadge =
+    runStatus === "running"
+      ? t("status.running")
+      : runStatus === "blocked"
+        ? t("status.blocked", { defaultValue: "blocked" })
+        : runStatus === "completed"
+          ? t("status.done", { defaultValue: "done" })
+          : runStatus === "failed" || runStatus === "killed"
+            ? t("status.failed", { defaultValue: runStatus })
+            : "";
+
   return (
     <div className="delegation-roster-stack">
+      {runBadge ? (
+        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+          {t("workflow.delegation.runStatus", {
+            defaultValue: "Run"
+          })}
+          {": "}
+          <strong>{runBadge}</strong>
+        </div>
+      ) : null}
       {team.roster.map((r) => {
         const isEntry = r.id === team.entryRoleId;
         const isActive = activeAgentId === r.agentId;
+        // Entry is parked when the run is live but a child agent owns the active slot.
+        const parkedEntry =
+          isEntry && runStatus === "running" && Boolean(activeAgentId) && !isActive;
         const badge = isActive
           ? t("status.running")
-          : isEntry
-            ? t("workflow.delegation.entry", { defaultValue: "entry" })
-            : "";
+          : parkedEntry
+            ? t("workflow.delegation.parked", { defaultValue: "parked" })
+            : isEntry
+              ? t("workflow.delegation.entry", { defaultValue: "entry" })
+              : "";
         const rwLabel = r.canWrite
           ? t("workflow.delegation.canWrite")
           : t("workflow.delegation.readonly", { defaultValue: "read-only" });

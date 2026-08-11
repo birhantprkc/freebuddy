@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import {
+  mcpCheckResultDescription,
+  mcpDelegateDescription,
+  mcpListTeammatesDescription
+} from "../cli/delegation/protocol/text.js";
 
 interface DelegateToolResponse {
   ok?: boolean;
@@ -70,8 +75,7 @@ export function createDelegateMcpServer(): McpServer {
     "list_teammates",
     {
       title: "List Delegation Teammates",
-      description:
-        "List the teammates available to delegate to in the current delegation run (excluding yourself). Each entry has id, label, capability (what to delegate to it), and canWrite. Read-only.",
+      description: mcpListTeammatesDescription(),
       inputSchema: {}
     },
     async () => {
@@ -87,8 +91,7 @@ export function createDelegateMcpServer(): McpServer {
     "delegate",
     {
       title: "Delegate a Sub-task to a Teammate",
-      description:
-        "Asynchronously delegate a sub-task to a teammate. Returns IMMEDIATELY with {request_id, status:'pending'}. The teammate runs in the background. Poll check_delegate_result(request_id) every 3-5 seconds until status is 'done'/'failed'/'timeout', then use the returned result. Pick the teammate by matching its capability to the sub-task. Do not delegate trivial work you can do yourself, and do not bounce back to your caller.",
+      description: mcpDelegateDescription(),
       inputSchema: {
         teammate_id: z.string().describe("The roster entry id from list_teammates."),
         task: z.string().describe("A self-contained description of the sub-task to delegate.")
@@ -107,12 +110,12 @@ export function createDelegateMcpServer(): McpServer {
     "check_delegate_result",
     {
       title: "Check Delegate Result",
-      description:
-        "Poll a delegate call's result. Returns {status, result, request_id}. status: 'pending' = queued behind the concurrency limit (not started yet); 'running' = teammate is executing; 'done'/'failed'/'timeout' = terminal. Poll every 3-5 seconds. You may end your turn once you see 'running' (the system resumes you with the result automatically); keep polling (do not end your turn) while 'pending'.",
+      description: mcpCheckResultDescription(),
       inputSchema: {
         request_id: z.string().describe("The request_id from delegate.")
       }
     },
+
     async (args) => {
       try {
         return toolResult(await invokeDelegateBridge("check_delegate_result", args));

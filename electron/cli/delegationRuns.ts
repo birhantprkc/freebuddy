@@ -226,6 +226,26 @@ export function countRunningDelegationEvents(runId: string): number {
   return row?.n ?? 0;
 }
 
+/**
+ * Active "leaf" delegates: running delegates (depth>=1) that currently have no
+ * active (pending or running) child. A delegatee that has spawned a child is
+ * parked waiting on that child and must not count against maxConcurrentDelegates.
+ */
+export function countActiveDelegateLeaves(runId: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM delegation_events AS d
+       WHERE d.run_id = ? AND d.parent_event_id IS NOT NULL AND d.status = 'running'
+         AND NOT EXISTS (
+           SELECT 1 FROM delegation_events AS c
+           WHERE c.run_id = d.run_id AND c.parent_event_id = d.id
+             AND c.status IN ('running','pending')
+         )`
+    )
+    .get(runId) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
 /** Active (non-terminal) child events of a given parent event. */
 export function listPendingChildEvents(
   runId: string,

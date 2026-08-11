@@ -124,6 +124,19 @@ export const delegationClient = {
     return api().stopRun(runId);
   },
 
+  hasRunForConversation(conversationId: string): Promise<boolean> {
+    return api().hasRunForConversation(conversationId);
+  },
+
+  followUp(input: {
+    conversationId: string;
+    prompt: string;
+  }): Promise<
+    { ok: true; runId: string } | { ok: false; error: string; code?: string }
+  > {
+    return api().followUp(input);
+  },
+
   onChanged(cb: () => void): (() => void) | undefined {
     return window.freebuddy?.delegation?.onChanged?.(cb);
   }

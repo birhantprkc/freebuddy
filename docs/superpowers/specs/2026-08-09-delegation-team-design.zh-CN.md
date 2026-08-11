@@ -1,5 +1,9 @@
 # 自组织委派团队（DelegationTeam）设计
 
+> **Superseded（协议/运行时）**：同步阻塞 `delegate()` 与「入口 turn 卡在工具调用里」的模型已被
+> [`2026-08-12-delegation-bus-design.zh-CN.md`](./2026-08-12-delegation-bus-design.zh-CN.md)
+> 的完整异步编排总线（pending 收据 + park/wake + 跟进走总线）取代。下文产品模型（花名册、policy、与 WorkflowTeam 并存）仍有效；凡描述「MCP 同步 await 子 agent / 结果作为本次 tool result 返回」的段落以新文为准。
+
 ## 目标
 
 为 FreeBuddy 增加一种新的团队模式：**DelegationTeam（自组织委派团队）**。用户只配置一个入口 agent 和一组花名册（各自带能力描述），不预定义工作流。Run 启动后由 agent 在运行时自主发现合适队友、递归委派子任务、汇总结果。
@@ -7,7 +11,7 @@
 借鉴 CodexLoom 的核心哲学——"agent 自动发现合作 agent 来委派任务"——但落到 FreeBuddy 的多运行时、单 Run、任务交付导向的现实上：
 
 - **发现**：agent 通过花名册（每个队友的 `capability` 能力描述）知道该找谁，`capability` 即路由契约（CodexLoom Profile 的 Domain/Scope 等价物）。
-- **委派**：agent 调用 MCP 工具 `delegate(teammate_id, task)`，FreeBuddy 作为编排总线同步 spawn 被委派 agent、跑完、把结果作为工具返回值交回。
+- **委派**：agent 调用 MCP 工具 `delegate(teammate_id, task)`，编排总线异步 enqueue 子 agent，立刻返回 pending 收据；结果经 park/wake 或 `check_delegate_result` 回到调用方（见 2026-08-12 bus 设计）。
 - **智能在 Skill**：内置 Delegation Skill 教会每个 agent 何时/如何委派（CodexLoom `loom-communication` 的角色搬运）。
 
 与现有 WorkflowTeam（静态预编译计划）**并存**，靠团队 `kind` 区分；旧团队保留，零破坏。

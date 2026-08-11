@@ -638,6 +638,10 @@ const delegation = {
   listPendingApprovals: (runId: string) =>
     ipcRenderer.invoke("delegation:listPendingApprovals", runId),
   stopRun: (runId: string) => ipcRenderer.invoke("delegation:stopRun", runId),
+  hasRunForConversation: (conversationId: string) =>
+    ipcRenderer.invoke("delegation:hasRunForConversation", conversationId),
+  followUp: (input: { conversationId: string; prompt: string }) =>
+    ipcRenderer.invoke("delegation:followUp", input),
   onChanged: (cb: () => void): (() => void) => {
     const channel = "delegationTeams://changed";
     const listener = () => cb();

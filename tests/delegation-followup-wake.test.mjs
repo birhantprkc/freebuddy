@@ -1,0 +1,106 @@
+import "./fixtures/electron-stub.mjs";
+import test from "node:test";
+import assert from "node:assert/strict";
+
+let Database, bindingAvailable = true;
+try {
+  Database = (await import("better-sqlite3")).default;
+  new Database(":memory:").close();
+} catch {
+  bindingAvailable = false;
+}
+
+async function withDb(fn) {
+  const db = new Database(":memory:");
+  const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  setDbForTest(db);
+  const { seedBuiltinSkills } = await import("../dist-electron/cli/skills.js");
+  seedBuiltinSkills();
+  try {
+    await fn();
+  } finally {
+    setDbForTest(null);
+    db.close();
+  }
+}
+
+const roster = [
+  { id: "r-impl", label: "实现", agentId: "cli-codex-acp", capability: "写", canWrite: true },
+  { id: "r-rev", label: "评审", agentId: "cli-claude-agent-acp", capability: "审", canWrite: false }
+];
+const policy = {
+  allowWrites: true,
+  requireApprovalBeforeDelegateWrite: false,
+  maxDepth: 3,
+  delegateTimeoutMs: 600000,
+  maxConcurrentDelegates: 1,
+  stopOnDelegateFailure: false
+};
+const snap = { roster, policy, entryRoleId: "r-impl" };
+const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("followUp after completed run parks on delegate and wakes with result", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { dispatchDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+
+    const entryPrompts = [];
+    let phase = "initial";
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({
+        adapter: id.includes("claude") ? "claude-agent-acp" : "codex-acp",
+        agentName: id,
+        skillIds: []
+      }),
+      runAgent: async (args) => {
+        if (args.delegation.depth === 0) {
+          entryPrompts.push(args.prompt);
+          if (phase === "followUp" && entryPrompts.filter((p) => p.includes("委派评审")).length >= 1) {
+            // Only delegate once on the follow-up task turn (not on wake).
+            if (!args.prompt.includes("委派结果返回")) {
+              await dispatchDelegateAction(
+                {
+                  token: "t",
+                  taskSessionId: "s",
+                  runId: args.delegation.runId,
+                  parentEventId: args.delegation.parentEventId,
+                  depth: 0,
+                  selfAgentId: "r-impl",
+                  selfLabel: "实现"
+                },
+                "delegate",
+                { teammate_id: "r-rev", task: "审查锤子升级改动并给风险列表" }
+              );
+            }
+          }
+          return { summary: `entry ${entryPrompts.length}`, exitCode: 0, error: null };
+        }
+        return { summary: "REVIEW: hammer costs schema drift", exitCode: 0, error: null };
+      }
+    });
+
+    const runId = await rt.start({
+      goal: "开发一个功能",
+      teamId: "t",
+      teamSnapshot: snap,
+      cwd: "/r"
+    });
+    await tick(30);
+    assert.equal(getDelegationRun(runId).status, "completed");
+    const afterStart = entryPrompts.length;
+
+    phase = "followUp";
+    await rt.followUp(runId, "委派评审");
+    await tick(80);
+
+    assert.ok(entryPrompts.length > afterStart + 1, "follow-up must park then wake");
+    const wake = entryPrompts.find((p) => p.includes("委派结果返回"));
+    assert.ok(wake, "wake prompt required after follow-up delegate settles");
+    assert.ok(wake.includes("hammer costs"), "wake must carry review result");
+    assert.equal(getDelegationRun(runId).status, "completed");
+  });
+});

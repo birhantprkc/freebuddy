@@ -128,15 +128,8 @@ import {
 import { tMain } from "./i18n.js";
 import { setApplicationMenuForLanguage } from "../menu.js";
 import { registerWorkflowIpc } from "./workflowIpc.js";
-import { registerDelegationIpc, ensureDelegationRuntime } from "./delegationIpc.js";
+import { registerDelegationIpc } from "./delegationIpc.js";
 import { registerDelegationTeamIpc } from "./delegationTeamIpc.js";
-import {
-  getDelegationRunByConversation,
-  listDelegationEvents
-} from "./delegationRuns.js";
-import { getDelegationTeam } from "./delegationTeams.js";
-import { buildDelegateTaskPrompt } from "./delegationPrompt.js";
-import { resolveSkillSnapshots } from "./skills.js";
 import { readCodexUsage } from "./codexUsage.js";
 import {
   deleteSkill,
@@ -705,51 +698,8 @@ export function registerCliIpc() {
       cwd: conversation?.cwd ?? rendererArgs.cwd
     };
 
-    // Delegation conversation follow-up: if this conversation has a delegation
-    // run, inject the delegation context so the entry agent retains
-    // delegate/list_teammates MCP tools + roster awareness on follow-up messages.
-    if (conversation && !runArgs.delegation) {
-      try {
-        const delRun = getDelegationRunByConversation(conversation.id);
-        if (delRun?.teamId) {
-          ensureDelegationRuntime(event);
-          const team = getDelegationTeam(delRun.teamId);
-          if (team) {
-            const events = listDelegationEvents(delRun.id);
-            const rootEvent = events.find((e) => e.depth === 0);
-            const entry =
-              team.roster.find((r) => r.id === team.entryRoleId) ?? team.roster[0];
-            if (entry && rootEvent) {
-              runArgs = {
-                ...runArgs,
-                delegation: {
-                  runId: delRun.id,
-                  parentEventId: rootEvent.id,
-                  depth: 0,
-                  selfAgentId: entry.id,
-                  selfLabel: entry.label
-                },
-                roleLabel: entry.label,
-                prompt: buildDelegateTaskPrompt(
-                  runArgs.prompt,
-                  team.roster,
-                  entry.id,
-                  0,
-                  team.policy.maxDepth
-                ),
-                skills: [
-                  ...(runArgs.skills ?? []),
-                  ...resolveSkillSnapshots(["delegation"])
-                ],
-                announceSkills: true
-              };
-            }
-          }
-        }
-      } catch {
-        // delegation lookup failed — fall through to normal run (no MCP injection)
-      }
-    }
+    // Delegation follow-ups must go through delegation:followUp (bus park/wake).
+    // Do not inject MCP into bare cli:run — that path has no wake loop.
     const resolvedWorkspaceRoots = conversation
       ? resolveWorkspaceRootsForConversation(conversation)
       : resolveWorkspaceRootsForConversation({
