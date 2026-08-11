@@ -124,6 +124,10 @@ export interface ScreenBallSpawnOptions {
   spawnOrigin?: ScreenBallOrigin;
 }
 
+export interface ScreenBallVolleyOptions extends ScreenBallSpawnOptions {
+  count?: number;
+}
+
 function distanceSquaredToSegment(
   point: ScreenBallPoint,
   start: ScreenBallPoint,
@@ -195,6 +199,11 @@ export function maxScreenBallCount(level: number): number {
 export function screenBallSpawnIntervalMs(level: number): number {
   const safeLevel = Math.max(1, Math.floor(finiteNumber(level, 1)));
   return Math.max(260, 520 - (safeLevel - 1) * 65);
+}
+
+export function screenBallVolleySize(level: number): number {
+  const safeLevel = Math.max(1, Math.floor(finiteNumber(level, 1)));
+  return Math.min(4, safeLevel);
 }
 
 export function screenBallColorForLevel(level: number): ScreenBallColor {
@@ -429,6 +438,26 @@ export function spawnScreenBall(
 export const spawnScreenBallArcadeBall = spawnScreenBall;
 export const spawnScreenBallBall = spawnScreenBall;
 
+/** Launch a level-scaled volley without exceeding the active-ball cap. */
+export function spawnScreenBallVolley(
+  state: ScreenBallArcadeState,
+  options: ScreenBallVolleyOptions = {}
+): ScreenBallArcadeState {
+  const count = Math.max(
+    1,
+    Math.floor(finiteNumber(options.count, screenBallVolleySize(effectiveLevel(state))))
+  );
+  let next = state;
+  for (let index = 0; index < count; index += 1) {
+    const spawned = spawnScreenBall(next, options);
+    if (spawned === next) break;
+    next = spawned;
+  }
+  return next;
+}
+
+export const spawnScreenBallArcadeVolley = spawnScreenBallVolley;
+
 function reflectAxis(
   position: number,
   velocity: number,
@@ -473,8 +502,8 @@ function movedBall(
   let x = ball.x + ball.vx * elapsedSeconds;
   let y = ball.y + ball.vy * elapsedSeconds;
 
-  // A ball is lost when its *top* edge has passed the bottom edge of the work
-  // area.  It never bounces from the bottom.
+  // A target leaves the round when its *top* edge has passed the bottom edge
+  // of the work area. It never bounces from the bottom.
   if (y - radius > bounds.bottom) return null;
 
   let vx = ball.vx;
@@ -538,8 +567,13 @@ export function advanceScreenBallState(
   let lost = 0;
   for (const ball of state.balls) {
     const nextBall = movedBall(ball, safeElapsedMs, state.bounds);
-    if (nextBall === null) lost += 1;
-    else movedBalls.push(nextBall);
+    if (nextBall === null) {
+      // Bombs are a separate hazard: slicing one ends the round, but letting
+      // one fall away should not consume one of the player's ten misses.
+      if (!isBomb(ball)) lost += 1;
+    } else {
+      movedBalls.push(nextBall);
+    }
   }
 
   const nextMissed = startingMisses + lost;

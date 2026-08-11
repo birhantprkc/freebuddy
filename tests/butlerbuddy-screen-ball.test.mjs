@@ -135,6 +135,29 @@ test("difficulty levels increase pace, active targets, and ball colors", async (
   assert.equal(bomb.balls[0].kind, "bomb");
 });
 
+test("higher levels launch volleys instead of only adding one ball", async () => {
+  const {
+    createScreenBallArcadeState,
+    screenBallVolleySize,
+    spawnScreenBallVolley
+  } = await loadScreenBallModule();
+  assert.equal(screenBallVolleySize(1), 1);
+  assert.equal(screenBallVolleySize(2), 2);
+  assert.equal(screenBallVolleySize(5), 4);
+
+  const state = createScreenBallArcadeState({
+    at: 1_000,
+    bounds: { left: 0, top: 0, right: 1_440, bottom: 900 },
+    origin: { x: 720, y: 720 }
+  });
+  const volley = spawnScreenBallVolley(
+    { ...state, score: 400, level: 2 },
+    { at: 1_000, random: () => 0.25 }
+  );
+  assert.equal(volley.balls.length, 2);
+  assert.equal(new Set(volley.balls.map((ball) => ball.id)).size, 2);
+});
+
 test("slicing a black bomb immediately ends the round", async () => {
   const { createScreenBallArcadeState, hitScreenBall } =
     await loadScreenBallModule();
@@ -251,6 +274,31 @@ test("a ball crossing the bottom is removed and counts as a miss", async () => {
   );
   assert.equal(partlyBelow.balls.length, 1);
   assert.ok(partlyBelow.balls[0].y > 98);
+
+  const bomb = advanceScreenBallState(
+    {
+      ...state,
+      balls: [
+        {
+          id: "falling-bomb",
+          kind: "bomb",
+          color: "bomb",
+          x: 50,
+          y: 98,
+          vx: 0,
+          vy: 20,
+          radius: 1,
+          createdAt: 1_000
+        }
+      ]
+    },
+    200,
+    1_200
+  );
+  assert.equal(bomb.balls.length, 0);
+  assert.equal(bomb.missed, 0);
+  assert.equal(bomb.misses, 0);
+  assert.equal(bomb.phase, "playing");
 });
 
 test("the tenth miss settles exactly once and clears remaining balls", async () => {

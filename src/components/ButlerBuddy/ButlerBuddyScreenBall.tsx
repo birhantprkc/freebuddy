@@ -9,7 +9,9 @@ import {
   remainingScreenBallSeconds,
   screenBallIntersectsSegment,
   screenBallSpawnIntervalMs,
+  screenBallVolleySize,
   spawnScreenBall,
+  spawnScreenBallVolley,
   type ScreenBallArcadeState
 } from "./screenBallArcade";
 
@@ -365,10 +367,11 @@ export function ButlerBuddyScreenBall() {
           next.balls.length < maxScreenBallCount(next.level) &&
           at - lastSpawnAtRef.current >= screenBallSpawnIntervalMs(next.level)
         ) {
-          next = spawnScreenBall(next, {
+          next = spawnScreenBallVolley(next, {
             at,
             origin: session.petOrigin,
-            random: Math.random
+            random: Math.random,
+            count: screenBallVolleySize(next.level)
           });
           lastSpawnAtRef.current = at;
         }
