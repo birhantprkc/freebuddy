@@ -45,6 +45,7 @@ import {
   playTaskFailure,
   playTaskSuccess
 } from "./utils/soundEffects";
+import { isAppInBackground } from "./utils/appFocus";
 import i18next from "i18next";
 import { useTranslation } from "react-i18next";
 
@@ -194,10 +195,10 @@ function App() {
   useEffect(() => {
     const off = window.freebuddy?.cli?.onMessagesChanged?.((conversationId) => {
       const state = useConversationStore.getState();
-      if (conversationId !== state.activeId) {
+      if (conversationId !== state.activeId || isAppInBackground()) {
         state.markConversationUnread(conversationId);
         void state.refreshList();
-        return;
+        if (conversationId !== state.activeId) return;
       }
       // Skip conversations this client is already live-streaming (e.g. the
       // current user's own active run) — live streaming owns those updates.
@@ -209,6 +210,17 @@ function App() {
       void state.loadMessages(conversationId);
     });
     return () => off?.();
+  }, []);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      const state = useConversationStore.getState();
+      if (state.activeId && state.unreadConversations[state.activeId]) {
+        state.markConversationRead(state.activeId);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, []);
 
   useEffect(() => {

@@ -350,6 +350,10 @@ declare global {
     shortcut: string;
     shortcutRegistered: boolean;
     error?: "shortcutUnavailable";
+    mainWindowShortcutEnabled: boolean;
+    mainWindowShortcut: string;
+    mainWindowShortcutRegistered: boolean;
+    mainWindowShortcutError?: "shortcutUnavailable";
   }
 
   type ButlerBuddyVisualState =
@@ -412,6 +416,8 @@ declare global {
       visible?: boolean;
       shortcutEnabled?: boolean;
       shortcut?: string;
+      mainWindowShortcutEnabled?: boolean;
+      mainWindowShortcut?: string;
     }): Promise<ButlerBuddyPreferences>;
     onNewConversation(cb: () => void): () => void;
     onPreferencesChanged(

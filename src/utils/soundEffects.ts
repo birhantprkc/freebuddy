@@ -1,5 +1,8 @@
 import { debugLogClient } from "@/services/debugLog";
 import { useTaskReceiptStore } from "@/store/taskReceiptStore";
+import { isAppInBackground, isWindowBlurred } from "./appFocus";
+
+export { isAppInBackground };
 
 const baseUrl = import.meta.env?.BASE_URL ?? "./";
 
@@ -21,21 +24,6 @@ function getAudio(kind: keyof typeof SOUNDS): HTMLAudioElement | undefined {
   } catch {
     return undefined;
   }
-}
-
-let windowBlurred = false;
-if (typeof window !== "undefined") {
-  window.addEventListener("blur", () => {
-    windowBlurred = true;
-  });
-  window.addEventListener("focus", () => {
-    windowBlurred = false;
-  });
-}
-
-export function isAppInBackground(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.hidden || windowBlurred;
 }
 
 export function playTaskSuccess(backgroundOnly = true): void {
@@ -90,7 +78,7 @@ export function notifyTaskFinished(
   debugLogClient.info("notification", "notifyTaskFinished evaluated", {
     kind,
     documentHidden,
-    windowBlurred,
+    windowBlurred: isWindowBlurred(),
     isAppInBackground: background,
     willNotify: background,
     conversationId

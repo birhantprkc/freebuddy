@@ -386,6 +386,10 @@ type ButlerBuddyPreferencesPayload = {
   shortcut: string;
   shortcutRegistered: boolean;
   error?: "shortcutUnavailable";
+  mainWindowShortcutEnabled: boolean;
+  mainWindowShortcut: string;
+  mainWindowShortcutRegistered: boolean;
+  mainWindowShortcutError?: "shortcutUnavailable";
 };
 
 type ButlerBuddyRuntimeStatePayload = {
@@ -467,6 +471,8 @@ const butlerBuddy = {
     visible?: boolean;
     shortcutEnabled?: boolean;
     shortcut?: string;
+    mainWindowShortcutEnabled?: boolean;
+    mainWindowShortcut?: string;
   }) => ipcRenderer.invoke("butlerBuddy:updatePreferences", input),
   onNewConversation(cb: () => void): () => void {
     const handler = () => cb();

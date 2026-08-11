@@ -185,11 +185,16 @@ test("ButlerBuddy preferences expose a global shortcut with conflict feedback", 
 
   assert.match(main, /CommandOrControl\+Shift\+Space/);
   assert.match(main, /globalShortcut\.register\(shortcut, toggleButlerChat\)/);
+  assert.match(main, /CommandOrControl\+Shift\+M/);
+  assert.match(main, /globalShortcut\.register\(shortcut, revealMainWindow\)/);
+  assert.match(main, /label:\s*"显示主窗口"/);
   assert.match(main, /butlerBuddy:updatePreferences/);
   assert.match(preload, /butlerBuddy:getPreferences/);
   assert.match(settings, /butler-shortcut-recorder/);
   assert.match(settings, /butlerShortcutUnavailable/);
   assert.match(settings, /DEFAULT_BUTLER_SHORTCUT/);
+  assert.match(settings, /DEFAULT_BUTLER_MAIN_WINDOW_SHORTCUT/);
+  assert.match(settings, /butlerMainWindowShortcut/);
 });
 
 test("ButlerBuddy keeps arcade play in the full-screen surface", () => {

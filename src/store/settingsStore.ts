@@ -27,6 +27,10 @@ interface SettingsState {
   butlerBuddyShortcut: string;
   butlerBuddyShortcutRegistered: boolean;
   butlerBuddyShortcutError?: "shortcutUnavailable";
+  butlerBuddyMainWindowShortcutEnabled: boolean;
+  butlerBuddyMainWindowShortcut: string;
+  butlerBuddyMainWindowShortcutRegistered: boolean;
+  butlerBuddyMainWindowShortcutError?: "shortcutUnavailable";
   load(): Promise<void>;
   setLanguage(lng: LanguagePreference): Promise<void>;
   setTheme(
@@ -38,6 +42,8 @@ interface SettingsState {
     visible?: boolean;
     shortcutEnabled?: boolean;
     shortcut?: string;
+    mainWindowShortcutEnabled?: boolean;
+    mainWindowShortcut?: string;
   }): Promise<void>;
   applyButlerBuddyPreferences(prefs: {
     visible: boolean;
@@ -45,6 +51,10 @@ interface SettingsState {
     shortcut: string;
     shortcutRegistered: boolean;
     error?: "shortcutUnavailable";
+    mainWindowShortcutEnabled: boolean;
+    mainWindowShortcut: string;
+    mainWindowShortcutRegistered: boolean;
+    mainWindowShortcutError?: "shortcutUnavailable";
   }): void;
   refreshSystemTheme(): void;
 }
@@ -61,6 +71,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   butlerBuddyShortcut: "CommandOrControl+Shift+Space",
   butlerBuddyShortcutRegistered: false,
   butlerBuddyShortcutError: undefined,
+  butlerBuddyMainWindowShortcutEnabled: true,
+  butlerBuddyMainWindowShortcut: "CommandOrControl+Shift+M",
+  butlerBuddyMainWindowShortcutRegistered: false,
+  butlerBuddyMainWindowShortcutError: undefined,
 
   async load() {
     const systemLanguage =
@@ -80,7 +94,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         butlerBuddyShortcutEnabled: true,
         butlerBuddyShortcut: "CommandOrControl+Shift+Space",
         butlerBuddyShortcutRegistered: false,
-        butlerBuddyShortcutError: undefined
+        butlerBuddyShortcutError: undefined,
+        butlerBuddyMainWindowShortcutEnabled: true,
+        butlerBuddyMainWindowShortcut: "CommandOrControl+Shift+M",
+        butlerBuddyMainWindowShortcutRegistered: false,
+        butlerBuddyMainWindowShortcutError: undefined
       });
       return;
     }
@@ -108,7 +126,15 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         butlerPreferences?.shortcut ?? "CommandOrControl+Shift+Space",
       butlerBuddyShortcutRegistered:
         butlerPreferences?.shortcutRegistered ?? false,
-      butlerBuddyShortcutError: butlerPreferences?.error
+      butlerBuddyShortcutError: butlerPreferences?.error,
+      butlerBuddyMainWindowShortcutEnabled:
+        butlerPreferences?.mainWindowShortcutEnabled ?? true,
+      butlerBuddyMainWindowShortcut:
+        butlerPreferences?.mainWindowShortcut ?? "CommandOrControl+Shift+M",
+      butlerBuddyMainWindowShortcutRegistered:
+        butlerPreferences?.mainWindowShortcutRegistered ?? false,
+      butlerBuddyMainWindowShortcutError:
+        butlerPreferences?.mainWindowShortcutError
     });
   },
 
@@ -154,6 +180,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         ...(input.shortcut === undefined
           ? {}
           : { butlerBuddyShortcut: input.shortcut }),
+        ...(input.mainWindowShortcutEnabled === undefined
+          ? {}
+          : { butlerBuddyMainWindowShortcutEnabled: input.mainWindowShortcutEnabled }),
+        ...(input.mainWindowShortcut === undefined
+          ? {}
+          : { butlerBuddyMainWindowShortcut: input.mainWindowShortcut }),
       });
       return;
     }
@@ -163,7 +195,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       butlerBuddyShortcutEnabled: result.shortcutEnabled,
       butlerBuddyShortcut: result.shortcut,
       butlerBuddyShortcutRegistered: result.shortcutRegistered,
-      butlerBuddyShortcutError: result.error
+      butlerBuddyShortcutError: result.error,
+      butlerBuddyMainWindowShortcutEnabled: result.mainWindowShortcutEnabled,
+      butlerBuddyMainWindowShortcut: result.mainWindowShortcut,
+      butlerBuddyMainWindowShortcutRegistered: result.mainWindowShortcutRegistered,
+      butlerBuddyMainWindowShortcutError: result.mainWindowShortcutError
     });
   },
   refreshSystemTheme() {
@@ -178,7 +214,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       butlerBuddyShortcutEnabled: prefs.shortcutEnabled,
       butlerBuddyShortcut: prefs.shortcut,
       butlerBuddyShortcutRegistered: prefs.shortcutRegistered,
-      butlerBuddyShortcutError: prefs.error
+      butlerBuddyShortcutError: prefs.error,
+      butlerBuddyMainWindowShortcutEnabled: prefs.mainWindowShortcutEnabled,
+      butlerBuddyMainWindowShortcut: prefs.mainWindowShortcut,
+      butlerBuddyMainWindowShortcutRegistered: prefs.mainWindowShortcutRegistered,
+      butlerBuddyMainWindowShortcutError: prefs.mainWindowShortcutError
     });
   }
 }));

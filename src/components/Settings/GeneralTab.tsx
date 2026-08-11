@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  AppWindow,
   Check,
   Crosshair,
   Keyboard,
@@ -31,6 +32,7 @@ const THEME_LABEL_KEY: Record<ThemePreference, string> = {
 };
 
 const DEFAULT_BUTLER_SHORTCUT = "CommandOrControl+Shift+Space";
+const DEFAULT_BUTLER_MAIN_WINDOW_SHORTCUT = "CommandOrControl+Shift+M";
 const petImageUrl = `${import.meta.env.BASE_URL}butlerbuddy-pet.png`;
 
 function shortcutFromEvent(event: KeyboardEvent): string | undefined {
@@ -80,6 +82,8 @@ function shortcutTokens(shortcut: string): string[] {
   });
 }
 
+type ShortcutRecordingTarget = "chat" | "mainWindow" | null;
+
 export function GeneralTab() {
   const { t } = useTranslation();
   const language = useSettingsStore((s) => s.language);
@@ -95,40 +99,72 @@ export function GeneralTab() {
     (s) => s.butlerBuddyShortcutRegistered
   );
   const shortcutError = useSettingsStore((s) => s.butlerBuddyShortcutError);
+  const mainWindowShortcutEnabled = useSettingsStore(
+    (s) => s.butlerBuddyMainWindowShortcutEnabled
+  );
+  const mainWindowShortcut = useSettingsStore(
+    (s) => s.butlerBuddyMainWindowShortcut
+  );
+  const mainWindowShortcutRegistered = useSettingsStore(
+    (s) => s.butlerBuddyMainWindowShortcutRegistered
+  );
+  const mainWindowShortcutError = useSettingsStore(
+    (s) => s.butlerBuddyMainWindowShortcutError
+  );
   const updateButler = useSettingsStore(
     (s) => s.updateButlerBuddyPreferences
   );
-  const [recording, setRecording] = useState(false);
+  const [recordingTarget, setRecordingTarget] =
+    useState<ShortcutRecordingTarget>(null);
   const [captureError, setCaptureError] = useState("");
 
   useEffect(() => {
-    if (!recording) return;
+    if (!recordingTarget) return;
     const onKeyDown = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat) return;
       if (event.key === "Escape") {
-        setRecording(false);
+        setRecordingTarget(null);
         setCaptureError("");
         return;
       }
       const next = shortcutFromEvent(event);
       if (!next) {
         if (!["Control", "Meta", "Alt", "Shift"].includes(event.key)) {
-          setCaptureError(t("general.butlerShortcutInvalid"));
+          setCaptureError(
+            recordingTarget === "mainWindow"
+              ? t("general.butlerMainWindowShortcutInvalid")
+              : t("general.butlerShortcutInvalid")
+          );
         }
         return;
       }
       setCaptureError("");
-      setRecording(false);
-      void updateButler({ shortcut: next, shortcutEnabled: true });
+      const target = recordingTarget;
+      setRecordingTarget(null);
+      if (target === "mainWindow") {
+        void updateButler({
+          mainWindowShortcut: next,
+          mainWindowShortcutEnabled: true
+        });
+      } else {
+        void updateButler({ shortcut: next, shortcutEnabled: true });
+      }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [recording, t, updateButler]);
+  }, [recordingTarget, t, updateButler]);
 
-  const shownShortcutError = captureError ||
+  const shownShortcutError =
+    (recordingTarget === "chat" ? captureError : "") ||
     (shortcutError ? t("general.butlerShortcutUnavailable") : "");
+
+  const shownMainWindowShortcutError =
+    (recordingTarget === "mainWindow" ? captureError : "") ||
+    (mainWindowShortcutError
+      ? t("general.butlerMainWindowShortcutUnavailable")
+      : "");
 
   return (
     <>
@@ -201,7 +237,7 @@ export function GeneralTab() {
                 type="checkbox"
                 checked={shortcutEnabled}
                 onChange={(event) => {
-                  setRecording(false);
+                  setRecordingTarget(null);
                   setCaptureError("");
                   void updateButler({ shortcutEnabled: event.target.checked });
                 }}
@@ -215,20 +251,22 @@ export function GeneralTab() {
             <div className="butler-shortcut-editor">
               <button
                 type="button"
-                className={`butler-shortcut-recorder${recording ? " is-recording" : ""}`}
-                aria-pressed={recording}
+                className={`butler-shortcut-recorder${recordingTarget === "chat" ? " is-recording" : ""}`}
+                aria-pressed={recordingTarget === "chat"}
                 onClick={() => {
                   setCaptureError("");
-                  setRecording((value) => !value);
+                  setRecordingTarget((target) =>
+                    target === "chat" ? null : "chat"
+                  );
                 }}
               >
                 <span className="butler-shortcut-recorder-label">
-                  {recording
+                  {recordingTarget === "chat"
                     ? t("general.butlerShortcutRecording")
                     : t("general.butlerShortcutCurrent")}
                 </span>
                 <span className="butler-shortcut-keys" aria-label={shortcut}>
-                  {recording ? (
+                  {recordingTarget === "chat" ? (
                     <kbd>…</kbd>
                   ) : (
                     shortcutTokens(shortcut).map((token, index) => (
@@ -237,7 +275,7 @@ export function GeneralTab() {
                   )}
                 </span>
                 <span className="butler-shortcut-action">
-                  {recording
+                  {recordingTarget === "chat"
                     ? t("general.butlerShortcutCancelHint")
                     : t("general.butlerShortcutChange")}
                 </span>
@@ -246,7 +284,7 @@ export function GeneralTab() {
                 type="button"
                 className="butler-shortcut-reset"
                 onClick={() => {
-                  setRecording(false);
+                  setRecordingTarget(null);
                   setCaptureError("");
                   void updateButler({ shortcut: DEFAULT_BUTLER_SHORTCUT });
                 }}
@@ -268,6 +306,102 @@ export function GeneralTab() {
             <div className="butler-shortcut-status is-success">
               <Check size={13} />
               <span>{t("general.butlerShortcutReady")}</span>
+            </div>
+          ) : null}
+
+          <div className="butler-settings-divider" />
+
+          <div className="butler-settings-row butler-settings-shortcut-row">
+            <span className="butler-settings-row-icon" aria-hidden="true">
+              <AppWindow size={18} strokeWidth={1.8} />
+            </span>
+            <div className="butler-settings-copy">
+              <strong>{t("general.butlerMainWindowShortcut")}</strong>
+              <small>{t("general.butlerMainWindowShortcutDescription")}</small>
+            </div>
+            <label className="butler-settings-switch">
+              <input
+                type="checkbox"
+                checked={mainWindowShortcutEnabled}
+                onChange={(event) => {
+                  setRecordingTarget(null);
+                  setCaptureError("");
+                  void updateButler({
+                    mainWindowShortcutEnabled: event.target.checked
+                  });
+                }}
+                aria-label={t("general.butlerMainWindowShortcut")}
+              />
+              <span aria-hidden="true" />
+            </label>
+          </div>
+
+          {mainWindowShortcutEnabled && (
+            <div className="butler-shortcut-editor">
+              <button
+                type="button"
+                className={`butler-shortcut-recorder${recordingTarget === "mainWindow" ? " is-recording" : ""}`}
+                aria-pressed={recordingTarget === "mainWindow"}
+                onClick={() => {
+                  setCaptureError("");
+                  setRecordingTarget((target) =>
+                    target === "mainWindow" ? null : "mainWindow"
+                  );
+                }}
+              >
+                <span className="butler-shortcut-recorder-label">
+                  {recordingTarget === "mainWindow"
+                    ? t("general.butlerMainWindowShortcutRecording")
+                    : t("general.butlerMainWindowShortcutCurrent")}
+                </span>
+                <span
+                  className="butler-shortcut-keys"
+                  aria-label={mainWindowShortcut}
+                >
+                  {recordingTarget === "mainWindow" ? (
+                    <kbd>…</kbd>
+                  ) : (
+                    shortcutTokens(mainWindowShortcut).map((token, index) => (
+                      <kbd key={`${token}-${index}`}>{token}</kbd>
+                    ))
+                  )}
+                </span>
+                <span className="butler-shortcut-action">
+                  {recordingTarget === "mainWindow"
+                    ? t("general.butlerMainWindowShortcutCancelHint")
+                    : t("general.butlerMainWindowShortcutChange")}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="butler-shortcut-reset"
+                onClick={() => {
+                  setRecordingTarget(null);
+                  setCaptureError("");
+                  void updateButler({
+                    mainWindowShortcut: DEFAULT_BUTLER_MAIN_WINDOW_SHORTCUT
+                  });
+                }}
+                disabled={
+                  mainWindowShortcut === DEFAULT_BUTLER_MAIN_WINDOW_SHORTCUT
+                }
+                title={t("general.butlerMainWindowShortcutReset")}
+                aria-label={t("general.butlerMainWindowShortcutReset")}
+              >
+                <RotateCcw size={14} strokeWidth={1.9} />
+              </button>
+            </div>
+          )}
+
+          {mainWindowShortcutEnabled && shownMainWindowShortcutError ? (
+            <div className="butler-shortcut-status is-error" role="alert">
+              <AlertCircle size={13} />
+              <span>{shownMainWindowShortcutError}</span>
+            </div>
+          ) : mainWindowShortcutEnabled && mainWindowShortcutRegistered ? (
+            <div className="butler-shortcut-status is-success">
+              <Check size={13} />
+              <span>{t("general.butlerMainWindowShortcutReady")}</span>
             </div>
           ) : null}
         </div>

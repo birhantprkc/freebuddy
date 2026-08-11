@@ -175,7 +175,17 @@
     "butlerShortcutReset": "恢复默认快捷键",
     "butlerShortcutReady": "全局快捷键已生效",
     "butlerShortcutUnavailable": "这个组合键已被其他应用占用，请换一个。",
-    "butlerShortcutInvalid": "请同时按下 Ctrl/⌘ 或 Alt 与另一个按键。"
+    "butlerShortcutInvalid": "请同时按下 Ctrl/⌘ 或 Alt 与另一个按键。",
+    "butlerMainWindowShortcut": "显示主窗口",
+    "butlerMainWindowShortcutDescription": "在其他应用中也能快速唤起 FreeBuddy 主窗口。",
+    "butlerMainWindowShortcutCurrent": "当前快捷键",
+    "butlerMainWindowShortcutRecording": "请按下组合键",
+    "butlerMainWindowShortcutCancelHint": "Esc 取消",
+    "butlerMainWindowShortcutChange": "点击修改",
+    "butlerMainWindowShortcutReset": "恢复默认快捷键",
+    "butlerMainWindowShortcutReady": "全局快捷键已生效",
+    "butlerMainWindowShortcutUnavailable": "这个组合键已被其他应用占用，请换一个。",
+    "butlerMainWindowShortcutInvalid": "请同时按下 Ctrl/⌘ 或 Alt 与另一个按键。"
   },
   "app": { "brand": "FreeBuddy", "chat": "聊天" },
   "skills": {

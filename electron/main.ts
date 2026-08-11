@@ -325,6 +325,10 @@ const BUTLER_VISIBLE_SETTING = "butlerbuddy.visible";
 const BUTLER_SHORTCUT_ENABLED_SETTING = "butlerbuddy.shortcut.enabled";
 const BUTLER_SHORTCUT_SETTING = "butlerbuddy.shortcut";
 const BUTLER_DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
+const BUTLER_MAIN_WINDOW_SHORTCUT_ENABLED_SETTING =
+  "butlerbuddy.mainWindowShortcut.enabled";
+const BUTLER_MAIN_WINDOW_SHORTCUT_SETTING = "butlerbuddy.mainWindowShortcut";
+const BUTLER_DEFAULT_MAIN_WINDOW_SHORTCUT = "CommandOrControl+Shift+M";
 
 type ButlerBuddyPreferences = {
   visible: boolean;
@@ -332,10 +336,16 @@ type ButlerBuddyPreferences = {
   shortcut: string;
   shortcutRegistered: boolean;
   error?: "shortcutUnavailable";
+  mainWindowShortcutEnabled: boolean;
+  mainWindowShortcut: string;
+  mainWindowShortcutRegistered: boolean;
+  mainWindowShortcutError?: "shortcutUnavailable";
 };
 
 let registeredButlerShortcut: string | null = null;
 let butlerShortcutError: "shortcutUnavailable" | undefined;
+let registeredButlerMainWindowShortcut: string | null = null;
+let butlerMainWindowShortcutError: "shortcutUnavailable" | undefined;
 
 function readButlerBuddyPreferences(): ButlerBuddyPreferences {
   const visible = getSetting(BUTLER_VISIBLE_SETTING) !== "false";
@@ -343,6 +353,11 @@ function readButlerBuddyPreferences(): ButlerBuddyPreferences {
     getSetting(BUTLER_SHORTCUT_ENABLED_SETTING) !== "false";
   const shortcut =
     getSetting(BUTLER_SHORTCUT_SETTING)?.trim() || BUTLER_DEFAULT_SHORTCUT;
+  const mainWindowShortcutEnabled =
+    getSetting(BUTLER_MAIN_WINDOW_SHORTCUT_ENABLED_SETTING) !== "false";
+  const mainWindowShortcut =
+    getSetting(BUTLER_MAIN_WINDOW_SHORTCUT_SETTING)?.trim() ||
+    BUTLER_DEFAULT_MAIN_WINDOW_SHORTCUT;
   return {
     visible,
     shortcutEnabled,
@@ -351,7 +366,14 @@ function readButlerBuddyPreferences(): ButlerBuddyPreferences {
       shortcutEnabled &&
       registeredButlerShortcut === shortcut &&
       globalShortcut.isRegistered(shortcut),
-    error: butlerShortcutError
+    error: butlerShortcutError,
+    mainWindowShortcutEnabled,
+    mainWindowShortcut,
+    mainWindowShortcutRegistered:
+      mainWindowShortcutEnabled &&
+      registeredButlerMainWindowShortcut === mainWindowShortcut &&
+      globalShortcut.isRegistered(mainWindowShortcut),
+    mainWindowShortcutError: butlerMainWindowShortcutError
   };
 }
 
@@ -757,6 +779,47 @@ function updateButlerShortcutRegistration(
   butlerShortcutError = undefined;
 }
 
+function updateButlerMainWindowShortcutRegistration(
+  enabled: boolean,
+  shortcut: string
+): "shortcutUnavailable" | undefined {
+  if (!enabled) {
+    if (registeredButlerMainWindowShortcut) {
+      globalShortcut.unregister(registeredButlerMainWindowShortcut);
+      registeredButlerMainWindowShortcut = null;
+    }
+    butlerMainWindowShortcutError = undefined;
+    return;
+  }
+
+  if (
+    registeredButlerMainWindowShortcut === shortcut &&
+    globalShortcut.isRegistered(shortcut)
+  ) {
+    butlerMainWindowShortcutError = undefined;
+    return;
+  }
+
+  try {
+    if (!globalShortcut.register(shortcut, revealMainWindow)) {
+      butlerMainWindowShortcutError = "shortcutUnavailable";
+      return butlerMainWindowShortcutError;
+    }
+  } catch {
+    butlerMainWindowShortcutError = "shortcutUnavailable";
+    return butlerMainWindowShortcutError;
+  }
+
+  if (
+    registeredButlerMainWindowShortcut &&
+    registeredButlerMainWindowShortcut !== shortcut
+  ) {
+    globalShortcut.unregister(registeredButlerMainWindowShortcut);
+  }
+  registeredButlerMainWindowShortcut = shortcut;
+  butlerMainWindowShortcutError = undefined;
+}
+
 function applyButlerBuddyVisibility(visible: boolean) {
   const pet = butlerPetWindow;
   if (!pet || pet.isDestroyed()) return;
@@ -773,7 +836,11 @@ function updateButlerBuddyPreferences(
   input: Partial<
     Pick<
       ButlerBuddyPreferences,
-      "visible" | "shortcutEnabled" | "shortcut"
+      | "visible"
+      | "shortcutEnabled"
+      | "shortcut"
+      | "mainWindowShortcutEnabled"
+      | "mainWindowShortcut"
     >
   >
 ): ButlerBuddyPreferences {
@@ -784,11 +851,37 @@ function updateButlerBuddyPreferences(
   const shortcutChanged =
     nextEnabled !== current.shortcutEnabled || nextShortcut !== current.shortcut;
 
+  const nextMainWindowEnabled =
+    input.mainWindowShortcutEnabled ?? current.mainWindowShortcutEnabled;
+  const nextMainWindowShortcut =
+    input.mainWindowShortcut?.trim() || current.mainWindowShortcut;
+  const mainWindowShortcutChanged =
+    nextMainWindowEnabled !== current.mainWindowShortcutEnabled ||
+    nextMainWindowShortcut !== current.mainWindowShortcut;
+
   if (shortcutChanged) {
     const error = updateButlerShortcutRegistration(nextEnabled, nextShortcut);
-    if (error) return { ...current, error };
     setSetting(BUTLER_SHORTCUT_ENABLED_SETTING, String(nextEnabled));
     setSetting(BUTLER_SHORTCUT_SETTING, nextShortcut);
+    if (error) return { ...readButlerBuddyPreferences(), error };
+  }
+
+  if (mainWindowShortcutChanged) {
+    const error = updateButlerMainWindowShortcutRegistration(
+      nextMainWindowEnabled,
+      nextMainWindowShortcut
+    );
+    setSetting(
+      BUTLER_MAIN_WINDOW_SHORTCUT_ENABLED_SETTING,
+      String(nextMainWindowEnabled)
+    );
+    setSetting(
+      BUTLER_MAIN_WINDOW_SHORTCUT_SETTING,
+      nextMainWindowShortcut
+    );
+    if (error) {
+      return { ...readButlerBuddyPreferences(), mainWindowShortcutError: error };
+    }
   }
 
   if (nextVisible !== current.visible) {
@@ -890,7 +983,19 @@ function createButlerBuddyWindows() {
 
 function showButlerContextMenu() {
   const screenBallActive = Boolean(butlerScreenBallSession);
+  const prefs = readButlerBuddyPreferences();
   const menu = Menu.buildFromTemplate([
+    {
+      label: "显示主窗口",
+      accelerator:
+        prefs.mainWindowShortcutEnabled && prefs.mainWindowShortcutRegistered
+          ? prefs.mainWindowShortcut
+          : undefined,
+      click: () => {
+        revealMainWindow();
+      }
+    },
+    { type: "separator" },
     {
       label: "新会话",
       click: () => {
@@ -1127,7 +1232,11 @@ function registerButlerBuddyWindowIpc() {
       input: Partial<
         Pick<
           ButlerBuddyPreferences,
-          "visible" | "shortcutEnabled" | "shortcut"
+          | "visible"
+          | "shortcutEnabled"
+          | "shortcut"
+          | "mainWindowShortcutEnabled"
+          | "mainWindowShortcut"
         >
       >
     ) => updateButlerBuddyPreferences(input)
@@ -1498,6 +1607,15 @@ app.whenReady().then(async () => {
   if (shortcutError) {
     logMain().warn("butlerbuddy", "global shortcut unavailable", {
       shortcut: butlerPreferences.shortcut
+    });
+  }
+  const mainWindowShortcutError = updateButlerMainWindowShortcutRegistration(
+    butlerPreferences.mainWindowShortcutEnabled,
+    butlerPreferences.mainWindowShortcut
+  );
+  if (mainWindowShortcutError) {
+    logMain().warn("butlerbuddy", "global main window shortcut unavailable", {
+      shortcut: butlerPreferences.mainWindowShortcut
     });
   }
   initializeScheduledTaskScheduler(() =>

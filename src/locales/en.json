@@ -175,7 +175,17 @@
     "butlerShortcutReset": "Restore default shortcut",
     "butlerShortcutReady": "Global shortcut is active",
     "butlerShortcutUnavailable": "That shortcut is already used by another app. Try another one.",
-    "butlerShortcutInvalid": "Include Ctrl/⌘ or Alt together with another key."
+    "butlerShortcutInvalid": "Include Ctrl/⌘ or Alt together with another key.",
+    "butlerMainWindowShortcut": "Show main window",
+    "butlerMainWindowShortcutDescription": "Quickly bring the FreeBuddy main window to the front from anywhere.",
+    "butlerMainWindowShortcutCurrent": "Current shortcut",
+    "butlerMainWindowShortcutRecording": "Press a key combination",
+    "butlerMainWindowShortcutCancelHint": "Esc to cancel",
+    "butlerMainWindowShortcutChange": "Click to change",
+    "butlerMainWindowShortcutReset": "Restore default shortcut",
+    "butlerMainWindowShortcutReady": "Global shortcut is active",
+    "butlerMainWindowShortcutUnavailable": "That shortcut is already used by another app. Try another one.",
+    "butlerMainWindowShortcutInvalid": "Include Ctrl/⌘ or Alt together with another key."
   },
   "app": { "brand": "FreeBuddy", "chat": "Chat" },
   "skills": {
