@@ -15,9 +15,9 @@ export function DelegationTeamCard({
 }) {
   const { t } = useTranslation();
   const members = useConversationStore((s) => s.members);
+  const liveStatus = useConversationStore((s) => s.live[conversationId]?.status);
   const [team, setTeam] = useState<DelegationTeam | undefined>(undefined);
   const [activeAgentId, setActiveAgentId] = useState<string | undefined>(undefined);
-  const [runStatus, setRunStatus] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,15 +30,26 @@ export function DelegationTeamCard({
           if (!cancelled) { setTeam(undefined); setActiveAgentId(undefined); }
           return;
         }
-        if (!cancelled) setRunStatus(run.status);
         if (!team) {
           const loaded = await delegationClient.get(run.teamId);
           if (!cancelled) setTeam(loaded ?? undefined);
         }
+
+        // Determine the active agent:
+        // 1. If a child event (depth>0) is "running" → that child is active
+        // 2. Else if the conversation is live → the entry agent is active
         const events = await delegationClient.listEvents(run.id);
         if (cancelled) return;
-        const running = events.find((e: any) => e.status === "running") as { agentId?: string } | undefined;
-        setActiveAgentId(running?.agentId);
+        const runningChild = events.find(
+          (e: any) => e.status === "running" && e.depth > 0
+        ) as { agentId?: string } | undefined;
+        if (runningChild?.agentId) {
+          setActiveAgentId(runningChild.agentId);
+        } else {
+          const isLive = liveStatus === "running" || liveStatus === "starting";
+          const entry = team?.roster.find((r) => r.id === team.entryRoleId) ?? team?.roster[0];
+          setActiveAgentId(isLive && entry ? entry.agentId : undefined);
+        }
       } catch {
         if (!cancelled) setActiveAgentId(undefined);
       }
@@ -60,7 +71,7 @@ export function DelegationTeamCard({
       if (timer) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
+  }, [conversationId, liveStatus, team]);
 
   if (!team) return null;
 
@@ -74,7 +85,6 @@ export function DelegationTeamCard({
       {team.roster.map((r) => {
         const isEntry = r.id === team.entryRoleId;
         const isActive = activeAgentId === r.agentId;
-        const isDone = runStatus === "completed" || runStatus === "failed" || runStatus === "killed";
         const badge = isActive
           ? t("status.running")
           : isEntry
@@ -87,7 +97,7 @@ export function DelegationTeamCard({
         return (
           <section
             key={r.id}
-            className={`side-card${isActive ? " delegation-roster-active" : ""}${isDone && !isActive ? " delegation-roster-done" : ""}`}
+            className={`side-card${isActive ? " delegation-roster-active" : ""}`}
           >
             <div className="side-card-header">
               <span>{r.label}</span>
