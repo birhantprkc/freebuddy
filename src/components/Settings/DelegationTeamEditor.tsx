@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Card,
@@ -12,12 +12,18 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { cliClient } from "@/services/cli/client";
+import type {
+  SessionConfigOption,
+  SessionConfigProbeInput
+} from "@/services/cli/types";
 import type {
   DelegationPolicy,
   DelegationRosterEntry
 } from "@/services/workflowTeams/types";
 import { useDelegationTeamStore } from "@/store/delegationStore";
 import { useConversationStore } from "@/store/conversationStore";
+import { useCliExecutorStore } from "@/store/cliExecutorStore";
 
 const { TextArea } = Input;
 
@@ -88,8 +94,139 @@ export function DelegationTeamEditor({
     setErrors([]);
   }, [existing]);
 
+  const [modelOptionsByAgent, setModelOptionsByAgent] = useState<
+    Record<string, SessionConfigOption[]>
+  >({});
+  const [modelLoadingByAgent, setModelLoadingByAgent] = useState<
+    Record<string, boolean>
+  >({});
+  const modelProbeInFlightRef = useRef(new Set<string>());
+  const modelRefreshedRef = useRef(new Set<string>());
+
+  const sessionProbeInputForAgent = useCallback(
+    (agentId: string): SessionConfigProbeInput | undefined => {
+      const member = members.find((entry) => entry.id === agentId);
+      if (!member) return undefined;
+      const resolved = useCliExecutorStore
+        .getState()
+        .resolve(member.cli.adapter);
+      return {
+        agentId: member.id,
+        adapter: member.cli.adapter,
+        binary: member.cli.binary || resolved?.binary,
+        extraArgs: [
+          ...(resolved?.extraArgs ?? []),
+          ...(member.cli.extraArgs ?? [])
+        ],
+        env: { ...(resolved?.env ?? {}), ...(member.cli.env ?? {}) }
+      };
+    },
+    [members]
+  );
+
+  const rosterAgentIdsKey = useMemo(
+    () =>
+      Array.from(new Set(roster.map((r) => r.agentId).filter(Boolean)))
+        .sort()
+        .join("\u0000"),
+    [roster]
+  );
+
+  useEffect(() => {
+    if (!rosterAgentIdsKey || !cliClient.isAvailable()) return;
+    let cancelled = false;
+    const agentIds = rosterAgentIdsKey.split("\u0000");
+    void Promise.all(
+      agentIds.map(async (agentId) => {
+        const input = sessionProbeInputForAgent(agentId);
+        if (!input) return [agentId, [] as SessionConfigOption[]] as const;
+        try {
+          return [
+            agentId,
+            await cliClient.getCachedSessionConfigOptions(input)
+          ] as const;
+        } catch {
+          return [agentId, [] as SessionConfigOption[]] as const;
+        }
+      })
+    ).then((entries) => {
+      if (cancelled) return;
+      setModelOptionsByAgent((current) => {
+        const next = { ...current };
+        for (const [agentId, options] of entries) {
+          if (options.length > 0) next[agentId] = options;
+        }
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rosterAgentIdsKey, sessionProbeInputForAgent]);
+
+  const refreshEntryModels = async (agentId: string) => {
+    if (
+      !cliClient.isAvailable() ||
+      modelRefreshedRef.current.has(agentId) ||
+      modelProbeInFlightRef.current.has(agentId)
+    ) {
+      return;
+    }
+    const input = sessionProbeInputForAgent(agentId);
+    if (!input) return;
+    modelProbeInFlightRef.current.add(agentId);
+    setModelLoadingByAgent((current) => ({ ...current, [agentId]: true }));
+    try {
+      const options = await cliClient.inspectSessionConfigOptions(input);
+      if (options.length > 0) {
+        modelRefreshedRef.current.add(agentId);
+        setModelOptionsByAgent((current) => ({
+          ...current,
+          [agentId]: options
+        }));
+      }
+    } catch {
+      // Keep any persisted options and allow another refresh attempt.
+    } finally {
+      modelProbeInFlightRef.current.delete(agentId);
+      setModelLoadingByAgent((current) => ({ ...current, [agentId]: false }));
+    }
+  };
+
   const setEntry = (patch: Partial<DelegationRosterEntry>, id: string) =>
     setRoster((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  const setEntryAgent = (id: string, agentId: string) =>
+    setRoster((rs) =>
+      rs.map((r) =>
+        r.id === id
+          ? { ...r, agentId, model: undefined, modelOptionId: undefined }
+          : r
+      )
+    );
+
+  const setEntryModel = (
+    id: string,
+    model: string,
+    modelOptionId: string
+  ) =>
+    setRoster((rs) =>
+      rs.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              model: model.trim() || undefined,
+              modelOptionId: model.trim() ? modelOptionId : undefined
+            }
+          : r
+      )
+    );
+
+  const modelOptionForAgent = (agentId: string): SessionConfigOption | undefined =>
+    (modelOptionsByAgent[agentId] ?? []).find(
+      (entry) => entry.category === "model"
+    ) ??
+    (modelOptionsByAgent[agentId] ?? []).find((entry) => entry.id === "model");
 
   const addEntry = () =>
     setRoster((rs) => [...rs, newEntry(`r-${Date.now().toString(36)}`)]);
@@ -195,11 +332,44 @@ export function DelegationTeamEditor({
             <Select
               value={r.agentId || undefined}
               options={agentOptions}
-              onChange={(v: string) => setEntry({ agentId: v }, r.id)}
+              onChange={(v: string) => setEntryAgent(r.id, v)}
               placeholder={t("workflow.delegation.agentPlaceholder")}
               style={{ width: "100%" }}
               showSearch
               optionFilterProp="label"
+            />
+            <Select
+              value={r.model || undefined}
+              options={(() => {
+                const option = modelOptionForAgent(r.agentId);
+                const values = [...(option?.values ?? [])];
+                if (r.model && !values.some((v) => v.id === r.model)) {
+                  values.unshift({ id: r.model, name: r.model });
+                }
+                return [
+                  { value: "", label: t("workflow.defaultModel") },
+                  ...values.map((v) => ({
+                    value: v.id,
+                    label: v.name || v.id
+                  }))
+                ];
+              })()}
+              onChange={(v: string) =>
+                setEntryModel(
+                  r.id,
+                  v,
+                  modelOptionForAgent(r.agentId)?.id ?? r.modelOptionId ?? "model"
+                )
+              }
+              onFocus={() => void refreshEntryModels(r.agentId)}
+              placeholder={t("workflow.currentModel")}
+              style={{ width: "100%" }}
+              showSearch
+              optionFilterProp="label"
+              loading={
+                modelLoadingByAgent[r.agentId] &&
+                !(modelOptionForAgent(r.agentId)?.values?.length ?? 0)
+              }
             />
             <TextArea
               value={r.capability}

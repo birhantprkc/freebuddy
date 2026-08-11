@@ -1,5 +1,5 @@
 import type { DelegationRosterEntry, DelegationPolicy } from "./delegationTeamTypes.js";
-import { getDelegationEvent, insertDelegationEvent, updateDelegationEvent } from "./delegationRuns.js";
+import { getDelegationEvent, insertDelegationEvent, updateDelegationEvent, countRunningDelegationEvents } from "./delegationRuns.js";
 
 const MAX_RESULT_CHARS = 12_000;
 
@@ -49,12 +49,14 @@ export interface DelegateActionDeps {
   contextProvider: DelegateRunContextProvider;
   executor: DelegateExecutor;
   writeApproval: DelegateWriteApprovalHook;
+  /** Fired after a delegated event reaches a terminal status (done/failed/timeout/cancelled). */
+  onSettle?: (eventId: string) => void;
 }
 
 export interface DelegateToolResponse {
   ok?: boolean;
   error?: string;
-  status?: "pending" | "done" | "failed" | "timeout" | "cancelled";
+  status?: "pending" | "running" | "done" | "failed" | "timeout" | "cancelled";
   result?: string;
   teammates?: Array<{ id: string; label: string; capability: string; canWrite: boolean }>;
   event_id?: string | null;
@@ -78,6 +80,50 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
     p.finally(() => { if (timer) clearTimeout(timer); }),
     new Promise<T>((_, reject) => { timer = setTimeout(() => reject(new DelegateTimeout()), ms); })
   ]);
+}
+
+// ---- per-run delegate queue (concurrency control) ----------------------
+// A delegate event is inserted as "pending"; drainRun starts it (flips to
+// "running" and fires the executor) only when a slot under
+// policy.maxConcurrentDelegates is free. Otherwise it stays queued here.
+interface QueuedDelegate {
+  childEventId: string;
+  execArgs: DelegateExecArgs;
+  timeoutMs: number;
+}
+const runQueues = new Map<string, QueuedDelegate[]>();
+
+function drainRun(deps: DelegateActionDeps, runId: string): void {
+  const ctx = deps.contextProvider(runId);
+  if (!ctx) return;
+  const max = ctx.policy.maxConcurrentDelegates;
+  const limit = typeof max === "number" && max > 0 ? max : Infinity;
+  const queue = runQueues.get(runId);
+  while (queue && queue.length > 0 && countRunningDelegationEvents(runId) < limit) {
+    const next = queue.shift()!;
+    if (queue.length === 0) runQueues.delete(runId);
+    startDelegate(deps, runId, next);
+  }
+}
+
+function startDelegate(deps: DelegateActionDeps, runId: string, q: QueuedDelegate): void {
+  updateDelegationEvent(q.childEventId, { status: "running" });
+  void withTimeout(deps.executor(q.execArgs), q.timeoutMs)
+    .then((result) => {
+      const status = result.error ? "failed" : "done";
+      updateDelegationEvent(q.childEventId, { status, resultSummary: result.error ?? boundSummary(result.summary) });
+      deps.onSettle?.(q.childEventId);
+      drainRun(deps, runId);
+    })
+    .catch((err) => {
+      if (err instanceof DelegateTimeout) {
+        updateDelegationEvent(q.childEventId, { status: "timeout", resultSummary: "委派超时" });
+      } else {
+        updateDelegationEvent(q.childEventId, { status: "failed", resultSummary: (err as Error)?.message ?? String(err) });
+      }
+      deps.onSettle?.(q.childEventId);
+      drainRun(deps, runId);
+    });
 }
 
 export async function runDelegateAction(
@@ -128,6 +174,12 @@ export async function runDelegateAction(
       }
     }
 
+    // Insert as "pending" (queued). drainRun will flip it to "running" and fire
+    // the executor as soon as a slot under maxConcurrentDelegates is free. The
+    // caller gets an immediate pending receipt and polls check_delegate_result
+    // to observe pending (queued) / running / terminal. This sidesteps the MCP
+    // transport's 60s call timeout, which would otherwise kill long-running
+    // delegates mid-flight; withTimeout still enforces delegateTimeoutMs.
     const childEventId = insertDelegationEvent({
       runId: binding.runId,
       parentEventId: binding.parentEventId,
@@ -137,29 +189,17 @@ export async function runDelegateAction(
       taskText: task,
       depth: childDepth,
       canWrite: teammate.canWrite,
-      status: "running"
+      status: "pending"
     });
 
-    // Fire-and-forget: the executor runs in the background and updates the
-    // event row when it settles. The caller gets an immediate pending receipt
-    // and polls check_delegate_result(childEventId) for the outcome. This
-    // sidesteps the MCP transport's 60s call timeout, which would otherwise
-    // kill long-running delegates mid-flight. withTimeout still enforces
-    // policy.delegateTimeoutMs so a stuck child eventually resolves the event.
-    void withTimeout(
-      deps.executor({ teammate, task, runId: binding.runId, teamId: ctx.teamId, cwd: ctx.cwd,
-                      childEventId, parentEventId: binding.parentEventId, depth: childDepth }),
-      ctx.policy.delegateTimeoutMs
-    ).then((result) => {
-      const status = result.error ? "failed" : "done";
-      updateDelegationEvent(childEventId, { status, resultSummary: result.error ?? boundSummary(result.summary) });
-    }).catch((err) => {
-      if (err instanceof DelegateTimeout) {
-        updateDelegationEvent(childEventId, { status: "timeout", resultSummary: "委派超时" });
-      } else {
-        updateDelegationEvent(childEventId, { status: "failed", resultSummary: (err as Error)?.message ?? String(err) });
-      }
-    });
+    const execArgs: DelegateExecArgs = {
+      teammate, task, runId: binding.runId, teamId: ctx.teamId, cwd: ctx.cwd,
+      childEventId, parentEventId: binding.parentEventId, depth: childDepth
+    };
+    const queue = runQueues.get(binding.runId) ?? [];
+    queue.push({ childEventId, execArgs, timeoutMs: ctx.policy.delegateTimeoutMs });
+    if (queue.length === 1) runQueues.set(binding.runId, queue);
+    drainRun(deps, binding.runId);
     return { ok: true, status: "pending", request_id: childEventId, event_id: childEventId };
   }
 
@@ -168,12 +208,8 @@ export async function runDelegateAction(
     if (!requestId) return { ok: false, error: "request_id required" };
     const event = getDelegationEvent(requestId);
     if (!event) return { ok: false, error: "request not found" };
-    // "running"/"pending" are reported to the caller as "pending"; the
-    // remaining terminal statuses are passed through verbatim. Splitting the
-    // return lets TS narrow event.status without a cast.
-    if (event.status === "running" || event.status === "pending") {
-      return { ok: true, status: "pending", result: event.resultSummary ?? "", request_id: requestId };
-    }
+    // Report the real event status verbatim: "pending" = queued behind the
+    // concurrency limit, "running" = executing, then done/failed/timeout/cancelled.
     return { ok: true, status: event.status, result: event.resultSummary ?? "", request_id: requestId };
   }
 

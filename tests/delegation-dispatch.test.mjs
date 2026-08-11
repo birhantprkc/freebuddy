@@ -269,7 +269,7 @@ test("check_delegate_result without request_id -> ok:false", async (t) => {
   });
 });
 
-test("check_delegate_result returns pending while executor is still running", async (t) => {
+test("check_delegate_result returns running while executor is still running", async (t) => {
   if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
   await withDb(async () => {
     const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
@@ -282,10 +282,51 @@ test("check_delegate_result returns pending while executor is still running", as
       writeApproval: async () => true
     });
     assert.equal(res.status, "pending");
-    // Poll immediately: the background executor is still running -> pending.
+    // Poll immediately: the background executor is executing -> status is now the real "running".
     const polled = await runDelegateAction(binding, "check_delegate_result", { request_id: res.request_id }, sentinelDeps());
-    assert.equal(polled.status, "pending");
+    assert.equal(polled.status, "running");
     // Let it finish so no background timer is left dangling.
     await tick(250);
+  });
+});
+
+test("maxConcurrentDelegates queues a second concurrent delegate until the first settles", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
+    // Shared deps so the queue's drain (fired from the first delegate's settle)
+    // invokes the same executor for the queued second delegate.
+    let releaseFirst;
+    const sharedDeps = {
+      contextProvider,
+      executor: (args) => args.task === "a"
+        ? new Promise((r) => { releaseFirst = () => r({ summary: "A done", exitCode: 0, error: null }); })
+        : Promise.resolve({ summary: "B done", exitCode: 0, error: null }),
+      writeApproval: async () => true
+    };
+    // First delegate: pending receipt, executor hangs so it stays "running".
+    const res1 = await runDelegateAction(binding, "delegate", { teammate_id: "r-rev", task: "a" }, sharedDeps);
+    assert.equal(res1.status, "pending");
+    await tick(20);
+    // Second delegate while the first is still running: queued (pending), NOT failed.
+    const res2 = await runDelegateAction(binding, "delegate", { teammate_id: "r-rev", task: "b" }, sharedDeps);
+    assert.equal(res2.status, "pending");
+    await tick(20);
+    // Real statuses: first running, second pending (queued behind the limit=1).
+    const poll1 = await runDelegateAction(binding, "check_delegate_result", { request_id: res1.request_id }, sentinelDeps());
+    assert.equal(poll1.status, "running");
+    const poll2 = await runDelegateAction(binding, "check_delegate_result", { request_id: res2.request_id }, sentinelDeps());
+    assert.equal(poll2.status, "pending");
+    // Release the first -> it settles -> drain starts the second -> it runs to done.
+    releaseFirst();
+    await tick(60);
+    const poll1b = await runDelegateAction(binding, "check_delegate_result", { request_id: res1.request_id }, sentinelDeps());
+    assert.equal(poll1b.status, "done");
+    await tick(60);
+    const poll2b = await runDelegateAction(binding, "check_delegate_result", { request_id: res2.request_id }, sentinelDeps());
+    assert.equal(poll2b.status, "done");
   });
 });

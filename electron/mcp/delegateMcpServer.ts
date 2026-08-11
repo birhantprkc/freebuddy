@@ -108,7 +108,7 @@ export function createDelegateMcpServer(): McpServer {
     {
       title: "Check Delegate Result",
       description:
-        "Poll a delegate call's result. Returns {status, result, request_id}. 'pending' = still running. Poll every 3-5 seconds until terminal (done/failed/timeout).",
+        "Poll a delegate call's result. Returns {status, result, request_id}. status: 'pending' = queued behind the concurrency limit (not started yet); 'running' = teammate is executing; 'done'/'failed'/'timeout' = terminal. Poll every 3-5 seconds. You may end your turn once you see 'running' (the system resumes you with the result automatically); keep polling (do not end your turn) while 'pending'.",
       inputSchema: {
         request_id: z.string().describe("The request_id from delegate.")
       }

@@ -195,3 +195,49 @@ export function getDelegationEvent(id: string): DelegationEventRow | undefined {
   const row = getDb().prepare("SELECT * FROM delegation_events WHERE id = ?").get(id) as any;
   return row ? rowToEvent(row) : undefined;
 }
+
+const ACTIVE_DELEGATION_STATUSES = ["running", "pending"] as const;
+const TERMINAL_DELEGATION_STATUSES = ["done", "failed", "timeout", "cancelled"] as const;
+
+export function isTerminalDelegationStatus(status: string): boolean {
+  return (TERMINAL_DELEGATION_STATUSES as readonly string[]).includes(status);
+}
+
+/** Outstanding delegates (depth>=1) still running/pending under a run. */
+export function countActiveDelegationEvents(runId: string): number {
+  const placeholders = ACTIVE_DELEGATION_STATUSES.map(() => "?").join(",");
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM delegation_events
+       WHERE run_id = ? AND parent_event_id IS NOT NULL AND status IN (${placeholders})`
+    )
+    .get(runId, ...ACTIVE_DELEGATION_STATUSES) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
+/** Delegates (depth>=1) currently executing (status = running). Excludes queued (pending). */
+export function countRunningDelegationEvents(runId: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM delegation_events
+       WHERE run_id = ? AND parent_event_id IS NOT NULL AND status = 'running'`
+    )
+    .get(runId) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
+/** Active (non-terminal) child events of a given parent event. */
+export function listPendingChildEvents(
+  runId: string,
+  parentEventId: string
+): DelegationEventRow[] {
+  const placeholders = ACTIVE_DELEGATION_STATUSES.map(() => "?").join(",");
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM delegation_events
+       WHERE run_id = ? AND parent_event_id = ? AND status IN (${placeholders})
+       ORDER BY started_at ASC`
+    )
+    .all(runId, parentEventId, ...ACTIVE_DELEGATION_STATUSES) as any[];
+  return rows.map(rowToEvent);
+}

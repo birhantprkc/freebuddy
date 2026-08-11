@@ -151,3 +151,133 @@ test("stopRun kills: a completing runEntry must not overwrite killed status", as
     assert.equal(getDelegationRun(runId).status, "killed");
   });
 });
+
+const rosterWithModels = [
+  { id: "r-impl", label: "实现", agentId: "cli-codex-acp", capability: "写", canWrite: true, model: "gpt-5.1", modelOptionId: "model" },
+  { id: "r-rev", label: "评审", agentId: "cli-claude-agent-acp", capability: "审", canWrite: false, model: "claude-sonnet-4", modelOptionId: "model" }
+];
+const snapWithModels = { roster: rosterWithModels, policy, entryRoleId: "r-impl" };
+const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("entry agent runAgent receives configOptionOverrides from entry roster model", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    let spawned = null;
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({ adapter: "codex-acp", agentName: "Codex", skillIds: [] }),
+      runAgent: async (args) => { spawned = args; return { summary: "done", exitCode: 0, error: null }; }
+    });
+    const runId = rt.prepareRun({ goal: "实现X", teamId: "t", teamSnapshot: snapWithModels, cwd: "/r" });
+    await rt.runEntry(runId, "实现X");
+    assert.equal(spawned.agentId, "cli-codex-acp");
+    assert.deepEqual(spawned.configOptionOverrides, { model: "gpt-5.1" });
+  });
+});
+
+test("delegated teammate runAgent receives configOptionOverrides from teammate model", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { dispatchDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    let spawned = null;
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({ adapter: "claude-agent-acp", agentName: "Claude", skillIds: [] }),
+      runAgent: async (args) => { spawned = args; return { summary: "LGTM", exitCode: 0, error: null }; }
+    });
+    const runId = rt.prepareRun({ goal: "实现X", teamId: "t", teamSnapshot: snapWithModels, cwd: "/r" });
+    const binding = { token: "t", taskSessionId: "sess-entry", runId, parentEventId: "evt-root", depth: 0, selfAgentId: "r-impl", selfLabel: "实现" };
+    const res = await dispatchDelegateAction(binding, "delegate", { teammate_id: "r-rev", task: "审 auth" });
+    assert.equal(res.status, "pending");
+    await tick(50);
+    assert.equal(spawned.agentId, "cli-claude-agent-acp");
+    assert.deepEqual(spawned.configOptionOverrides, { model: "claude-sonnet-4" });
+  });
+});
+
+test("entry agent without model omits configOptionOverrides", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    let spawned = null;
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({ adapter: "codex-acp", agentName: "Codex", skillIds: [] }),
+      runAgent: async (args) => { spawned = args; return { summary: "done", exitCode: 0, error: null }; }
+    });
+    const runId = rt.prepareRun({ goal: "实现X", teamId: "t", teamSnapshot: snap, cwd: "/r" });
+    await rt.runEntry(runId, "实现X");
+    assert.equal(spawned.configOptionOverrides, undefined);
+  });
+});
+
+test("entry uses isolated toolSessionScope; entry and delegate scopes differ", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { dispatchDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const scopes = {};
+    let entryScope = null;
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({ adapter: id.includes("claude") ? "claude-agent-acp" : "codex-acp", agentName: id, skillIds: [] }),
+      runAgent: async (args) => {
+        scopes[args.sessionId] = args.toolSessionScope;
+        if (args.delegation.depth === 0 && !entryScope) {
+          entryScope = args.toolSessionScope;
+          // delegate to r-rev so we can also capture the teammate scope
+          await dispatchDelegateAction(
+            { token: "t", taskSessionId: "s", runId: args.delegation.runId, parentEventId: args.delegation.parentEventId, depth: 0, selfAgentId: "r-impl", selfLabel: "实现" },
+            "delegate", { teammate_id: "r-rev", task: "审" }
+          );
+        }
+        return { summary: "", exitCode: 0, error: null };
+      }
+    });
+    const runId = await rt.start({ goal: "实现X", teamId: "t", teamSnapshot: snap, cwd: "/r" });
+    await tick(50);
+    assert.equal(entryScope, `delegation:${runId}:entry`);
+    const teammateScope = Object.values(scopes).find((v) => v && v !== entryScope);
+    assert.ok(teammateScope?.startsWith(`delegation:${runId}:delevent_`), `teammate scope isolated per event: ${teammateScope}`);
+    assert.notEqual(teammateScope, entryScope);
+  });
+});
+
+test("entry parks on pending delegate and is resumed with the result (wake prompt)", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { dispatchDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const entryPrompts = [];
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({ adapter: id.includes("claude") ? "claude-agent-acp" : "codex-acp", agentName: id, skillIds: [] }),
+      runAgent: async (args) => {
+        // entry turns (depth 0) vs teammate turns (depth >= 1)
+        if (args.delegation.depth === 0) {
+          entryPrompts.push(args.prompt);
+          if (entryPrompts.length === 1) {
+            // first entry turn fires a real delegate to the reviewer teammate
+            await dispatchDelegateAction(
+              { token: "t", taskSessionId: "s", runId: args.delegation.runId, parentEventId: args.delegation.parentEventId, depth: 0, selfAgentId: "r-impl", selfLabel: "实现" },
+              "delegate", { teammate_id: "r-rev", task: "审 auth" }
+            );
+          }
+          return { summary: `entry turn ${entryPrompts.length}`, exitCode: 0, error: null };
+        }
+        // teammate (reviewer) returns a review result
+        return { summary: "REVIEW: Not ready, bomb not synthesizable", exitCode: 0, error: null };
+      }
+    });
+    const runId = await rt.start({ goal: "实现X", teamId: "t", teamSnapshot: snap, cwd: "/r" });
+    await tick(50);
+    // entry must have been woken for a second turn carrying the review result
+    assert.equal(entryPrompts.length, 2, "entry should park then wake exactly once");
+    assert.ok(entryPrompts[1].includes("委派结果返回"), "second turn must use the wake prompt");
+    assert.ok(entryPrompts[1].includes("Not ready, bomb"), "wake prompt must carry the delegate result");
+    assert.equal(getDelegationRun(runId).status, "completed");
+  });
+});
