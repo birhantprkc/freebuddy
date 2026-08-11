@@ -8,10 +8,10 @@
  * also gives callers a useful no-op signal.
  */
 
-// Six active balls is the level-one baseline; later levels add targets while
-// capping the swarm at ten so the full-display mode stays readable.
-export const SCREEN_BALL_MAX_BALLS = 6;
-export const SCREEN_BALL_ABSOLUTE_MAX_BALLS = 10;
+// Eight active balls is the level-one baseline; later levels add targets while
+// capping the swarm at sixteen so the full-display mode feels lively.
+export const SCREEN_BALL_MAX_BALLS = 8;
+export const SCREEN_BALL_ABSOLUTE_MAX_BALLS = 16;
 export const SCREEN_BALL_LEVEL_THRESHOLDS = [0, 400, 1_000, 1_800, 3_000] as const;
 export const SCREEN_BALL_MISS_LIMIT = 10;
 export const SCREEN_BALL_ROUND_DURATION_MS = 180_000;
@@ -188,13 +188,13 @@ export function maxScreenBallCount(level: number): number {
   const safeLevel = Math.max(1, Math.floor(finiteNumber(level, 1)));
   return Math.min(
     SCREEN_BALL_ABSOLUTE_MAX_BALLS,
-    SCREEN_BALL_MAX_BALLS + Math.max(0, safeLevel - 1)
+    SCREEN_BALL_MAX_BALLS + Math.max(0, safeLevel - 1) * 2
   );
 }
 
 export function screenBallSpawnIntervalMs(level: number): number {
   const safeLevel = Math.max(1, Math.floor(finiteNumber(level, 1)));
-  return Math.max(300, 600 - (safeLevel - 1) * 75);
+  return Math.max(260, 520 - (safeLevel - 1) * 65);
 }
 
 export function screenBallColorForLevel(level: number): ScreenBallColor {

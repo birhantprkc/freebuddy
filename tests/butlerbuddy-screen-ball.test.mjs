@@ -30,7 +30,7 @@ function stateAt(create, at = 1_000) {
   });
 }
 
-test("screen-ball spawning is deterministic and capped at six active balls", async () => {
+test("screen-ball spawning is deterministic and capped at eight level-one balls", async () => {
   const {
     SCREEN_BALL_MAX_BALLS,
     createScreenBallArcadeState,
@@ -75,7 +75,7 @@ test("screen-ball swipes support a larger swarm and segment hits", async () => {
     SCREEN_BALL_MAX_BALLS,
     screenBallIntersectsSegment
   } = await loadScreenBallModule();
-  assert.equal(SCREEN_BALL_MAX_BALLS, 6);
+  assert.equal(SCREEN_BALL_MAX_BALLS, 8);
   assert.equal(SCREEN_BALL_DEFAULT_RADIUS, 14);
   const ball = {
     id: "swipe-target",
@@ -108,8 +108,8 @@ test("difficulty levels increase pace, active targets, and ball colors", async (
   assert.equal(screenBallLevelForScore(0), 1);
   assert.equal(screenBallLevelForScore(400), 2);
   assert.equal(screenBallLevelForScore(3_000), 5);
-  assert.equal(maxScreenBallCount(1), 6);
-  assert.equal(maxScreenBallCount(5), 10);
+  assert.equal(maxScreenBallCount(1), 8);
+  assert.equal(maxScreenBallCount(5), 16);
   assert.ok(screenBallSpawnIntervalMs(5) < screenBallSpawnIntervalMs(1));
   assert.equal(screenBallColorForLevel(1), "mint");
   assert.equal(screenBallColorForLevel(3), "violet");

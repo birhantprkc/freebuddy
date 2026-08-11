@@ -16438,6 +16438,27 @@ button.ghost:focus-visible,
   transform: scale(1.05);
 }
 
+.butler-screen-ball-sound {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  padding: 0;
+  color: #0f766e;
+  border: 1px solid rgba(45, 212, 191, 0.32);
+  border-radius: 50%;
+  background: rgba(204, 251, 241, 0.72);
+  transition: color 0.12s ease, background 0.12s ease, transform 0.12s ease;
+}
+
+.butler-screen-ball-sound:hover {
+  color: #115e59;
+  background: rgba(153, 246, 228, 0.9);
+  transform: scale(1.05);
+}
+
 .butler-screen-ball-ball {
   position: absolute;
   z-index: 5;
@@ -16514,58 +16535,69 @@ button.ghost:focus-visible,
   height: 1px;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  animation: butler-screen-ball-burst-pop 420ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
+  filter: saturate(1.18);
+  animation: butler-screen-ball-burst-pop 520ms cubic-bezier(0.2, 0.82, 0.22, 1) both;
 }
 
 .butler-screen-ball-burst::before {
   position: absolute;
-  left: -7px;
-  top: -7px;
-  width: 14px;
-  height: 14px;
+  left: -11px;
+  top: -11px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: radial-gradient(circle, #ffffff 0 12%, #99f6e4 34%, #14b8a6 72%, transparent 74%);
-  box-shadow: 0 0 14px rgba(45, 212, 191, 0.95);
+  background: radial-gradient(circle, #ffffff 0 12%, #ccfbf1 28%, #2dd4bf 58%, #0f766e 72%, transparent 75%);
+  box-shadow: 0 0 18px rgba(45, 212, 191, 0.98), 0 0 38px rgba(20, 184, 166, 0.7);
   content: "";
 }
 
 .butler-screen-ball-burst::after {
   position: absolute;
-  left: -21px;
-  top: -21px;
-  width: 42px;
-  height: 42px;
-  border: 3px solid rgba(94, 234, 212, 0.76);
+  left: -35px;
+  top: -35px;
+  width: 70px;
+  height: 70px;
+  border: 4px solid rgba(94, 234, 212, 0.82);
   border-radius: 50%;
   content: "";
-  animation: butler-screen-ball-burst-ring 420ms ease-out both;
+  box-shadow: 0 0 18px rgba(45, 212, 191, 0.65), inset 0 0 14px rgba(255, 255, 255, 0.28);
+  animation: butler-screen-ball-burst-ring 520ms ease-out both;
 }
 
 .butler-screen-ball-burst > i {
   position: absolute;
   left: -2px;
-  top: -2px;
-  width: 4px;
-  height: 13px;
+  top: -3px;
+  width: 5px;
+  height: 21px;
   border-radius: 999px;
   background: linear-gradient(to top, rgba(13, 148, 136, 0.14), #5eead4 42%, #ffffff);
-  box-shadow: 0 0 7px rgba(45, 212, 191, 0.84);
+  box-shadow: 0 0 10px rgba(45, 212, 191, 0.96), 0 0 18px rgba(255, 255, 255, 0.48);
   transform-origin: 50% 2px;
 }
 
 .butler-screen-ball-burst--bomb::before {
-  background: radial-gradient(circle, #fff7ed 0 10%, #facc15 28%, #ef4444 58%, #111827 76%, transparent 78%);
-  box-shadow: 0 0 24px rgba(239, 68, 68, 0.95), 0 0 40px rgba(250, 204, 21, 0.72);
+  left: -15px;
+  top: -15px;
+  width: 30px;
+  height: 30px;
+  background: radial-gradient(circle, #ffffff 0 8%, #fff7ed 16%, #facc15 32%, #ef4444 58%, #111827 76%, transparent 79%);
+  box-shadow: 0 0 28px rgba(239, 68, 68, 0.98), 0 0 52px rgba(250, 204, 21, 0.82);
 }
 
 .butler-screen-ball-burst--bomb::after {
+  left: -48px;
+  top: -48px;
+  width: 96px;
+  height: 96px;
   border-color: rgba(248, 113, 113, 0.92);
-  box-shadow: 0 0 18px rgba(239, 68, 68, 0.76);
+  box-shadow: 0 0 26px rgba(239, 68, 68, 0.88), inset 0 0 24px rgba(250, 204, 21, 0.4);
 }
 
 .butler-screen-ball-burst--bomb > i {
+  height: 30px;
   background: linear-gradient(to top, rgba(17, 24, 39, 0.16), #facc15 42%, #fff7ed);
-  box-shadow: 0 0 9px rgba(248, 113, 113, 0.9);
+  box-shadow: 0 0 12px rgba(248, 113, 113, 0.98), 0 0 22px rgba(250, 204, 21, 0.7);
 }
 
 .butler-screen-ball-swipe-trail {
@@ -16595,26 +16627,26 @@ button.ghost:focus-visible,
 @keyframes butler-screen-ball-burst-pop {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.32);
+    transform: translate(-50%, -50%) scale(0.18);
   }
   24% {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1.08);
+    transform: translate(-50%, -50%) scale(1.12);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1.42);
+    transform: translate(-50%, -50%) scale(1.72);
   }
 }
 
 @keyframes butler-screen-ball-burst-ring {
   0% {
     opacity: 0.95;
-    transform: scale(0.35);
+    transform: scale(0.16);
   }
   100% {
     opacity: 0;
-    transform: scale(1.35);
+    transform: scale(1.48);
   }
 }
 
@@ -16692,6 +16724,7 @@ button.ghost:focus-visible,
 }
 
 .butler-screen-ball-close:focus-visible,
+.butler-screen-ball-sound:focus-visible,
 .butler-screen-ball-ball:focus-visible,
 .butler-screen-ball-result button:focus-visible {
   outline: 3px solid rgba(16, 185, 129, 0.32);
@@ -16701,6 +16734,7 @@ button.ghost:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .butler-screen-ball-ball,
   .butler-screen-ball-close,
+  .butler-screen-ball-sound,
   .butler-screen-ball-result button {
     transition: none;
   }

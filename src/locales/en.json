@@ -1779,6 +1779,8 @@
     "screenBallMisses": "MISSES",
     "screenBallTime": "TIME",
     "screenBallSwipeHint": "Move through balls to pop them",
+    "screenBallSoundOn": "Mute sound effects",
+    "screenBallSoundOff": "Enable sound effects",
     "screenBallStop": "Stop full-screen game",
     "screenBallBallAria": "Pop bouncing ball",
     "screenBallBombAria": "Black bomb; slicing it ends the game",

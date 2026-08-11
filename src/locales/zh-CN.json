@@ -1764,6 +1764,8 @@
     "screenBallMisses": "丢失",
     "screenBallTime": "时间",
     "screenBallSwipeHint": "移动鼠标划过小球",
+    "screenBallSoundOn": "关闭音效",
+    "screenBallSoundOff": "开启音效",
     "screenBallStop": "结束全屏弹球",
     "screenBallBallAria": "点击击碎小球",
     "screenBallBombAria": "黑色雷弹，划到会结束游戏",

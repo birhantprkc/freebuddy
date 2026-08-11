@@ -287,6 +287,9 @@ test("ButlerBuddy full-screen ball mode uses guarded IPC and transparent hit reg
     "forwarded mouse movement must not require a button flag"
   );
   assert.match(renderer, /screenBallReplay/);
+  assert.match(renderer, /screen-ball-sound/);
+  assert.match(renderer, /AudioContext/);
+  assert.match(renderer, /screenBallSoundEnabled/);
   assert.doesNotMatch(
     renderer,
     /butler-screen-ball-launcher|butlerbuddy-pet\.png/,

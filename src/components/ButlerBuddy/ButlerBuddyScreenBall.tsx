@@ -1,4 +1,4 @@
-import { RotateCcw, X } from "lucide-react";
+import { RotateCcw, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -53,9 +53,13 @@ type SwipePointer = {
 
 type ScreenPointerStart = Pick<globalThis.PointerEvent, "pointerId" | "screenX" | "screenY">;
 
+type ScreenBallHitSound = "ball" | "bomb";
+type AudioWindow = Window & { webkitAudioContext?: typeof AudioContext };
+
 const HIT_PADDING = 10;
 const SWIPE_HIT_PADDING = 14;
-const BURST_DURATION_MS = 420;
+const BURST_DURATION_MS = 520;
+const SCREEN_BALL_SOUND_STORAGE_KEY = "freebuddy.screenBallSoundEnabled";
 const CLOCK_ORIGIN =
   typeof performance.timeOrigin === "number"
     ? performance.timeOrigin
@@ -63,6 +67,58 @@ const CLOCK_ORIGIN =
 
 function monotonicNow(): number {
   return CLOCK_ORIGIN + performance.now();
+}
+
+function readScreenBallSoundEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(SCREEN_BALL_SOUND_STORAGE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function createScreenBallAudioContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  const AudioContextConstructor =
+    window.AudioContext ?? (window as AudioWindow).webkitAudioContext;
+  if (!AudioContextConstructor) return null;
+  try {
+    return new AudioContextConstructor();
+  } catch {
+    return null;
+  }
+}
+
+function playScreenBallHitSound(
+  audioContext: AudioContext,
+  kind: ScreenBallHitSound
+): void {
+  const now = audioContext.currentTime;
+  const isBomb = kind === "bomb";
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = isBomb ? "sawtooth" : "triangle";
+  oscillator.frequency.setValueAtTime(isBomb ? 150 : 680, now);
+  oscillator.frequency.exponentialRampToValueAtTime(isBomb ? 38 : 180, now + (isBomb ? 0.42 : 0.16));
+  gain.gain.setValueAtTime(isBomb ? 0.2 : 0.12, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + (isBomb ? 0.46 : 0.18));
+  oscillator.connect(gain).connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now + (isBomb ? 0.48 : 0.2));
+
+  if (isBomb) {
+    const sub = audioContext.createOscillator();
+    const subGain = audioContext.createGain();
+    sub.type = "square";
+    sub.frequency.setValueAtTime(72, now);
+    sub.frequency.exponentialRampToValueAtTime(24, now + 0.38);
+    subGain.gain.setValueAtTime(0.11, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    sub.connect(subGain).connect(audioContext.destination);
+    sub.start(now);
+    sub.stop(now + 0.42);
+  }
 }
 
 function initialState(session: SessionPayload, at = Date.now()): ScreenBallArcadeState {
@@ -88,6 +144,9 @@ export function ButlerBuddyScreenBall() {
   const [state, setState] = useState<ScreenBallArcadeState | null>(null);
   const [bursts, setBursts] = useState<BurstEffect[]>([]);
   const [trailSegments, setTrailSegments] = useState<SwipeTrailSegment[]>([]);
+  const [screenBallSoundEnabled, setScreenBallSoundEnabled] = useState(
+    readScreenBallSoundEnabled
+  );
   const sessionRef = useRef<SessionPayload | null>(null);
   const stateRef = useRef<ScreenBallArcadeState | null>(null);
   const hitRegionsRef = useRef<HitRegion[]>([]);
@@ -99,6 +158,7 @@ export function ButlerBuddyScreenBall() {
   const publishTimerRef = useRef<number | null>(null);
   const lastSpawnAtRef = useRef(0);
   const frameRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   stateRef.current = state;
 
   const beginSwipe = (event: ScreenPointerStart, initialHitId?: string) => {
@@ -123,7 +183,7 @@ export function ButlerBuddyScreenBall() {
   const emitBurst = (ball: { x: number; y: number; kind?: string }) => {
     const id = `screen-ball-burst-${burstSequenceRef.current++}`;
     const kind: BurstEffect["kind"] = ball.kind === "bomb" ? "bomb" : "ball";
-    setBursts((current) => [...current, { id, x: ball.x, y: ball.y, kind }].slice(-12));
+    setBursts((current) => [...current, { id, x: ball.x, y: ball.y, kind }].slice(-16));
     const timer = window.setTimeout(() => {
       burstTimersRef.current.delete(timer);
       setBursts((current) => current.filter((burst) => burst.id !== id));
@@ -195,6 +255,10 @@ export function ButlerBuddyScreenBall() {
   useEffect(() => {
     const reportPointer = (event: PointerEvent) => {
       bridge?.reportScreenBallPointer?.(event.screenX, event.screenY);
+      if (screenBallSoundEnabled && !audioContextRef.current) {
+        audioContextRef.current = createScreenBallAudioContext();
+        void audioContextRef.current?.resume().catch(() => undefined);
+      }
       const currentSession = sessionRef.current;
       const currentState = stateRef.current;
       if (!currentSession || !currentState || currentState.phase !== "playing") {
@@ -255,7 +319,7 @@ export function ButlerBuddyScreenBall() {
       window.removeEventListener("pointercancel", resetSwipe);
       window.removeEventListener("blur", resetSwipe);
     };
-  }, [bridge]);
+  }, [bridge, screenBallSoundEnabled]);
 
   useEffect(() => {
     const off = bridge?.onScreenBallHitAccepted?.((payload) => {
@@ -267,12 +331,24 @@ export function ButlerBuddyScreenBall() {
       const target = currentState.balls.find((ball) => ball.id === payload.ballId);
       if (!target) return;
       emitBurst(target);
+      if (screenBallSoundEnabled) {
+        const audioContext = audioContextRef.current ?? createScreenBallAudioContext();
+        audioContextRef.current = audioContext;
+        if (audioContext) {
+          void audioContext.resume().catch(() => undefined);
+          try {
+            playScreenBallHitSound(audioContext, target.kind === "bomb" ? "bomb" : "ball");
+          } catch {
+            // Audio is an enhancement; a blocked or unavailable context must not stop gameplay.
+          }
+        }
+      }
       setState((current) =>
         current ? hitScreenBall(current, payload.ballId, monotonicNow()) : current
       );
     });
     return () => off?.();
-  }, [bridge]);
+  }, [bridge, screenBallSoundEnabled]);
 
   useEffect(() => {
     if (!session || !state || state.phase !== "playing") return;
@@ -318,6 +394,14 @@ export function ButlerBuddyScreenBall() {
       kind: "ball" as const
     }));
     regions.push({
+      id: "screen-ball-sound",
+      x: session.display.x + session.display.width - 108,
+      y: session.display.y + 12,
+      width: 52,
+      height: 52,
+      kind: "control" as const
+    });
+    regions.push({
       id: "screen-ball-close",
       x: session.display.x + session.display.width - 72,
       y: session.display.y + 12,
@@ -362,6 +446,8 @@ export function ButlerBuddyScreenBall() {
         trailClearTimerRef.current = null;
       }
       swipeRef.current = null;
+      audioContextRef.current?.close().catch(() => undefined);
+      audioContextRef.current = null;
     },
     []
   );
@@ -371,6 +457,22 @@ export function ButlerBuddyScreenBall() {
 
   const close = () => bridge?.closeScreenBall?.(session.sessionId);
   const replay = () => bridge?.startScreenBall?.();
+  const toggleScreenBallSound = () => {
+    setScreenBallSoundEnabled((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(SCREEN_BALL_SOUND_STORAGE_KEY, String(next));
+      } catch {
+        // Local storage can be unavailable in a restricted renderer profile.
+      }
+      if (next) {
+        void audioContextRef.current?.resume().catch(() => undefined);
+      } else {
+        void audioContextRef.current?.suspend().catch(() => undefined);
+      }
+      return next;
+    });
+  };
 
   return (
     <main className="butler-screen-ball-surface" aria-label={t("butler.screenBallSurfaceAria")}>
@@ -394,6 +496,31 @@ export function ButlerBuddyScreenBall() {
         <span className="butler-screen-ball-swipe-hint">
           {t("butler.screenBallSwipeHint")}
         </span>
+        <button
+          type="button"
+          className="butler-screen-ball-sound"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleScreenBallSound();
+          }}
+          aria-label={t(
+            screenBallSoundEnabled
+              ? "butler.screenBallSoundOn"
+              : "butler.screenBallSoundOff"
+          )}
+          title={t(
+            screenBallSoundEnabled
+              ? "butler.screenBallSoundOn"
+              : "butler.screenBallSoundOff"
+          )}
+        >
+          {screenBallSoundEnabled ? (
+            <Volume2 aria-hidden="true" size={16} />
+          ) : (
+            <VolumeX aria-hidden="true" size={16} />
+          )}
+        </button>
         <button
           type="button"
           className="butler-screen-ball-close"
@@ -441,10 +568,14 @@ export function ButlerBuddyScreenBall() {
           style={{ left: `${burst.x}px`, top: `${burst.y}px` }}
           aria-hidden="true"
         >
-          {Array.from({ length: 8 }, (_, index) => (
+          {Array.from({ length: 14 }, (_, index) => (
             <i
               key={index}
-              style={{ transform: `rotate(${index * 45}deg) translateY(-18px)` }}
+              style={{
+                transform: `rotate(${index * (360 / 14)}deg) translateY(-${
+                  burst.kind === "bomb" ? 42 : 30
+                }px)`
+              }}
             />
           ))}
         </span>
