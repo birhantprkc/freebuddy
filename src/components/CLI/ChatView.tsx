@@ -2796,15 +2796,6 @@ function NewTaskHome({
           </div>
         </div>
 
-        {delegationPreviewTeam && (
-          <DelegationTeamPreviewCard
-            team={delegationPreviewTeam}
-            goal={draft.trim()}
-            onRun={onSubmit}
-            onCancel={() => onDraft("")}
-          />
-        )}
-
         {preflightMsg && <div className="preflight-warn new-task-warn">{preflightMsg}</div>}
       </section>
 
