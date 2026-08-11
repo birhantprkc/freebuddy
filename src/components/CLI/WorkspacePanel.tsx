@@ -119,10 +119,11 @@ export function WorkspacePanel({
   const isTeamRun = (!!displayRun && displayRun.conversationId === activeId) || isDelegationConv;
   const isTeamLive =
     !replayFrame &&
+    !!displayRun &&
     isTeamRun &&
-    (displayRun!.status === "running" ||
-      displayRun!.status === "paused" ||
-      displayRun!.status === "blocked");
+    (displayRun.status === "running" ||
+      displayRun.status === "paused" ||
+      displayRun.status === "blocked");
 
   useEffect(() => {
     if (!isLive && !isTeamLive) return;
