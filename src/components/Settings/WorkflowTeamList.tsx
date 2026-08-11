@@ -48,7 +48,7 @@ export function WorkflowTeamList({
         <button type="button" className="primary" onClick={onNew}>
           + {t("workflow.newTeam")}
         </button>
-        <button type="button" onClick={onNewDelegation}>
+        <button type="button" className="primary" onClick={onNewDelegation}>
           + {t("workflow.delegation.newTeam")}
         </button>
       </div>
