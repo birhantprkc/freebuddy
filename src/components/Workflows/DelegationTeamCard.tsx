@@ -29,11 +29,14 @@ export function DelegationTeamCard({
       const entries = await Promise.all(
         team.roster.map(async (r) => {
           try {
-            const adapter = members.find((m) => m.id === r.agentId)?.cli.adapter;
-            if (!adapter) return [r.agentId, r.model ?? ""] as const;
+            const member = members.find((m) => m.id === r.agentId);
+            if (!member) return [r.agentId, r.model ?? ""] as const;
             const options = await cliClient.getCachedSessionConfigOptions({
               agentId: r.agentId,
-              adapter: adapter as any
+              adapter: member.cli.adapter as any,
+              binary: member.cli.binary,
+              extraArgs: member.cli.extraArgs,
+              env: member.cli.env
             });
             const modelOpt = options.find((o) => o.id === "model");
             return [r.agentId, r.model ?? modelOpt?.currentLabel ?? modelOpt?.currentValue ?? ""] as const;
