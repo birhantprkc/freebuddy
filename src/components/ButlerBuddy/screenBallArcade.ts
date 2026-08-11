@@ -8,13 +8,15 @@
  * also gives callers a useful no-op signal.
  */
 
-export const SCREEN_BALL_MAX_BALLS = 3;
+// Six active balls keeps the full-display mode lively without turning the
+// screen into an unreadable wall of targets.
+export const SCREEN_BALL_MAX_BALLS = 6;
 export const SCREEN_BALL_MISS_LIMIT = 10;
 export const SCREEN_BALL_ROUND_DURATION_MS = 180_000;
 export const SCREEN_BALL_COMBO_WINDOW_MS = 1_200;
 export const SCREEN_BALL_DEFAULT_WIDTH = 100;
 export const SCREEN_BALL_DEFAULT_HEIGHT = 100;
-export const SCREEN_BALL_DEFAULT_RADIUS = 9;
+export const SCREEN_BALL_DEFAULT_RADIUS = 14;
 // The game spans a whole display, so small arcade-scale velocities make the
 // projectile look stuck to the pet.  These values produce a clear, casual arc
 // of roughly 250–370 px while keeping the flight short enough to click.
@@ -42,6 +44,11 @@ export type ScreenBallTerminalReason =
   | "stopped";
 
 export interface ScreenBallOrigin {
+  x: number;
+  y: number;
+}
+
+export interface ScreenBallPoint {
   x: number;
   y: number;
 }
@@ -106,6 +113,49 @@ export interface ScreenBallSpawnOptions {
   random?: () => number;
   origin?: ScreenBallOrigin;
   spawnOrigin?: ScreenBallOrigin;
+}
+
+function distanceSquaredToSegment(
+  point: ScreenBallPoint,
+  start: ScreenBallPoint,
+  end: ScreenBallPoint
+): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 0) {
+    const px = point.x - start.x;
+    const py = point.y - start.y;
+    return px * px + py * py;
+  }
+  const projection = clamp(
+    ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared,
+    0,
+    1
+  );
+  const closestX = start.x + projection * dx;
+  const closestY = start.y + projection * dy;
+  const offsetX = point.x - closestX;
+  const offsetY = point.y - closestY;
+  return offsetX * offsetX + offsetY * offsetY;
+}
+
+/** Return true when a mouse swipe segment crosses a ball's padded circle. */
+export function screenBallIntersectsSegment(
+  ball: Pick<ScreenBall, "x" | "y" | "radius">,
+  start: ScreenBallPoint,
+  end: ScreenBallPoint,
+  padding = 12
+): boolean {
+  const radius = Math.max(0, finiteNumber(ball.radius, SCREEN_BALL_DEFAULT_RADIUS));
+  const safePadding = Math.max(0, finiteNumber(padding, 0));
+  return (
+    distanceSquaredToSegment(
+      { x: finiteNumber(ball.x, 0), y: finiteNumber(ball.y, 0) },
+      { x: finiteNumber(start.x, 0), y: finiteNumber(start.y, 0) },
+      { x: finiteNumber(end.x, 0), y: finiteNumber(end.y, 0) }
+    ) <= (radius + safePadding) ** 2
+  );
 }
 
 function finiteNumber(value: unknown, fallback: number): number {

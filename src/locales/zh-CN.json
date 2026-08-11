@@ -1762,6 +1762,7 @@
     "screenBallScore": "得分",
     "screenBallMisses": "丢失",
     "screenBallTime": "时间",
+    "screenBallSwipeHint": "按住鼠标划过小球",
     "screenBallStop": "结束全屏弹球",
     "screenBallBallAria": "点击击碎小球",
     "screenBallMissLimit": "球掉光了",

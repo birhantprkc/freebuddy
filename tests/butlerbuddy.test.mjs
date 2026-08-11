@@ -272,6 +272,9 @@ test("ButlerBuddy full-screen ball mode uses guarded IPC and transparent hit reg
   assert.match(preload, /onScreenBallSession/);
   assert.match(renderer, /publishScreenBallHitRegions/);
   assert.match(renderer, /onPointerDown/);
+  assert.match(renderer, /screenBallIntersectsSegment/);
+  assert.match(renderer, /butler-screen-ball-burst/);
+  assert.match(renderer, /screenBallSwipeHint/);
   assert.match(renderer, /screenBallReplay/);
   assert.doesNotMatch(
     renderer,

@@ -7,6 +7,7 @@ import {
   hitScreenBall,
   remainingScreenBallSeconds,
   SCREEN_BALL_MAX_BALLS,
+  screenBallIntersectsSegment,
   spawnScreenBall,
   type ScreenBallArcadeState
 } from "./screenBallArcade";
@@ -26,8 +27,26 @@ type HitRegion = {
   kind: "ball" | "control";
 };
 
-const SPAWN_INTERVAL_MS = 900;
+type BurstEffect = {
+  id: string;
+  x: number;
+  y: number;
+};
+
+type SwipePointer = {
+  pointerId: number;
+  sessionId: string;
+  x: number;
+  y: number;
+  hitIds: Set<string>;
+};
+
+type ScreenPointerStart = Pick<globalThis.PointerEvent, "pointerId" | "screenX" | "screenY">;
+
+const SPAWN_INTERVAL_MS = 600;
 const HIT_PADDING = 10;
+const SWIPE_HIT_PADDING = 14;
+const BURST_DURATION_MS = 420;
 const CLOCK_ORIGIN =
   typeof performance.timeOrigin === "number"
     ? performance.timeOrigin
@@ -58,11 +77,46 @@ export function ButlerBuddyScreenBall() {
   const bridge = window.freebuddy?.butlerBuddy;
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [state, setState] = useState<ScreenBallArcadeState | null>(null);
+  const [bursts, setBursts] = useState<BurstEffect[]>([]);
   const sessionRef = useRef<SessionPayload | null>(null);
+  const stateRef = useRef<ScreenBallArcadeState | null>(null);
   const hitRegionsRef = useRef<HitRegion[]>([]);
+  const swipeRef = useRef<SwipePointer | null>(null);
+  const burstTimersRef = useRef<Set<number>>(new Set());
+  const burstSequenceRef = useRef(0);
   const publishTimerRef = useRef<number | null>(null);
   const lastSpawnAtRef = useRef(0);
   const frameRef = useRef<number | null>(null);
+  stateRef.current = state;
+
+  const beginSwipe = (event: ScreenPointerStart, initialHitId?: string) => {
+    const currentSession = sessionRef.current;
+    if (!currentSession) return;
+    swipeRef.current = {
+      pointerId: event.pointerId,
+      sessionId: currentSession.sessionId,
+      x: event.screenX,
+      y: event.screenY,
+      hitIds: initialHitId ? new Set([initialHitId]) : new Set()
+    };
+  };
+
+  const submitHit = (ballId: string) => {
+    const currentSession = sessionRef.current;
+    if (currentSession) {
+      bridge?.reportScreenBallHit?.(currentSession.sessionId, ballId);
+    }
+  };
+
+  const emitBurst = (ball: { x: number; y: number }) => {
+    const id = `screen-ball-burst-${burstSequenceRef.current++}`;
+    setBursts((current) => [...current, { id, x: ball.x, y: ball.y }].slice(-12));
+    const timer = window.setTimeout(() => {
+      burstTimersRef.current.delete(timer);
+      setBursts((current) => current.filter((burst) => burst.id !== id));
+    }, BURST_DURATION_MS);
+    burstTimersRef.current.add(timer);
+  };
 
   useEffect(() => {
     let active = true;
@@ -116,20 +170,74 @@ export function ButlerBuddyScreenBall() {
   useEffect(() => {
     const reportPointer = (event: PointerEvent) => {
       bridge?.reportScreenBallPointer?.(event.screenX, event.screenY);
+      const currentSession = sessionRef.current;
+      const currentState = stateRef.current;
+      const isSwiping = (event.buttons & 1) === 1;
+      if (!isSwiping || !currentSession || !currentState || currentState.phase !== "playing") {
+        swipeRef.current = null;
+        return;
+      }
+      const point = { x: event.screenX, y: event.screenY };
+      const previous = swipeRef.current;
+      if (
+        !previous ||
+        previous.pointerId !== event.pointerId ||
+        previous.sessionId !== currentSession.sessionId
+      ) {
+        beginSwipe(event);
+        return;
+      }
+      const start = {
+        x: previous.x - currentSession.display.x,
+        y: previous.y - currentSession.display.y
+      };
+      const end = {
+        x: point.x - currentSession.display.x,
+        y: point.y - currentSession.display.y
+      };
+      for (const ball of currentState.balls) {
+        if (
+          !previous.hitIds.has(ball.id) &&
+          screenBallIntersectsSegment(ball, start, end, SWIPE_HIT_PADDING)
+        ) {
+          previous.hitIds.add(ball.id);
+          submitHit(ball.id);
+        }
+      }
+      previous.x = point.x;
+      previous.y = point.y;
+    };
+    const resetSwipe = () => {
+      swipeRef.current = null;
     };
     window.addEventListener("pointermove", reportPointer);
-    return () => window.removeEventListener("pointermove", reportPointer);
+    window.addEventListener("pointerup", resetSwipe);
+    window.addEventListener("pointercancel", resetSwipe);
+    window.addEventListener("blur", resetSwipe);
+    return () => {
+      window.removeEventListener("pointermove", reportPointer);
+      window.removeEventListener("pointerup", resetSwipe);
+      window.removeEventListener("pointercancel", resetSwipe);
+      window.removeEventListener("blur", resetSwipe);
+    };
   }, [bridge]);
 
   useEffect(() => {
     const off = bridge?.onScreenBallHitAccepted?.((payload) => {
-      if (!session || payload.sessionId !== session.sessionId) return;
+      const currentSession = sessionRef.current;
+      const currentState = stateRef.current;
+      if (!currentSession || payload.sessionId !== currentSession.sessionId || !currentState) {
+        return;
+      }
+      const target = currentState.balls.find((ball) => ball.id === payload.ballId);
+      if (!target) return;
+      emitBurst(target);
       setState((current) =>
         current ? hitScreenBall(current, payload.ballId, monotonicNow()) : current
       );
     });
     return () => off?.();
-  }, [bridge, session]);
+  }, [bridge]);
 
   useEffect(() => {
     if (!session || !state || state.phase !== "playing") return;
@@ -212,6 +320,9 @@ export function ButlerBuddyScreenBall() {
         window.clearTimeout(publishTimerRef.current);
         publishTimerRef.current = null;
       }
+      for (const timer of burstTimersRef.current) window.clearTimeout(timer);
+      burstTimersRef.current.clear();
+      swipeRef.current = null;
     },
     []
   );
@@ -221,9 +332,6 @@ export function ButlerBuddyScreenBall() {
 
   const close = () => bridge?.closeScreenBall?.(session.sessionId);
   const replay = () => bridge?.startScreenBall?.();
-  const submitHit = (ballId: string) => {
-    bridge?.reportScreenBallHit?.(session.sessionId, ballId);
-  };
 
   return (
     <main className="butler-screen-ball-surface" aria-label={t("butler.screenBallSurfaceAria")}>
@@ -240,6 +348,9 @@ export function ButlerBuddyScreenBall() {
           <span>{t("butler.screenBallTime")}</span>
           <strong>{remainingSeconds}s</strong>
         </div>
+        <span className="butler-screen-ball-swipe-hint">
+          {t("butler.screenBallSwipeHint")}
+        </span>
         <button
           type="button"
           className="butler-screen-ball-close"
@@ -267,6 +378,7 @@ export function ButlerBuddyScreenBall() {
           }}
           aria-label={t("butler.screenBallBallAria")}
           onPointerDown={(event) => {
+            beginSwipe(event, ball.id);
             event.preventDefault();
             event.stopPropagation();
             submitHit(ball.id);
@@ -274,6 +386,21 @@ export function ButlerBuddyScreenBall() {
         >
           <span />
         </button>
+      ))}
+      {bursts.map((burst) => (
+        <span
+          key={burst.id}
+          className="butler-screen-ball-burst"
+          style={{ left: `${burst.x}px`, top: `${burst.y}px` }}
+          aria-hidden="true"
+        >
+          {Array.from({ length: 8 }, (_, index) => (
+            <i
+              key={index}
+              style={{ transform: `rotate(${index * 45}deg) translateY(-18px)` }}
+            />
+          ))}
+        </span>
       ))}
       {state.phase !== "playing" && (
         <section className="butler-screen-ball-result" role="status">

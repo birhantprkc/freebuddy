@@ -30,7 +30,7 @@ function stateAt(create, at = 1_000) {
   });
 }
 
-test("screen-ball spawning is deterministic and capped at three active balls", async () => {
+test("screen-ball spawning is deterministic and capped at six active balls", async () => {
   const {
     SCREEN_BALL_MAX_BALLS,
     createScreenBallArcadeState,
@@ -67,6 +67,33 @@ test("spawned balls launch into a readable full-screen arc", async () => {
   assert.ok(spawned.vy < -450, "the launch should have enough upward velocity");
   assert.ok(Math.abs(spawned.vx) > 60, "the launch should travel across the display");
   assert.ok(lifted.y < spawned.y - 120, "the ball should visibly rise before falling");
+});
+
+test("screen-ball swipes support a larger swarm and segment hits", async () => {
+  const {
+    SCREEN_BALL_DEFAULT_RADIUS,
+    SCREEN_BALL_MAX_BALLS,
+    screenBallIntersectsSegment
+  } = await loadScreenBallModule();
+  assert.equal(SCREEN_BALL_MAX_BALLS, 6);
+  assert.equal(SCREEN_BALL_DEFAULT_RADIUS, 14);
+  const ball = {
+    id: "swipe-target",
+    x: 120,
+    y: 100,
+    vx: 0,
+    vy: 0,
+    radius: 9,
+    createdAt: 1_000
+  };
+  assert.equal(
+    screenBallIntersectsSegment(ball, { x: 40, y: 100 }, { x: 200, y: 100 }),
+    true
+  );
+  assert.equal(
+    screenBallIntersectsSegment(ball, { x: 40, y: 40 }, { x: 200, y: 40 }),
+    false
+  );
 });
 
 test("balls reflect from left, right, and top edges", async () => {

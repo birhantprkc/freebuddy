@@ -1777,6 +1777,7 @@
     "screenBallScore": "SCORE",
     "screenBallMisses": "MISSES",
     "screenBallTime": "TIME",
+    "screenBallSwipeHint": "Hold and swipe through balls",
     "screenBallStop": "Stop full-screen game",
     "screenBallBallAria": "Pop bouncing ball",
     "screenBallMissLimit": "Too many misses",
