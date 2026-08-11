@@ -16,7 +16,10 @@ export function buildDelegationRosterPrompt(
     .join("\n");
   return [
     "## 协作团队（可委派）",
-    "某子任务更适合某队友时，调 MCP 工具 delegate(teammate_id, task)；list_teammates() 查队友。",
+    "某子任务更适合某队友时：",
+    "1. 调 delegate(teammate_id, task) —— 立即返回 {request_id, status:\"pending\"}",
+    "2. 每隔几秒调 check_delegate_result(request_id) 直到 status 不再是 \"pending\"",
+    "3. 用返回的 result 继续你的工作",
     "优先自己能完成的；别滥用委派；别反弹回调用方。",
     `当前深度 ${depth} \/ 上限 ${maxDepth}。`,
     "队友：",

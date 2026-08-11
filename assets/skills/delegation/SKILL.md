@@ -1,6 +1,6 @@
 ---
 name: delegation
-description: Collaborate with teammate agents in a self-organizing delegation run. Discover teammates and delegate sub-tasks synchronously.
+description: Collaborate with teammate agents in a self-organizing delegation run. Discover teammates and delegate sub-tasks asynchronously, polling for results.
 version: 1.0.0
 ---
 
@@ -19,9 +19,10 @@ Do NOT delegate:
 - The entire task you were given.
 
 ## How to delegate
-1. Call `list_teammates` to see who is available and their `capability` (excluding yourself).
-2. Call `delegate(teammate_id, task)` with a self-contained `task` description. The call blocks until the teammate finishes and returns `{status, result, event_id}`.
-3. Use the returned `result` to continue your own work.
+1. Call `list_teammates` to see who is available.
+2. Call `delegate(teammate_id, task)` — returns IMMEDIATELY with `{request_id, status:"pending"}`. The teammate runs asynchronously.
+3. Poll `check_delegate_result(request_id)` every 3-5 seconds. When `status` is `"done"`, use `result`. When `"failed"`/`"timeout"`, decide: retry, delegate elsewhere, or do it yourself.
+4. Do NOT busy-loop — wait ~3-5 seconds between polls.
 
 ## Handle the result
 - `status: "done"` → use `result`.

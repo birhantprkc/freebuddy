@@ -88,7 +88,7 @@ export function createDelegateMcpServer(): McpServer {
     {
       title: "Delegate a Sub-task to a Teammate",
       description:
-        "Synchronously delegate a sub-task to a teammate. This call blocks until the teammate finishes (or times out), then returns {status, result, event_id}. Pick the teammate by matching its capability to the sub-task. Do not delegate trivial work you can do yourself, and do not bounce back to your caller.",
+        "Asynchronously delegate a sub-task to a teammate. Returns IMMEDIATELY with {request_id, status:'pending'}. The teammate runs in the background. Poll check_delegate_result(request_id) every 3-5 seconds until status is 'done'/'failed'/'timeout', then use the returned result. Pick the teammate by matching its capability to the sub-task. Do not delegate trivial work you can do yourself, and do not bounce back to your caller.",
       inputSchema: {
         teammate_id: z.string().describe("The roster entry id from list_teammates."),
         task: z.string().describe("A self-contained description of the sub-task to delegate.")
@@ -97,6 +97,25 @@ export function createDelegateMcpServer(): McpServer {
     async (args) => {
       try {
         return toolResult(await invokeDelegateBridge("delegate", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "check_delegate_result",
+    {
+      title: "Check Delegate Result",
+      description:
+        "Poll a delegate call's result. Returns {status, result, request_id}. 'pending' = still running. Poll every 3-5 seconds until terminal (done/failed/timeout).",
+      inputSchema: {
+        request_id: z.string().describe("The request_id from delegate.")
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeDelegateBridge("check_delegate_result", args));
       } catch (error) {
         return toolError(error);
       }

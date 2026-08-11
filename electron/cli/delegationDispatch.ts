@@ -1,6 +1,5 @@
 import type { DelegationRosterEntry, DelegationPolicy } from "./delegationTeamTypes.js";
-import { insertDelegationEvent, updateDelegationEvent } from "./delegationRuns.js";
-import { addInactivitySuppression, removeInactivitySuppression } from "./inactivitySuppression.js";
+import { getDelegationEvent, insertDelegationEvent, updateDelegationEvent } from "./delegationRuns.js";
 
 const MAX_RESULT_CHARS = 12_000;
 
@@ -32,8 +31,6 @@ export interface DelegateExecArgs {
   childEventId: string;
   parentEventId: string;
   depth: number;
-  /** Aborted when the delegate exceeds its timeout (so the real executor can kill the child). */
-  signal?: AbortSignal;
 }
 
 export interface DelegateExecResult {
@@ -57,10 +54,11 @@ export interface DelegateActionDeps {
 export interface DelegateToolResponse {
   ok?: boolean;
   error?: string;
-  status?: "done" | "failed" | "timeout";
+  status?: "pending" | "done" | "failed" | "timeout" | "cancelled";
   result?: string;
   teammates?: Array<{ id: string; label: string; capability: string; canWrite: boolean }>;
   event_id?: string | null;
+  request_id?: string;
 }
 
 class DelegateTimeout extends Error {
@@ -74,31 +72,11 @@ function boundSummary(text: string): string {
   return `${head}\n…[truncated]…\n${tail}`;
 }
 
-// A simple per-key mutex (opaque string key). In the delegate path the key is
-// the calling agent's session (see call site). Honoring
-// policy.maxConcurrentDelegates > 1 is a future task.
-const mutexByRun = new Map<string, Promise<unknown>>();
-async function withRunMutex<T>(runId: string, fn: () => Promise<T>): Promise<T> {
-  const prev = mutexByRun.get(runId) ?? Promise.resolve();
-  let release!: () => void;
-  const next = new Promise<void>((r) => (release = r));
-  mutexByRun.set(runId, next);
-  await prev;
-  try {
-    return await fn();
-  } finally {
-    release();
-    if (mutexByRun.get(runId) === next) mutexByRun.delete(runId);
-  }
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => void): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   return Promise.race([
     p.finally(() => { if (timer) clearTimeout(timer); }),
-    new Promise<T>((_, reject) => {
-      timer = setTimeout(() => { onTimeout?.(); reject(new DelegateTimeout()); }, ms);
-    })
+    new Promise<T>((_, reject) => { timer = setTimeout(() => reject(new DelegateTimeout()), ms); })
   ]);
 }
 
@@ -119,11 +97,12 @@ export async function runDelegateAction(
 
   if (action === "delegate") {
     // ok flag semantics: ok === true means the tool call succeeded (including
-    // when it returns a status: "failed" DECISION the agent must handle, e.g.
-    // teammate-not-found, depth-limit, policy rejection); ok === false means a
-    // transport/execution error (context missing, executor exception, timeout).
-    // This split is intentional so the agent can distinguish "the delegation
-    // itself ran but the sub-task failed" from "we could not delegate at all".
+    // a status:"failed" DECISION the agent must handle synchronously, e.g.
+    // teammate-not-found / depth-limit / policy rejection, and status:"pending"
+    // when the executor has been dispatched in the background); ok === false
+    // means a transport/execution error (e.g. run context missing). The
+    // executor's own outcome is reported later via check_delegate_result, not
+    // via ok here.
     const ctx = deps.contextProvider(binding.runId);
     if (!ctx) return { ok: false, error: "run context not found", status: "failed" };
     const teammateId = String(params.teammate_id ?? "");
@@ -161,50 +140,41 @@ export async function runDelegateAction(
       status: "running"
     });
 
-    addInactivitySuppression(binding.taskSessionId);
-    const controller = new AbortController();
-    try {
-      // Serializes PARALLEL delegates from the SAME calling agent (keyed by
-      // taskSessionId), so an agent issuing two `delegate()` tool calls in one
-      // turn runs them one-at-a-time. It does NOT block nested delegates from
-      // child agents (different taskSessionId), which is what enables recursive
-      // delegation. (Keying on runId would deadlock the recursive tree.)
-      return await withRunMutex(binding.taskSessionId, async () => {
-        try {
-          const result = await withTimeout(
-            deps.executor({
-              teammate, task, runId: binding.runId, teamId: ctx.teamId, cwd: ctx.cwd,
-              childEventId, parentEventId: binding.parentEventId, depth: childDepth,
-              signal: controller.signal
-            }),
-            ctx.policy.delegateTimeoutMs,
-            () => controller.abort()
-          );
-          const status: "done" | "failed" = result.error ? "failed" : "done";
-          updateDelegationEvent(childEventId, {
-            status,
-            resultSummary: result.error ?? boundSummary(result.summary)
-          });
-          return {
-            ok: status === "done",
-            status,
-            result: boundSummary(result.error ? (result.summary || result.error) : result.summary),
-            event_id: childEventId
-          };
-        } catch (err) {
-          if (err instanceof DelegateTimeout) {
-            controller.abort();
-            updateDelegationEvent(childEventId, { status: "timeout", resultSummary: "委派超时" });
-            return { ok: false, status: "timeout", result: "delegate exceeded timeout", event_id: childEventId };
-          }
-          const msg = (err as Error)?.message ?? String(err);
-          updateDelegationEvent(childEventId, { status: "failed", resultSummary: msg });
-          return { ok: false, status: "failed", result: msg, event_id: childEventId };
-        }
-      });
-    } finally {
-      removeInactivitySuppression(binding.taskSessionId);
+    // Fire-and-forget: the executor runs in the background and updates the
+    // event row when it settles. The caller gets an immediate pending receipt
+    // and polls check_delegate_result(childEventId) for the outcome. This
+    // sidesteps the MCP transport's 60s call timeout, which would otherwise
+    // kill long-running delegates mid-flight. withTimeout still enforces
+    // policy.delegateTimeoutMs so a stuck child eventually resolves the event.
+    void withTimeout(
+      deps.executor({ teammate, task, runId: binding.runId, teamId: ctx.teamId, cwd: ctx.cwd,
+                      childEventId, parentEventId: binding.parentEventId, depth: childDepth }),
+      ctx.policy.delegateTimeoutMs
+    ).then((result) => {
+      const status = result.error ? "failed" : "done";
+      updateDelegationEvent(childEventId, { status, resultSummary: result.error ?? boundSummary(result.summary) });
+    }).catch((err) => {
+      if (err instanceof DelegateTimeout) {
+        updateDelegationEvent(childEventId, { status: "timeout", resultSummary: "委派超时" });
+      } else {
+        updateDelegationEvent(childEventId, { status: "failed", resultSummary: (err as Error)?.message ?? String(err) });
+      }
+    });
+    return { ok: true, status: "pending", request_id: childEventId, event_id: childEventId };
+  }
+
+  if (action === "check_delegate_result") {
+    const requestId = String(params.request_id ?? "");
+    if (!requestId) return { ok: false, error: "request_id required" };
+    const event = getDelegationEvent(requestId);
+    if (!event) return { ok: false, error: "request not found" };
+    // "running"/"pending" are reported to the caller as "pending"; the
+    // remaining terminal statuses are passed through verbatim. Splitting the
+    // return lets TS narrow event.status without a cast.
+    if (event.status === "running" || event.status === "pending") {
+      return { ok: true, status: "pending", result: event.resultSummary ?? "", request_id: requestId };
     }
+    return { ok: true, status: event.status, result: event.resultSummary ?? "", request_id: requestId };
   }
 
   return { ok: false, error: `unknown action: ${action}` };

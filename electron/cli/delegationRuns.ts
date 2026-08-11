@@ -190,3 +190,8 @@ export function listDelegationEvents(runId: string): DelegationEventRow[] {
     .all(runId) as any[];
   return rows.map(rowToEvent);
 }
+
+export function getDelegationEvent(id: string): DelegationEventRow | undefined {
+  const row = getDb().prepare("SELECT * FROM delegation_events WHERE id = ?").get(id) as any;
+  return row ? rowToEvent(row) : undefined;
+}
