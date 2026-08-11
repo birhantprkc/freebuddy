@@ -61,6 +61,7 @@ type AudioWindow = Window & { webkitAudioContext?: typeof AudioContext };
 const HIT_PADDING = 10;
 const SWIPE_HIT_PADDING = 14;
 const BURST_DURATION_MS = 520;
+const SCREEN_BALL_VISUAL_SCALE = 1.45;
 const SCREEN_BALL_SOUND_STORAGE_KEY = "freebuddy.screenBallSoundEnabled";
 const SCREEN_BALL_ORB_ASSET = `${import.meta.env.BASE_URL}butlerbuddy/arcade/orb.png`;
 const CLOCK_ORIGIN =
@@ -391,10 +392,18 @@ export function ButlerBuddyScreenBall() {
     if (!session || !state) return [];
     const regions: HitRegion[] = state.balls.map((ball) => ({
       id: ball.id,
-      x: session.display.x + ball.x - ball.radius - HIT_PADDING,
-      y: session.display.y + ball.y - ball.radius - HIT_PADDING,
-      width: ball.radius * 2 + HIT_PADDING * 2,
-      height: ball.radius * 2 + HIT_PADDING * 2,
+      x:
+        session.display.x +
+        ball.x -
+        ball.radius * SCREEN_BALL_VISUAL_SCALE -
+        HIT_PADDING,
+      y:
+        session.display.y +
+        ball.y -
+        ball.radius * SCREEN_BALL_VISUAL_SCALE -
+        HIT_PADDING,
+      width: ball.radius * SCREEN_BALL_VISUAL_SCALE * 2 + HIT_PADDING * 2,
+      height: ball.radius * SCREEN_BALL_VISUAL_SCALE * 2 + HIT_PADDING * 2,
       kind: "ball" as const
     }));
     regions.push({
@@ -547,8 +556,8 @@ export function ButlerBuddyScreenBall() {
           style={{
             left: `${ball.x}px`,
             top: `${ball.y}px`,
-            width: `${ball.radius * 2}px`,
-            height: `${ball.radius * 2}px`
+            width: `${ball.radius * SCREEN_BALL_VISUAL_SCALE * 2}px`,
+            height: `${ball.radius * SCREEN_BALL_VISUAL_SCALE * 2}px`
           }}
           aria-label={t(
             ball.kind === "bomb" ? "butler.screenBallBombAria" : "butler.screenBallBallAria"
