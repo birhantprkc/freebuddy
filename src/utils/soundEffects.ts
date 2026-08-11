@@ -1,4 +1,8 @@
 import { debugLogClient } from "@/services/debugLog";
+import { useTaskReceiptStore } from "@/store/taskReceiptStore";
+import { isAppInBackground, isWindowBlurred } from "./appFocus";
+
+export { isAppInBackground };
 
 const baseUrl = import.meta.env?.BASE_URL ?? "./";
 
@@ -20,21 +24,6 @@ function getAudio(kind: keyof typeof SOUNDS): HTMLAudioElement | undefined {
   } catch {
     return undefined;
   }
-}
-
-let windowBlurred = false;
-if (typeof window !== "undefined") {
-  window.addEventListener("blur", () => {
-    windowBlurred = true;
-  });
-  window.addEventListener("focus", () => {
-    windowBlurred = false;
-  });
-}
-
-export function isAppInBackground(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.hidden || windowBlurred;
 }
 
 export function playTaskSuccess(backgroundOnly = true): void {
@@ -67,14 +56,29 @@ export function notifyTaskFinished(
   kind: "success" | "failure",
   title: string,
   body?: string,
-  conversationId?: string
+  conversationId?: string,
+  receipt?: {
+    eventId: string;
+    taskTitle: string;
+    completedAt?: string;
+  }
 ): void {
+  if (receipt) {
+    useTaskReceiptStore.getState().recordCompletion({
+      id: receipt.eventId,
+      title: receipt.taskTitle,
+      result: kind,
+      completedAt: receipt.completedAt ?? new Date().toISOString(),
+      ...(conversationId ? { conversationId } : {})
+    });
+  }
+  window.freebuddy?.butlerBuddy?.reportTaskResult?.(kind);
   const documentHidden = typeof document !== "undefined" ? document.hidden : false;
   const background = isAppInBackground();
   debugLogClient.info("notification", "notifyTaskFinished evaluated", {
     kind,
     documentHidden,
-    windowBlurred,
+    windowBlurred: isWindowBlurred(),
     isAppInBackground: background,
     willNotify: background,
     conversationId

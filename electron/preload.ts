@@ -322,6 +322,11 @@ const window = {
     ipcRenderer.on("window:new-conversation", handler);
     return () => ipcRenderer.off("window:new-conversation", handler);
   },
+  onOpenTaskReceipt(cb: () => void): () => void {
+    const handler = () => cb();
+    ipcRenderer.on("window:open-task-receipt", handler);
+    return () => ipcRenderer.off("window:open-task-receipt", handler);
+  },
   onOpenView(
     cb: (payload: {
       view: string;
@@ -366,6 +371,12 @@ const window = {
     conversationId?: string;
   }): Promise<void> {
     return ipcRenderer.invoke("window:notify", payload);
+  },
+  saveImage(payload: {
+    dataUrl: string;
+    suggestedName?: string;
+  }): Promise<{ path?: string }> {
+    return ipcRenderer.invoke("window:save-image", payload);
   }
 };
 
@@ -375,6 +386,40 @@ type ButlerBuddyPreferencesPayload = {
   shortcut: string;
   shortcutRegistered: boolean;
   error?: "shortcutUnavailable";
+  mainWindowShortcutEnabled: boolean;
+  mainWindowShortcut: string;
+  mainWindowShortcutRegistered: boolean;
+  mainWindowShortcutError?: "shortcutUnavailable";
+};
+
+type ButlerBuddyRuntimeStatePayload = {
+  visualState:
+    | "idle"
+    | "working"
+    | "celebrating"
+    | "comforting"
+    | "sleeping";
+  since: string;
+  transientUntil?: string;
+  taskText?: string;
+  taskConversationId?: string;
+  taskKind?: "running" | "completed" | "failure";
+  taskCount?: number;
+};
+
+type ButlerBuddyScreenBallSessionPayload = {
+  sessionId: string;
+  display: { id: number | string; x: number; y: number; width: number; height: number };
+  petOrigin: { x: number; y: number };
+};
+
+type ButlerBuddyScreenBallHitRegionPayload = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  kind: "ball" | "control";
 };
 
 const butlerBuddy = {
@@ -383,11 +428,51 @@ const butlerBuddy = {
   beginDrag: () => ipcRenderer.send("butlerBuddy:beginDrag"),
   endDrag: () => ipcRenderer.send("butlerBuddy:endDrag"),
   openMenu: () => ipcRenderer.send("butlerBuddy:openMenu"),
+  openCurrentTask: () => ipcRenderer.send("butlerBuddy:openCurrentTask"),
+  startScreenBall: () => ipcRenderer.send("butlerBuddy:startScreenBall"),
+  stopScreenBall: () => ipcRenderer.send("butlerBuddy:stopScreenBall"),
+  getScreenBallSession: (): Promise<ButlerBuddyScreenBallSessionPayload | null> =>
+    ipcRenderer.invoke("butlerBuddy:getScreenBallSession"),
+  publishScreenBallHitRegions: (
+    regions: ButlerBuddyScreenBallHitRegionPayload[]
+  ) => ipcRenderer.send("butlerBuddy:screenBallHitRegions", regions),
+  reportScreenBallPointer: (x: number, y: number) =>
+    ipcRenderer.send("butlerBuddy:screenBallPointer", { x, y }),
+  reportScreenBallHit: (sessionId: string, ballId: string) =>
+    ipcRenderer.send("butlerBuddy:screenBallHit", { sessionId, ballId }),
+  closeScreenBall: (sessionId: string) =>
+    ipcRenderer.send("butlerBuddy:screenBallClose", sessionId),
+  onScreenBallSession(
+    cb: (payload: ButlerBuddyScreenBallSessionPayload) => void
+  ): () => void {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: ButlerBuddyScreenBallSessionPayload
+    ) => cb(payload);
+    ipcRenderer.on("butlerBuddy:screenBallSession", handler);
+    return () => ipcRenderer.off("butlerBuddy:screenBallSession", handler);
+  },
+  onScreenBallHitAccepted(
+    cb: (payload: { sessionId: string; ballId: string }) => void
+  ): () => void {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: { sessionId: string; ballId: string }
+    ) => cb(payload);
+    ipcRenderer.on("butlerBuddy:screenBallHitAccepted", handler);
+    return () => ipcRenderer.off("butlerBuddy:screenBallHitAccepted", handler);
+  },
   getPreferences: () => ipcRenderer.invoke("butlerBuddy:getPreferences"),
+  getRuntimeState: (): Promise<ButlerBuddyRuntimeStatePayload | undefined> =>
+    ipcRenderer.invoke("butlerBuddy:getRuntimeState"),
+  reportTaskResult: (result: "success" | "failure") =>
+    ipcRenderer.send("butlerBuddy:reportTaskResult", result),
   updatePreferences: (input: {
     visible?: boolean;
     shortcutEnabled?: boolean;
     shortcut?: string;
+    mainWindowShortcutEnabled?: boolean;
+    mainWindowShortcut?: string;
   }) => ipcRenderer.invoke("butlerBuddy:updatePreferences", input),
   onNewConversation(cb: () => void): () => void {
     const handler = () => cb();
@@ -403,6 +488,16 @@ const butlerBuddy = {
     ) => cb(prefs);
     ipcRenderer.on("butlerBuddy:preferencesChanged", handler);
     return () => ipcRenderer.off("butlerBuddy:preferencesChanged", handler);
+  },
+  onRuntimeStateChanged(
+    cb: (state: ButlerBuddyRuntimeStatePayload) => void
+  ): () => void {
+    const handler = (
+      _event: IpcRendererEvent,
+      state: ButlerBuddyRuntimeStatePayload
+    ) => cb(state);
+    ipcRenderer.on("butlerBuddy:runtimeStateChanged", handler);
+    return () => ipcRenderer.off("butlerBuddy:runtimeStateChanged", handler);
   }
 };
 

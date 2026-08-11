@@ -16,6 +16,7 @@ import {
 import { ImageLightboxProvider } from "./components/CLI/ImageLightbox";
 import { PermissionDialog } from "./components/CLI/PermissionDialog";
 import { AuthenticationDialog } from "./components/CLI/AuthenticationDialog";
+import { TaskReceiptDialog } from "./components/ButlerBuddy/TaskReceiptDialog";
 import { ExportDebugLogsDialog } from "./components/Settings/ExportDebugLogsDialog";
 import { DetailColumn } from "./components/CLI/DetailColumn";
 import { AgentBridgeListener } from "./components/AgentBridge/AgentBridgeListener";
@@ -38,11 +39,13 @@ import { useUpdaterStore } from "./store/updaterStore";
 import { useDetailLayoutStore, selectDetailWidth, DETAIL_MIN_WIDTH } from "./store/detailLayoutStore";
 import { useNewTaskUiStore } from "./store/newTaskUiStore";
 import { useWorkflowStore } from "./store/workflowStore";
+import { useTaskReceiptStore } from "./store/taskReceiptStore";
 import {
   notifyTaskFinished,
   playTaskFailure,
   playTaskSuccess
 } from "./utils/soundEffects";
+import { isAppInBackground } from "./utils/appFocus";
 import i18next from "i18next";
 import { useTranslation } from "react-i18next";
 
@@ -95,6 +98,29 @@ function App() {
   }, [loadExecutors, loadConversations]);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const preview = new URLSearchParams(window.location.search).get(
+      "taskReceiptPreview"
+    );
+    if (preview !== "1") return;
+    const state = useTaskReceiptStore.getState();
+    const titles = [
+      i18next.t("taskReceipt.previewTasks.quarterlyReport"),
+      i18next.t("taskReceipt.previewTasks.releaseConfig"),
+      i18next.t("taskReceipt.previewTasks.userFeedback")
+    ];
+    titles.forEach((title, index) => {
+      state.recordCompletion({
+        id: `task-receipt-preview-${index}`,
+        title,
+        result: "success",
+        completedAt: new Date(Date.now() - index * 60_000).toISOString()
+      });
+    });
+    state.openReport();
+  }, []);
+
+  useEffect(() => {
     const lastStatusMap = new Map<string, string | undefined>();
     const off = window.freebuddy?.scheduledTasks?.onChanged?.((task) => {
       if (!task || task.lastStatus === "completed" || task.lastStatus === "failed") {
@@ -106,22 +132,44 @@ function App() {
         lastStatusMap.set(task.id, next);
         if (prev !== next) {
           if (next === "completed") {
+            if (task.lastConversationId) {
+              useConversationStore
+                .getState()
+                .markConversationCompletedUnread(task.lastConversationId, "success");
+            }
             playTaskSuccess(true);
             notifyTaskFinished(
               "success",
               i18next.t("notifications.taskSucceededTitle"),
               i18next.t("notifications.taskSucceededBody", {
                 title: task?.title ?? i18next.t("conversations.untitled")
-              })
+              }),
+              task.lastConversationId,
+              {
+                eventId: `scheduled:${task.id}:${task.lastRunAt ?? task.updatedAt}`,
+                taskTitle: task.title,
+                completedAt: task.lastRunAt
+              }
             );
           } else if (next === "failed") {
+            if (task.lastConversationId) {
+              useConversationStore
+                .getState()
+                .markConversationCompletedUnread(task.lastConversationId, "failure");
+            }
             playTaskFailure(true);
             notifyTaskFinished(
               "failure",
               i18next.t("notifications.taskFailedTitle"),
               i18next.t("notifications.taskFailedBody", {
                 title: task?.title ?? i18next.t("conversations.untitled")
-              })
+              }),
+              task.lastConversationId,
+              {
+                eventId: `scheduled:${task.id}:${task.lastRunAt ?? task.updatedAt}`,
+                taskTitle: task.title,
+                completedAt: task.lastRunAt
+              }
             );
           }
         }
@@ -147,10 +195,10 @@ function App() {
   useEffect(() => {
     const off = window.freebuddy?.cli?.onMessagesChanged?.((conversationId) => {
       const state = useConversationStore.getState();
-      if (conversationId !== state.activeId) {
+      if (conversationId !== state.activeId || isAppInBackground()) {
         state.markConversationUnread(conversationId);
         void state.refreshList();
-        return;
+        if (conversationId !== state.activeId) return;
       }
       // Skip conversations this client is already live-streaming (e.g. the
       // current user's own active run) — live streaming owns those updates.
@@ -162,6 +210,17 @@ function App() {
       void state.loadMessages(conversationId);
     });
     return () => off?.();
+  }, []);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      const state = useConversationStore.getState();
+      if (state.activeId && state.unreadConversations[state.activeId]) {
+        state.markConversationRead(state.activeId);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, []);
 
   useEffect(() => {
@@ -187,6 +246,16 @@ function App() {
   useEffect(() => {
     const off = window.freebuddy?.window?.onNewConversation?.(() => {
       startNewTask();
+    });
+    return () => {
+      off?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const off = window.freebuddy?.window?.onOpenTaskReceipt?.(() => {
+      setSettingsOpen(false);
+      useTaskReceiptStore.getState().openReport();
     });
     return () => {
       off?.();
@@ -229,6 +298,14 @@ function App() {
       if (success) playTaskSuccess(true);
       else playTaskFailure(true);
       if (event.conversationId) {
+        if (event.status !== "killed") {
+          useConversationStore
+            .getState()
+            .markConversationCompletedUnread(
+              event.conversationId,
+              success ? "success" : "failure"
+            );
+        }
         notifyTaskFinished(
           success ? "success" : "failure",
           success
@@ -237,7 +314,11 @@ function App() {
           success
             ? i18next.t("notifications.taskSucceededBody", { title: event.name })
             : i18next.t("notifications.taskFailedBody", { title: event.name }),
-          event.conversationId
+          event.conversationId,
+          {
+            eventId: `workflow:${event.runId}`,
+            taskTitle: event.name
+          }
         );
       }
     });
@@ -368,6 +449,31 @@ function App() {
       0
     )
   );
+  // Completion metadata can change without changing the total unread count,
+  // so keep a separate primitive subscription for the pet's task queue.
+  const completedUnreadTasksJson = useConversationStore((s) =>
+    JSON.stringify(
+      s.conversations.reduce<
+        Array<{
+          id: string;
+          title: string;
+          result: "success" | "failure";
+          completedAt: string;
+        }>
+      >((tasks, conversation) => {
+        const unread = s.unreadConversations[conversation.id];
+        if (unread?.kind === "success" || unread?.kind === "failure") {
+          tasks.push({
+            id: conversation.id,
+            title: conversation.title,
+            result: unread.kind,
+            completedAt: unread.at
+          });
+        }
+        return tasks;
+      }, [])
+    )
+  );
   const members = useConversationStore((s) => s.members);
   const activeId = useConversationStore((s) => s.activeId);
   const setActive = useConversationStore((s) => s.setActive);
@@ -378,9 +484,26 @@ function App() {
     const status = s.live[activeId]?.status;
     return status === "running" || status === "starting";
   });
+  // Keep the selector primitive so root rendering does not follow every stream
+  // chunk. The value changes only when the set of running conversations does.
+  const runningConversationIds = useConversationStore((s) =>
+    s.conversations
+      .filter((conversation) => {
+        const status = s.live[conversation.id]?.status;
+        return status === "running" || status === "starting";
+      })
+      .map((conversation) => conversation.id)
+      .join("\u001f")
+  );
+  const runningCount = runningConversationIds
+    ? runningConversationIds.split("\u001f").length
+    : 0;
 
   useEffect(() => {
     const member = members.find((m) => m.id === activeConversation?.agentId);
+    const runningIds = new Set(
+      runningConversationIds ? runningConversationIds.split("\u001f") : []
+    );
     const snapshot = {
       workspaceView,
       settingsOpen,
@@ -397,6 +520,18 @@ function App() {
           }
         : null,
       streaming: activeConversationRunning,
+      runningTasks: conversations
+        .filter((conversation) => runningIds.has(conversation.id))
+        .map((conversation) => ({
+          id: conversation.id,
+          title: conversation.title
+        })),
+      completedUnreadTasks: JSON.parse(completedUnreadTasksJson) as Array<{
+        id: string;
+        title: string;
+        result: "success" | "failure";
+        completedAt: string;
+      }>,
       unreadCount,
       updatedAt: new Date().toISOString()
     };
@@ -413,8 +548,11 @@ function App() {
     activeConversation?.agentId,
     activeConversation?.agentName,
     activeConversationRunning,
+    runningConversationIds,
+    completedUnreadTasksJson,
     unreadCount,
-    members
+    members,
+    conversations
   ]);
 
   const activeWorkflowRunning = useWorkflowStore((s) =>
@@ -502,19 +640,6 @@ function App() {
         : workspaceView === "usage"
           ? t("usage.title")
         : activeConversation?.title ?? t("app.chat");
-  // Select the running *count* rather than the whole live map: App (the root)
-  // re-renders only when the number of running conversations changes, not on
-  // every streaming chunk. Otherwise every background event would re-render
-  // the entire tree.
-  const runningCount = useConversationStore((s) => {
-    let n = 0;
-    for (const c of s.conversations) {
-      const st = s.live[c.id]?.status;
-      if (st === "running" || st === "starting") n += 1;
-    }
-    return n;
-  });
-
   const renderToggleButton = (extraClass = "") => (
     <button
       type="button"
@@ -759,6 +884,7 @@ function App() {
       <PermissionDialog />
       <ExportDebugLogsDialog />
       <AuthenticationDialog />
+      <TaskReceiptDialog />
       <ConversationCommandPalette
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}

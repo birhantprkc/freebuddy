@@ -289,6 +289,7 @@ declare global {
     resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
     onOpenConversation(cb: (conversationId: string) => void): () => void;
     onNewConversation(cb: () => void): () => void;
+    onOpenTaskReceipt(cb: () => void): () => void;
     onOpenView(
       cb: (payload: {
         view: "chat" | "scheduledTasks" | "workflowTeams" | "usage" | string;
@@ -317,6 +318,16 @@ declare global {
         agentName: string;
       } | null;
       streaming: boolean;
+      runningTasks: Array<{
+        id: string;
+        title: string;
+      }>;
+      completedUnreadTasks: Array<{
+        id: string;
+        title: string;
+        result: "success" | "failure";
+        completedAt: string;
+      }>;
       unreadCount: number;
       updatedAt: string;
     }): void;
@@ -327,6 +338,10 @@ declare global {
       body?: string;
       conversationId?: string;
     }): Promise<void>;
+    saveImage(payload: {
+      dataUrl: string;
+      suggestedName?: string;
+    }): Promise<{ path?: string }>;
   }
 
   interface FreebuddySession {
@@ -339,22 +354,81 @@ declare global {
     shortcut: string;
     shortcutRegistered: boolean;
     error?: "shortcutUnavailable";
+    mainWindowShortcutEnabled: boolean;
+    mainWindowShortcut: string;
+    mainWindowShortcutRegistered: boolean;
+    mainWindowShortcutError?: "shortcutUnavailable";
   }
 
-  interface FreebuddyButlerBuddy {    toggleChat(): void;
+  type ButlerBuddyVisualState =
+    | "idle"
+    | "working"
+    | "celebrating"
+    | "comforting"
+    | "sleeping";
+
+  type ButlerBuddyTaskKind = "running" | "completed" | "failure";
+
+  interface ButlerBuddyRuntimeState {
+    visualState: ButlerBuddyVisualState;
+    since: string;
+    transientUntil?: string;
+    taskText?: string;
+    taskConversationId?: string;
+    taskKind?: ButlerBuddyTaskKind;
+    taskCount?: number;
+  }
+
+  interface FreebuddyButlerBuddy {
+    toggleChat(): void;
     hideChat(): void;
     beginDrag(): void;
     endDrag(): void;
     openMenu(): void;
+    openCurrentTask(): void;
+    startScreenBall(): void;
+    stopScreenBall(): void;
+    getScreenBallSession(): Promise<{
+      sessionId: string;
+      display: { id: number | string; x: number; y: number; width: number; height: number };
+      petOrigin: { x: number; y: number };
+    } | null>;
+    publishScreenBallHitRegions(regions: Array<{
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      kind: "ball" | "control";
+    }>): void;
+    reportScreenBallPointer(x: number, y: number): void;
+    reportScreenBallHit(sessionId: string, ballId: string): void;
+    closeScreenBall(sessionId: string): void;
+    onScreenBallSession(cb: (payload: {
+      sessionId: string;
+      display: { id: number | string; x: number; y: number; width: number; height: number };
+      petOrigin: { x: number; y: number };
+    }) => void): () => void;
+    onScreenBallHitAccepted(cb: (payload: {
+      sessionId: string;
+      ballId: string;
+    }) => void): () => void;
     getPreferences(): Promise<ButlerBuddyPreferences>;
+    getRuntimeState(): Promise<ButlerBuddyRuntimeState | undefined>;
+    reportTaskResult(result: "success" | "failure"): void;
     updatePreferences(input: {
       visible?: boolean;
       shortcutEnabled?: boolean;
       shortcut?: string;
+      mainWindowShortcutEnabled?: boolean;
+      mainWindowShortcut?: string;
     }): Promise<ButlerBuddyPreferences>;
     onNewConversation(cb: () => void): () => void;
     onPreferencesChanged(
       cb: (prefs: ButlerBuddyPreferences) => void
+    ): () => void;
+    onRuntimeStateChanged(
+      cb: (state: ButlerBuddyRuntimeState) => void
     ): () => void;
   }
 

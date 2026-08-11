@@ -2,6 +2,41 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.7.9] - 2026-08-11
+
+### 新功能
+
+- add show main window shortcut to desktop pet and keep unfocused task completions unread
+- reuse orb styling in full-screen arcade
+- add level volleys and ignore bomb misses
+- enrich screen ball feedback and sound toggle
+- add screen ball difficulty levels and bomb target
+- add screen ball swipes and burst effects
+- add full-screen ButlerBuddy screen ball game
+
+### 问题修复
+
+- increase full-screen arcade ball size
+- enlarge full-screen arcade balls
+- enable hover swipes and add light trails
+- tune screen ball launch and remove duplicate pet
+
+### 体验优化
+
+- keep ButlerBuddy arcade full-screen only
+
+## [0.7.8] - 2026-08-09
+
+### 问题修复
+
+- keep ButlerBuddy visible over macOS fullscreen
+
+## [0.7.7] - 2026-08-09
+
+### 新功能
+
+- upgrade ButlerBuddy pet experience
+
 ## [0.7.6] - 2026-08-08
 
 ### 问题修复
