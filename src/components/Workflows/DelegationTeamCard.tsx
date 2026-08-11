@@ -6,6 +6,8 @@ import type { DelegationTeam } from "@/services/workflowTeams/types";
 import { useConversationStore } from "@/store/conversationStore";
 import { AgentAvatar } from "../CLI/AgentAvatar";
 
+const POLL_MS = 1500;
+
 export function DelegationTeamCard({
   conversationId
 }: {
@@ -14,25 +16,50 @@ export function DelegationTeamCard({
   const { t } = useTranslation();
   const members = useConversationStore((s) => s.members);
   const [team, setTeam] = useState<DelegationTeam | undefined>(undefined);
+  const [activeAgentId, setActiveAgentId] = useState<string | undefined>(undefined);
+  const [runStatus, setRunStatus] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = async () => {
       try {
         const run = await delegationClient.getRunByConversation(conversationId);
         if (!run || !run.teamId) {
-          if (!cancelled) setTeam(undefined);
+          if (!cancelled) { setTeam(undefined); setActiveAgentId(undefined); }
           return;
         }
-        const loaded = await delegationClient.get(run.teamId);
-        if (!cancelled) setTeam(loaded ?? undefined);
+        if (!cancelled) setRunStatus(run.status);
+        if (!team) {
+          const loaded = await delegationClient.get(run.teamId);
+          if (!cancelled) setTeam(loaded ?? undefined);
+        }
+        const events = await delegationClient.listEvents(run.id);
+        if (cancelled) return;
+        const running = events.find((e: any) => e.status === "running") as { agentId?: string } | undefined;
+        setActiveAgentId(running?.agentId);
       } catch {
-        if (!cancelled) setTeam(undefined);
+        if (!cancelled) setActiveAgentId(undefined);
       }
-    })();
+    };
+
+    const schedule = () => {
+      timer = setTimeout(async () => {
+        if (cancelled) return;
+        await poll();
+        schedule();
+      }, POLL_MS);
+    };
+
+    void poll();
+    schedule();
+
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
   if (!team) return null;
@@ -46,15 +73,27 @@ export function DelegationTeamCard({
     <div className="delegation-roster-stack">
       {team.roster.map((r) => {
         const isEntry = r.id === team.entryRoleId;
-        const badge = [
-          r.canWrite ? t("workflow.delegation.canWrite") : t("workflow.delegation.readonly", { defaultValue: "只读" }),
-          isEntry ? t("workflow.delegation.entry", { defaultValue: "入口" }) : ""
-        ].filter(Boolean).join(" · ");
+        const isActive = activeAgentId === r.agentId;
+        const isDone = runStatus === "completed" || runStatus === "failed" || runStatus === "killed";
+        const badge = isActive
+          ? t("status.running")
+          : isEntry
+            ? t("workflow.delegation.entry", { defaultValue: "入口" })
+            : "";
+        const rwLabel = r.canWrite
+          ? t("workflow.delegation.canWrite")
+          : t("workflow.delegation.readonly", { defaultValue: "只读" });
+
         return (
-          <section key={r.id} className="side-card">
+          <section
+            key={r.id}
+            className={`side-card${isActive ? " delegation-roster-active" : ""}${isDone && !isActive ? " delegation-roster-done" : ""}`}
+          >
             <div className="side-card-header">
               <span>{r.label}</span>
-              <strong>{badge}</strong>
+              <strong className={isActive ? "delegation-roster-status-running" : ""}>
+                {badge ? `${badge} · ` : ""}{rwLabel}
+              </strong>
             </div>
             <div className="agent-lockup">
               <AgentAvatar

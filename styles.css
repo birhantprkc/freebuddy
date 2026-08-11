@@ -16165,6 +16165,16 @@ button.ghost:focus-visible,
   gap: 16px;
   margin-bottom: 16px;
 }
+.delegation-roster-active {
+  border-color: var(--fb-brand, #10b981);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+.delegation-roster-status-running {
+  color: var(--fb-brand, #10b981);
+}
+.delegation-roster-done {
+  opacity: 0.6;
+}
 .delegation-run-tree {
   flex: 1 1 auto;
   min-height: 0;
