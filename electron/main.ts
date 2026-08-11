@@ -50,14 +50,8 @@ import {
   normalizeButlerBuddyTaskText
 } from "./butlerBuddyState.js";
 import {
-  applyButlerBuddyEntertainmentTransition,
-  broadcastButlerBuddyPreferences,
-  BUTLER_PET_ARCADE_HEIGHT,
-  BUTLER_PET_ARCADE_WIDTH,
-  BUTLER_PET_SIZE,
-  calculateButlerBuddyEntertainmentBounds,
-  persistButlerBuddyEntertainmentChange
-} from "./butlerBuddyEntertainment.js";
+  broadcastButlerBuddyPreferences
+} from "./butlerBuddyPreferences.js";
 import {
   displayChangedForScreenBall,
   disposeScreenBallSession,
@@ -325,12 +319,11 @@ function recoverMainRenderer(win: BrowserWindow, reason: string): void {
 
 const BUTLER_CHAT_WIDTH = 360;
 const BUTLER_CHAT_HEIGHT = 420;
+const BUTLER_PET_SIZE = 108;
 const BUTLER_WINDOW_GAP = 6;
 const BUTLER_VISIBLE_SETTING = "butlerbuddy.visible";
 const BUTLER_SHORTCUT_ENABLED_SETTING = "butlerbuddy.shortcut.enabled";
 const BUTLER_SHORTCUT_SETTING = "butlerbuddy.shortcut";
-const BUTLER_ENTERTAINMENT_ENABLED_SETTING =
-  "butlerbuddy.entertainment.enabled";
 const BUTLER_DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
 
 type ButlerBuddyPreferences = {
@@ -338,7 +331,6 @@ type ButlerBuddyPreferences = {
   shortcutEnabled: boolean;
   shortcut: string;
   shortcutRegistered: boolean;
-  entertainmentEnabled: boolean;
   error?: "shortcutUnavailable";
 };
 
@@ -351,13 +343,10 @@ function readButlerBuddyPreferences(): ButlerBuddyPreferences {
     getSetting(BUTLER_SHORTCUT_ENABLED_SETTING) !== "false";
   const shortcut =
     getSetting(BUTLER_SHORTCUT_SETTING)?.trim() || BUTLER_DEFAULT_SHORTCUT;
-  const entertainmentEnabled =
-    getSetting(BUTLER_ENTERTAINMENT_ENABLED_SETTING) === "true";
   return {
     visible,
     shortcutEnabled,
     shortcut,
-    entertainmentEnabled,
     shortcutRegistered:
       shortcutEnabled &&
       registeredButlerShortcut === shortcut &&
@@ -445,21 +434,14 @@ function loadCompanionSurface(
   win: BrowserWindow,
   surface: "butler-pet" | "butler-chat" | "butler-screen-ball"
 ) {
-  const entertainmentEnabled =
-    surface === "butler-pet" &&
-    readButlerBuddyPreferences().entertainmentEnabled;
   if (isDev) {
     const url = new URL(process.env.VITE_DEV_SERVER_URL as string);
     url.searchParams.set("surface", surface);
-    if (entertainmentEnabled) url.searchParams.set("entertainment", "1");
     void win.loadURL(url.toString());
     return;
   }
   void win.loadFile(path.join(__dirname, "../dist/index.html"), {
-    query: {
-      surface,
-      ...(entertainmentEnabled ? { entertainment: "1" } : {})
-    }
+    query: { surface }
   });
 }
 
@@ -607,9 +589,6 @@ function restartButlerScreenBallSession(
 function startButlerScreenBallGame(): void {
   const preferences = readButlerBuddyPreferences();
   if (!preferences.visible) return;
-  if (preferences.entertainmentEnabled) {
-    updateButlerBuddyPreferences({ entertainmentEnabled: false });
-  }
   restartButlerScreenBallSession();
 }
 
@@ -633,21 +612,14 @@ function updateButlerScreenBallDisplayAfterDrag(): void {
   sendButlerScreenBallSession();
 }
 
-function initialButlerPetBounds(entertainmentEnabled = false) {
+function initialButlerPetBounds() {
   const workArea = screen.getPrimaryDisplay().workArea;
-  const normalBounds = {
+  return {
     width: BUTLER_PET_SIZE,
     height: BUTLER_PET_SIZE,
     x: workArea.x + workArea.width - BUTLER_PET_SIZE - 18,
     y: workArea.y + Math.round((workArea.height - BUTLER_PET_SIZE) / 2)
   };
-  if (!entertainmentEnabled) return normalBounds;
-  return calculateButlerBuddyEntertainmentBounds(
-    normalBounds,
-    workArea,
-    true,
-    false
-  );
 }
 
 function syncButlerChatPosition() {
@@ -797,25 +769,11 @@ function applyButlerBuddyVisibility(visible: boolean) {
   pet.hide();
 }
 
-function applyButlerBuddyEntertainmentMode(
-  enabled: boolean,
-  previousEnabled: boolean
-) {
-  applyButlerBuddyEntertainmentTransition({
-    enabled,
-    previousEnabled,
-    pet: butlerPetWindow,
-    getWorkArea: (bounds) => screen.getDisplayMatching(bounds).workArea,
-    hideChat: hideButlerChat,
-    syncChatPosition: syncButlerChatPosition
-  });
-}
-
 function updateButlerBuddyPreferences(
   input: Partial<
     Pick<
       ButlerBuddyPreferences,
-      "visible" | "shortcutEnabled" | "shortcut" | "entertainmentEnabled"
+      "visible" | "shortcutEnabled" | "shortcut"
     >
   >
 ): ButlerBuddyPreferences {
@@ -823,8 +781,6 @@ function updateButlerBuddyPreferences(
   const nextVisible = input.visible ?? current.visible;
   const nextEnabled = input.shortcutEnabled ?? current.shortcutEnabled;
   const nextShortcut = input.shortcut?.trim() || current.shortcut;
-  const nextEntertainmentEnabled =
-    input.entertainmentEnabled ?? current.entertainmentEnabled;
   const shortcutChanged =
     nextEnabled !== current.shortcutEnabled || nextShortcut !== current.shortcut;
 
@@ -839,15 +795,6 @@ function updateButlerBuddyPreferences(
     setSetting(BUTLER_VISIBLE_SETTING, String(nextVisible));
     applyButlerBuddyVisibility(nextVisible);
   }
-
-  persistButlerBuddyEntertainmentChange({
-    enabled: nextEntertainmentEnabled,
-    previousEnabled: current.entertainmentEnabled,
-    persist: (enabled) =>
-      setSetting(BUTLER_ENTERTAINMENT_ENABLED_SETTING, String(enabled)),
-    applyTransition: applyButlerBuddyEntertainmentMode
-  });
-  if (nextEntertainmentEnabled) closeButlerScreenBallWindow();
 
   const result = readButlerBuddyPreferences();
   // Push the new preferences to the main window so the settings toggle stays
@@ -910,7 +857,7 @@ function createButlerBuddyWindows() {
 
   const butlerPreferences = readButlerBuddyPreferences();
   butlerPetWindow = new BrowserWindow({
-    ...initialButlerPetBounds(butlerPreferences.entertainmentEnabled),
+    ...initialButlerPetBounds(),
     type: process.platform === "darwin" ? "panel" : undefined,
     show: false,
     frame: false,
@@ -942,8 +889,6 @@ function createButlerBuddyWindows() {
 }
 
 function showButlerContextMenu() {
-  const entertainmentEnabled =
-    readButlerBuddyPreferences().entertainmentEnabled;
   const screenBallActive = Boolean(butlerScreenBallSession);
   const menu = Menu.buildFromTemplate([
     {
@@ -964,13 +909,6 @@ function showButlerContextMenu() {
       }
     },
     { type: "separator" },
-    {
-      label: entertainmentEnabled ? "结束小窗弹球" : "开启小窗弹球",
-      click: () =>
-        updateButlerBuddyPreferences({
-          entertainmentEnabled: !entertainmentEnabled
-        })
-    },
     {
       label: screenBallActive ? "结束全屏弹球" : "开启全屏弹球",
       click: () =>
@@ -1189,7 +1127,7 @@ function registerButlerBuddyWindowIpc() {
       input: Partial<
         Pick<
           ButlerBuddyPreferences,
-          "visible" | "shortcutEnabled" | "shortcut" | "entertainmentEnabled"
+          "visible" | "shortcutEnabled" | "shortcut"
         >
       >
     ) => updateButlerBuddyPreferences(input)

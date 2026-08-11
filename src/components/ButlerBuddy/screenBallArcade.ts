@@ -32,8 +32,7 @@ export const SCREEN_BALL_COMBO_STEP = 0.25;
 export type ScreenBallKind = "ball" | "bomb";
 export type ScreenBallColor = "mint" | "sky" | "violet" | "amber" | "coral" | "bomb";
 
-/** Compatibility aliases make the constants pleasant to consume alongside
- * the existing petArcade module. */
+/** Compatibility aliases keep the screen-ball state API stable for callers. */
 export const SCREEN_BALL_ARCADE_MAX_BALLS = SCREEN_BALL_MAX_BALLS;
 export const SCREEN_BALL_ARCADE_MISS_LIMIT = SCREEN_BALL_MISS_LIMIT;
 export const SCREEN_BALL_ARCADE_ROUND_DURATION_MS =

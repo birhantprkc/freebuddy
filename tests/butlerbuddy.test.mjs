@@ -192,7 +192,7 @@ test("ButlerBuddy preferences expose a global shortcut with conflict feedback", 
   assert.match(settings, /DEFAULT_BUTLER_SHORTCUT/);
 });
 
-test("ButlerBuddy entertainment mode expands the pet arena and stays synchronized", () => {
+test("ButlerBuddy keeps arcade play in the full-screen surface", () => {
   const main = fs.readFileSync(
     new URL("../electron/main.ts", import.meta.url),
     "utf8"
@@ -213,41 +213,15 @@ test("ButlerBuddy entertainment mode expands the pet arena and stays synchronize
     new URL("../src/components/ButlerBuddy/ButlerBuddyPet.tsx", import.meta.url),
     "utf8"
   );
-  const styles = fs.readFileSync(
-    new URL("../styles.css", import.meta.url),
-    "utf8"
-  );
-
-  assert.match(main, /BUTLER_ENTERTAINMENT_ENABLED_SETTING/);
-  assert.match(main, /applyButlerBuddyEntertainmentMode/);
-  assert.match(main, /entertainmentEnabled/);
-  assert.match(main, /开启小窗弹球/);
-  assert.match(main, /结束小窗弹球/);
+  assert.doesNotMatch(main, /entertainmentEnabled/);
+  assert.doesNotMatch(main, /小窗弹球/);
   assert.match(main, /开启全屏弹球/);
   assert.match(main, /结束全屏弹球/);
-  assert.match(preload, /entertainmentEnabled\?: boolean/);
-  assert.match(types, /entertainmentEnabled: boolean/);
-  assert.match(settings, /butlerEntertainment/);
+  assert.doesNotMatch(preload, /entertainmentEnabled/);
+  assert.doesNotMatch(types, /entertainmentEnabled/);
+  assert.doesNotMatch(settings, /butlerEntertainment/);
   assert.match(settings, /butlerScreenBall/);
-  assert.match(pet, /onPreferencesChanged/);
-  const refreshShortcutHint = pet.slice(
-    pet.indexOf("const refreshShortcutHint"),
-    pet.indexOf("useEffect(refreshShortcutHint")
-  );
-  assert.doesNotMatch(refreshShortcutHint, /setEntertainmentEnabled/);
-  assert.match(pet, /spawnPetArcadeBall/);
-  assert.match(pet, /hitPetArcadeBall/);
-  assert.match(pet, /butler-pet-arcade-score/);
-  const arcadeBallStyles = styles.slice(
-    styles.indexOf(".butler-pet-arcade-ball {"),
-    styles.indexOf(".butler-pet-arcade-ball:hover")
-  );
-  assert.match(
-    arcadeBallStyles,
-    /transition:\s*filter\s+/,
-    "per-frame ball positions must not inherit the global button transition"
-  );
-  assert.doesNotMatch(arcadeBallStyles, /transition:\s*all/);
+  assert.doesNotMatch(pet, /petArcade|butler-pet-arcade|entertainmentEnabled/);
 });
 
 test("ButlerBuddy full-screen ball mode uses guarded IPC and transparent hit regions", () => {

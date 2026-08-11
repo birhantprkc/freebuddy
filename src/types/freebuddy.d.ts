@@ -349,7 +349,6 @@ declare global {
     shortcutEnabled: boolean;
     shortcut: string;
     shortcutRegistered: boolean;
-    entertainmentEnabled: boolean;
     error?: "shortcutUnavailable";
   }
 
@@ -413,7 +412,6 @@ declare global {
       visible?: boolean;
       shortcutEnabled?: boolean;
       shortcut?: string;
-      entertainmentEnabled?: boolean;
     }): Promise<ButlerBuddyPreferences>;
     onNewConversation(cb: () => void): () => void;
     onPreferencesChanged(

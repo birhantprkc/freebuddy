@@ -2,12 +2,10 @@ import {
   useEffect,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent,
   type PointerEvent
 } from "react";
 import { useTranslation } from "react-i18next";
-import { RotateCcw, Star, X, Zap } from "lucide-react";
 
 import {
   classifyPetClick,
@@ -15,25 +13,7 @@ import {
   isPetInteractionCoolingDown,
   PET_SINGLE_CLICK_DELAY_MS
 } from "./petInteractions";
-import {
-  advancePetArcadeState,
-  createPetArcadeState,
-  hitPetArcadeBall,
-  hitPetArcadeWeakPoint,
-  PET_ARCADE_BOSS_MAX_HEALTH,
-  PET_ARCADE_FEVER_MAX,
-  PET_ARCADE_ULTIMATE_MAX,
-  remainingPetArcadeSeconds,
-  spawnPetArcadeBall,
-  triggerPetArcadeUltimate
-} from "./petArcade";
-
 const stateAssetBase = `${import.meta.env.BASE_URL}butlerbuddy/states/v2`;
-const arcadeAssetBase = `${import.meta.env.BASE_URL}butlerbuddy/arcade`;
-const PET_ARCADE_ASSETS = {
-  boss: `${arcadeAssetBase}/boss.png`,
-  orb: `${arcadeAssetBase}/orb.png`
-};
 const PET_STATE_ASSETS: Record<
   ButlerBuddyVisualState,
   { motion: string; poster: string }
@@ -61,15 +41,6 @@ const PET_STATE_ASSETS: Record<
 };
 
 type PetInteraction = "pat" | "poke" | "land";
-
-interface PetArcadeBurst {
-  id: number;
-  x: number;
-  y: number;
-  hue: number;
-  points: number;
-  order: number;
-}
 
 function initialRuntimeState(): ButlerBuddyRuntimeState {
   const previewParams = new URLSearchParams(window.location.search);
@@ -127,13 +98,6 @@ export function ButlerBuddyPet() {
   const pendingSingleClickRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const interactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const arcadeFrameRef = useRef<number | null>(null);
-  const arcadeSpawnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const arcadeBurstTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(
-    new Set()
-  );
-  const arcadeBurstSequenceRef = useRef(0);
-  const arcadeLastHitRef = useRef<number | null>(null);
   const lastInteractionAtRef = useRef<number | null>(null);
   const interactionSequenceRef = useRef(0);
   const [runtimeState, setRuntimeState] =
@@ -145,18 +109,6 @@ export function ButlerBuddyPet() {
   const [shortcutHint, setShortcutHint] = useState(() =>
     compactShortcut("CommandOrControl+Shift+Space")
   );
-  const [entertainmentEnabled, setEntertainmentEnabled] = useState(
-    () =>
-      new URLSearchParams(window.location.search).get("entertainment") === "1"
-  );
-  const arcadeWasEnabledRef = useRef(entertainmentEnabled);
-  const [arcadeRunId, setArcadeRunId] = useState(0);
-  const [arcadeState, setArcadeState] = useState(createPetArcadeState);
-  const [arcadeBursts, setArcadeBursts] = useState<PetArcadeBurst[]>([]);
-  const [pageVisible, setPageVisible] = useState(
-    () => document.visibilityState !== "hidden"
-  );
-  const initializedArcadeRunRef = useRef<number | null>(null);
 
   const stateAssets = PET_STATE_ASSETS[runtimeState.visualState];
   const localizedState = t(`butler.states.${runtimeState.visualState}`);
@@ -189,22 +141,6 @@ export function ButlerBuddyPet() {
     0,
     (runtimeState.taskCount ?? 1) - 1
   );
-  const arcadeFinished =
-    arcadeState.phase === "victory" || arcadeState.phase === "timeout";
-  const arcadeRemainingSeconds = remainingPetArcadeSeconds(arcadeState);
-  const arcadeFeverPercent = Math.round(
-    (arcadeState.fever / PET_ARCADE_FEVER_MAX) * 100
-  );
-  const arcadeBossHealthPercent = Math.round(
-    (arcadeState.bossHealth / PET_ARCADE_BOSS_MAX_HEALTH) * 100
-  );
-  const arcadeUltimatePercent = Math.round(
-    (arcadeState.ultimate / PET_ARCADE_ULTIMATE_MAX) * 100
-  );
-  const arcadeUltimateReady =
-    arcadeState.phase === "boss" &&
-    arcadeState.ultimate >= PET_ARCADE_ULTIMATE_MAX;
-
   const beginDrag = () => window.freebuddy?.butlerBuddy?.beginDrag?.();
   const endDrag = () => window.freebuddy?.butlerBuddy?.endDrag?.();
 
@@ -256,10 +192,6 @@ export function ButlerBuddyPet() {
         image.src = src;
       }
     }
-    for (const src of Object.values(PET_ARCADE_ASSETS)) {
-      const image = new Image();
-      image.src = src;
-    }
   }, []);
 
   useEffect(() => {
@@ -278,118 +210,6 @@ export function ButlerBuddyPet() {
     };
   }, []);
 
-  useEffect(() => {
-    const off = window.freebuddy?.butlerBuddy?.onPreferencesChanged?.(
-      (preferences) => {
-        setEntertainmentEnabled(preferences.entertainmentEnabled);
-      }
-    );
-    return () => off?.();
-  }, []);
-
-  useEffect(() => {
-    const onVisibilityChange = () => {
-      setPageVisible(document.visibilityState !== "hidden");
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () =>
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, []);
-
-  useEffect(() => {
-    if (!entertainmentEnabled) {
-      if (arcadeWasEnabledRef.current) {
-        for (const timer of arcadeBurstTimersRef.current) clearTimeout(timer);
-        arcadeBurstTimersRef.current.clear();
-        setArcadeState(createPetArcadeState());
-        setArcadeBursts([]);
-        arcadeLastHitRef.current = null;
-      }
-      arcadeWasEnabledRef.current = false;
-      return;
-    }
-
-    if (!pageVisible) return;
-
-    arcadeWasEnabledRef.current = true;
-    if (initializedArcadeRunRef.current !== arcadeRunId) {
-      const startedAt = Date.now();
-      setArcadeState(
-        spawnPetArcadeBall(createPetArcadeState(startedAt), startedAt)
-      );
-      initializedArcadeRunRef.current = arcadeRunId;
-    }
-    const scheduleNextBall = () => {
-      arcadeSpawnTimerRef.current = setTimeout(() => {
-        setArcadeState((current) => spawnPetArcadeBall(current, Date.now()));
-        scheduleNextBall();
-      }, 720);
-    };
-    scheduleNextBall();
-
-    let previousFrame = performance.now();
-    const animate = (frameAt: number) => {
-      const elapsed = frameAt - previousFrame;
-      previousFrame = frameAt;
-      setArcadeState((current) =>
-        advancePetArcadeState(current, elapsed, Date.now())
-      );
-      arcadeFrameRef.current = requestAnimationFrame(animate);
-    };
-    arcadeFrameRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (arcadeSpawnTimerRef.current) {
-        clearTimeout(arcadeSpawnTimerRef.current);
-        arcadeSpawnTimerRef.current = null;
-      }
-      if (arcadeFrameRef.current !== null) {
-        cancelAnimationFrame(arcadeFrameRef.current);
-        arcadeFrameRef.current = null;
-      }
-    };
-  }, [arcadeRunId, entertainmentEnabled, pageVisible]);
-
-  useEffect(() => {
-    if (!arcadeFinished) return;
-    if (arcadeSpawnTimerRef.current) {
-      clearTimeout(arcadeSpawnTimerRef.current);
-      arcadeSpawnTimerRef.current = null;
-    }
-    if (arcadeFrameRef.current !== null) {
-      cancelAnimationFrame(arcadeFrameRef.current);
-      arcadeFrameRef.current = null;
-    }
-  }, [arcadeFinished]);
-
-  useEffect(() => {
-    const feedback = arcadeState.lastHit;
-    if (!feedback || feedback.id === arcadeLastHitRef.current) return;
-    arcadeLastHitRef.current = feedback.id;
-    const bursts = feedback.balls.map((ball, order) => {
-      arcadeBurstSequenceRef.current += 1;
-      return {
-        id: arcadeBurstSequenceRef.current,
-        x: ball.x,
-        y: ball.y,
-        hue: ball.hue,
-        points: ball.points,
-        order
-      };
-    });
-    setArcadeBursts((current) => [...current, ...bursts]);
-    for (const burst of bursts) {
-      const timer = setTimeout(() => {
-        arcadeBurstTimersRef.current.delete(timer);
-        setArcadeBursts((current) => {
-          if (!current.some((item) => item.id === burst.id)) return current;
-          return current.filter((item) => item.id !== burst.id);
-        });
-      }, 620 + burst.order * 70);
-      arcadeBurstTimersRef.current.add(timer);
-    }
-  }, [arcadeState.lastHit]);
-
   useEffect(
     () => () => {
       clearPendingSingleClick();
@@ -397,8 +217,6 @@ export function ButlerBuddyPet() {
       if (suppressClickTimerRef.current) {
         clearTimeout(suppressClickTimerRef.current);
       }
-      for (const timer of arcadeBurstTimersRef.current) clearTimeout(timer);
-      arcadeBurstTimersRef.current.clear();
     },
     []
   );
@@ -465,20 +283,6 @@ export function ButlerBuddyPet() {
       }
       return;
     }
-    if (entertainmentEnabled) {
-      clearPendingSingleClick();
-      playInteraction("poke", true);
-      if (arcadeFinished) {
-        restartArcade();
-      } else if (arcadeUltimateReady) {
-        setArcadeState((current) =>
-          triggerPetArcadeUltimate(current, Date.now())
-        );
-      } else {
-        setArcadeState((current) => spawnPetArcadeBall(current, Date.now()));
-      }
-      return;
-    }
     const coolingDown = isPetInteractionCoolingDown(
       lastInteractionAtRef.current,
       Date.now()
@@ -500,278 +304,18 @@ export function ButlerBuddyPet() {
     }, PET_SINGLE_CLICK_DELAY_MS);
   };
 
-  const hitArcadeBall = (
-    event: MouseEvent<HTMLButtonElement>,
-    ballId: string
-  ) => {
-    event.stopPropagation();
-    setArcadeState((current) =>
-      hitPetArcadeBall(current, ballId, Date.now())
-    );
-  };
-
-  const hitArcadeWeakPoint = (
-    event: MouseEvent<HTMLButtonElement>,
-    weakPoint: number
-  ) => {
-    event.stopPropagation();
-    setArcadeState((current) =>
-      hitPetArcadeWeakPoint(current, weakPoint, Date.now())
-    );
-  };
-
-  const restartArcade = () => {
-    for (const timer of arcadeBurstTimersRef.current) clearTimeout(timer);
-    arcadeBurstTimersRef.current.clear();
-    setArcadeBursts([]);
-    arcadeLastHitRef.current = null;
-    setArcadeRunId((current) => current + 1);
-  };
-
-  const stopEntertainment = () => {
-    const updatePreferences =
-      window.freebuddy?.butlerBuddy?.updatePreferences;
-    if (!updatePreferences) {
-      setEntertainmentEnabled(false);
-      return;
-    }
-    void updatePreferences({ entertainmentEnabled: false })
-      .then((preferences) => {
-        setEntertainmentEnabled(preferences.entertainmentEnabled);
-      })
-      .catch(() => undefined);
-  };
-
   return (
     <div
       className="butler-pet-surface"
-      data-entertainment={entertainmentEnabled}
-      aria-label={
-        entertainmentEnabled
-          ? t("butler.arcadeSurfaceAria")
-          : t("butler.petSurfaceAria")
-      }
+      aria-label={t("butler.petSurfaceAria")}
     >
-      {entertainmentEnabled && (
-        <div className="butler-pet-arcade" data-phase={arcadeState.phase}>
-          <div className="butler-pet-arcade-score" aria-live="polite">
-            <span>{t("butler.arcadeScore")}</span>
-            <strong>{arcadeState.score}</strong>
-          </div>
-          <div
-            className="butler-pet-arcade-fever"
-            role="progressbar"
-            aria-label={t("butler.arcadeFeverAria")}
-            aria-valuemin={0}
-            aria-valuemax={PET_ARCADE_FEVER_MAX}
-            aria-valuenow={arcadeState.fever}
-          >
-            <span style={{ width: `${arcadeFeverPercent}%` }} />
-            <strong>
-              {t("butler.arcadeFever", {
-                count: Math.max(1, arcadeState.combo)
-              })}
-            </strong>
-          </div>
-          <div
-            className="butler-pet-arcade-timer"
-            data-urgent={arcadeRemainingSeconds <= 5}
-            aria-label={t("butler.arcadeTimeAria", {
-              count: arcadeRemainingSeconds
-            })}
-          >
-            <strong>{arcadeRemainingSeconds}</strong>
-            <span>{t("butler.arcadeSeconds")}</span>
-          </div>
-          <button
-            type="button"
-            className="butler-pet-arcade-close"
-            aria-label={t("butler.arcadeStop")}
-            title={t("butler.arcadeStop")}
-            onClick={stopEntertainment}
-          >
-            <X aria-hidden="true" size={17} strokeWidth={2.4} />
-          </button>
-
-          {(arcadeState.phase === "boss" ||
-            (arcadeState.phase === "victory" &&
-              arcadeState.lastBossHit)) && (
-            <div className="butler-pet-arcade-boss">
-              <div className="butler-pet-arcade-boss-health">
-                <span>{t("butler.arcadeBoss")}</span>
-                <div
-                  role="progressbar"
-                  aria-label={t("butler.arcadeBossHealthAria")}
-                  aria-valuemin={0}
-                  aria-valuemax={PET_ARCADE_BOSS_MAX_HEALTH}
-                  aria-valuenow={arcadeState.bossHealth}
-                >
-                  <i style={{ width: `${arcadeBossHealthPercent}%` }} />
-                </div>
-              </div>
-              <div
-                className="butler-pet-arcade-boss-stage"
-                data-ultimate-hit={arcadeState.lastBossHit?.ultimate ?? false}
-              >
-                <img src={PET_ARCADE_ASSETS.boss} alt="" draggable={false} />
-                {Array.from({ length: 3 }, (_, weakPoint) => (
-                  <button
-                    key={weakPoint}
-                    type="button"
-                    className="butler-pet-arcade-weak-point"
-                    data-position={weakPoint}
-                    data-active={weakPoint === arcadeState.activeWeakPoint}
-                    disabled={
-                      weakPoint !== arcadeState.activeWeakPoint || arcadeFinished
-                    }
-                    aria-label={t("butler.arcadeWeakPointAria", {
-                      count: weakPoint + 1
-                    })}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) =>
-                      hitArcadeWeakPoint(event, weakPoint)
-                    }
-                  >
-                    <img src={PET_ARCADE_ASSETS.orb} alt="" draggable={false} />
-                    <Zap aria-hidden="true" size={11} fill="currentColor" />
-                  </button>
-                ))}
-                {arcadeState.lastBossHit && (
-                  <strong
-                    key={arcadeState.lastBossHit.id}
-                    className="butler-pet-arcade-damage"
-                  >
-                    -{arcadeState.lastBossHit.damage}
-                  </strong>
-                )}
-              </div>
-            </div>
-          )}
-
-          {!arcadeFinished && (
-            <span className="butler-pet-arcade-streak" aria-hidden="true" />
-          )}
-          {arcadeState.balls.map((ball) => (
-            <button
-              key={ball.id}
-              type="button"
-              className="butler-pet-arcade-ball"
-              data-kind={ball.kind}
-              style={{
-                left: `${ball.x}%`,
-                top: `${ball.y}%`,
-                width: `${ball.radius * 2}%`,
-                aspectRatio: "1",
-                "--arcade-ball-hue": ball.hue,
-                "--arcade-ball-shift": `${ball.hue - 160}deg`
-              } as CSSProperties}
-              aria-label={t(
-                ball.kind === "gold"
-                  ? "butler.arcadeGoldBallAria"
-                  : "butler.arcadeBallAria"
-              )}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => hitArcadeBall(event, ball.id)}
-            >
-              <img src={PET_ARCADE_ASSETS.orb} alt="" draggable={false} />
-              {ball.kind === "gold" && (
-                <Star aria-hidden="true" size={13} fill="currentColor" />
-              )}
-            </button>
-          ))}
-          {arcadeBursts.map((burst) => (
-            <span
-              key={burst.id}
-              className="butler-pet-arcade-burst"
-              style={{
-                left: `${burst.x}%`,
-                top: `${burst.y}%`,
-                "--arcade-ball-hue": burst.hue,
-                "--arcade-ball-shift": `${burst.hue - 160}deg`,
-                animationDelay: `${burst.order * 70}ms`
-              } as CSSProperties}
-              aria-hidden="true"
-            >
-              <img src={PET_ARCADE_ASSETS.orb} alt="" />
-              <strong>+{burst.points}</strong>
-            </span>
-          ))}
-          {arcadeState.lastHit && arcadeState.lastHit.chainCount > 1 && (
-            <strong
-              key={arcadeState.lastHit.id}
-              className="butler-pet-arcade-chain"
-            >
-              {t("butler.arcadeChain", {
-                count: arcadeState.lastHit.chainCount
-              })}
-            </strong>
-          )}
-          {arcadeState.phase === "boss" && (
-            <span
-              className="butler-pet-arcade-ultimate"
-              data-ready={arcadeUltimateReady}
-              style={
-                {
-                  "--arcade-ultimate-progress": `${arcadeUltimatePercent * 3.6}deg`
-                } as CSSProperties
-              }
-              aria-hidden="true"
-            >
-              <Zap size={11} fill="currentColor" />
-              {arcadeUltimateReady
-                ? t("butler.arcadeUltimateReady")
-                : t("butler.arcadeUltimate", {
-                    count: arcadeUltimatePercent
-                  })}
-            </span>
-          )}
-          {arcadeFinished && (
-            <div className="butler-pet-arcade-result" role="status">
-              <strong>
-                {t(
-                  arcadeState.phase === "victory"
-                    ? "butler.arcadeVictory"
-                    : "butler.arcadeTimeout"
-                )}
-              </strong>
-              <span>
-                {t("butler.arcadeFinalScore", { count: arcadeState.score })}
-              </span>
-              <button type="button" onClick={restartArcade}>
-                <RotateCcw aria-hidden="true" size={13} />
-                {t("butler.arcadeReplay")}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
       <button
         type="button"
         className="butler-pet-button"
         data-state={runtimeState.visualState}
         data-interaction={interaction?.kind}
-        data-arcade-phase={entertainmentEnabled ? arcadeState.phase : undefined}
-        data-ultimate-ready={arcadeUltimateReady}
-        aria-label={
-          entertainmentEnabled
-            ? t(
-                arcadeFinished
-                  ? "butler.arcadeReplay"
-                  : arcadeUltimateReady
-                    ? "butler.arcadeUltimateReadyAria"
-                    : "butler.arcadePetAria"
-              )
-            : t("butler.openChatStateAria", { state: localizedState })
-        }
-        title={
-          entertainmentEnabled
-            ? t(
-                arcadeUltimateReady
-                  ? "butler.arcadeUltimateReadyAria"
-                  : "butler.arcadePetTooltip"
-              )
-            : t("butler.petTooltip")
-        }
+        aria-label={t("butler.openChatStateAria", { state: localizedState })}
+        title={t("butler.petTooltip")}
         onPointerEnter={refreshShortcutHint}
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
@@ -800,13 +344,13 @@ export function ButlerBuddyPet() {
             draggable={false}
           />
         </span>
-        {!entertainmentEnabled && shortcutHint && (
+        {shortcutHint && (
           <span className="butler-pet-hint" aria-hidden="true">
             {shortcutHint}
           </span>
         )}
       </button>
-      {!entertainmentEnabled && taskText && (
+      {taskText && (
         <button
           type="button"
           className="butler-pet-task-bubble"

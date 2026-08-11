@@ -385,7 +385,6 @@ type ButlerBuddyPreferencesPayload = {
   shortcutEnabled: boolean;
   shortcut: string;
   shortcutRegistered: boolean;
-  entertainmentEnabled: boolean;
   error?: "shortcutUnavailable";
 };
 
@@ -468,7 +467,6 @@ const butlerBuddy = {
     visible?: boolean;
     shortcutEnabled?: boolean;
     shortcut?: string;
-    entertainmentEnabled?: boolean;
   }) => ipcRenderer.invoke("butlerBuddy:updatePreferences", input),
   onNewConversation(cb: () => void): () => void {
     const handler = () => cb();

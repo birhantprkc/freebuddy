@@ -26,7 +26,6 @@ interface SettingsState {
   butlerBuddyShortcutEnabled: boolean;
   butlerBuddyShortcut: string;
   butlerBuddyShortcutRegistered: boolean;
-  butlerBuddyEntertainmentEnabled: boolean;
   butlerBuddyShortcutError?: "shortcutUnavailable";
   load(): Promise<void>;
   setLanguage(lng: LanguagePreference): Promise<void>;
@@ -39,14 +38,12 @@ interface SettingsState {
     visible?: boolean;
     shortcutEnabled?: boolean;
     shortcut?: string;
-    entertainmentEnabled?: boolean;
   }): Promise<void>;
   applyButlerBuddyPreferences(prefs: {
     visible: boolean;
     shortcutEnabled: boolean;
     shortcut: string;
     shortcutRegistered: boolean;
-    entertainmentEnabled: boolean;
     error?: "shortcutUnavailable";
   }): void;
   refreshSystemTheme(): void;
@@ -63,7 +60,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   butlerBuddyShortcutEnabled: true,
   butlerBuddyShortcut: "CommandOrControl+Shift+Space",
   butlerBuddyShortcutRegistered: false,
-  butlerBuddyEntertainmentEnabled: false,
   butlerBuddyShortcutError: undefined,
 
   async load() {
@@ -84,7 +80,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         butlerBuddyShortcutEnabled: true,
         butlerBuddyShortcut: "CommandOrControl+Shift+Space",
         butlerBuddyShortcutRegistered: false,
-        butlerBuddyEntertainmentEnabled: false,
         butlerBuddyShortcutError: undefined
       });
       return;
@@ -113,8 +108,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         butlerPreferences?.shortcut ?? "CommandOrControl+Shift+Space",
       butlerBuddyShortcutRegistered:
         butlerPreferences?.shortcutRegistered ?? false,
-      butlerBuddyEntertainmentEnabled:
-        butlerPreferences?.entertainmentEnabled ?? false,
       butlerBuddyShortcutError: butlerPreferences?.error
     });
   },
@@ -161,11 +154,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         ...(input.shortcut === undefined
           ? {}
           : { butlerBuddyShortcut: input.shortcut }),
-        ...(input.entertainmentEnabled === undefined
-          ? {}
-          : {
-              butlerBuddyEntertainmentEnabled: input.entertainmentEnabled
-            })
       });
       return;
     }
@@ -175,7 +163,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       butlerBuddyShortcutEnabled: result.shortcutEnabled,
       butlerBuddyShortcut: result.shortcut,
       butlerBuddyShortcutRegistered: result.shortcutRegistered,
-      butlerBuddyEntertainmentEnabled: result.entertainmentEnabled,
       butlerBuddyShortcutError: result.error
     });
   },
@@ -191,7 +178,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       butlerBuddyShortcutEnabled: prefs.shortcutEnabled,
       butlerBuddyShortcut: prefs.shortcut,
       butlerBuddyShortcutRegistered: prefs.shortcutRegistered,
-      butlerBuddyEntertainmentEnabled: prefs.entertainmentEnabled,
       butlerBuddyShortcutError: prefs.error
     });
   }
