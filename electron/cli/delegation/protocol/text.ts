@@ -43,6 +43,15 @@ export function mcpCheckResultDescription(): string {
   ].join(" ");
 }
 
+export function mcpSubmitVerdictDescription(): string {
+  return [
+    "Submit a structured verdict for the current delegated task before you finish.",
+    "Required for review/audit sub-tasks.",
+    "verdict must be one of: pass (ready to close), needs_changes (caller must fix then re-delegate review), fail (blocking).",
+    "Optional summary: one or two sentences."
+  ].join(" ");
+}
+
 function writeFlag(canWrite: boolean): string {
   return canWrite ? "可写" : "只读";
 }

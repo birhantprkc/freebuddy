@@ -53,6 +53,17 @@ test("checked-in SKILL.md matches protocol skill generator key rules", async () 
   assert.doesNotMatch(disk, /Poll `check_delegate_result\(request_id\)` every 3-5 seconds\. When `status` is `"done"`/);
 });
 
+test("mcp submit_verdict description mentions required enums", async () => {
+  const { mcpSubmitVerdictDescription } = await import(
+    "../dist-electron/cli/delegation/protocol/text.js"
+  );
+  const d = mcpSubmitVerdictDescription();
+  assert.match(d, /submit_verdict|verdict/i);
+  assert.match(d, /pass/);
+  assert.match(d, /needs_changes/);
+  assert.match(d, /fail/);
+});
+
 test("task similarity / whole-task guard", async () => {
   const { taskSimilarity, isWholeTaskRedelegate, normalizeTaskText } = await import(
     "../dist-electron/cli/delegation/protocol/guards.js"

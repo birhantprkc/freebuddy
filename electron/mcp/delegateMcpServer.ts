@@ -7,7 +7,8 @@ import { z } from "zod";
 import {
   mcpCheckResultDescription,
   mcpDelegateDescription,
-  mcpListTeammatesDescription
+  mcpListTeammatesDescription,
+  mcpSubmitVerdictDescription
 } from "../cli/delegation/protocol/text.js";
 
 interface DelegateToolResponse {
@@ -119,6 +120,25 @@ export function createDelegateMcpServer(): McpServer {
     async (args) => {
       try {
         return toolResult(await invokeDelegateBridge("check_delegate_result", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "submit_verdict",
+    {
+      title: "Submit Delegation Verdict",
+      description: mcpSubmitVerdictDescription(),
+      inputSchema: {
+        verdict: z.enum(["pass", "needs_changes", "fail"]),
+        summary: z.string().optional().describe("Optional short summary.")
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeDelegateBridge("submit_verdict", args));
       } catch (error) {
         return toolError(error);
       }
