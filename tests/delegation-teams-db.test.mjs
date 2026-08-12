@@ -48,7 +48,7 @@ test("migration creates delegation_events table with expected columns", async (t
     for (const name of [
       "id", "run_id", "parent_event_id", "agent_id", "agent_name", "role_label",
       "task_text", "depth", "status", "result_summary", "can_write",
-      "started_at", "ended_at"
+      "started_at", "ended_at", "verdict", "verdict_summary"
     ]) {
       assert.ok(cols.includes(name), `delegation_events.${name} missing`);
     }

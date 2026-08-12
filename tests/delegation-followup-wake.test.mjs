@@ -118,6 +118,83 @@ test("followUp after completed run parks on delegate and wakes with result", asy
   });
 });
 
+test("followUp wake prompt carries submit_verdict needs_changes and re-delegate guidance", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { dispatchDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+
+    const entryPrompts = [];
+    const verdictSummary = "hammer toast must use design tokens";
+    let phase = "initial";
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: (id) => ({
+        adapter: id.includes("claude") ? "claude-agent-acp" : "codex-acp",
+        agentName: id,
+        skillIds: []
+      }),
+      runAgent: async (args) => {
+        if (args.delegation.depth === 0) {
+          entryPrompts.push(args.prompt);
+          if (phase === "followUp" && !args.prompt.includes("委派结果返回")) {
+            await dispatchDelegateAction(
+              {
+                token: "t",
+                taskSessionId: "s",
+                runId: args.delegation.runId,
+                parentEventId: args.delegation.parentEventId,
+                depth: 0,
+                selfAgentId: "r-impl",
+                selfLabel: "实现"
+              },
+              "delegate",
+              { teammate_id: "r-rev", task: "审查锤子升级改动并给风险列表" }
+            );
+          }
+          return { summary: `entry ${entryPrompts.length}`, exitCode: 0, error: null };
+        }
+        await dispatchDelegateAction(
+          {
+            token: "t",
+            taskSessionId: "s",
+            runId: args.delegation.runId,
+            parentEventId: args.delegation.parentEventId,
+            depth: args.delegation.depth,
+            selfAgentId: args.delegation.selfAgentId,
+            selfLabel: args.delegation.selfLabel
+          },
+          "submit_verdict",
+          { verdict: "needs_changes", summary: verdictSummary }
+        );
+        return { summary: "REVIEW: hammer costs schema drift", exitCode: 0, error: null };
+      }
+    });
+
+    const runId = await rt.start({
+      goal: "开发一个功能",
+      teamId: "t",
+      teamSnapshot: snap,
+      cwd: "/r"
+    });
+    await tick(30);
+    assert.equal(getDelegationRun(runId).status, "completed");
+
+    phase = "followUp";
+    await rt.followUp(runId, "委派评审");
+    await tick(80);
+
+    const wake = entryPrompts.find((p) => p.includes("委派结果返回"));
+    assert.ok(wake, "wake prompt required after follow-up delegate settles");
+    assert.match(wake, /needs_changes|结构化结论/);
+    assert.match(wake, /delegate/);
+    assert.match(wake, /复审|不要宣布收尾|收尾之前/);
+    assert.ok(wake.includes(verdictSummary), "wake must carry submitted verdict summary");
+    assert.equal(getDelegationRun(runId).status, "completed");
+  });
+});
+
 test("followUp after completed entry reopens without reusing entry sessionId", async (t) => {
   if (!bindingAvailable) { t.skip(); return; }
   await withDb(async () => {

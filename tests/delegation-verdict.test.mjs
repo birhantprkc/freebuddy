@@ -92,6 +92,96 @@ test("submit_verdict writes and check_delegate_result returns it", async (t) => 
   });
 });
 
+test("migrate adds verdict columns to legacy delegation_events", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  db.exec("DROP TABLE delegation_events");
+  db.exec(`
+    CREATE TABLE delegation_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      parent_event_id TEXT,
+      agent_id TEXT,
+      agent_name TEXT,
+      role_label TEXT,
+      task_text TEXT,
+      depth INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      result_summary TEXT,
+      can_write INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT,
+      ended_at TEXT,
+      FOREIGN KEY(run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
+    );
+  `);
+  migrate(db);
+  const cols = db.prepare("PRAGMA table_info(delegation_events)").all().map((c) => c.name);
+  assert.ok(cols.includes("verdict"), "verdict column missing after legacy migrate");
+  assert.ok(cols.includes("verdict_summary"), "verdict_summary column missing after legacy migrate");
+
+  setDbForTest(db);
+  try {
+    const { createDelegationRun, insertDelegationEvent, updateDelegationEvent, getDelegationEvent } =
+      await import("../dist-electron/cli/delegationRuns.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "t", teamSnapshotJson: "{}" });
+    const id = insertDelegationEvent({
+      runId,
+      parentEventId: null,
+      agentId: "rev",
+      agentName: "评审",
+      roleLabel: "评审",
+      taskText: "审",
+      depth: 1,
+      canWrite: false,
+      status: "running"
+    });
+    updateDelegationEvent(id, { verdict: "pass", verdictSummary: "all good" });
+    const row = getDelegationEvent(id);
+    assert.equal(row.verdict, "pass");
+    assert.equal(row.verdictSummary, "all good");
+  } finally {
+    setDbForTest(null);
+    db.close();
+  }
+});
+
+test("submit_verdict without summary clears prior verdictSummary", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, insertDelegationEvent, getDelegationEvent } =
+      await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "t", teamSnapshotJson: "{}" });
+    const id = insertDelegationEvent({
+      runId, parentEventId: null, agentId: "rev", agentName: "评审", roleLabel: "评审",
+      taskText: "审", depth: 1, canWrite: false, status: "running"
+    });
+    const binding = {
+      token: "t", taskSessionId: "s", runId, parentEventId: id, depth: 1,
+      selfAgentId: "r-rev", selfLabel: "评审"
+    };
+    const deps = {
+      contextProvider: () => undefined,
+      executor: async () => ({ summary: "", exitCode: 0, error: null }),
+      writeApproval: async () => true
+    };
+    const first = await runDelegateAction(binding, "submit_verdict", {
+      verdict: "fail",
+      summary: "blocking issue"
+    }, deps);
+    assert.equal(first.ok, true);
+    assert.equal(getDelegationEvent(id).verdictSummary, "blocking issue");
+
+    const second = await runDelegateAction(binding, "submit_verdict", { verdict: "pass" }, deps);
+    assert.equal(second.ok, true);
+    assert.equal(getDelegationEvent(id).verdict, "pass");
+    assert.equal(getDelegationEvent(id).verdictSummary, null);
+  });
+});
+
 test("submit_verdict rejects invalid enum and allows overwrite", async (t) => {
   if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
   await withDb(async () => {

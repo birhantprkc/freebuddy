@@ -94,7 +94,7 @@ export function submitVerdictAction(
       : String(params.summary);
   updateDelegationEvent(eventId, {
     verdict: verdict as DelegationVerdict,
-    ...(summary !== undefined ? { verdictSummary: summary } : {})
+    verdictSummary: summary !== undefined ? summary : null
   });
   return { ok: true, verdict: verdict as DelegationVerdict, event_id: eventId };
 }
