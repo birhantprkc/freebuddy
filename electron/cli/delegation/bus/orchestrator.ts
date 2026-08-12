@@ -93,7 +93,9 @@ export class DelegationOrchestrator {
       childStatus: evt.status,
       resultSummary: evt.resultSummary ?? "",
       taskText: evt.taskText,
-      roleLabel: evt.roleLabel
+      roleLabel: evt.roleLabel,
+      verdict: evt.verdict,
+      verdictSummary: evt.verdictSummary
     });
     this.bus = state;
     // Wake effects for parked parents are consumed by the park loops via waiters;
@@ -247,7 +249,9 @@ export class DelegationOrchestrator {
           childStatus: settled.status,
           resultSummary: settled.resultSummary ?? "",
           taskText: settled.taskText,
-          roleLabel: settled.roleLabel
+          roleLabel: settled.roleLabel,
+          verdict: settled.verdict,
+          verdictSummary: settled.verdictSummary
         });
         this.bus = state;
       }
@@ -257,7 +261,9 @@ export class DelegationOrchestrator {
           taskText: settled?.taskText ?? "",
           roleLabel: settled?.roleLabel ?? "",
           status: settled?.status ?? "done",
-          resultSummary: settled?.resultSummary ?? ""
+          resultSummary: settled?.resultSummary ?? "",
+          verdict: settled?.verdict ?? null,
+          verdictSummary: settled?.verdictSummary ?? null
         },
         this.opts.roster,
         opts.selfAgentId,

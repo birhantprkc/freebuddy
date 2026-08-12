@@ -34,10 +34,15 @@ test("FSM: TurnEnded with active child parks; ChildSettled wakes; no children co
     childStatus: "done",
     resultSummary: "LGTM",
     taskText: "审",
-    roleLabel: "评审"
+    roleLabel: "评审",
+    verdict: "needs_changes",
+    verdictSummary: "toast"
   }));
   assert.equal(state.nodes.root.status, "turning");
-  assert.ok(effects.some((e) => e.type === "SpawnWake"));
+  const wake = effects.find((e) => e.type === "SpawnWake");
+  assert.ok(wake);
+  assert.equal(wake.verdict, "needs_changes");
+  assert.equal(wake.verdictSummary, "toast");
 
   ({ state, effects } = reduce(state, { type: "TurnStarted", nodeId: "root" }));
   ({ state, effects } = reduce(state, {

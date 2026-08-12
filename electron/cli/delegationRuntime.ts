@@ -498,7 +498,9 @@ export class DelegationRuntime {
           taskText: settled?.taskText ?? "",
           roleLabel: settled?.roleLabel ?? "",
           status: settled?.status ?? "done",
-          resultSummary: settled?.resultSummary ?? ""
+          resultSummary: settled?.resultSummary ?? "",
+          verdict: settled?.verdict ?? null,
+          verdictSummary: settled?.verdictSummary ?? null
         },
         ctx.roster,
         args.teammate.id,

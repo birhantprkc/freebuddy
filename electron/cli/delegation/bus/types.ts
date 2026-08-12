@@ -31,14 +31,14 @@ export interface BusState {
 export type BusEvent =
   | { type: "TurnStarted"; nodeId: string }
   | { type: "TurnEnded"; nodeId: string; error?: string | null; summary?: string }
-  | { type: "ChildSettled"; parentId: string; childId: string; childStatus: string; resultSummary: string; taskText: string; roleLabel: string }
+  | { type: "ChildSettled"; parentId: string; childId: string; childStatus: string; resultSummary: string; taskText: string; roleLabel: string; verdict?: string | null; verdictSummary?: string | null }
   | { type: "UserFollowUp"; prompt: string }
   | { type: "RunKilled" }
   | { type: "RunBlocked" }
   | { type: "RunUnblocked" };
 
 export type BusEffect =
-  | { type: "SpawnWake"; nodeId: string; childId: string; childStatus: string; resultSummary: string; taskText: string; roleLabel: string }
+  | { type: "SpawnWake"; nodeId: string; childId: string; childStatus: string; resultSummary: string; taskText: string; roleLabel: string; verdict?: string | null; verdictSummary?: string | null }
   | { type: "SpawnFollowUp"; prompt: string }
   | { type: "MarkRunCompleted"; summary?: string }
   | { type: "MarkRunFailed"; error: string }

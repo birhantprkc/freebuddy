@@ -128,7 +128,9 @@ export function reduce(state: BusState, event: BusEvent): ReduceResult {
           childStatus: event.childStatus,
           resultSummary: event.resultSummary,
           taskText: event.taskText,
-          roleLabel: event.roleLabel
+          roleLabel: event.roleLabel,
+          verdict: event.verdict,
+          verdictSummary: event.verdictSummary
         });
       }
       break;
