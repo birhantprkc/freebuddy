@@ -10,6 +10,7 @@ import {
   ancestorRosterIds,
   isWholeTaskRedelegate
 } from "./guards.js";
+import { PROTOCOL_RULES } from "./text.js";
 
 export interface DelegateToolBinding {
   token: string;
@@ -38,6 +39,8 @@ export interface DelegateToolResponse {
   request_id?: string;
   verdict?: DelegationVerdict | null;
   verdictSummary?: string | null;
+  /** Present when status is running — model should end the turn. */
+  instruction?: string;
 }
 
 export type ListTeammatesResult = DelegateToolResponse;
@@ -48,8 +51,14 @@ export function listTeammatesAction(
   ctx: DelegateRunContext | undefined
 ): ListTeammatesResult {
   if (!ctx) return { ok: false, error: "run context not found" };
+  const banned = ancestorRosterIds({
+    selfRosterId: binding.selfAgentId,
+    parentEventId: binding.parentEventId,
+    getEvent: getDelegationEvent,
+    roster: ctx.roster
+  });
   const teammates = ctx.roster
-    .filter((r) => r.id !== binding.selfAgentId)
+    .filter((r) => !banned.has(r.id))
     .map((r) => ({
       id: r.id,
       label: r.label,
@@ -64,7 +73,7 @@ export function checkDelegateResultAction(params: Record<string, unknown>): Chec
   if (!requestId) return { ok: false, error: "request_id required" };
   const event = getDelegationEvent(requestId);
   if (!event) return { ok: false, error: "request not found" };
-  return {
+  const response: CheckResult = {
     ok: true,
     status: event.status,
     result: event.resultSummary ?? "",
@@ -72,6 +81,10 @@ export function checkDelegateResultAction(params: Record<string, unknown>): Chec
     verdict: event.verdict,
     verdictSummary: event.verdictSummary
   };
+  if (event.status === "running") {
+    response.instruction = PROTOCOL_RULES.runningCheckInstruction;
+  }
+  return response;
 }
 
 const VERDICTS = new Set(["pass", "needs_changes", "fail"]);

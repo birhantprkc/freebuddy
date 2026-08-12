@@ -134,6 +134,19 @@ export function registerDelegationIpc(): void {
   );
 
   registerHandler(
+    "delegation:pauseRun",
+    (event, runId: string) => ensureDelegationRuntime(event).pauseRun(runId)
+  );
+
+  registerHandler(
+    "delegation:resumeRun",
+    async (event, runId: string) => {
+      const ok = await ensureDelegationRuntime(event).resumeRun(runId);
+      return ok;
+    }
+  );
+
+  registerHandler(
     "delegation:hasRunForConversation",
     (_event, conversationId: string) => conversationHasDelegationRun(conversationId)
   );

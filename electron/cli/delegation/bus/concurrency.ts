@@ -1,5 +1,6 @@
 import {
   countActiveDelegateLeaves,
+  listPendingChildEvents,
   updateDelegationEvent
 } from "../../delegationRuns.js";
 import type { DelegationPolicy } from "../../delegationTeamTypes.js";
@@ -20,23 +21,58 @@ export interface ConcurrencyDeps<TExecArgs, TResult> {
   onSettled: (childEventId: string, runId: string) => void;
 }
 
-class DelegateTimeout extends Error {
+export class DelegateTimeout extends Error {
   constructor() {
     super("delegate exceeded timeout");
     this.name = "DelegateTimeout";
   }
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  return Promise.race([
-    p.finally(() => {
-      if (timer) clearTimeout(timer);
-    }),
-    new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new DelegateTimeout()), ms);
-    })
-  ]);
+/**
+ * Race `p` against an active-time budget. While `isPaused()` is true the budget
+ * does not drain (used when the delegate has unfinished child events).
+ */
+export function withActiveTimeTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  isPaused: () => boolean,
+  opts?: { tickMs?: number }
+): Promise<T> {
+  const tickMs = opts?.tickMs ?? 50;
+  if (ms <= 0) {
+    return Promise.reject(new DelegateTimeout());
+  }
+  return new Promise<T>((resolve, reject) => {
+    let remaining = ms;
+    let last = Date.now();
+    let settled = false;
+    const tick = setInterval(() => {
+      if (settled) return;
+      const now = Date.now();
+      const elapsed = now - last;
+      last = now;
+      if (isPaused()) return;
+      remaining -= elapsed;
+      if (remaining <= 0) {
+        cleanup();
+        reject(new DelegateTimeout());
+      }
+    }, tickMs);
+    const cleanup = () => {
+      settled = true;
+      clearInterval(tick);
+    };
+    p.then(
+      (v) => {
+        cleanup();
+        resolve(v);
+      },
+      (e) => {
+        cleanup();
+        reject(e);
+      }
+    );
+  });
 }
 
 /**
@@ -70,7 +106,11 @@ export class DelegateConcurrencyQueue<TExecArgs, TResult> {
 
   private start(runId: string, q: QueuedDelegateJob<TExecArgs>): void {
     updateDelegationEvent(q.childEventId, { status: "running" });
-    void withTimeout(this.deps.executor(q.execArgs), q.timeoutMs)
+    void withActiveTimeTimeout(
+      this.deps.executor(q.execArgs),
+      q.timeoutMs,
+      () => listPendingChildEvents(runId, q.childEventId).length > 0
+    )
       .then((result) => {
         this.deps.onResult(q.childEventId, result);
         this.deps.onSettled(q.childEventId, runId);

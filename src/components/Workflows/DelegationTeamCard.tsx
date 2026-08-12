@@ -9,6 +9,55 @@ import { AgentAvatar } from "../CLI/AgentAvatar";
 
 const POLL_MS = 1500;
 
+function PauseIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="7" y="5" width="3" height="14" rx="1" />
+      <rect x="14" y="5" width="3" height="14" rx="1" />
+    </svg>
+  );
+}
+
+function ResumeIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polygon points="7 4 19 12 7 20 7 4" fill="currentColor" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="6" y="6" width="12" height="12" rx="1.5" />
+    </svg>
+  );
+}
+
 export function DelegationTeamCard({
   conversationId
 }: {
@@ -20,7 +69,9 @@ export function DelegationTeamCard({
   const [team, setTeam] = useState<DelegationTeam | undefined>(undefined);
   const [activeAgentId, setActiveAgentId] = useState<string | undefined>(undefined);
   const [runStatus, setRunStatus] = useState<string | undefined>(undefined);
+  const [runId, setRunId] = useState<string | undefined>(undefined);
   const [modelsByAgent, setModelsByAgent] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
 
   // Extract model per agent from the conversation's streamed config-options
   // items — same mechanism as WorkspacePanel's sessionConfigSummary.
@@ -70,10 +121,14 @@ export function DelegationTeamCard({
             setTeam(undefined);
             setActiveAgentId(undefined);
             setRunStatus(undefined);
+            setRunId(undefined);
           }
           return;
         }
-        if (!cancelled) setRunStatus(run.status);
+        if (!cancelled) {
+          setRunStatus(run.status);
+          setRunId(run.id);
+        }
         if (!team) {
           const loaded = await delegationClient.get(run.teamId);
           if (!cancelled) setTeam(loaded ?? undefined);
@@ -132,23 +187,82 @@ export function DelegationTeamCard({
   const runBadge =
     runStatus === "running"
       ? t("status.running")
-      : runStatus === "blocked"
-        ? t("status.blocked", { defaultValue: "blocked" })
-        : runStatus === "completed"
-          ? t("status.done", { defaultValue: "done" })
-          : runStatus === "failed" || runStatus === "killed"
-            ? t("status.failed", { defaultValue: runStatus })
-            : "";
+      : runStatus === "paused"
+        ? t("workflow.status.paused", { defaultValue: "paused" })
+        : runStatus === "blocked"
+          ? t("status.blocked", { defaultValue: "blocked" })
+          : runStatus === "completed"
+            ? t("status.done", { defaultValue: "done" })
+            : runStatus === "failed" || runStatus === "killed"
+              ? t("status.failed", { defaultValue: runStatus })
+              : "";
+
+  const onPause = async () => {
+    if (!runId || busy) return;
+    setBusy(true);
+    try {
+      await delegationClient.pauseRun(runId);
+      setRunStatus("paused");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onResume = async () => {
+    if (!runId || busy) return;
+    setBusy(true);
+    try {
+      await delegationClient.resumeRun(runId);
+      setRunStatus("running");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onStop = async () => {
+    if (!runId || busy) return;
+    setBusy(true);
+    try {
+      await delegationClient.stopRun(runId);
+      setRunStatus("killed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showRunControls =
+    Boolean(runId) &&
+    (runStatus === "running" || runStatus === "blocked" || runStatus === "paused");
 
   return (
     <div className="delegation-roster-stack">
-      {runBadge ? (
-        <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-          {t("workflow.delegation.runStatus", {
-            defaultValue: "Run"
-          })}
-          {": "}
-          <strong>{runBadge}</strong>
+      {showRunControls ? (
+        <div className="delegation-run-toolbar">
+          {runBadge ? (
+            <span className={`workflow-run-status ${runStatus ?? ""}`}>{runBadge}</span>
+          ) : (
+            <span />
+          )}
+          <div className="delegation-run-actions">
+            {runStatus === "running" || runStatus === "blocked" ? (
+              <button type="button" disabled={busy} onClick={() => void onPause()}>
+                <PauseIcon /> {t("workflow.pause")}
+              </button>
+            ) : null}
+            {runStatus === "paused" ? (
+              <button type="button" disabled={busy} onClick={() => void onResume()}>
+                <ResumeIcon /> {t("workflow.resume")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="danger"
+              disabled={busy}
+              onClick={() => void onStop()}
+            >
+              <StopIcon /> {t("workflow.stop")}
+            </button>
+          </div>
         </div>
       ) : null}
       {team.roster.map((r) => {

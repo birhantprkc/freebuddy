@@ -20,6 +20,7 @@ test("protocol text is the single source for roster / MCP / skill phrases", asyn
   const prompt = buildDelegationRosterPrompt(roster, "r-impl", 0, 3);
   assert.match(prompt, /pending/);
   assert.match(prompt, /running/);
+  assert.match(prompt, /立即结束本轮|禁止再.*check_delegate_result/);
   assert.match(prompt, /唤醒/);
   assert.match(prompt, /别反弹/);
   assert.match(prompt, /整份任务/);
@@ -33,16 +34,22 @@ test("protocol text is the single source for roster / MCP / skill phrases", asyn
   assert.match(check, /wake/i);
   assert.match(check, /pending/i);
   assert.match(check, /running/i);
+  assert.match(check, /END THIS TURN IMMEDIATELY/i);
+  assert.match(check, /Do NOT call `check_delegate_result` again/i);
 
   const skill = buildDelegationSkillMarkdown();
   assert.match(skill, /no ping-pong/);
   assert.match(skill, /entire task/);
   assert.match(skill, /wake/i);
   assert.match(skill, /submit_verdict/);
-  assert.match(skill, /1\.2\.0/);
+  assert.match(skill, /1\.2\.1/);
+  assert.match(skill, /END THIS TURN IMMEDIATELY/);
   assert.doesNotMatch(skill, /every 3-5 seconds until status is/);
+  assert.doesNotMatch(skill, /You MAY end your turn/);
 
-  assert.ok(PROTOCOL_RULES.runningMeansMayEndTurn.includes("wake"));
+  assert.ok(PROTOCOL_RULES.runningMeansEndTurn.includes("wake"));
+  assert.ok(PROTOCOL_RULES.runningMeansEndTurn.includes("END THIS TURN IMMEDIATELY"));
+  assert.match(PROTOCOL_RULES.runningCheckInstruction, /End this turn now/i);
 });
 
 test("checked-in SKILL.md matches protocol skill generator key rules", async () => {
@@ -53,8 +60,10 @@ test("checked-in SKILL.md matches protocol skill generator key rules", async () 
   assert.match(disk, /wake/i);
   assert.match(disk, /pending/);
   assert.match(disk, /submit_verdict/);
-  assert.match(disk, /1\.2\.0/);
+  assert.match(disk, /1\.2\.1/);
+  assert.match(disk, /END THIS TURN IMMEDIATELY/);
   assert.doesNotMatch(disk, /Poll `check_delegate_result\(request_id\)` every 3-5 seconds\. When `status` is `"done"`/);
+  assert.doesNotMatch(disk, /You MAY end your turn/);
 });
 
 test("wake prompt branches on verdict", async () => {

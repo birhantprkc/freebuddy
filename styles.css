@@ -17919,6 +17919,45 @@ button.ghost:focus-visible,
   gap: 16px;
   margin-bottom: 16px;
 }
+.delegation-run-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+}
+.delegation-run-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.delegation-run-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--fb-border);
+  background: var(--fb-panel-bg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.delegation-run-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.delegation-run-actions button svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.delegation-run-actions button.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
 .delegation-roster-active {
   border-color: var(--fb-brand, #10b981);
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);

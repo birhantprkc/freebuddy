@@ -175,12 +175,11 @@ export const runCtxMap = new Map<string, RunCtx>();
 
 let transferInFlight = false;
 
-let workflowMessageUnsubscribe: (() => void) | null = null;
+const workflowMessageUnsubscribes = new Map<string, () => void>();
 const workflowEventUnsubscribes = new Map<string, () => void>();
 let workflowFinishedUnsubscribe: (() => void) | null = null;
-let workflowMessageConversationId: string | null = null;
-let workflowRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-const workflowPendingMessageIds = new Set<string>();
+const workflowRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const workflowPendingMessageIds = new Map<string, Set<string>>();
 
 const terminalWorkflowStatuses = new Set([
   "completed",
@@ -188,6 +187,24 @@ const terminalWorkflowStatuses = new Set([
   "killed",
   "partial"
 ]);
+
+function removeWorkflowMessageSubscription(conversationId: string): void {
+  const unsubscribe = workflowMessageUnsubscribes.get(conversationId);
+  if (unsubscribe) {
+    try {
+      unsubscribe();
+    } catch {
+      /* noop */
+    }
+    workflowMessageUnsubscribes.delete(conversationId);
+  }
+  const timer = workflowRefreshTimers.get(conversationId);
+  if (timer) {
+    clearTimeout(timer);
+    workflowRefreshTimers.delete(conversationId);
+  }
+  workflowPendingMessageIds.delete(conversationId);
+}
 
 function removeWorkflowEventSubscription(conversationId: string): void {
   const unsubscribe = workflowEventUnsubscribes.get(conversationId);
@@ -200,11 +217,12 @@ function removeWorkflowEventSubscription(conversationId: string): void {
   workflowEventUnsubscribes.delete(conversationId);
 }
 
-function hasActiveWorkflowMessages(messages: ConversationMessage[] | undefined): boolean {
+/** Running assistant turns (workflow steps or delegation handoffs). */
+function hasActiveStreamingMessages(messages: ConversationMessage[] | undefined): boolean {
   return (
     messages?.some(
       (message) =>
-        Boolean(message.workflowRunId && message.workflowStepRowId) &&
+        message.role === "assistant" &&
         (message.status === "running" || message.status === "starting")
     ) ?? false
   );
@@ -229,6 +247,7 @@ function ensureWorkflowMessageSubscription(
         terminalWorkflowStatuses.has(event.status)
       ) {
         removeWorkflowEventSubscription(event.conversationId);
+        removeWorkflowMessageSubscription(event.conversationId);
       }
     });
   }
@@ -249,32 +268,43 @@ function ensureWorkflowMessageSubscription(
       )
     );
   }
-  if (workflowMessageConversationId === conversationId) return;
-  if (workflowMessageUnsubscribe) {
-    try {
-      workflowMessageUnsubscribe();
-    } catch {
-      /* noop */
+
+  if (conversationId && !workflowMessageUnsubscribes.has(conversationId)) {
+    workflowMessageUnsubscribes.set(
+      conversationId,
+      api.onStepMessage(conversationId, (event: { messageId?: string }) => {
+        let pending = workflowPendingMessageIds.get(conversationId);
+        if (!pending) {
+          pending = new Set();
+          workflowPendingMessageIds.set(conversationId, pending);
+        }
+        if (event.messageId) pending.add(event.messageId);
+        if (workflowRefreshTimers.has(conversationId)) return;
+        workflowRefreshTimers.set(
+          conversationId,
+          setTimeout(() => {
+            workflowRefreshTimers.delete(conversationId);
+            const ids = [...(workflowPendingMessageIds.get(conversationId) ?? [])];
+            workflowPendingMessageIds.get(conversationId)?.clear();
+            void refresh(conversationId, ids.length ? ids : undefined);
+          }, 300)
+        );
+      })
+    );
+  }
+}
+
+function pruneIdleWorkflowMessageSubscriptions(
+  activeId: string | undefined,
+  messagesById: ConversationState["messages"]
+): void {
+  for (const cid of [...workflowMessageUnsubscribes.keys()]) {
+    if (cid === activeId) continue;
+    if (!hasActiveStreamingMessages(messagesById[cid])) {
+      removeWorkflowMessageSubscription(cid);
+      removeWorkflowEventSubscription(cid);
     }
-    workflowMessageUnsubscribe = null;
   }
-  if (workflowRefreshTimer) {
-    clearTimeout(workflowRefreshTimer);
-    workflowRefreshTimer = null;
-  }
-  workflowPendingMessageIds.clear();
-  workflowMessageConversationId = conversationId ?? null;
-  if (!conversationId) return;
-  workflowMessageUnsubscribe = api.onStepMessage(conversationId, (event: { messageId?: string }) => {
-    if (event.messageId) workflowPendingMessageIds.add(event.messageId);
-    if (workflowRefreshTimer) return;
-    workflowRefreshTimer = setTimeout(() => {
-      workflowRefreshTimer = null;
-      const ids = [...workflowPendingMessageIds];
-      workflowPendingMessageIds.clear();
-      void refresh(conversationId, ids.length ? ids : undefined);
-    }, 300);
-  });
 }
 
 function latestSessionIdFromMessages(
@@ -664,12 +694,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       set({ activeId: id });
     }
     const cachedMessages = id ? get().messages[id] : undefined;
-    if (id && (!cachedMessages || hasActiveWorkflowMessages(cachedMessages))) {
+    // Always reload when the conversation has an in-flight assistant turn
+    // (delegation handoffs included). Missing this made background teams look
+    // frozen after switching away and back.
+    if (id && (!cachedMessages || hasActiveStreamingMessages(cachedMessages))) {
       await get().loadMessages(id);
     }
     ensureWorkflowMessageSubscription(id, async (cid, messageIds) => {
       await get().loadMessages(cid, messageIds);
     });
+    pruneIdleWorkflowMessageSubscriptions(id, get().messages);
     if (id) {
       const conv = get().conversations.find((c) => c.id === id);
       if (conv?.cwd) {

@@ -14,6 +14,7 @@ export interface DelegationRunRow {
   id: string;
   kind: "delegation";
   conversationId: string | null;
+  name: string;
   goal: string;
   status: WorkflowRunStatus;
   cwd: string | null;
@@ -22,6 +23,47 @@ export interface DelegationRunRow {
   createdAt: string;
   updatedAt: string;
   endedAt: string | null;
+}
+
+export type DelegationRunFinishedEvent = {
+  runId: string;
+  conversationId?: string;
+  status: string;
+  name: string;
+};
+
+let delegationRunFinishedHandler:
+  | ((event: DelegationRunFinishedEvent) => void)
+  | null = null;
+
+export function bindDelegationRunFinishedNotifier(
+  fn: ((event: DelegationRunFinishedEvent) => void) | null
+): void {
+  delegationRunFinishedHandler = fn;
+}
+
+const TERMINAL_RUN_STATUSES = new Set<WorkflowRunStatus>([
+  "completed",
+  "failed",
+  "killed",
+  "partial"
+]);
+
+function mapDelegationRunRow(r: any): DelegationRunRow {
+  return {
+    id: r.id,
+    kind: "delegation",
+    conversationId: r.conversation_id,
+    name: typeof r.name === "string" && r.name.trim() ? r.name : r.goal,
+    goal: r.goal,
+    status: r.status,
+    cwd: r.cwd,
+    teamId: r.team_id,
+    teamSnapshotJson: r.team_snapshot_json,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    endedAt: r.ended_at
+  };
 }
 
 export function createDelegationRun(input: CreateDelegationRunInput): string {
@@ -54,19 +96,7 @@ export function getDelegationRun(id: string): DelegationRunRow | undefined {
     .prepare("SELECT * FROM workflow_runs WHERE id = ? AND kind = 'delegation'")
     .get(id) as any;
   if (!r) return undefined;
-  return {
-    id: r.id,
-    kind: "delegation",
-    conversationId: r.conversation_id,
-    goal: r.goal,
-    status: r.status,
-    cwd: r.cwd,
-    teamId: r.team_id,
-    teamSnapshotJson: r.team_snapshot_json,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    endedAt: r.ended_at
-  };
+  return mapDelegationRunRow(r);
 }
 
 export function getDelegationRunByConversation(
@@ -78,28 +108,33 @@ export function getDelegationRunByConversation(
     )
     .get(conversationId) as any;
   if (!r) return undefined;
-  return {
-    id: r.id,
-    kind: "delegation",
-    conversationId: r.conversation_id,
-    goal: r.goal,
-    status: r.status,
-    cwd: r.cwd,
-    teamId: r.team_id,
-    teamSnapshotJson: r.team_snapshot_json,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    endedAt: r.ended_at
-  };
+  return mapDelegationRunRow(r);
 }
 
 export function setDelegationRunStatus(id: string, status: WorkflowRunStatus): void {
+  const previous = getDelegationRun(id);
   const now = new Date().toISOString();
   getDb()
     .prepare(
       `UPDATE workflow_runs SET status = ?, updated_at = ?, ended_at = ? WHERE id = ? AND kind = 'delegation'`
     )
-    .run(status, now, ["completed", "failed", "killed", "partial"].includes(status) ? now : null, id);
+    .run(status, now, TERMINAL_RUN_STATUSES.has(status) ? now : null, id);
+
+  // Mirror workflow finalize: notify on first transition into a non-killed
+  // terminal status so unread / OS notification / pet broadcast can fire.
+  if (
+    previous &&
+    !TERMINAL_RUN_STATUSES.has(previous.status) &&
+    TERMINAL_RUN_STATUSES.has(status) &&
+    status !== "killed"
+  ) {
+    delegationRunFinishedHandler?.({
+      runId: id,
+      conversationId: previous.conversationId ?? undefined,
+      status,
+      name: previous.name || previous.goal || "Delegation run"
+    });
+  }
 }
 
 export type DelegationEventRow = DelegationEvent;
@@ -256,6 +291,22 @@ export function countActiveDelegateLeaves(runId: string): number {
     )
     .get(runId) as { n: number } | undefined;
   return row?.n ?? 0;
+}
+
+/** Cancel all pending/running events under a run. Returns cancelled ids. */
+export function cancelActiveDelegationEvents(runId: string, reason: string): string[] {
+  const active = listDelegationEvents(runId).filter(
+    (e) => e.status === "pending" || e.status === "running"
+  );
+  const ids: string[] = [];
+  for (const ev of active) {
+    updateDelegationEvent(ev.id, {
+      status: "cancelled",
+      resultSummary: reason
+    });
+    ids.push(ev.id);
+  }
+  return ids;
 }
 
 /** Active (non-terminal) child events of a given parent event. */

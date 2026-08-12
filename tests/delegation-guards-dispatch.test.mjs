@@ -95,6 +95,58 @@ test("hard reject bounce to caller/ancestor", async (t) => {
   });
 });
 
+test("list_teammates excludes caller/ancestors on the call chain", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, insertDelegationEvent } = await import(
+      "../dist-electron/cli/delegationRuns.js"
+    );
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const rootId = insertDelegationEvent({
+      runId,
+      parentEventId: null,
+      agentId: "cli-codex-acp",
+      agentName: "实现",
+      roleLabel: "实现",
+      taskText: "实现功能",
+      depth: 0,
+      canWrite: true,
+      status: "running"
+    });
+    const revId = insertDelegationEvent({
+      runId,
+      parentEventId: rootId,
+      agentId: "cli-claude-agent-acp",
+      agentName: "评审",
+      roleLabel: "评审",
+      taskText: "审查改动",
+      depth: 1,
+      canWrite: false,
+      status: "running"
+    });
+    const revBinding = {
+      token: "t",
+      taskSessionId: "s",
+      runId,
+      parentEventId: revId,
+      depth: 1,
+      selfAgentId: "r-rev",
+      selfLabel: "评审"
+    };
+    const res = await runDelegateAction(revBinding, "list_teammates", {}, {
+      contextProvider,
+      executor: async () => ({ summary: "", exitCode: 0, error: null }),
+      writeApproval: async () => true
+    });
+    assert.equal(res.ok, true);
+    const ids = (res.teammates ?? []).map((x) => x.id);
+    assert.deepEqual(ids, ["r-fix"], "caller r-impl must be filtered; only non-ancestor remains");
+    assert.ok(!ids.includes("r-impl"));
+    assert.ok(!ids.includes("r-rev"));
+  });
+});
+
 test("hard reject whole-task re-delegate", async (t) => {
   if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
   await withDb(async () => {

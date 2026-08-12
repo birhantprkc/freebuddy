@@ -131,6 +131,124 @@ test("delegate timeout: executor hanging -> pending now, poll -> timeout", async
   });
 });
 
+test("delegate timeout pauses while nested child is active", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, listDelegationEvents } = await import(
+      "../dist-electron/cli/delegationRuns.js"
+    );
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const three = [
+      ...roster,
+      { id: "r-fix", label: "修复", agentId: "cli-fix-acp", capability: "修", canWrite: true }
+    ];
+    // Parent job is enqueued with 80ms; nested job gets a longer budget after we bump policy.
+    const mutablePolicy = { ...policy, delegateTimeoutMs: 80, maxConcurrentDelegates: 2 };
+    const shortCtx = {
+      roster: three,
+      policy: mutablePolicy,
+      teamId: "team-1",
+      cwd: "/repo"
+    };
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
+    const deps = {
+      contextProvider: () => shortCtx,
+      executor: async (args) => {
+        if (args.teammate.id === "r-fix") {
+          await tick(250);
+          return { summary: "nested done", exitCode: 0, error: null };
+        }
+        // Parent (r-rev): spawn nested work that outlives the parent's 80ms active budget.
+        mutablePolicy.delegateTimeoutMs = 500;
+        const revBinding = {
+          token: "t",
+          taskSessionId: "s-rev",
+          runId,
+          parentEventId: args.childEventId,
+          depth: args.depth,
+          selfAgentId: "r-rev",
+          selfLabel: "评审"
+        };
+        const nested = await runDelegateAction(
+          revBinding,
+          "delegate",
+          { teammate_id: "r-fix", task: "子任务修一小处" },
+          deps
+        );
+        assert.equal(nested.status, "pending");
+        for (let i = 0; i < 40; i++) {
+          await tick(20);
+          const poll = await runDelegateAction(
+            revBinding,
+            "check_delegate_result",
+            { request_id: nested.request_id },
+            deps
+          );
+          if (poll.status === "done") break;
+          assert.notEqual(poll.status, "timeout", "nested must finish under its longer budget");
+        }
+        return { summary: "parent done after nested", exitCode: 0, error: null };
+      },
+      writeApproval: async () => true
+    };
+    const res = await runDelegateAction(
+      binding,
+      "delegate",
+      { teammate_id: "r-rev", task: "审查并必要时委派修复" },
+      deps
+    );
+    assert.equal(res.status, "pending");
+    await tick(450);
+    const polled = await runDelegateAction(
+      binding,
+      "check_delegate_result",
+      { request_id: res.request_id },
+      deps
+    );
+    assert.equal(
+      polled.status,
+      "done",
+      "parent must not timeout while waiting on nested child (wall > delegateTimeoutMs)"
+    );
+    assert.equal(polled.result, "parent done after nested");
+    const ev = listDelegationEvents(runId).find((e) => e.id === res.request_id);
+    assert.equal(ev.status, "done");
+  });
+});
+
+test("withActiveTimeTimeout pauses budget while isPaused", async () => {
+  const { withActiveTimeTimeout, DelegateTimeout } = await import(
+    "../dist-electron/cli/delegation/bus/concurrency.js"
+  );
+  let paused = true;
+  const start = Date.now();
+  const value = await withActiveTimeTimeout(
+    new Promise((resolve) => {
+      setTimeout(() => {
+        paused = false;
+        setTimeout(() => resolve("ok"), 40);
+      }, 120);
+    }),
+    80,
+    () => paused,
+    { tickMs: 10 }
+  );
+  assert.equal(value, "ok");
+  assert.ok(Date.now() - start >= 120, "wall time includes paused stretch");
+
+  await assert.rejects(
+    () =>
+      withActiveTimeTimeout(
+        new Promise(() => {}),
+        40,
+        () => false,
+        { tickMs: 10 }
+      ),
+    (err) => err instanceof DelegateTimeout
+  );
+});
+
 test("delegate executor failure -> pending now, poll -> failed", async (t) => {
   if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
   await withDb(async () => {
@@ -285,6 +403,8 @@ test("check_delegate_result returns running while executor is still running", as
     // Poll immediately: the background executor is executing -> status is now the real "running".
     const polled = await runDelegateAction(binding, "check_delegate_result", { request_id: res.request_id }, sentinelDeps());
     assert.equal(polled.status, "running");
+    assert.match(String(polled.instruction ?? ""), /End this turn now/i);
+    assert.match(String(polled.instruction ?? ""), /Do not poll/i);
     // Let it finish so no background timer is left dangling.
     await tick(250);
   });

@@ -546,12 +546,13 @@ test("conversationStore subscribes to workflow message events", () => {
   assert.match(src, /onStepMessage/);
 });
 
-test("conversationStore refreshes stale running workflow messages on reactivation", () => {
+test("conversationStore keeps background streaming subscriptions and refreshes on reactivation", () => {
   const src = read("../src/store/conversationStore.ts");
-  assert.match(src, /function hasActiveWorkflowMessages/);
-  assert.match(src, /message\.workflowRunId && message\.workflowStepRowId/);
+  assert.match(src, /function hasActiveStreamingMessages/);
   assert.match(src, /message\.status === "running"/);
-  assert.match(src, /hasActiveWorkflowMessages\(cachedMessages\)/);
+  assert.match(src, /hasActiveStreamingMessages\(cachedMessages\)/);
+  assert.match(src, /workflowMessageUnsubscribes/);
+  assert.match(src, /pruneIdleWorkflowMessageSubscriptions/);
 });
 
 test("conversationStore uses a team follow-up context and dedicated session scope", () => {

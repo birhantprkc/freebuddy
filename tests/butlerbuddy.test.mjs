@@ -497,21 +497,19 @@ test("ButlerBuddy runtime state is owned by main and synchronized over a bounded
   assert.match(types, /taskText\?: string/);
 });
 
-test("every completed task reaches ButlerBuddy before foreground notification suppression", () => {
+test("ButlerBuddy and OS notifications only fire while FreeBuddy is in the background", () => {
   const sounds = fs.readFileSync(
     new URL("../src/utils/soundEffects.ts", import.meta.url),
     "utf8"
   );
   const notifyBlock = sounds.slice(sounds.indexOf("export function notifyTaskFinished"));
-  const reportIndex = notifyBlock.indexOf("reportTaskResult");
   const backgroundReturnIndex = notifyBlock.indexOf("if (!background) return");
+  const reportIndex = notifyBlock.indexOf("butlerBuddy?.reportTaskResult");
+  const osNotifyIndex = notifyBlock.indexOf("window?.notifyTask");
 
-  assert.ok(reportIndex >= 0, "task result is reported to ButlerBuddy");
-  assert.ok(
-    reportIndex < backgroundReturnIndex,
-    "task result is reported before foreground notifications return early"
-  );
-  assert.match(notifyBlock, /reportTaskResult\?\.\(kind\)/);
+  assert.ok(backgroundReturnIndex >= 0, "foreground early-return is present");
+  assert.ok(reportIndex > backgroundReturnIndex, "pet report is gated by background");
+  assert.ok(osNotifyIndex > backgroundReturnIndex, "OS notify is gated by background");
 });
 
 test("the pet renderer subscribes to all five states and preserves click and drag behavior", () => {
@@ -586,6 +584,12 @@ test("ButlerBuddy task bubble opens the authoritative running task in the main w
   assert.match(app, /runningConversationIds/);
   assert.match(app, /completedUnreadTasks/);
   assert.match(app, /markConversationCompletedUnread/);
+  // Self-organizing delegation does not use conversationStore.live; presence
+  // must also treat assistant message status running/starting as in-progress.
+  assert.match(
+    app,
+    /message\.status === "running" \|\| message\.status === "starting"/
+  );
 });
 
 test("five transparent state assets and reduced-motion posters ship within budget", () => {

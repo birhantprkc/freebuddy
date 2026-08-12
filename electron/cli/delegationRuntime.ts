@@ -8,8 +8,10 @@ import {
   setDelegationRunStatus,
   insertDelegationEvent,
   updateDelegationEvent,
-  listDelegationEvents
+  listDelegationEvents,
+  cancelActiveDelegationEvents
 } from "./delegationRuns.js";
+import { cliKill } from "./runtime.js";
 import type {
   DelegationRosterEntry,
   DelegationPolicy,
@@ -91,6 +93,21 @@ export class DelegationRuntime {
   private contexts = new Map<string, RunContext>();
   private pendingApprovals: PendingApproval[] = [];
   private killedRunIds = new Set<string>();
+  private pausedRunIds = new Set<string>();
+  private activeSessionsByRun = new Map<string, Set<string>>();
+  private resumeAnchors = new Map<
+    string,
+    {
+      eventId: string;
+      parentEventId: string | null;
+      depth: number;
+      agentId: string;
+      roleLabel: string;
+      taskText: string;
+      canWrite: boolean;
+    }
+  >();
+  private abortWaiters = new Map<string, Array<(err: Error) => void>>();
 
   constructor(private deps: DelegationRuntimeDeps) {
     setDelegateDeps({
@@ -158,6 +175,20 @@ export class DelegationRuntime {
     return ctx;
   }
 
+  /** Reload team roster/model bindings so mid-run edits take effect on the next turn. */
+  private refreshTeamFromDb(ctx: RunContext): void {
+    const team = getDelegationTeam(ctx.teamId);
+    if (!team) return;
+    ctx.roster = team.roster;
+    ctx.policy = team.policy;
+    ctx.entryRoleId = team.entryRoleId;
+    ctx.orchestrator?.syncTeamSnapshot({
+      roster: team.roster,
+      policy: team.policy,
+      entryRoleId: team.entryRoleId
+    });
+  }
+
   private ensureOrchestrator(ctx: RunContext): DelegationOrchestrator {
     if (ctx.orchestrator) return ctx.orchestrator;
     const orch = new DelegationOrchestrator({
@@ -166,6 +197,7 @@ export class DelegationRuntime {
       policy: ctx.policy,
       entryRoleId: ctx.entryRoleId,
       spawnTurn: async (args) => {
+        this.refreshTeamFromDb(ctx);
         const agent =
           ctx.roster.find((r) => r.id === args.selfAgentId) ??
           ctx.roster.find((r) => r.id === ctx.entryRoleId) ??
@@ -285,6 +317,9 @@ export class DelegationRuntime {
         });
         return;
       }
+      if (this.pausedRunIds.has(runId)) {
+        return;
+      }
       // Orchestrator already marks run/node terminal via FSM effects when appropriate.
       // Ensure root event has a summary if still running-ish.
       const status: DelegationEventStatus = result.error ? "failed" : "done";
@@ -292,7 +327,7 @@ export class DelegationRuntime {
         status,
         resultSummary: result.error ?? result.summary
       });
-      if (!this.killedRunIds.has(runId)) {
+      if (!this.killedRunIds.has(runId) && !this.pausedRunIds.has(runId)) {
         const run = getDelegationRun(runId);
         if (run && run.status === "running") {
           setDelegationRunStatus(
@@ -302,6 +337,7 @@ export class DelegationRuntime {
         }
       }
     } catch (err) {
+      if (this.pausedRunIds.has(runId)) return;
       updateDelegationEvent(rootEventId, {
         status: "failed",
         resultSummary: (err as Error).message
@@ -320,6 +356,7 @@ export class DelegationRuntime {
     if (!ctx) throw new Error("delegation run not found");
 
     this.killedRunIds.delete(runId);
+    this.pausedRunIds.delete(runId);
     const entry = ctx.roster.find((r) => r.id === ctx!.entryRoleId) ?? ctx.roster[0];
     const events = listDelegationEvents(runId);
     let root = events.find((e) => e.depth === 0);
@@ -371,6 +408,21 @@ export class DelegationRuntime {
     }
   }
 
+  private waitForAbort(runId: string): Promise<never> {
+    return new Promise((_, reject) => {
+      const list = this.abortWaiters.get(runId) ?? [];
+      list.push(reject);
+      this.abortWaiters.set(runId, list);
+    });
+  }
+
+  private signalAbortWaiters(runId: string, message: string): void {
+    const list = this.abortWaiters.get(runId) ?? [];
+    this.abortWaiters.delete(runId);
+    const err = new Error(message);
+    for (const reject of list) reject(err);
+  }
+
   private async runAgentTurn(opts: {
     ctx: RunContext;
     agent: DelegationRosterEntry;
@@ -381,40 +433,71 @@ export class DelegationRuntime {
     depth: number;
     prompt: string;
   }): Promise<DelegateExecResult> {
-    const modelOverride = modelConfigOverride(opts.agent);
+    this.refreshTeamFromDb(opts.ctx);
+    const agent =
+      opts.ctx.roster.find((r) => r.id === opts.agent.id) ??
+      opts.ctx.roster.find(
+        (r) => r.agentId === opts.agent.agentId && r.label === opts.agent.label
+      ) ??
+      opts.agent;
+    const modelOverride = modelConfigOverride(agent);
+    const sessions = this.activeSessionsByRun.get(opts.ctx.runId) ?? new Set<string>();
+    sessions.add(opts.sessionId);
+    this.activeSessionsByRun.set(opts.ctx.runId, sessions);
     try {
-      const result = await this.deps.runAgent({
-        sessionId: opts.sessionId,
-        conversationId: opts.ctx.conversationId,
-        toolSessionScope: opts.scope,
-        resumeToolSession: true,
-        roleLabel: opts.agent.label,
-        agentId: opts.agent.agentId,
-        agentName: opts.resolved.agentName,
-        adapter: opts.resolved.adapter as CLIAdapterId,
-        binary: opts.resolved.binary,
-        extraArgs: opts.resolved.extraArgs,
-        env: opts.resolved.env,
-        prompt: opts.prompt,
-        cwd: opts.ctx.cwd,
-        approvalMode: "auto",
-        ...(modelOverride ? { configOptionOverrides: modelOverride } : {}),
-        skills: resolveSkillSnapshots([
-          ...(opts.agent.skillIds ?? []),
-          DELEGATION_SKILL_ID
-        ]),
-        announceSkills: true,
-        delegation: {
-          runId: opts.ctx.runId,
-          parentEventId: opts.parentEventId,
-          depth: opts.depth,
-          selfAgentId: opts.agent.id,
-          selfLabel: opts.agent.label
-        }
-      });
+      const result = await Promise.race([
+        this.deps.runAgent({
+          sessionId: opts.sessionId,
+          conversationId: opts.ctx.conversationId,
+          toolSessionScope: opts.scope,
+          resumeToolSession: true,
+          roleLabel: agent.label,
+          agentId: agent.agentId,
+          agentName: opts.resolved.agentName,
+          adapter: opts.resolved.adapter as CLIAdapterId,
+          binary: opts.resolved.binary,
+          extraArgs: opts.resolved.extraArgs,
+          env: opts.resolved.env,
+          prompt: opts.prompt,
+          cwd: opts.ctx.cwd,
+          approvalMode: "auto",
+          ...(modelOverride ? { configOptionOverrides: modelOverride } : {}),
+          skills: resolveSkillSnapshots([
+            ...(agent.skillIds ?? []),
+            DELEGATION_SKILL_ID
+          ]),
+          announceSkills: true,
+          delegation: {
+            runId: opts.ctx.runId,
+            parentEventId: opts.parentEventId,
+            depth: opts.depth,
+            selfAgentId: agent.id,
+            selfLabel: agent.label
+          }
+        }),
+        this.waitForAbort(opts.ctx.runId)
+      ]);
+      if (this.pausedRunIds.has(opts.ctx.runId) || this.killedRunIds.has(opts.ctx.runId)) {
+        return {
+          summary: result.summary,
+          exitCode: result.exitCode,
+          error: this.pausedRunIds.has(opts.ctx.runId) ? "paused by user" : "killed"
+        };
+      }
       return { summary: result.summary, exitCode: result.exitCode, error: result.error };
     } catch (err) {
-      return { summary: "", exitCode: null, error: (err as Error).message };
+      const message = (err as Error).message;
+      if (this.pausedRunIds.has(opts.ctx.runId) || /paused by user/i.test(message)) {
+        return { summary: "", exitCode: null, error: "paused by user" };
+      }
+      if (this.killedRunIds.has(opts.ctx.runId) || /killed/i.test(message)) {
+        return { summary: "", exitCode: null, error: "killed" };
+      }
+      return { summary: "", exitCode: null, error: message };
+    } finally {
+      const set = this.activeSessionsByRun.get(opts.ctx.runId);
+      set?.delete(opts.sessionId);
+      if (set && set.size === 0) this.activeSessionsByRun.delete(opts.ctx.runId);
     }
   }
 
@@ -439,12 +522,19 @@ export class DelegationRuntime {
     if (!ctx) {
       return { summary: "", exitCode: null, error: "run context not found" };
     }
-    const resolved = this.deps.resolveAgent(args.teammate.agentId);
+    this.refreshTeamFromDb(ctx);
+    const teammate =
+      ctx.roster.find((r) => r.id === args.teammate.id) ??
+      ctx.roster.find(
+        (r) => r.agentId === args.teammate.agentId && r.label === args.teammate.label
+      ) ??
+      args.teammate;
+    const resolved = this.deps.resolveAgent(teammate.agentId);
     if (!resolved) {
       return {
         summary: "",
         exitCode: null,
-        error: `agent not resolved: ${args.teammate.agentId}`
+        error: `agent not resolved: ${teammate.agentId}`
       };
     }
 
@@ -457,22 +547,23 @@ export class DelegationRuntime {
     orch.noteChildStarted(args.childEventId);
 
     const { buildDelegateWakePrompt } = await import("./delegation/protocol/text.js");
-    const { listPendingChildEvents } = await import("./delegationRuns.js");
+    const { resolveEffectiveWakeVerdict } = await import("./delegation/protocol/wakeVerdict.js");
+    const { listPendingChildEvents, listDelegationEvents } = await import("./delegationRuns.js");
 
     let prompt = buildDelegateTaskPrompt(
       args.task,
       ctx.roster,
-      args.teammate.id,
+      teammate.id,
       args.depth,
       ctx.policy.maxDepth
     );
     let lastError: string | null = null;
     let lastSummary = "";
 
-    while (!this.killedRunIds.has(args.runId)) {
+    while (!this.killedRunIds.has(args.runId) && !this.pausedRunIds.has(args.runId)) {
       const turn = await this.runAgentTurn({
         ctx,
-        agent: args.teammate,
+        agent: teammate,
         resolved,
         scope: delegationEventScope(ctx.runId, args.childEventId),
         sessionId: delegationTurnSessionId(ctx.runId, args.childEventId),
@@ -482,28 +573,32 @@ export class DelegationRuntime {
       });
       lastError = turn.error;
       lastSummary = turn.summary ?? "";
-      if (this.killedRunIds.has(args.runId)) {
-        lastError = lastError ?? "killed";
+      if (this.killedRunIds.has(args.runId) || this.pausedRunIds.has(args.runId)) {
+        lastError = lastError ?? (this.pausedRunIds.has(args.runId) ? "paused by user" : "killed");
         break;
       }
       const pending = listPendingChildEvents(args.runId, args.childEventId);
       if (pending.length === 0) break;
       const settled = await orch.raceAnySettle(pending.map((e) => e.id));
-      if (this.killedRunIds.has(args.runId)) {
-        lastError = lastError ?? "killed";
+      if (this.killedRunIds.has(args.runId) || this.pausedRunIds.has(args.runId)) {
+        lastError = lastError ?? (this.pausedRunIds.has(args.runId) ? "paused by user" : "killed");
         break;
       }
+      const effective = resolveEffectiveWakeVerdict(
+        settled ?? { id: "", verdict: null, verdictSummary: null },
+        listDelegationEvents(args.runId)
+      );
       prompt = buildDelegateWakePrompt(
         {
           taskText: settled?.taskText ?? "",
           roleLabel: settled?.roleLabel ?? "",
           status: settled?.status ?? "done",
           resultSummary: settled?.resultSummary ?? "",
-          verdict: settled?.verdict ?? null,
-          verdictSummary: settled?.verdictSummary ?? null
+          verdict: effective.verdict,
+          verdictSummary: effective.verdictSummary
         },
         ctx.roster,
-        args.teammate.id,
+        teammate.id,
         args.depth,
         ctx.policy.maxDepth
       );
@@ -543,9 +638,194 @@ export class DelegationRuntime {
   }
 
   stopRun(runId: string): void {
+    this.pausedRunIds.delete(runId);
+    this.resumeAnchors.delete(runId);
     this.killedRunIds.add(runId);
     this.contexts.get(runId)?.orchestrator?.markKilled();
+    this.signalAbortWaiters(runId, "killed");
+    for (const sessionId of this.activeSessionsByRun.get(runId) ?? []) {
+      try {
+        cliKill(sessionId);
+      } catch {
+        /* noop */
+      }
+    }
+    this.activeSessionsByRun.delete(runId);
+    cancelActiveDelegationEvents(runId, "用户停止");
     setDelegationRunStatus(runId, "killed");
+  }
+
+  pauseRun(runId: string): boolean {
+    const run = getDelegationRun(runId);
+    if (!run || (run.status !== "running" && run.status !== "blocked")) {
+      return false;
+    }
+    const events = listDelegationEvents(runId);
+    const candidates = events.filter(
+      (e) => e.status === "running" || e.status === "pending"
+    );
+    candidates.sort((a, b) => b.depth - a.depth || (a.startedAt ?? "").localeCompare(b.startedAt ?? ""));
+    const anchor = candidates[0];
+    if (anchor) {
+      this.resumeAnchors.set(runId, {
+        eventId: anchor.id,
+        parentEventId: anchor.parentEventId,
+        depth: anchor.depth,
+        agentId: anchor.agentId,
+        roleLabel: anchor.roleLabel,
+        taskText: anchor.taskText,
+        canWrite: anchor.canWrite
+      });
+    } else {
+      this.resumeAnchors.delete(runId);
+    }
+
+    this.pausedRunIds.add(runId);
+    this.contexts.get(runId)?.orchestrator?.interruptLoops();
+    this.signalAbortWaiters(runId, "paused by user");
+    for (const sessionId of this.activeSessionsByRun.get(runId) ?? []) {
+      try {
+        cliKill(sessionId);
+      } catch {
+        /* noop */
+      }
+    }
+    this.activeSessionsByRun.delete(runId);
+
+    for (const pending of [...this.pendingApprovals]) {
+      if (pending.runId !== runId) continue;
+      this.resolveWriteApproval(pending.approvalId, false);
+    }
+
+    cancelActiveDelegationEvents(runId, "用户暂停");
+    setDelegationRunStatus(runId, "paused");
+    return true;
+  }
+
+  async resumeRun(runId: string): Promise<boolean> {
+    const run = getDelegationRun(runId);
+    if (!run || run.status !== "paused") return false;
+    let ctx = this.contexts.get(runId);
+    if (!ctx) ctx = this.loadContextFromDb(runId);
+    if (!ctx) return false;
+
+    this.refreshTeamFromDb(ctx);
+    this.pausedRunIds.delete(runId);
+    this.killedRunIds.delete(runId);
+    setDelegationRunStatus(runId, "running");
+    ctx.orchestrator?.clearInterrupt();
+
+    const anchor = this.resumeAnchors.get(runId);
+    this.resumeAnchors.delete(runId);
+
+    if (!anchor) {
+      await this.followUp(
+        runId,
+        "继续先前因用户暂停而中断的任务。会话锚点已丢失，请从入口角色根据当前工作区状态继续推进并收尾。"
+      );
+      return true;
+    }
+
+    const role =
+      ctx.roster.find((r) => r.agentId === anchor.agentId && r.label === anchor.roleLabel) ??
+      ctx.roster.find((r) => r.label === anchor.roleLabel) ??
+      ctx.roster.find((r) => r.agentId === anchor.agentId);
+    if (!role) {
+      await this.followUp(
+        runId,
+        `继续先前因用户暂停而中断的任务（原角色 ${anchor.roleLabel} 已不在花名册）。请根据当前工作区状态继续。`
+      );
+      return true;
+    }
+
+    const resumeTask = [
+      "【用户暂停后续跑】上次执行被用户暂停中断。请从现场继续完成原任务，不要无故从头重做已完成部分。",
+      "",
+      "原任务：",
+      anchor.taskText
+    ].join("\n");
+
+    if (anchor.depth <= 0) {
+      const rootId = insertDelegationEvent({
+        runId,
+        parentEventId: null,
+        agentId: role.agentId,
+        agentName: role.label,
+        roleLabel: role.label,
+        taskText: resumeTask,
+        depth: 0,
+        canWrite: role.canWrite,
+        status: "running"
+      });
+      ctx.rootEventId = rootId;
+      const orch = this.ensureOrchestrator(ctx);
+      orch.bindEntry(rootId);
+      orch.clearInterrupt();
+      const prompt = buildDelegateTaskPrompt(
+        resumeTask,
+        ctx.roster,
+        role.id,
+        0,
+        ctx.policy.maxDepth
+      );
+      const result = await orch.runNodeLoop({
+        nodeId: rootId,
+        depth: 0,
+        selfAgentId: role.id,
+        selfLabel: role.label,
+        initialPrompt: prompt,
+        kind: "task"
+      });
+      if (this.pausedRunIds.has(runId) || this.killedRunIds.has(runId)) return true;
+      const status: DelegationEventStatus = result.error ? "failed" : "done";
+      updateDelegationEvent(rootId, {
+        status,
+        resultSummary: result.error ?? result.summary
+      });
+      const latest = getDelegationRun(runId);
+      if (latest && latest.status === "running") {
+        setDelegationRunStatus(runId, status === "done" ? "completed" : "failed");
+      }
+      return true;
+    }
+
+    const childId = insertDelegationEvent({
+      runId,
+      parentEventId: anchor.parentEventId,
+      agentId: role.agentId,
+      agentName: role.label,
+      roleLabel: role.label,
+      taskText: resumeTask,
+      depth: anchor.depth,
+      canWrite: role.canWrite,
+      status: "pending"
+    });
+    const result = await this.executor({
+      teammate: role,
+      task: resumeTask,
+      runId,
+      teamId: ctx.teamId,
+      cwd: ctx.cwd,
+      childEventId: childId,
+      parentEventId: anchor.parentEventId ?? ctx.rootEventId ?? childId,
+      depth: anchor.depth
+    });
+    if (this.pausedRunIds.has(runId) || this.killedRunIds.has(runId)) return true;
+    updateDelegationEvent(childId, {
+      status: result.error ? "failed" : "done",
+      resultSummary: result.error ?? result.summary
+    });
+    const latest = getDelegationRun(runId);
+    if (latest && latest.status === "running") {
+      // Child resume may leave entry parked; prefer leave running unless no active work.
+      const stillActive = listDelegationEvents(runId).some(
+        (e) => e.status === "pending" || e.status === "running"
+      );
+      if (!stillActive) {
+        setDelegationRunStatus(runId, result.error ? "failed" : "completed");
+      }
+    }
+    return true;
   }
 }
 

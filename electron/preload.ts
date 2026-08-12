@@ -638,6 +638,8 @@ const delegation = {
   listPendingApprovals: (runId: string) =>
     ipcRenderer.invoke("delegation:listPendingApprovals", runId),
   stopRun: (runId: string) => ipcRenderer.invoke("delegation:stopRun", runId),
+  pauseRun: (runId: string) => ipcRenderer.invoke("delegation:pauseRun", runId),
+  resumeRun: (runId: string) => ipcRenderer.invoke("delegation:resumeRun", runId),
   hasRunForConversation: (conversationId: string) =>
     ipcRenderer.invoke("delegation:hasRunForConversation", conversationId),
   followUp: (input: { conversationId: string; prompt: string }) =>
@@ -649,6 +651,20 @@ const delegation = {
     return () => {
       ipcRenderer.off(channel, listener);
     };
+  },
+  onRunFinished(
+    cb: (event: {
+      runId: string;
+      conversationId?: string;
+      status: string;
+      name: string;
+    }) => void
+  ): () => void {
+    const channel = "delegation://finished";
+    const handler = (_e: IpcRendererEvent, payload: unknown) =>
+      cb(payload as any);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
   }
 };
 

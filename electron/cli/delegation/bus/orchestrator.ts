@@ -2,11 +2,13 @@ import type { DelegationEvent } from "../../delegationTeamTypes.js";
 import {
   getDelegationEvent,
   isTerminalDelegationStatus,
+  listDelegationEvents,
   listPendingChildEvents,
   setDelegationRunStatus,
   updateDelegationEvent
 } from "../../delegationRuns.js";
 import { buildDelegateWakePrompt } from "../protocol/text.js";
+import { resolveEffectiveWakeVerdict } from "../protocol/wakeVerdict.js";
 import type { DelegationRosterEntry, DelegationPolicy } from "../../delegationTeamTypes.js";
 import {
   createInitialBusState,
@@ -51,6 +53,17 @@ export class DelegationOrchestrator {
 
   get state(): BusState | null {
     return this.bus;
+  }
+
+  /** Refresh roster/policy after the user edits the team mid-run (e.g. model swap). */
+  syncTeamSnapshot(input: {
+    roster: DelegationRosterEntry[];
+    policy: DelegationPolicy;
+    entryRoleId: string;
+  }): void {
+    this.opts.roster = input.roster;
+    this.opts.policy = input.policy;
+    this.opts.entryRoleId = input.entryRoleId;
   }
 
   bindEntry(entryNodeId: string): void {
@@ -154,6 +167,15 @@ export class DelegationOrchestrator {
     const { state, effects } = reduce(this.bus, { type: "RunKilled" });
     this.bus = state;
     this.applyEffects(effects);
+  }
+
+  /** Stop park/wake loops without forcing run status to killed (used by pause). */
+  interruptLoops(): void {
+    this.killed = true;
+  }
+
+  clearInterrupt(): void {
+    this.killed = false;
   }
 
   /**
@@ -262,8 +284,14 @@ export class DelegationOrchestrator {
           roleLabel: settled?.roleLabel ?? "",
           status: settled?.status ?? "done",
           resultSummary: settled?.resultSummary ?? "",
-          verdict: settled?.verdict ?? null,
-          verdictSummary: settled?.verdictSummary ?? null
+          ...resolveEffectiveWakeVerdict(
+            settled ?? {
+              id: "",
+              verdict: null,
+              verdictSummary: null
+            },
+            listDelegationEvents(this.opts.runId)
+          )
         },
         this.opts.roster,
         opts.selfAgentId,

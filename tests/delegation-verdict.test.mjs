@@ -89,6 +89,7 @@ test("submit_verdict writes and check_delegate_result returns it", async (t) => 
     assert.equal(checked.ok, true);
     assert.equal(checked.verdict, "needs_changes");
     assert.equal(checked.verdictSummary, "toast copy");
+    assert.equal(checked.instruction, undefined);
   });
 });
 
@@ -215,4 +216,135 @@ test("submit_verdict rejects invalid enum and allows overwrite", async (t) => {
     assert.equal(getDelegationEvent(id).verdict, "pass");
     assert.equal(getDelegationEvent(id).verdictSummary, "ok now");
   });
+});
+
+test("resolveEffectiveWakeVerdict prefers own verdict, else latest descendant review verdict", async () => {
+  const { resolveEffectiveWakeVerdict } = await import(
+    "../dist-electron/cli/delegation/protocol/wakeVerdict.js"
+  );
+
+  const base = {
+    runId: "r",
+    agentId: "a",
+    agentName: "n",
+    canWrite: true,
+    depth: 0,
+    startedAt: "2026-08-12T00:00:00.000Z",
+    endedAt: null,
+    resultSummary: null,
+    verdict: null,
+    verdictSummary: null
+  };
+
+  const impl = {
+    ...base,
+    id: "impl",
+    parentEventId: "root",
+    roleLabel: "开发工程师",
+    taskText: "实现",
+    status: "done",
+    endedAt: "2026-08-12T00:10:00.000Z",
+    canWrite: true,
+    verdict: null
+  };
+  const rev1 = {
+    ...base,
+    id: "rev1",
+    parentEventId: "impl",
+    roleLabel: "代码评审",
+    taskText: "审",
+    status: "done",
+    depth: 2,
+    canWrite: false,
+    endedAt: "2026-08-12T00:08:00.000Z",
+    verdict: "needs_changes",
+    verdictSummary: "fix ui"
+  };
+  const rev2 = {
+    ...rev1,
+    id: "rev2",
+    endedAt: "2026-08-12T00:09:30.000Z",
+    verdict: "pass",
+    verdictSummary: "lgtm"
+  };
+
+  // Implementer finished after nested review pass — wake parent must see pass, not null.
+  const bubbled = resolveEffectiveWakeVerdict(impl, [impl, rev1, rev2]);
+  assert.equal(bubbled.verdict, "pass");
+  assert.equal(bubbled.verdictSummary, "lgtm");
+
+  // Own verdict wins (reviewer node itself).
+  const reviewerSelf = resolveEffectiveWakeVerdict(
+    { ...rev2, verdict: "fail", verdictSummary: "blocking" },
+    [impl, rev1, rev2]
+  );
+  assert.equal(reviewerSelf.verdict, "fail");
+
+  // No descendant verdict → null.
+  const bare = resolveEffectiveWakeVerdict(impl, [impl]);
+  assert.equal(bare.verdict, null);
+});
+
+test("wake prompt for PM uses bubbled descendant pass", async () => {
+  const { buildDelegateWakePrompt } = await import(
+    "../dist-electron/cli/delegation/protocol/text.js"
+  );
+  const { resolveEffectiveWakeVerdict } = await import(
+    "../dist-electron/cli/delegation/protocol/wakeVerdict.js"
+  );
+  const roster = [
+    { id: "r-pm", label: "项目经理", agentId: "a", capability: "计划", canWrite: true },
+    { id: "r-dev", label: "开发工程师", agentId: "b", capability: "写", canWrite: true },
+    { id: "r-rev", label: "代码评审", agentId: "c", capability: "审", canWrite: false }
+  ];
+  const impl = {
+    id: "impl",
+    runId: "r",
+    parentEventId: "pm",
+    agentId: "b",
+    agentName: "开发工程师",
+    roleLabel: "开发工程师",
+    taskText: "做每日挑战",
+    depth: 1,
+    status: "done",
+    canWrite: true,
+    resultSummary: "已完成并通过评审",
+    startedAt: "t0",
+    endedAt: "t2",
+    verdict: null,
+    verdictSummary: null
+  };
+  const rev = {
+    ...impl,
+    id: "rev",
+    parentEventId: "impl",
+    agentId: "c",
+    agentName: "代码评审",
+    roleLabel: "代码评审",
+    taskText: "审查",
+    depth: 2,
+    canWrite: false,
+    endedAt: "t1",
+    verdict: "pass",
+    verdictSummary: "ok",
+    resultSummary: "pass notes"
+  };
+  const effective = resolveEffectiveWakeVerdict(impl, [impl, rev]);
+  const wake = buildDelegateWakePrompt(
+    {
+      taskText: impl.taskText,
+      roleLabel: impl.roleLabel,
+      status: impl.status,
+      resultSummary: impl.resultSummary,
+      verdict: effective.verdict,
+      verdictSummary: effective.verdictSummary
+    },
+    roster,
+    "r-pm",
+    0,
+    3
+  );
+  assert.match(wake, /verdict=pass/);
+  assert.doesNotMatch(wake, /未提交 verdict/);
+  assert.doesNotMatch(wake, /必须再.*delegate|不要宣布收尾/);
 });

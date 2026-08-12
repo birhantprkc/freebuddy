@@ -8,8 +8,11 @@ export const PROTOCOL_RULES = {
     'Call `delegate(teammate_id, task)` — returns IMMEDIATELY with `{request_id, status:"pending"}`. The teammate runs asynchronously.',
   pendingMeansQueued:
     'status `pending` = queued behind the concurrency limit (not started yet). Keep this turn open; poll `check_delegate_result` after a few seconds. Do NOT end your turn while pending.',
-  runningMeansMayEndTurn:
-    'status `running` = teammate is executing. You MAY end your turn; the system will automatically wake you with the result when it settles. No need to busy-poll.',
+  runningMeansEndTurn:
+    'status `running` = teammate is executing. END THIS TURN IMMEDIATELY. Do NOT call `check_delegate_result` again for this request. The system will automatically wake you with the result when it settles.',
+  /** Returned on `check_delegate_result` when status is running — shown at decision time. */
+  runningCheckInstruction:
+    "End this turn now. Do not poll check_delegate_result again; you will be woken when it settles.",
   terminalMeansUseResult:
     'status `done`/`failed`/`timeout` = terminal. Use `result` to continue (retry, delegate elsewhere, or do it yourself).',
   noBounce: "Do NOT bounce work back to your caller or any ancestor on the call chain.",
@@ -21,7 +24,7 @@ export const PROTOCOL_RULES = {
 } as const;
 
 export function mcpListTeammatesDescription(): string {
-  return "List the teammates available to delegate to in the current delegation run (excluding yourself). Each entry has id, label, capability (what to delegate to it), and canWrite. Read-only.";
+  return "List the teammates available to delegate to in the current delegation run (excluding yourself and any caller/ancestor on the call chain — those cannot be delegated to). Each entry has id, label, capability (what to delegate to it), and canWrite. Read-only. An empty list means do the work yourself.";
 }
 
 export function mcpDelegateDescription(): string {
@@ -39,7 +42,7 @@ export function mcpCheckResultDescription(): string {
   return [
     "Poll a delegate call's result. Returns {status, result, request_id}.",
     PROTOCOL_RULES.pendingMeansQueued,
-    PROTOCOL_RULES.runningMeansMayEndTurn,
+    PROTOCOL_RULES.runningMeansEndTurn,
     PROTOCOL_RULES.terminalMeansUseResult
   ].join(" ");
 }
@@ -73,7 +76,7 @@ export function buildDelegationRosterPrompt(
     '1. 调 delegate(teammate_id, task) —— 立即返回 {request_id, status:"pending"}',
     "2. 调 check_delegate_result(request_id) 查看结果：",
     "   - status 为 done/failed/timeout —— 直接用 result 继续工作。",
-    "   - status 为 running —— 子任务正在跑；你可以结束本轮，结果就绪后系统会自动用结果唤醒你继续，无需反复轮询。",
+    "   - status 为 running —— 子任务正在跑；应当立即结束本轮，禁止再对同一 request_id 调用 check_delegate_result；结果就绪后系统会自动唤醒你。",
     "   - status 为 pending —— 还在排队（前面的子任务没跑完），稍等几秒再查，本轮先别结束。",
     "3. 用返回的 result 继续你的工作。",
     "优先自己能完成的；别滥用委派；别反弹回调用方；别把整份任务原样外派。",
@@ -154,7 +157,7 @@ export function buildDelegationSkillMarkdown(): string {
     "---",
     "name: delegation",
     "description: Collaborate with teammate agents in a self-organizing delegation run. Discover teammates and delegate sub-tasks asynchronously; the system wakes you when results settle.",
-    "version: 1.2.0",
+    "version: 1.2.1",
     "---",
     "",
     "# Delegation",
@@ -176,7 +179,7 @@ export function buildDelegationSkillMarkdown(): string {
     `2. ${PROTOCOL_RULES.delegateReturnsPending}`,
     `3. Call \`check_delegate_result(request_id)\`:`,
     `   - ${PROTOCOL_RULES.terminalMeansUseResult}`,
-    `   - ${PROTOCOL_RULES.runningMeansMayEndTurn}`,
+    `   - ${PROTOCOL_RULES.runningMeansEndTurn}`,
     `   - ${PROTOCOL_RULES.pendingMeansQueued}`,
     "",
     "## Handle the result",
