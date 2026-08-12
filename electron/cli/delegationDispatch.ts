@@ -6,6 +6,7 @@ import {
   decideDelegate,
   insertPendingChildEvent,
   listTeammatesAction,
+  submitVerdictAction,
   type DelegateToolBinding,
   type DelegateRunContext,
   type DelegateToolResponse
@@ -118,6 +119,10 @@ export async function runDelegateAction(
 ): Promise<DelegateToolResponse> {
   if (action === "list_teammates") {
     return listTeammatesAction(binding, deps.contextProvider(binding.runId));
+  }
+
+  if (action === "submit_verdict") {
+    return submitVerdictAction(binding, params);
   }
 
   if (action === "delegate") {

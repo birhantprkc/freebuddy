@@ -1,7 +1,9 @@
 import type { DelegationRosterEntry, DelegationPolicy } from "../../delegationTeamTypes.js";
+import type { DelegationVerdict } from "../../delegationTeamTypes.js";
 import {
   getDelegationEvent,
   insertDelegationEvent,
+  updateDelegationEvent,
   type DelegationEventRow
 } from "../../delegationRuns.js";
 import {
@@ -34,6 +36,8 @@ export interface DelegateToolResponse {
   teammates?: Array<{ id: string; label: string; capability: string; canWrite: boolean }>;
   event_id?: string | null;
   request_id?: string;
+  verdict?: DelegationVerdict | null;
+  verdictSummary?: string | null;
 }
 
 export type ListTeammatesResult = DelegateToolResponse;
@@ -64,8 +68,35 @@ export function checkDelegateResultAction(params: Record<string, unknown>): Chec
     ok: true,
     status: event.status,
     result: event.resultSummary ?? "",
-    request_id: requestId
+    request_id: requestId,
+    verdict: event.verdict,
+    verdictSummary: event.verdictSummary
   };
+}
+
+const VERDICTS = new Set(["pass", "needs_changes", "fail"]);
+
+export function submitVerdictAction(
+  binding: DelegateToolBinding,
+  params: Record<string, unknown>
+): DelegateToolResponse {
+  const verdict = String(params.verdict ?? "");
+  if (!VERDICTS.has(verdict)) {
+    return { ok: false, error: `invalid verdict: ${verdict}` };
+  }
+  const eventId = binding.parentEventId;
+  if (!eventId || !getDelegationEvent(eventId)) {
+    return { ok: false, error: "current event not found" };
+  }
+  const summary =
+    params.summary === undefined || params.summary === null
+      ? undefined
+      : String(params.summary);
+  updateDelegationEvent(eventId, {
+    verdict: verdict as DelegationVerdict,
+    ...(summary !== undefined ? { verdictSummary: summary } : {})
+  });
+  return { ok: true, verdict: verdict as DelegationVerdict, event_id: eventId };
 }
 
 export type DelegateDecision =
