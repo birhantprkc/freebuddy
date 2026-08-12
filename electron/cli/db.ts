@@ -876,11 +876,23 @@ export function migrate(db: DB) {
       can_write INTEGER NOT NULL DEFAULT 0,
       started_at TEXT,
       ended_at TEXT,
+      verdict TEXT,
+      verdict_summary TEXT,
       FOREIGN KEY(run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_delegation_events_run
       ON delegation_events(run_id);
   `);
+
+  const delegationEventCols = db
+    .prepare("PRAGMA table_info(delegation_events)")
+    .all() as Array<{ name: string }>;
+  if (!delegationEventCols.some((c) => c.name === "verdict")) {
+    db.exec("ALTER TABLE delegation_events ADD COLUMN verdict TEXT");
+  }
+  if (!delegationEventCols.some((c) => c.name === "verdict_summary")) {
+    db.exec("ALTER TABLE delegation_events ADD COLUMN verdict_summary TEXT");
+  }
 
   const scheduledTaskCols = db
     .prepare("PRAGMA table_info(scheduled_tasks)")

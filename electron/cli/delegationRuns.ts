@@ -1,6 +1,6 @@
 import { getDb } from "./db.js";
 import type { WorkflowRunStatus } from "./workflowTypes.js";
-import type { DelegationEvent, DelegationEventStatus } from "./delegationTeamTypes.js";
+import type { DelegationEvent, DelegationEventStatus, DelegationVerdict } from "./delegationTeamTypes.js";
 
 export interface CreateDelegationRunInput {
   goal: string;
@@ -118,7 +118,9 @@ function rowToEvent(r: any): DelegationEventRow {
     resultSummary: r.result_summary,
     canWrite: r.can_write === 1 || r.can_write === true,
     startedAt: r.started_at,
-    endedAt: r.ended_at
+    endedAt: r.ended_at,
+    verdict: (r.verdict as DelegationVerdict | null) ?? null,
+    verdictSummary: r.verdict_summary ?? null,
   };
 }
 
@@ -155,6 +157,8 @@ export function insertDelegationEvent(input: InsertDelegationEventInput): string
 export interface UpdateDelegationEventPatch {
   status?: DelegationEventStatus;
   resultSummary?: string | null;
+  verdict?: DelegationVerdict | null;
+  verdictSummary?: string | null;
 }
 
 export function updateDelegationEvent(
@@ -174,6 +178,14 @@ export function updateDelegationEvent(
   if (patch.resultSummary !== undefined) {
     fields.push("result_summary = ?");
     params.push(patch.resultSummary);
+  }
+  if (patch.verdict !== undefined) {
+    fields.push("verdict = ?");
+    params.push(patch.verdict);
+  }
+  if (patch.verdictSummary !== undefined) {
+    fields.push("verdict_summary = ?");
+    params.push(patch.verdictSummary);
   }
   if (fields.length === 0) return;
   params.push(id);
