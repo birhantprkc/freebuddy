@@ -1,7 +1,7 @@
 ---
 name: delegation
 description: Collaborate with teammate agents in a self-organizing delegation run. Discover teammates and delegate sub-tasks asynchronously; the system wakes you when results settle.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Delegation
@@ -29,6 +29,15 @@ Do NOT delegate:
 ## Handle the result
 - `status: "done"` → use `result`.
 - `status: "failed"` / `"timeout"` → decide: retry, delegate to a different teammate, or do it yourself. Do not loop forever.
+
+## Review verdicts
+For review/audit sub-tasks, call `submit_verdict` before you finish:
+- `pass` — ready to close
+- `needs_changes` — caller must fix, then re-delegate review
+- `fail` — blocking
+
+## After a wake with needs_changes/fail
+Fix first, then `delegate` review again. Do not declare done until a later wake has `verdict=pass`.
 
 ## Current context
 Your current delegation depth and the team roster are in the prompt header. Near the depth cap, prefer doing the work yourself.

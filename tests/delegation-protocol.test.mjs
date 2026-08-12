@@ -38,6 +38,8 @@ test("protocol text is the single source for roster / MCP / skill phrases", asyn
   assert.match(skill, /no ping-pong/);
   assert.match(skill, /entire task/);
   assert.match(skill, /wake/i);
+  assert.match(skill, /submit_verdict/);
+  assert.match(skill, /1\.2\.0/);
   assert.doesNotMatch(skill, /every 3-5 seconds until status is/);
 
   assert.ok(PROTOCOL_RULES.runningMeansMayEndTurn.includes("wake"));
@@ -50,7 +52,40 @@ test("checked-in SKILL.md matches protocol skill generator key rules", async () 
   assert.match(disk, /entire task/);
   assert.match(disk, /wake/i);
   assert.match(disk, /pending/);
+  assert.match(disk, /submit_verdict/);
+  assert.match(disk, /1\.2\.0/);
   assert.doesNotMatch(disk, /Poll `check_delegate_result\(request_id\)` every 3-5 seconds\. When `status` is `"done"`/);
+});
+
+test("wake prompt branches on verdict", async () => {
+  const { buildDelegateWakePrompt } = await import(
+    "../dist-electron/cli/delegation/protocol/text.js"
+  );
+  const roster = [
+    { id: "r-impl", label: "实现", agentId: "a", capability: "写", canWrite: true },
+    { id: "r-rev", label: "评审", agentId: "b", capability: "审", canWrite: false }
+  ];
+  const base = { taskText: "审查 hint", roleLabel: "评审", status: "done", resultSummary: "详情…" };
+
+  const pass = buildDelegateWakePrompt({ ...base, verdict: "pass" }, roster, "r-impl", 0, 3);
+  assert.match(pass, /可收尾|通过/);
+  assert.doesNotMatch(pass, /必须再.*delegate|不要宣布收尾/);
+
+  const needs = buildDelegateWakePrompt(
+    { ...base, verdict: "needs_changes", verdictSummary: "toast" },
+    roster, "r-impl", 0, 3
+  );
+  assert.match(needs, /delegate/);
+  assert.match(needs, /复审|再次/);
+  assert.match(needs, /不要宣布收尾|收尾之前/);
+  assert.match(needs, /评审/);
+
+  const missing = buildDelegateWakePrompt(
+    { ...base, verdict: null },
+    roster, "r-impl", 0, 3
+  );
+  assert.match(missing, /未提交|conservative|保守/i);
+  assert.match(missing, /delegate/);
 });
 
 test("mcp submit_verdict description mentions required enums", async () => {

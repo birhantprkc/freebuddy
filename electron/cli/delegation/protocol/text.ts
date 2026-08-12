@@ -1,4 +1,5 @@
 import type { DelegationRosterEntry } from "../../delegationTeamTypes.js";
+import type { DelegationVerdict } from "../../delegationTeamTypes.js";
 
 /** Canonical async-delegation protocol. Skill / MCP / roster prompts derive from here. */
 
@@ -99,6 +100,8 @@ export interface DelegateWakeInfo {
   roleLabel: string;
   status: string;
   resultSummary: string;
+  verdict?: DelegationVerdict | null;
+  verdictSummary?: string | null;
 }
 
 export function buildDelegateWakePrompt(
@@ -109,18 +112,39 @@ export function buildDelegateWakePrompt(
   maxDepth: number
 ): string {
   const summary = info.resultSummary?.trim() || "(无输出)";
+  const verdict = info.verdict ?? null;
+  const verdictLine =
+    verdict === null
+      ? "结构化结论：未提交 verdict（按 needs_changes 保守处理）。"
+      : `结构化结论：verdict=${verdict}${info.verdictSummary ? `；摘要：${info.verdictSummary}` : ""}`;
+
+  let nextSteps: string;
+  if (verdict === "pass") {
+    nextSteps =
+      "评审已通过（pass）。若无新待办可以收尾；不要无故再开一轮复审。";
+  } else {
+    // needs_changes | fail | null
+    nextSteps = [
+      "存在待改项或未通过（或对方未提交 verdict）。",
+      "请先按上方结果修改。",
+      `改完后必须再 delegate 给角色「${info.roleLabel}」做复审（用 list_teammates 选对应 id）。`,
+      "在复审返回 verdict=pass 之前，不要宣布收尾。"
+    ].join("");
+  }
+
   return [
     buildDelegationRosterPrompt(roster, selfId, depth, maxDepth),
     "",
     "## 委派结果返回（你被唤醒）",
     `你之前委派给「${info.roleLabel}」的子任务已结束（status: ${info.status}）。`,
+    verdictLine,
     "子任务：",
     info.taskText,
     "",
     "结果：",
     summary,
     "",
-    "请据此继续你的工作：问题已解决就收尾；仍有待办就继续，或按需再次委派。"
+    nextSteps
   ].join("\n");
 }
 
@@ -130,7 +154,7 @@ export function buildDelegationSkillMarkdown(): string {
     "---",
     "name: delegation",
     "description: Collaborate with teammate agents in a self-organizing delegation run. Discover teammates and delegate sub-tasks asynchronously; the system wakes you when results settle.",
-    "version: 1.1.0",
+    "version: 1.2.0",
     "---",
     "",
     "# Delegation",
@@ -159,6 +183,15 @@ export function buildDelegationSkillMarkdown(): string {
     "- `status: \"done\"` → use `result`.",
     "- `status: \"failed\"` / `\"timeout\"` → decide: retry, delegate to a different teammate, or do it yourself. Do not loop forever.",
     "",
+    "## Review verdicts",
+    "For review/audit sub-tasks, call `submit_verdict` before you finish:",
+    "- `pass` — ready to close",
+    "- `needs_changes` — caller must fix, then re-delegate review",
+    "- `fail` — blocking",
+    "",
+    "## After a wake with needs_changes/fail",
+    "Fix first, then `delegate` review again. Do not declare done until a later wake has `verdict=pass`.",
+    "",
     "## Current context",
     PROTOCOL_RULES.depthAwareness
   ].join("\n");
@@ -172,6 +205,8 @@ export function protocolCanonicalPhrases(): string[] {
     "wake",
     "pending",
     "no ping-pong",
-    "entire task"
+    "entire task",
+    "submit_verdict",
+    "needs_changes"
   ];
 }
