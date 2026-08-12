@@ -48,6 +48,7 @@ test("followUp after completed run parks on delegate and wakes with result", asy
     const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
 
     const entryPrompts = [];
+    const sessionIds = [];
     let phase = "initial";
     const rt = new DelegationRuntime({
       webContents: undefined,
@@ -57,6 +58,7 @@ test("followUp after completed run parks on delegate and wakes with result", asy
         skillIds: []
       }),
       runAgent: async (args) => {
+        sessionIds.push(args.sessionId);
         if (args.delegation.depth === 0) {
           entryPrompts.push(args.prompt);
           if (phase === "followUp" && entryPrompts.filter((p) => p.includes("委派评审")).length >= 1) {
@@ -102,5 +104,57 @@ test("followUp after completed run parks on delegate and wakes with result", asy
     assert.ok(wake, "wake prompt required after follow-up delegate settles");
     assert.ok(wake.includes("hammer costs"), "wake must carry review result");
     assert.equal(getDelegationRun(runId).status, "completed");
+    // cli_tasks.id === sessionId; reusing across follow-up/wake marks the run failed
+    // (UNIQUE constraint) — regression for delrun_mspc69xn_93qqdw.
+    assert.equal(
+      new Set(sessionIds).size,
+      sessionIds.length,
+      `each agent turn needs a unique sessionId, got ${JSON.stringify(sessionIds)}`
+    );
+    assert.ok(
+      sessionIds.every((id) => id.startsWith(`del-${runId}-`)),
+      "sessionIds should stay under the run prefix"
+    );
+  });
+});
+
+test("followUp after completed entry reopens without reusing entry sessionId", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+
+    const sessionIds = [];
+    const scopes = [];
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: () => ({
+        adapter: "codex-acp",
+        agentName: "codex",
+        skillIds: []
+      }),
+      runAgent: async (args) => {
+        sessionIds.push(args.sessionId);
+        scopes.push(args.toolSessionScope);
+        return { summary: "ok", exitCode: 0, error: null };
+      }
+    });
+
+    const runId = await rt.start({
+      goal: "先做完",
+      teamId: "t",
+      teamSnapshot: snap,
+      cwd: "/r"
+    });
+    assert.equal(getDelegationRun(runId).status, "completed");
+    const first = sessionIds[0];
+    assert.ok(first);
+
+    await rt.followUp(runId, "委派审核");
+    assert.equal(getDelegationRun(runId).status, "completed");
+    assert.equal(sessionIds.length, 2);
+    assert.notEqual(sessionIds[1], first, "follow-up must mint a new cli task id");
+    assert.equal(scopes[0], `delegation:${runId}:entry`);
+    assert.equal(scopes[1], scopes[0], "tool session scope stays stable for resume");
   });
 });

@@ -38,6 +38,11 @@ function delegationEventScope(runId: string, eventId: string): string {
   return `delegation:${runId}:${eventId}`;
 }
 
+/** Unique per agent turn — maps to cli_tasks.id; must never reuse across wakes/follow-ups. */
+function delegationTurnSessionId(runId: string, nodeKey: string): string {
+  return `del-${runId}-${nodeKey}-${randomUUID().slice(0, 8)}`;
+}
+
 function modelConfigOverride(entry: {
   model?: string;
   modelOptionId?: string;
@@ -169,14 +174,17 @@ export class DelegationRuntime {
         if (!resolvedAgent) {
           return { summary: "", error: `agent not found: ${agent.agentId}` };
         }
+        // Keep scope stable so ACP tool sessions resume; mint a fresh
+        // sessionId each turn so cli_tasks PRIMARY KEY never collides on
+        // wake / follow-up (see debug delrun_mspc69xn_93qqdw).
         const scope =
           args.depth === 0
             ? delegationEntryScope(ctx.runId)
             : delegationEventScope(ctx.runId, args.nodeId);
-        const sessionId =
-          args.depth === 0
-            ? `del-${ctx.runId}`
-            : `del-${ctx.runId}-${args.nodeId}`;
+        const sessionId = delegationTurnSessionId(
+          ctx.runId,
+          args.depth === 0 ? "entry" : args.nodeId
+        );
         const turn = await this.runAgentTurn({
           ctx,
           agent,
@@ -467,7 +475,7 @@ export class DelegationRuntime {
         agent: args.teammate,
         resolved,
         scope: delegationEventScope(ctx.runId, args.childEventId),
-        sessionId: `del-${ctx.runId}-${args.childEventId}`,
+        sessionId: delegationTurnSessionId(ctx.runId, args.childEventId),
         parentEventId: args.childEventId,
         depth: args.depth,
         prompt
