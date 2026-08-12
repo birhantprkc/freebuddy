@@ -20,6 +20,23 @@ function run(command, args, options = {}) {
   return child;
 }
 
+function waitForExit(child, label) {
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `${label} failed with ${signal ? `signal ${signal}` : `code ${code}`}`
+        )
+      );
+    });
+  });
+}
+
 async function waitForVite() {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     try {
@@ -53,10 +70,16 @@ process.on("SIGTERM", () => {
   process.exit(0);
 });
 
-run("npm", ["run", "build:electron"]);
+// Vite is ready in ~100ms; tsc for electron takes multiple seconds. Launching
+// Electron before build:electron finishes loads half-written dist-electron
+// modules and surfaces confusing ESM named-export SyntaxErrors.
+const buildElectron = run("npm", ["run", "build:electron"]);
 const vite = run("npm", ["exec", "vite", "--", "--host", "127.0.0.1", "--port", "5173", "--strictPort"]);
 
-await waitForVite();
+await Promise.all([
+  waitForExit(buildElectron, "build:electron"),
+  waitForVite()
+]);
 
 const electronCommand = resolveElectronCommand(rootDir, path.join(rootDir, "dist-electron/main.js"));
 const electron = run(electronCommand.command, electronCommand.args, {
