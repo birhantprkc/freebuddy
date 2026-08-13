@@ -13,7 +13,8 @@ import {
   parseAcpLine,
   type AcpMessage
 } from "./acp.js";
-import { buildCommand, getAdapterDefinition } from "./adapters.js";
+import { buildCommand, dshAcpManagedRoot, getAdapterDefinition } from "./adapters.js";
+import { getDataDir } from "./db.js";
 import { waitForCodexToolchainAutoUpdate } from "./check.js";
 import { killProcessTree } from "./process-kill.js";
 import { mergeBuiltEnv } from "./runtime.js";
@@ -142,7 +143,9 @@ export async function inspectSessionConfigOptions(
     binary: input.binary,
     extraArgs: input.extraArgs,
     prompt: "",
-    cwd: input.cwd
+    cwd: input.cwd,
+    dshAcpRuntimeRoot:
+      input.adapter === "dsh-acp" ? dshAcpManagedRoot(getDataDir()) : undefined
   });
   if (built.protocol !== "acp") return [];
 

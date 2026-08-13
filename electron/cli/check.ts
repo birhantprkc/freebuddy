@@ -5,10 +5,16 @@ import { BrowserWindow } from "electron";
 import {
   adapterBinary,
   applyDshAcpNpmInstallEnv,
+  bundledDshAcpConfigPath,
+  dshAcpCompositionReady,
+  dshAcpInstallCommand,
+  dshAcpManagedDemoBin,
+  dshAcpManagedRoot,
   dshAcpWindowsResiduePath,
+  DSH_ACP_PLUGIN_TREE_MISSING,
   getCliCheckProbe
 } from "./adapters.js";
-import { getDb } from "./db.js";
+import { getDataDir, getDb } from "./db.js";
 import { safeSendToWebContents } from "./ipcSend.js";
 import { compareSemver, extractSemver } from "./version.js";
 import { trackTelemetryEvent } from "../telemetry.js";
@@ -362,6 +368,35 @@ export async function cliCheck(
     ...(env || {})
   });
   const resolved = await which(bin, effectiveEnv as Record<string, string>);
+  if (adapter === "dsh-acp") {
+    const managedBin = dshAcpManagedDemoBin(getDataDir());
+    if (fs.existsSync(managedBin) && dshAcpCompositionReady(managedBin)) {
+      const result: CliCheckResult = { installed: true, path: managedBin };
+      upsertRuntime(runtimeKey, true, managedBin);
+      trackAgentSetup(adapter, "check", "detected");
+      return result;
+    }
+    if (!resolved) {
+      upsertRuntime(runtimeKey, false, undefined, undefined, "binary not found");
+      trackAgentSetup(adapter, "check", "missing", "binary not found");
+      return { installed: false };
+    }
+    if (!dshAcpCompositionReady(resolved)) {
+      upsertRuntime(
+        runtimeKey,
+        false,
+        resolved,
+        undefined,
+        DSH_ACP_PLUGIN_TREE_MISSING
+      );
+      trackAgentSetup(adapter, "check", "probe_failed", DSH_ACP_PLUGIN_TREE_MISSING);
+      return { installed: false };
+    }
+    const result: CliCheckResult = { installed: true, path: resolved };
+    upsertRuntime(runtimeKey, true, resolved);
+    trackAgentSetup(adapter, "check", "detected");
+    return result;
+  }
   if (!resolved) {
     upsertRuntime(runtimeKey, false, undefined, undefined, "binary not found");
     trackAgentSetup(adapter, "check", "missing", "binary not found");
@@ -847,17 +882,21 @@ async function removeDshAcpWindowsResidue(
     .catch(() => undefined);
 }
 
+function prepareDshAcpManagedInstall(): string {
+  const root = dshAcpManagedRoot(getDataDir());
+  fs.mkdirSync(root, { recursive: true });
+  fs.copyFileSync(bundledDshAcpConfigPath(), path.join(root, "cordis.yml"));
+  return dshAcpInstallCommand({ prefix: root });
+}
+
 export function cliInstall(command: string, adapter = "custom"): Promise<CliInstallResult> {
   return new Promise((resolve, reject) => {
     void (async () => {
-      const trimmed = command.trim();
+      const trimmed =
+        adapter === "dsh-acp" ? prepareDshAcpManagedInstall() : command.trim();
       if (!trimmed) {
         reject(new Error("install command required"));
         return;
-      }
-
-      if (adapter === "dsh-acp") {
-        await removeDshAcpWindowsResidue();
       }
 
       const isWindows = process.platform === "win32";
@@ -940,9 +979,6 @@ export function cliInstallStream(
       if (!trimmed) throw new Error("install command required");
 
       const preflight = await prepareInstallEnvironment(trimmed, adapter);
-      if (adapter === "dsh-acp") {
-        await removeDshAcpWindowsResidue(preflight.env);
-      }
       if (preflight.failureCode) {
         const error = preflight.error || "Install environment check failed";
         const exitCode = preflight.failureCode === "tool_missing" ? 127 : 1;
@@ -958,7 +994,8 @@ export function cliInstallStream(
         return;
       }
 
-      const installCommand = preflight.command;
+      const installCommand =
+        adapter === "dsh-acp" ? prepareDshAcpManagedInstall() : preflight.command;
       const isWindows = process.platform === "win32";
       const isPowerShellCommand =
         preflight.requiresPowerShell ||

@@ -108,6 +108,8 @@ test("DeepSeek ACP install skips koffi source rebuilds and clears Windows residu
 
 test("DeepSeek ACP check treats PATH resolution as installed without --version", () => {
   assert.match(checkSource, /probe\.skipSpawn/);
+  assert.match(checkSource, /DSH_ACP_PLUGIN_TREE_MISSING/);
+  assert.match(checkSource, /prepareDshAcpManagedInstall/);
 });
 
 test("agent version probes preserve actionable failure categories", () => {

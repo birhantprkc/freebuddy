@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath, dshAcpInstallCommand, parseDshAcpCompositionPackages, bundledDshAcpConfigPath } from "../dist-electron/cli/adapters.js";
+import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath, dshAcpInstallCommand, parseDshAcpCompositionPackages, bundledDshAcpConfigPath, dshAcpCompositionReady, dshAcpManagedDemoBin, resolveDshAcpDemoDirFromBinary } from "../dist-electron/cli/adapters.js";
 
 test("Codex ACP checks the new Agent Client Protocol package version", () => {
   assert.deepEqual(getCliCheckProbe("codex-acp"), {
@@ -78,6 +80,9 @@ test("dsh-acp install command includes every bundled cordis plugin package", () 
     "utf8"
   );
   assert.equal(renderer.includes(hint), true);
+  const prefixed = dshAcpInstallCommand({ prefix: "/tmp/freebuddy-dsh" });
+  assert.match(prefixed, /--prefix /);
+  assert.equal(prefixed.includes(" -g "), false);
 });
 
 test("dsh-acp npm installs skip koffi rebuild scripts", () => {
@@ -100,4 +105,33 @@ test("dsh-acp npm installs skip koffi rebuild scripts", () => {
       undefined
     );
   }
+});
+
+test("dsh-acp composition ready requires llm-deepseek beside the demo", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-ready-"));
+  const demo = path.join(root, "node_modules", "@deepseek-ai", "dsh-acp-demo");
+  fs.mkdirSync(path.join(demo, "lib"), { recursive: true });
+  fs.writeFileSync(path.join(demo, "package.json"), "{}");
+  const bin = path.join(demo, "lib", "bin.js");
+  fs.writeFileSync(bin, "");
+  assert.equal(dshAcpCompositionReady(bin), false);
+
+  const probe = path.join(root, "node_modules", "@deepseek-ai", "dsh-llm-deepseek");
+  fs.mkdirSync(probe, { recursive: true });
+  fs.writeFileSync(path.join(probe, "package.json"), "{}");
+  assert.equal(dshAcpCompositionReady(bin), true);
+  assert.equal(resolveDshAcpDemoDirFromBinary(bin), demo);
+  assert.equal(
+    dshAcpManagedDemoBin("/data"),
+    path.join(
+      "/data",
+      "runtimes",
+      "dsh-acp",
+      "node_modules",
+      "@deepseek-ai",
+      "dsh-acp-demo",
+      "lib",
+      "bin.js"
+    )
+  );
 });

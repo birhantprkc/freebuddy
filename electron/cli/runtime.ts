@@ -7,12 +7,13 @@ import type { Readable, Writable } from "node:stream";
 
 import {
   buildCommand,
+  dshAcpManagedRoot,
   getAdapterDefinition,
   hasExplicitToolSessionArg
 } from "./adapters.js";
 import { runAcpAgent } from "./acpRuntime.js";
 import { runLegacyCliAgent } from "./legacyRuntime.js";
-import { getLogDir } from "./db.js";
+import { getDataDir, getLogDir } from "./db.js";
 import { updateRuntimeRun, waitForCodexToolchainAutoUpdate } from "./check.js";
 import { safeSendToWebContents } from "./ipcSend.js";
 import { getToolSession } from "./store.js";
@@ -248,7 +249,11 @@ export async function cliRun(
       extraArgs: executionArgs.extraArgs,
       cwd: executionArgs.cwd,
       toolSessionId,
-      workspaceRoots: args.workspaceRoots
+      workspaceRoots: args.workspaceRoots,
+      dshAcpRuntimeRoot:
+        executionArgs.adapter === "dsh-acp"
+          ? dshAcpManagedRoot(getDataDir())
+          : undefined
     });
   } catch (e) {
     const msg = `build command failed: ${(e as Error)?.message || e}`;
@@ -291,7 +296,10 @@ export async function cliRun(
           ...(executionArgs.promptAttachments ?? []).map(
             (attachment) => attachment.path
           ),
-          ...(executionArgs.skills ?? []).map((skill) => skill.rootPath)
+          ...(executionArgs.skills ?? []).map((skill) => skill.rootPath),
+          ...(executionArgs.adapter === "dsh-acp"
+            ? [dshAcpManagedRoot(getDataDir())]
+            : [])
         ]
       });
     } catch (error) {

@@ -341,6 +341,30 @@ test("buildCommand uses a workspace cordis.yml when present", () => {
   assert.deepEqual(built.args, ["--config", local]);
 });
 
+test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-managed-"));
+  const demo = path.join(root, "node_modules", "@deepseek-ai", "dsh-acp-demo");
+  fs.mkdirSync(path.join(demo, "lib"), { recursive: true });
+  fs.writeFileSync(path.join(demo, "package.json"), "{}");
+  const binJs = path.join(demo, "lib", "bin.js");
+  fs.writeFileSync(binJs, "");
+  const probe = path.join(root, "node_modules", "@deepseek-ai", "dsh-llm-deepseek");
+  fs.mkdirSync(probe, { recursive: true });
+  fs.writeFileSync(path.join(probe, "package.json"), "{}");
+  const config = path.join(root, "cordis.yml");
+  fs.writeFileSync(config, "- id: acp-agent\n");
+
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    prompt: "hello",
+    dshAcpRuntimeRoot: root
+  });
+
+  assert.equal(built.bin, "node");
+  assert.deepEqual(built.args, [binJs, "--config", config]);
+  assert.equal(built.protocol, "acp");
+});
+
 test("buildCommand keeps extra DeepSeek args after the bundled config", () => {
   const built = buildCommand({
     adapter: "dsh-acp",

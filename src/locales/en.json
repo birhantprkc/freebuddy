@@ -1062,6 +1062,7 @@
       "checkTimedOut": "The version check timed out. Retry or check whether security software blocked the executable.",
       "installBroken": "install broken — retry",
       "commandNotFound": "command not found",
+      "dshAcpPluginTreeMissing": "dsh-acp-demo is on PATH, but its ACP plugin packages are missing. Click Install again.",
       "codexAcpUpgradeRequired": "new Codex ACP required — install",
       "checkProbeFailed": "check failed — retry",
       "checkInstalled": "{{label}} check completed: installed{{version}}",

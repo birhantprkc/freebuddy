@@ -94,6 +94,9 @@ function matchesQuery(ex: ResolvedExecutor, query: string): boolean {
 
 function cliRuntimeErrorKey(lastError: string | undefined): string {
   if (lastError === "binary not found") return "settings.cli.commandNotFound";
+  if (lastError === "DeepSeek ACP plugin tree missing") {
+    return "settings.cli.dshAcpPluginTreeMissing";
+  }
   if (lastError === "claude runtime architecture mismatch") {
     return "settings.cli.claudeArchitectureMismatch";
   }

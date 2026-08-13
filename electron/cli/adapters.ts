@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync as fsRealpath } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -360,12 +360,98 @@ export function bundledDshAcpConfigPath(): string {
  * `dsh-acp-demo` defaults to `./cordis.yml` in the session cwd. Prefer a
  * workspace file when present; otherwise use FreeBuddy's bundled default.
  */
-export function resolveDshAcpConfigPath(cwd?: string): string {
+export function resolveDshAcpConfigPath(
+  cwd?: string,
+  runtimeRoot?: string
+): string {
   if (cwd) {
     const local = path.join(cwd, "cordis.yml");
     if (existsSync(local)) return local;
   }
+  if (runtimeRoot) {
+    const managed = path.join(runtimeRoot, "cordis.yml");
+    if (existsSync(managed)) return managed;
+  }
   return bundledDshAcpConfigPath();
+}
+
+export const DSH_ACP_PLUGIN_TREE_MISSING = "DeepSeek ACP plugin tree missing";
+export const DSH_ACP_PROBE_PACKAGE = "@deepseek-ai/dsh-llm-deepseek";
+
+export function dshAcpManagedRoot(dataDir: string): string {
+  return path.join(dataDir, "runtimes", "dsh-acp");
+}
+
+export function dshAcpManagedDemoBin(dataDir: string): string {
+  return path.join(
+    dshAcpManagedRoot(dataDir),
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-acp-demo",
+    "lib",
+    "bin.js"
+  );
+}
+
+export function quoteForShell(value: string): string {
+  if (process.platform === "win32") {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Walk up from `startDir` looking for `node_modules/<package>`. */
+export function nodeModulesHasPackage(
+  startDir: string,
+  packageName: string
+): boolean {
+  let dir = path.resolve(startDir);
+  for (;;) {
+    if (existsSync(path.join(dir, "node_modules", packageName, "package.json"))) {
+      return true;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+export function resolveDshAcpDemoDirFromBinary(
+  binPath: string
+): string | undefined {
+  let current = path.resolve(binPath);
+  try {
+    current = fsRealpath(binPath);
+  } catch {
+    /* keep resolved path */
+  }
+  if (/\.(cmd|ps1|bat)$/i.test(current)) {
+    try {
+      const text = readFileSync(current, "utf8");
+      const match = text.match(
+        /node_modules[/\\]@deepseek-ai[/\\]dsh-acp-demo[/\\]lib[/\\]bin\.js/i
+      );
+      if (match) {
+        const pkg = path.resolve(
+          path.dirname(current),
+          match[0].replace(/[/\\]lib[/\\]bin\.js$/i, "")
+        );
+        if (existsSync(path.join(pkg, "package.json"))) return pkg;
+      }
+    } catch {
+      /* ignore unreadable shims */
+    }
+  }
+  if (current.endsWith(`${path.sep}lib${path.sep}bin.js`)) {
+    const pkg = path.dirname(path.dirname(current));
+    if (existsSync(path.join(pkg, "package.json"))) return pkg;
+  }
+  return undefined;
+}
+
+export function dshAcpCompositionReady(binPath: string): boolean {
+  const pkgDir = resolveDshAcpDemoDirFromBinary(binPath) ?? path.dirname(binPath);
+  return nodeModulesHasPackage(pkgDir, DSH_ACP_PROBE_PACKAGE);
 }
 
 /** Bare npm package names referenced by the bundled ACP composition. */
@@ -382,9 +468,12 @@ export function parseDshAcpCompositionPackages(yamlText: string): string[] {
  * cordis unable to import `@deepseek-ai/dsh-llm-deepseek` and the rest of
  * the official ACP plugin tree (`ERR_MODULE_NOT_FOUND`).
  */
-export function dshAcpInstallCommand(
-  yamlText = readFileSync(bundledDshAcpConfigPath(), "utf8")
-): string {
+export function dshAcpInstallCommand(options?: {
+  yamlText?: string;
+  prefix?: string;
+}): string {
+  const yamlText =
+    options?.yamlText ?? readFileSync(bundledDshAcpConfigPath(), "utf8");
   const specs = parseDshAcpCompositionPackages(yamlText).map(
     (pkg) => `${pkg}@${DSH_ACP_NPM_TAG}`
   );
@@ -393,7 +482,10 @@ export function dshAcpInstallCommand(
     if (b.startsWith("@deepseek-ai/dsh-acp-demo@")) return 1;
     return a.localeCompare(b);
   });
-  return `npm install -g --include=optional --ignore-scripts ${specs.join(" ")}`;
+  const target = options?.prefix
+    ? `--prefix ${quoteForShell(options.prefix)}`
+    : "-g";
+  return `npm install ${target} --include=optional --ignore-scripts ${specs.join(" ")}`;
 }
 
 export function hasExplicitToolSessionArg(
@@ -419,6 +511,8 @@ export interface BuildCommandInput {
   toolSessionId?: string;
   /** Absolute multi-folder project roots; OpenCode gets external_directory allows when length > 1. */
   workspaceRoots?: string[];
+  /** FreeBuddy-managed `runtimes/dsh-acp` prefix; used when no custom binary. */
+  dshAcpRuntimeRoot?: string;
 }
 
 export interface BuiltCommand {
@@ -710,9 +804,36 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
       };
     }
     case "dsh-acp": {
+      const managedBin = input.dshAcpRuntimeRoot
+        ? path.join(
+            input.dshAcpRuntimeRoot,
+            "node_modules",
+            "@deepseek-ai",
+            "dsh-acp-demo",
+            "lib",
+            "bin.js"
+          )
+        : "";
+      const useManaged =
+        !input.binary?.trim() &&
+        Boolean(managedBin) &&
+        existsSync(managedBin) &&
+        dshAcpCompositionReady(managedBin);
       const args = extraArgsHaveDshConfig(extra)
         ? [...extra]
-        : ["--config", resolveDshAcpConfigPath(input.cwd), ...extra];
+        : [
+            "--config",
+            resolveDshAcpConfigPath(input.cwd, input.dshAcpRuntimeRoot),
+            ...extra
+          ];
+      if (useManaged) {
+        return {
+          bin: "node",
+          args: [managedBin, ...args],
+          promptViaStdin: false,
+          protocol: "acp"
+        };
+      }
       return {
         bin,
         args,

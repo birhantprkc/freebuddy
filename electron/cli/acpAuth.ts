@@ -5,8 +5,10 @@ import spawn from "cross-spawn";
 
 import {
   buildCommand,
+  dshAcpManagedRoot,
   type CLIAdapterId
 } from "./adapters.js";
+import { getDataDir } from "./db.js";
 import {
   buildInitializeRequest,
   buildLogoutRequest,
@@ -47,7 +49,9 @@ async function withAcpAgent<T>(
     binary: args.binary,
     extraArgs: args.extraArgs,
     prompt: "",
-    cwd: args.cwd
+    cwd: args.cwd,
+    dshAcpRuntimeRoot:
+      args.adapter === "dsh-acp" ? dshAcpManagedRoot(getDataDir()) : undefined
   });
   if (built.protocol !== "acp") {
     throw new Error("Authentication control requires an ACP agent.");
