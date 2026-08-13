@@ -164,6 +164,13 @@ test("cliRun merges NODE_OPTIONS instead of overwriting them", () => {
   assert.match(runtimeSource, /mergeNodeOptions/);
 });
 
+test("cliRun sanitizes Electron env and gives DeepSeek a workspace when cwd is unset", () => {
+  assert.match(runtimeSource, /sanitizeCliAgentEnv/);
+  assert.match(runtimeSource, /ensureDshAcpCwd/);
+  assert.match(runtimeSource, /syncDshAcpManagedConfig/);
+  assert.match(acpRuntimeSource, /formatAcpAgentExitMessage/);
+});
+
 test("cliRun passes workspaceRoots into buildCommand", () => {
   assert.match(runtimeSource, /workspaceRoots:\s*args\.workspaceRoots/);
 });

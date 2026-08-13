@@ -12,7 +12,12 @@ import {
   resolveDshAcpConfigPath,
   DSH_ACP_NODE_DISABLE_WARNING,
   isDshAcpExperimentalWarningLine,
-  mergeNodeOptions
+  mergeNodeOptions,
+  sanitizeCliAgentEnv,
+  ensureDshAcpCwd,
+  dshAcpManagedRoot,
+  formatAcpAgentExitMessage,
+  isWindowsAccessViolationExit
 } from "../dist-electron/cli/adapters.js";
 import {
   acpSessionListToItems,
@@ -461,6 +466,49 @@ test("mergeNodeOptions appends the DeepSeek warning flag without dropping existi
   assert.equal(
     mergeNodeOptions(DSH_ACP_NODE_DISABLE_WARNING, DSH_ACP_NODE_DISABLE_WARNING),
     DSH_ACP_NODE_DISABLE_WARNING
+  );
+});
+
+test("sanitizeCliAgentEnv drops Electron crashpad variables before spawning Node CLIs", () => {
+  const env = sanitizeCliAgentEnv({
+    PATH: "/usr/bin",
+    ELECTRON_RUN_AS_NODE: "1",
+    CHROME_CRASHPAD_PIPE_NAME: "\\\\.\\pipe\\crashpad",
+    ELECTRON_CRASHPAD_PIPE_NAME: "\\\\.\\pipe\\electron-crashpad",
+    NODE_OPTIONS: "--require /app/asar/hook.js --disable-warning=ExperimentalWarning",
+    DEEPSEEK_API_KEY: "sk-test"
+  });
+  assert.equal(env.PATH, "/usr/bin");
+  assert.equal(env.DEEPSEEK_API_KEY, "sk-test");
+  assert.equal("ELECTRON_RUN_AS_NODE" in env, false);
+  assert.equal("CHROME_CRASHPAD_PIPE_NAME" in env, false);
+  assert.equal("ELECTRON_CRASHPAD_PIPE_NAME" in env, false);
+  assert.equal(env.NODE_OPTIONS, "--disable-warning=ExperimentalWarning");
+});
+
+test("ensureDshAcpCwd falls back to the managed runtime workspace when cwd is missing", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-cwd-"));
+  const fallback = ensureDshAcpCwd(undefined, dataDir);
+  assert.equal(fallback, path.join(dshAcpManagedRoot(dataDir), "workspace"));
+  assert.equal(fs.existsSync(fallback), true);
+  assert.equal(ensureDshAcpCwd(" /tmp/project ", dataDir), "/tmp/project");
+});
+
+test("formatAcpAgentExitMessage explains Windows access violation 0xC0000005", () => {
+  assert.equal(isWindowsAccessViolationExit(3221225477), true);
+  assert.equal(isWindowsAccessViolationExit(-1073741819), true);
+  assert.equal(isWindowsAccessViolationExit(1), false);
+  assert.match(
+    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    /访问冲突/
+  );
+  assert.match(
+    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    /session\/prompt/
+  );
+  assert.match(
+    formatAcpAgentExitMessage(3221225477, "en"),
+    /access violation/i
   );
 });
 

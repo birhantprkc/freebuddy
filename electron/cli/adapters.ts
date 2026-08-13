@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, realpathSync as fsRealpath } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync as fsRealpath
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -332,6 +338,97 @@ function isNodeBinary(bin: string): boolean {
   return base === "node" || base === "node.exe";
 }
 
+const ELECTRON_CHILD_ENV_BLOCKLIST = [
+  "ELECTRON_RUN_AS_NODE",
+  "ELECTRON_NO_ASAR",
+  "ELECTRON_NO_ATTACH_CONSOLE",
+  "CHROME_CRASHPAD_PIPE_NAME",
+  "ELECTRON_CRASHPAD_PIPE_NAME"
+] as const;
+
+/** NTSTATUS STATUS_ACCESS_VIOLATION; Node reports it as signed or unsigned. */
+export const WINDOWS_STATUS_ACCESS_VIOLATION = 0xc0000005;
+
+export function isWindowsAccessViolationExit(code: number): boolean {
+  return (code >>> 0) === WINDOWS_STATUS_ACCESS_VIOLATION;
+}
+
+/**
+ * Chromium/Electron env inherited by `spawn("node")` can make native addons
+ * (koffi, node:sqlite) abort with 0xC0000005 on Windows.
+ */
+export function sanitizeCliAgentEnv(
+  env: Record<string, string | undefined>
+): Record<string, string | undefined> {
+  const next = { ...env };
+  for (const key of ELECTRON_CHILD_ENV_BLOCKLIST) {
+    delete next[key];
+  }
+  if (typeof next.NODE_OPTIONS === "string") {
+    const kept = sanitizeNodeOptions(next.NODE_OPTIONS);
+    if (kept) next.NODE_OPTIONS = kept;
+    else delete next.NODE_OPTIONS;
+  }
+  return next;
+}
+
+const NODE_OPTIONS_PATH_FLAGS = new Set([
+  "--require",
+  "-r",
+  "--import",
+  "--loader",
+  "--experimental-loader"
+]);
+
+function sanitizeNodeOptions(value: string): string | undefined {
+  const tokens = value.split(/\s+/).filter(Boolean);
+  const kept: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (/electron|asar/i.test(token)) continue;
+    const eq = token.indexOf("=");
+    const flag = eq === -1 ? token : token.slice(0, eq);
+    const inline = eq === -1 ? "" : token.slice(eq + 1);
+    if (NODE_OPTIONS_PATH_FLAGS.has(flag)) {
+      const arg = inline || tokens[i + 1];
+      if (arg && /electron|asar/i.test(arg)) {
+        if (!inline) i += 1;
+        continue;
+      }
+    }
+    kept.push(token);
+  }
+  return kept.length ? kept.join(" ") : undefined;
+}
+
+export function dshAcpFallbackWorkspace(dataDir: string): string {
+  return path.join(dshAcpManagedRoot(dataDir), "workspace");
+}
+
+/** DeepSeek's sandbox/persistence use `process.cwd()`; never spawn with no cwd. */
+export function ensureDshAcpCwd(
+  cwd: string | undefined,
+  dataDir: string
+): string {
+  const trimmed = cwd?.trim();
+  if (trimmed) return trimmed;
+  const fallback = dshAcpFallbackWorkspace(dataDir);
+  mkdirSync(fallback, { recursive: true });
+  return fallback;
+}
+
+export function formatAcpAgentExitMessage(
+  code: number,
+  language?: string
+): string {
+  if (isWindowsAccessViolationExit(code)) {
+    return language === "zh-CN"
+      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。这通常是 koffi 或 Node zstd/SQLite 原生模块中止，而不是 ACP 协议错误。请用本版本重新编译后再试。"
+      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. This is usually a koffi or Node zstd/SQLite native abort, not an ACP protocol error. Rebuild this version and retry.";
+  }
+  return `ACP agent exited with code ${code}`;
+}
+
 function withDshAcpSqliteWarningSuppressed(command: BuiltCommand): BuiltCommand {
   const env = {
     ...command.env,
@@ -432,6 +529,14 @@ export const DSH_ACP_PROBE_PACKAGE = "@deepseek-ai/dsh-llm-deepseek";
 
 export function dshAcpManagedRoot(dataDir: string): string {
   return path.join(dataDir, "runtimes", "dsh-acp");
+}
+
+/** Refresh the managed composition from the bundled default before spawn/install. */
+export function syncDshAcpManagedConfig(dataDir: string): string {
+  const root = dshAcpManagedRoot(dataDir);
+  mkdirSync(root, { recursive: true });
+  copyFileSync(bundledDshAcpConfigPath(), path.join(root, "cordis.yml"));
+  return root;
 }
 
 export function dshAcpManagedDemoBin(dataDir: string): string {

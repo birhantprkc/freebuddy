@@ -5,14 +5,14 @@ import { BrowserWindow } from "electron";
 import {
   adapterBinary,
   applyDshAcpNpmInstallEnv,
-  bundledDshAcpConfigPath,
   dshAcpCompositionReady,
   dshAcpInstallCommand,
   dshAcpManagedDemoBin,
   dshAcpManagedRoot,
   dshAcpWindowsResiduePath,
   DSH_ACP_PLUGIN_TREE_MISSING,
-  getCliCheckProbe
+  getCliCheckProbe,
+  syncDshAcpManagedConfig
 } from "./adapters.js";
 import { getDataDir, getDb } from "./db.js";
 import { safeSendToWebContents } from "./ipcSend.js";
@@ -883,9 +883,7 @@ async function removeDshAcpWindowsResidue(
 }
 
 function prepareDshAcpManagedInstall(): string {
-  const root = dshAcpManagedRoot(getDataDir());
-  fs.mkdirSync(root, { recursive: true });
-  fs.copyFileSync(bundledDshAcpConfigPath(), path.join(root, "cordis.yml"));
+  const root = syncDshAcpManagedConfig(getDataDir());
   return dshAcpInstallCommand({ prefix: root });
 }
 

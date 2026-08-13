@@ -100,6 +100,7 @@ import { clearSessionOwner } from "./sessionOwners.js";
 import { getLanguage } from "./settings.js";
 import {
   adapterAcceptsClientMcpServers,
+  formatAcpAgentExitMessage,
   isDshAcpExperimentalWarningLine
 } from "./adapters.js";
 
@@ -858,7 +859,7 @@ export async function runAcpAgent({
       if (epoch !== connectionEpoch) return;
       const exitCode = code ?? -1;
       for (const waiter of pending.values()) {
-        waiter.reject(new Error(`ACP agent exited with code ${exitCode}`));
+        waiter.reject(new Error(formatAcpAgentExitMessage(exitCode, getLanguage())));
       }
       pending.clear();
       if (finished) return;
@@ -872,7 +873,7 @@ export async function runAcpAgent({
           ? stderrTail ||
             (commandTail ? `Last command before exit: ${commandTail}` : "") ||
             (agentTail ? `Agent output before exit: ${agentTail}` : "") ||
-            `ACP agent exited with code ${exitCode}`
+            formatAcpAgentExitMessage(exitCode, getLanguage())
           : undefined;
       finish(status, exitCode, crashMessage);
     });

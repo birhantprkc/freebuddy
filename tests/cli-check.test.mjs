@@ -69,6 +69,15 @@ test("dsh-acp install uses next plus optional koffi prebuilds", () => {
   assert.equal(getAdapterDefinition("dsh-acp")?.defaultBinary, "dsh-acp-demo");
 });
 
+test("bundled DeepSeek ACP config disables zstd persistence on Windows-safe defaults", () => {
+  const yaml = fs.readFileSync(bundledDshAcpConfigPath(), "utf8");
+  assert.match(yaml, /persistenceCompression:\s*none/);
+  assert.doesNotMatch(
+    yaml,
+    /persistenceCompression:\s*!!js "process\.env\.DSH_SNAPSHOT === undefined \? 'zstd'/
+  );
+});
+
 test("dsh-acp install command includes every bundled cordis plugin package", () => {
   const yaml = fs.readFileSync(bundledDshAcpConfigPath(), "utf8");
   const hint = dshAcpInstallCommand();

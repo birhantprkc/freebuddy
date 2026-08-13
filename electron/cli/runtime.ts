@@ -8,9 +8,12 @@ import type { Readable, Writable } from "node:stream";
 import {
   buildCommand,
   dshAcpManagedRoot,
+  ensureDshAcpCwd,
   getAdapterDefinition,
   hasExplicitToolSessionArg,
-  mergeNodeOptions
+  mergeNodeOptions,
+  sanitizeCliAgentEnv,
+  syncDshAcpManagedConfig
 } from "./adapters.js";
 import { runAcpAgent } from "./acpRuntime.js";
 import { runLegacyCliAgent } from "./legacyRuntime.js";
@@ -146,8 +149,8 @@ export function mergeBuiltEnv(
   base: Record<string, string | undefined>,
   patch?: Record<string, string>
 ) {
-  if (!patch) return base;
-  const next = { ...base };
+  if (!patch) return sanitizeCliAgentEnv(base);
+  const next: Record<string, string | undefined> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
     next[key] =
       key === "OPENCODE_CONFIG_CONTENT" || key === "CODEX_CONFIG"
@@ -156,7 +159,7 @@ export function mergeBuiltEnv(
           ? mergeNodeOptions(next[key], value)
           : value;
   }
-  return next;
+  return sanitizeCliAgentEnv(next);
 }
 
 export async function cliRun(
@@ -236,12 +239,22 @@ export async function cliRun(
     args.announceSkills && args.skills?.length
       ? { ...args, prompt: buildSkillAnnouncement(args.prompt, args.skills) }
       : args;
+  const withWorkspace: CliRunArgs =
+    effectiveArgs.adapter === "dsh-acp"
+      ? {
+          ...effectiveArgs,
+          cwd: ensureDshAcpCwd(effectiveArgs.cwd, getDataDir())
+        }
+      : effectiveArgs;
+  if (withWorkspace.adapter === "dsh-acp") {
+    syncDshAcpManagedConfig(getDataDir());
+  }
   const isolatedCwd = remoteIsolated
-    ? await isolateRemoteCwdForCaller(effectiveArgs.cwd)
-    : effectiveArgs.cwd;
+    ? await isolateRemoteCwdForCaller(withWorkspace.cwd)
+    : withWorkspace.cwd;
   const executionArgs: CliRunArgs = remoteIsolated
-    ? { ...effectiveArgs, cwd: sandboxWorkingDirectory(isolatedCwd) }
-    : effectiveArgs;
+    ? { ...withWorkspace, cwd: sandboxWorkingDirectory(isolatedCwd) }
+    : { ...withWorkspace, cwd: isolatedCwd };
 
   let built;
   try {

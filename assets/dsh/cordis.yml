@@ -58,7 +58,10 @@
     provider: deepseek-official
     model: deepseek-v4-pro
     persistenceRoot: !!js process.env.DSH_SNAPSHOT_SESSIONS_ROOT ?? './.sessions'
-    persistenceCompression: !!js "process.env.DSH_SNAPSHOT === undefined ? 'zstd' : 'none'"
+    # Official snapshot runs use `none`. The default `zstd` path plus koffi's
+    # Win32 durable-publish bindings have aborted Windows desktop sessions with
+    # STATUS_ACCESS_VIOLATION (0xC0000005) immediately after session/prompt.
+    persistenceCompression: none
     workspaceContext:
       maxBytes: 65536
     # Keep the persona to identity and behavior; tool plugins own tool guidance.
