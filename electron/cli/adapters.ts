@@ -7,7 +7,7 @@ import {
   realpathSync as fsRealpath
 } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DSH_ACP_NPM_TAG = "next";
 
@@ -424,29 +424,31 @@ export function formatAcpAgentExitMessage(
 ): string {
   if (isWindowsAccessViolationExit(code)) {
     return language === "zh-CN"
-      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL 会用 koffi 调 MoveFileExW；本版本会覆盖所有嵌套副本并在 Windows 上关掉 ACL sandbox。请再编一次本版本（无需重装 DeepSeek）。"
-      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL publishes the first log with koffi MoveFileExW; this build overlays the harness fork (Node fs) onto the installed package. If this still happens, rebuild this version — you do not need to reinstall DeepSeek.";
+      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL / Windows ACL 会用 koffi 调 Win32（含 MoveFileExW）；本版本会覆盖 JSONL、关掉 ACL sandbox，并用 Node --import 拦截 koffi。请重新编译本版本后再试（无需重装 DeepSeek）。若仍崩溃，请用「导出调试日志」把 zip 发回来。"
+      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL / Windows ACL call Win32 through koffi (including MoveFileExW). This build overlays JSONL, disables the ACL sandbox, and intercepts koffi with Node --import. Rebuild this version — you do not need to reinstall DeepSeek. If it still crashes, export debug logs and send the zip.";
   }
   return `ACP agent exited with code ${code}`;
 }
 
 function withDshAcpSqliteWarningSuppressed(command: BuiltCommand): BuiltCommand {
-  const env = {
-    ...command.env,
-    NODE_OPTIONS: mergeNodeOptions(
-      command.env?.NODE_OPTIONS,
-      DSH_ACP_NODE_DISABLE_WARNING
-    )
-  };
-  if (
-    !isNodeBinary(command.bin) ||
-    command.args.includes(DSH_ACP_NODE_DISABLE_WARNING)
-  ) {
+  const flags = [
+    DSH_ACP_NODE_DISABLE_WARNING,
+    dshAcpKoffiGuardImportFlag()
+  ].filter((flag): flag is string => Boolean(flag));
+  let env = command.env;
+  for (const flag of flags) {
+    env = {
+      ...env,
+      NODE_OPTIONS: mergeNodeOptions(env?.NODE_OPTIONS, flag)
+    };
+  }
+  if (!isNodeBinary(command.bin)) {
     return { ...command, env };
   }
+  const prepend = flags.filter((flag) => !command.args.includes(flag));
   return {
     ...command,
-    args: [DSH_ACP_NODE_DISABLE_WARNING, ...command.args],
+    args: [...prepend, ...command.args],
     env
   };
 }
@@ -562,17 +564,14 @@ export function dshHarnessOverlayDir(): string {
  * nest it under another `@deepseek-ai/*` plugin; covering only the prefix
  * root left the running import unpatched.
  */
-export function findDshPackageLibIndex(
-  root: string,
-  packageName: string
-): string[] {
+export function findDshPackageDirs(root: string, packageName: string): string[] {
   const found = new Set<string>();
   const visit = (dir: string, depth: number) => {
     if (depth > 8) return;
     const nm = path.join(dir, "node_modules");
     if (!existsSync(nm)) return;
-    const index = path.join(nm, packageName, "lib", "index.js");
-    if (existsSync(index)) found.add(index);
+    const pkg = path.join(nm, packageName);
+    if (existsSync(pkg)) found.add(pkg);
     let entries: string[] = [];
     try {
       entries = readdirSync(nm);
@@ -589,7 +588,7 @@ export function findDshPackageLibIndex(
         } catch {
           continue;
         }
-        for (const pkg of scoped) visit(path.join(child, pkg), depth + 1);
+        for (const nested of scoped) visit(path.join(child, nested), depth + 1);
       } else {
         visit(child, depth + 1);
       }
@@ -599,12 +598,117 @@ export function findDshPackageLibIndex(
   return [...found];
 }
 
-export function dshAcpJsonlStillUsesKoffi(root: string): string[] {
-  return findDshPackageLibIndex(root, DSH_JSONL_PACKAGE).filter((file) =>
-    /(?:import\(|from\s+|load\()["']koffi["']|koffi\.load/.test(
-      readFileSync(file, "utf8")
-    )
+export function findDshPackageLibIndex(
+  root: string,
+  packageName: string
+): string[] {
+  return findDshPackageDirs(root, packageName)
+    .map((dir) => path.join(dir, "lib", "index.js"))
+    .filter((file) => existsSync(file));
+}
+
+const DSH_KOFFI_IMPORT_RE =
+  /(?:import\(|from\s+|load\()["']koffi["']|koffi\.load/;
+
+function fileUsesKoffi(file: string): boolean {
+  try {
+    return DSH_KOFFI_IMPORT_RE.test(readFileSync(file, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+function packageJsUsesKoffi(pkgDir: string): boolean {
+  const lib = path.join(pkgDir, "lib");
+  let names: string[] = [];
+  try {
+    names = existsSync(lib) ? readdirSync(lib) : [];
+  } catch {
+    return false;
+  }
+  return names.some(
+    (name) => name.endsWith(".js") && fileUsesKoffi(path.join(lib, name))
   );
+}
+
+function toPosixRelative(root: string, file: string): string {
+  return path.relative(root, file).split(path.sep).join("/");
+}
+
+export function dshAcpJsonlStillUsesKoffi(root: string): string[] {
+  return findDshPackageLibIndex(root, DSH_JSONL_PACKAGE).filter(fileUsesKoffi);
+}
+
+const DSH_WINDOWS_ACL_PACKAGE = "@deepseek-ai/dsh-sandbox-windows-acl";
+
+export function dshAcpKoffiGuardPath(): string {
+  const fromSource = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "assets",
+    "dsh",
+    "koffi-guard.mjs"
+  );
+  const packaged =
+    typeof process.resourcesPath === "string"
+      ? path.join(process.resourcesPath, "dsh", "koffi-guard.mjs")
+      : "";
+  if (packaged && existsSync(packaged)) return packaged;
+  return fromSource;
+}
+
+export function dshAcpKoffiGuardImportFlag(): string | undefined {
+  const file = dshAcpKoffiGuardPath();
+  if (!existsSync(file)) return undefined;
+  return `--import=${pathToFileURL(file).href}`;
+}
+
+export interface DshAcpRuntimeDiagnostics {
+  runtimePresent: boolean;
+  overlayDirPresent: boolean;
+  jsonlCopyCount: number;
+  jsonlKoffiCopyCount: number;
+  windowsAclPresent: boolean;
+  windowsAclUsesKoffi: boolean;
+  persistenceCompressionNone: boolean;
+  sandboxDisabledOnWin32: boolean;
+  koffiGuardPresent: boolean;
+  jsonlRelatives: Array<{ path: string; usesKoffi: boolean }>;
+}
+
+/** Snapshot of the managed DeepSeek runtime for debug-log export. */
+export function buildDshAcpRuntimeDiagnostics(input: {
+  runtimeRoot: string;
+  overlayDir?: string;
+  configPath?: string;
+}): DshAcpRuntimeDiagnostics {
+  const root = input.runtimeRoot;
+  const overlayDir = input.overlayDir ?? dshHarnessOverlayDir();
+  const jsonlFiles = findDshPackageLibIndex(root, DSH_JSONL_PACKAGE);
+  const jsonlRelatives = jsonlFiles.map((file) => ({
+    path: toPosixRelative(root, file),
+    usesKoffi: fileUsesKoffi(file)
+  }));
+  const aclDirs = findDshPackageDirs(root, DSH_WINDOWS_ACL_PACKAGE);
+  const configPath =
+    input.configPath && existsSync(input.configPath)
+      ? input.configPath
+      : path.join(root, "cordis.yml");
+  const cordis = existsSync(configPath) ? readFileSync(configPath, "utf8") : "";
+  return {
+    runtimePresent: existsSync(root),
+    overlayDirPresent: existsSync(overlayDir),
+    jsonlCopyCount: jsonlFiles.length,
+    jsonlKoffiCopyCount: jsonlRelatives.filter((file) => file.usesKoffi).length,
+    windowsAclPresent: aclDirs.length > 0,
+    windowsAclUsesKoffi: aclDirs.some((dir) => packageJsUsesKoffi(dir)),
+    persistenceCompressionNone: /persistenceCompression:\s*none/.test(cordis),
+    sandboxDisabledOnWin32:
+      /dsh-sandbox-local[\s\S]{0,400}disabled:/.test(cordis),
+    koffiGuardPresent: existsSync(dshAcpKoffiGuardPath()),
+    jsonlRelatives
+  };
 }
 
 export function patchDshAcpManagedRuntime(root: string): number {

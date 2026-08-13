@@ -180,7 +180,9 @@ test("managed DeepSeek spawn overlays the harness fork before the agent starts",
   assert.match(adaptersSource, /patchDshAcpRuntimeFromBin/);
   assert.match(adaptersSource, /dshHarnessOverlayDir/);
   assert.match(adaptersSource, /dsh-harness-overlays/);
+  assert.match(adaptersSource, /dshAcpKoffiGuardImportFlag/);
   assert.match(runtimeSource, /patchDshAcpRuntimeFromCommand/);
+  assert.match(runtimeSource, /buildDshAcpRuntimeDiagnostics/);
 });
 
 test("cliRun passes workspaceRoots into buildCommand", () => {

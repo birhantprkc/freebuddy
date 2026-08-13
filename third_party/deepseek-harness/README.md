@@ -53,3 +53,11 @@ https://github.com/deepseek-ai/deepseek-harness/compare/master...maojindao55:dee
 `patchDshAcpManagedRuntime()` copies the overlay files over the managed
 runtime after npm install and again before every spawn. Packaged builds
 ship the overlays as `extraResources` (`dsh-harness-overlays`).
+
+On Windows, spawn also injects `assets/dsh/koffi-guard.mjs` via Node
+`--import`. That register hook redirects every `koffi` import to a
+fail-closed JavaScript stub so a missed overlay or `dsh-sandbox-windows-acl`
+cannot load the native addon.
+
+Debug log export includes `dsh-acp-runtime.json` (JSONL copies, leftover
+koffi, cordis safety flags, guard present).

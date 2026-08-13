@@ -7,6 +7,7 @@ import type { Readable, Writable } from "node:stream";
 
 import {
   buildCommand,
+  buildDshAcpRuntimeDiagnostics,
   dshAcpManagedRoot,
   ensureDshAcpCwd,
   getAdapterDefinition,
@@ -274,6 +275,27 @@ export async function cliRun(
     });
     if (executionArgs.adapter === "dsh-acp") {
       patchDshAcpRuntimeFromCommand(built);
+      const configIdx = built.args.findIndex(
+        (arg) => arg === "--config" || arg === "-c"
+      );
+      const configPath =
+        configIdx >= 0
+          ? built.args[configIdx + 1]
+          : built.args
+              .find((arg) => arg.startsWith("--config=") || arg.startsWith("-c="))
+              ?.split("=")
+              .slice(1)
+              .join("=");
+      appendLog(
+        logStream,
+        "system",
+        `dsh-acp runtime ${JSON.stringify(
+          buildDshAcpRuntimeDiagnostics({
+            runtimeRoot: dshAcpManagedRoot(getDataDir()),
+            configPath
+          })
+        )}`
+      );
     }
   } catch (e) {
     const msg = `build command failed: ${(e as Error)?.message || e}`;

@@ -53,6 +53,8 @@ test("export bundle filters by mode and includes sessions", () => {
   assert.match(exporter, /filterOwnLogLine/);
   assert.match(exporter, /sessions\/\$\{f\.name\}/);
   assert.match(exporter, /environment\.json/);
+  assert.match(exporter, /dsh-acp-runtime\.json/);
+  assert.match(exporter, /buildDshAcpRuntimeDiagnostics/);
   assert.match(exporter, /dialog\.showSaveDialog/);
 });
 

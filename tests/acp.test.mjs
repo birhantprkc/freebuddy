@@ -22,7 +22,10 @@ import {
   syncDshAcpManagedConfig,
   dshHarnessOverlayDir,
   dshAcpJsonlStillUsesKoffi,
-  patchDshAcpRuntimeFromBin
+  patchDshAcpRuntimeFromBin,
+  buildDshAcpRuntimeDiagnostics,
+  dshAcpKoffiGuardPath,
+  dshAcpKoffiGuardImportFlag
 } from "../dist-electron/cli/adapters.js";
 import {
   acpSessionListToItems,
@@ -374,13 +377,17 @@ test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
   });
 
   assert.equal(built.bin, "node");
+  const importFlag = dshAcpKoffiGuardImportFlag();
+  assert.ok(importFlag);
   assert.deepEqual(built.args, [
     DSH_ACP_NODE_DISABLE_WARNING,
+    importFlag,
     binJs,
     "--config",
     config
   ]);
   assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
+  assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
   assert.equal(built.protocol, "acp");
 });
 
@@ -431,7 +438,8 @@ test("buildCommand silences Node SQLite ExperimentalWarning for DeepSeek ACP", (
 
   assert.equal(built.bin, "dsh-acp-demo");
   assert.equal(built.args.includes(DSH_ACP_NODE_DISABLE_WARNING), false);
-  assert.equal(built.env?.NODE_OPTIONS, DSH_ACP_NODE_DISABLE_WARNING);
+  assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
+  assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
 });
 
 test("isDshAcpExperimentalWarningLine matches Node sqlite warning stderr", () => {
@@ -515,6 +523,10 @@ test("formatAcpAgentExitMessage explains Windows access violation 0xC0000005", (
     formatAcpAgentExitMessage(3221225477, "zh-CN"),
     /MoveFileExW/
   );
+  assert.match(
+    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    /导出调试日志/
+  );
   assert.doesNotMatch(
     formatAcpAgentExitMessage(3221225477, "zh-CN"),
     /请用本版本重新编译后再试。$/
@@ -526,6 +538,10 @@ test("formatAcpAgentExitMessage explains Windows access violation 0xC0000005", (
   assert.match(
     formatAcpAgentExitMessage(3221225477, "en"),
     /MoveFileExW/
+  );
+  assert.match(
+    formatAcpAgentExitMessage(3221225477, "en"),
+    /debug logs/i
   );
 });
 
@@ -623,6 +639,69 @@ test("patchDshAcpManagedRuntime overlays nested node_modules copies", () => {
   patchDshAcpManagedRuntime(root);
   assert.doesNotMatch(fs.readFileSync(dest, "utf8"), /koffi/);
   assert.deepEqual(dshAcpJsonlStillUsesKoffi(root), []);
+});
+
+test("buildDshAcpRuntimeDiagnostics reports leftover koffi and cordis safety flags", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-diag-"));
+  const files = writePlaceholderDshRuntime(root);
+  const aclLib = path.join(
+    root,
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-sandbox-windows-acl",
+    "lib"
+  );
+  fs.mkdirSync(aclLib, { recursive: true });
+  fs.writeFileSync(path.join(aclLib, "index.js"), 'await import("koffi");\n');
+  fs.writeFileSync(
+    path.join(root, "cordis.yml"),
+    [
+      "- id: sandbox",
+      "  name: '@deepseek-ai/dsh-sandbox-local'",
+      "  disabled: !!js process.platform === 'win32'",
+      "- id: acp-agent",
+      "  name: '@deepseek-ai/dsh-acp-demo'",
+      "  config:",
+      "    persistenceCompression: none",
+      ""
+    ].join("\n")
+  );
+
+  const before = buildDshAcpRuntimeDiagnostics({ runtimeRoot: root });
+  assert.equal(before.runtimePresent, true);
+  assert.equal(before.jsonlCopyCount, 1);
+  assert.equal(before.jsonlKoffiCopyCount, 1);
+  assert.equal(before.windowsAclPresent, true);
+  assert.equal(before.windowsAclUsesKoffi, true);
+  assert.equal(before.persistenceCompressionNone, true);
+  assert.equal(before.sandboxDisabledOnWin32, true);
+  assert.equal(before.koffiGuardPresent, true);
+  assert.equal(before.jsonlRelatives[0]?.usesKoffi, true);
+  assert.doesNotMatch(JSON.stringify(before), /home|Users|AppData/i);
+
+  patchDshAcpManagedRuntime(root);
+  const after = buildDshAcpRuntimeDiagnostics({ runtimeRoot: root });
+  assert.equal(after.jsonlKoffiCopyCount, 0);
+  assert.equal(fs.readFileSync(files.jsonl, "utf8").includes("koffi"), false);
+});
+
+test("koffi guard redirects koffi to a JavaScript stub", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { pathToFileURL } = await import("node:url");
+  const guard = dshAcpKoffiGuardPath();
+  assert.equal(fs.existsSync(guard), true);
+  const script = [
+    "const k = await import('koffi');",
+    "const api = (k.default ?? k).load('kernel32.dll');",
+    "const fn = api.func('__stdcall', 'MoveFileExW', 'int', ['str16', 'str16', 'uint']);",
+    "process.stdout.write(JSON.stringify({ result: fn('a', 'b', 8), stub: true }));"
+  ].join("");
+  const stdout = execFileSync(
+    process.execPath,
+    ["--import", pathToFileURL(guard).href, "--input-type=module", "-e", script],
+    { encoding: "utf8" }
+  );
+  assert.deepEqual(JSON.parse(stdout), { result: 0, stub: true });
 });
 
 test("patchDshAcpRuntimeFromBin overlays the install prefix of a demo bin", () => {

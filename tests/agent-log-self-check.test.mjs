@@ -67,7 +67,7 @@ test("diagnostic prompt contains the temporary directory path, not log contents"
   assert.match(dialog, /logDirectory: prepared\.path/);
   assert.match(promptBuilder, /logDirectory: string/);
   assert.match(promptBuilder, /Review the full diagnostic logs/);
-  assert.match(promptBuilder, /Read README\.txt, environment\.json, logs\/, and sessions\//);
+  assert.match(promptBuilder, /Read README\.txt, environment\.json, dsh-acp-runtime\.json, logs\/, and sessions\//);
   assert.match(promptBuilder, /Separate confirmed facts from possible causes/);
   assert.match(promptBuilder, /Do not modify or delete files in the temporary directory/);
   assert.match(promptBuilder, /conversation\.id/);
