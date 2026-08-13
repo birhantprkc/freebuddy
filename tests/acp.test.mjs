@@ -1,8 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import { buildCommand, cliAdapterDefinitions, adapterAcceptsClientMcpServers } from "../dist-electron/cli/adapters.js";
+import {
+  buildCommand,
+  cliAdapterDefinitions,
+  adapterAcceptsClientMcpServers,
+  extraArgsHaveDshConfig,
+  resolveDshAcpConfigPath
+} from "../dist-electron/cli/adapters.js";
 import {
   acpSessionListToItems,
   acpSessionSetupToItems,
@@ -311,11 +319,40 @@ test("buildCommand starts Grok through its ACP stdio agent", () => {
 
 test("buildCommand starts DeepSeek Harness through its ACP demo server", () => {
   const built = buildCommand({ adapter: "dsh-acp", prompt: "hello" });
+  const config = resolveDshAcpConfigPath();
 
   assert.equal(built.bin, "dsh-acp-demo");
-  assert.deepEqual(built.args, []);
+  assert.deepEqual(built.args, ["--config", config]);
+  assert.equal(fs.existsSync(config), true);
   assert.equal(built.promptViaStdin, false);
   assert.equal(built.protocol, "acp");
+});
+
+test("buildCommand uses a workspace cordis.yml when present", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-"));
+  const local = path.join(dir, "cordis.yml");
+  fs.writeFileSync(local, "- id: acp-agent\n");
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    prompt: "hello",
+    cwd: dir
+  });
+
+  assert.deepEqual(built.args, ["--config", local]);
+});
+
+test("buildCommand keeps extra DeepSeek args after the bundled config", () => {
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    prompt: "hello",
+    extraArgs: ["--verbose"]
+  });
+
+  assert.deepEqual(built.args, [
+    "--config",
+    resolveDshAcpConfigPath(),
+    "--verbose"
+  ]);
 });
 
 test("buildCommand forwards DeepSeek Harness extra args including cordis config", () => {
@@ -327,6 +364,17 @@ test("buildCommand forwards DeepSeek Harness extra args including cordis config"
 
   assert.deepEqual(built.args, ["-c", "/tmp/acp-agent/cordis.yml"]);
   assert.equal(built.protocol, "acp");
+});
+
+test("buildCommand does not override DeepSeek --config= extra args", () => {
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    prompt: "hello",
+    extraArgs: ["--config=/custom/cordis.yml"]
+  });
+
+  assert.equal(extraArgsHaveDshConfig(["--config=/custom/cordis.yml"]), true);
+  assert.deepEqual(built.args, ["--config=/custom/cordis.yml"]);
 });
 
 test("DeepSeek Harness ACP rejects client MCP servers", () => {

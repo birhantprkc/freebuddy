@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export type CLIAdapterId =
   | "codex"
@@ -323,6 +325,46 @@ export function dshAcpWindowsResiduePath(
   return path.join(appdata, "npm", "node_modules", "@deepseek-ai");
 }
 
+export function extraArgsHaveDshConfig(args: string[]): boolean {
+  return args.some(
+    (arg) =>
+      arg === "-c" ||
+      arg === "--config" ||
+      arg.startsWith("-c=") ||
+      arg.startsWith("--config=")
+  );
+}
+
+/** Packaged extraResources, else the repo `assets/dsh/cordis.yml` used in dev. */
+export function bundledDshAcpConfigPath(): string {
+  const fromSource = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "assets",
+    "dsh",
+    "cordis.yml"
+  );
+  const packaged =
+    typeof process.resourcesPath === "string"
+      ? path.join(process.resourcesPath, "dsh", "cordis.yml")
+      : "";
+  if (packaged && existsSync(packaged)) return packaged;
+  return fromSource;
+}
+
+/**
+ * `dsh-acp-demo` defaults to `./cordis.yml` in the session cwd. Prefer a
+ * workspace file when present; otherwise use FreeBuddy's bundled default.
+ */
+export function resolveDshAcpConfigPath(cwd?: string): string {
+  if (cwd) {
+    const local = path.join(cwd, "cordis.yml");
+    if (existsSync(local)) return local;
+  }
+  return bundledDshAcpConfigPath();
+}
+
 export function hasExplicitToolSessionArg(
   adapter: string | null | undefined,
   extraArgs: string[] | null | undefined
@@ -637,7 +679,9 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
       };
     }
     case "dsh-acp": {
-      const args: string[] = [...extra];
+      const args = extraArgsHaveDshConfig(extra)
+        ? [...extra]
+        : ["--config", resolveDshAcpConfigPath(input.cwd), ...extra];
       return {
         bin,
         args,

@@ -77,6 +77,8 @@ FreeBuddy is compatible with **all CLI-based AI coding tools** — if it runs in
 | **CodeBuddy** | `codebuddy` | `npm install -g @tencent-ai/codebuddy-code` | 🆕 |
 | **DeepSeek** | `dsh-acp-demo` | `npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next` | 🆕 |
 
+FreeBuddy starts DeepSeek with a bundled `cordis.yml` (`--config`). A `cordis.yml` in the workspace root wins if present. Set `DEEPSEEK_API_KEY` under **Settings → Coding Agents**.
+
 </details>
 
 Open **Settings → Coding Agents** to:

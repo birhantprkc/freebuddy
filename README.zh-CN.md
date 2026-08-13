@@ -78,6 +78,8 @@ FreeBuddy 兼容**所有基于 CLI 的 AI 编码工具** —— 只要它能在�
 | **CodeBuddy** | `codebuddy` | `npm install -g @tencent-ai/codebuddy-code` | 🆕 |
 | **DeepSeek** | `dsh-acp-demo` | `npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next` | 🆕 |
 
+FreeBuddy 启动 DeepSeek 时会带上内置的 `cordis.yml`（`--config`）。工作区根目录若已有 `cordis.yml` 则优先使用。请在 **设置 → 编码 Agent** 中配置 `DEEPSEEK_API_KEY`。
+
 </details>
 
 打开 **设置 → 编码 Agent** 可以：

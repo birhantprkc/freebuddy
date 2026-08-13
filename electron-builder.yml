@@ -18,6 +18,8 @@ files:
 extraResources:
   - from: assets/skills
     to: skills
+  - from: assets/dsh
+    to: dsh
   - from: assets/app-icon.png
     to: app-icon.png
   - from: assets/sidebar-logo.png
