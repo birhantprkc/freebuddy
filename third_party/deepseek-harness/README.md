@@ -5,6 +5,7 @@ FreeBuddy still runs the official ACP leaf (`@deepseek-ai/dsh-acp-demo` +
 set** we apply on top of that install.
 
 Upstream: https://github.com/deepseek-ai/deepseek-harness  
+Fork: https://github.com/maojindao55/deepseek-harness  
 Pinned published line: `@next` / `0.1.0-rc.6`
 
 ## Why
@@ -23,11 +24,29 @@ replace the installed files wholesale.
 | `overlays/dsh-session-persistence-jsonl/lib/index.js` | Windows publish uses Node `rename` / copy / `mkdir`. No native addon load. |
 | `overlays/dsh-acp-demo/lib/index.js` | SQLite query engine `openAt: "never"`. |
 
-Intended upstream source for the persistence change lives in
-`src/session-persistence-jsonl/win32.ts`. When
-`maojindao55/deepseek-harness` exists, copy that file onto
-`packages/session/session-persistence-jsonl/src/win32.ts` and open a PR
-back to DeepSeek.
+Source-of-truth for the fork / upstream PR:
+
+- `src/session-persistence-jsonl/win32.ts`
+- `0001-fix-windows-jsonl-node-fs.patch` (also closes ACP demo SQLite at startup)
+
+## Apply the patch on the fork
+
+This Cloud Agent can read `maojindao55/deepseek-harness` but cannot push to
+it (GitHub App is `cursor[bot]`, no write on that repo). Apply locally:
+
+```sh
+git clone https://github.com/maojindao55/deepseek-harness.git
+cd deepseek-harness
+git checkout -b cursor/windows-jsonl-node-fs-255d
+git am /path/to/freebuddy/third_party/deepseek-harness/0001-fix-windows-jsonl-node-fs.patch
+git push -u origin cursor/windows-jsonl-node-fs-255d
+```
+
+Then open a PR from that branch back to `deepseek-ai/deepseek-harness`.
+
+Compare URL after push:
+
+https://github.com/deepseek-ai/deepseek-harness/compare/master...maojindao55:deepseek-harness:cursor/windows-jsonl-node-fs-255d
 
 ## How FreeBuddy applies it
 
