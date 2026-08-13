@@ -106,6 +106,22 @@ test("DeepSeek ACP install skips koffi source rebuilds and clears Windows residu
   assert.match(checkSource, /removeDshAcpWindowsResidue/);
 });
 
+test("DeepSeek ACP install patches koffi MoveFileExW after a successful npm install", () => {
+  assert.match(checkSource, /patchDshAcpManagedRuntime/);
+  const installClose = checkSource.slice(checkSource.indexOf("export function cliInstall("));
+  const streamClose = checkSource.slice(
+    checkSource.indexOf("export function cliInstallStream(")
+  );
+  assert.match(
+    installClose,
+    /adapter === "dsh-acp" && code === 0[\s\S]*patchDshAcpManagedRuntime/
+  );
+  assert.match(
+    streamClose,
+    /adapter === "dsh-acp" && code === 0[\s\S]*patchDshAcpManagedRuntime/
+  );
+});
+
 test("DeepSeek ACP check treats PATH resolution as installed without --version", () => {
   assert.match(checkSource, /probe\.skipSpawn/);
   assert.match(checkSource, /DSH_ACP_PLUGIN_TREE_MISSING/);

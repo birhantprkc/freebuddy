@@ -3,7 +3,8 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  realpathSync as fsRealpath
+  realpathSync as fsRealpath,
+  writeFileSync
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -423,8 +424,8 @@ export function formatAcpAgentExitMessage(
 ): string {
   if (isWindowsAccessViolationExit(code)) {
     return language === "zh-CN"
-      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。这通常是 koffi 或 Node zstd/SQLite 原生模块中止，而不是 ACP 协议错误。请用本版本重新编译后再试。"
-      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. This is usually a koffi or Node zstd/SQLite native abort, not an ACP protocol error. Rebuild this version and retry.";
+      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL 首次落盘会用 koffi 调用 MoveFileExW；本版本启动时会改走 Node 文件系统。若仍看到此错误，请确认已重新编译本版本（无需重装 DeepSeek）。"
+      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL publishes the first log with koffi MoveFileExW; this build rewrites that path onto Node fs at spawn. If this still happens, rebuild this version — you do not need to reinstall DeepSeek.";
   }
   return `ACP agent exited with code ${code}`;
 }
@@ -531,11 +532,81 @@ export function dshAcpManagedRoot(dataDir: string): string {
   return path.join(dataDir, "runtimes", "dsh-acp");
 }
 
+const DSH_ACP_JSONL_WIN32_DISPATCH =
+  'if (process.platform === "win32") await this.materializeWin32';
+const DSH_ACP_JSONL_WIN32_DISPATCH_PATCHED =
+  "if (false) await this.materializeWin32";
+const DSH_ACP_JSONL_SYNC_DIR =
+  'async syncDirPosix(dir) {\n\t\tconst handle = await open(dir, "r");';
+const DSH_ACP_JSONL_SYNC_DIR_PATCHED =
+  'async syncDirPosix(dir) {\n\t\tif (process.platform === "win32") return;\n\t\tconst handle = await open(dir, "r");';
+const DSH_ACP_DEMO_SQLITE =
+  'ctx.plugin(SqliteSessionQueryEngine, { path: join(persistenceRoot, "session-query.db") })';
+const DSH_ACP_DEMO_SQLITE_PATCHED =
+  'ctx.plugin(SqliteSessionQueryEngine, { path: join(persistenceRoot, "session-query.db"), openAt: "never" })';
+
+function replaceOnceIfNeeded(
+  text: string,
+  find: string,
+  replace: string
+): string {
+  if (text.includes(replace) || !text.includes(find)) return text;
+  return text.replace(find, replace);
+}
+
+function patchManagedFile(
+  file: string,
+  replacements: Array<[string, string]>
+): void {
+  if (!existsSync(file)) return;
+  const original = readFileSync(file, "utf8");
+  let next = original;
+  for (const [find, replace] of replacements) {
+    next = replaceOnceIfNeeded(next, find, replace);
+  }
+  if (next !== original) writeFileSync(file, next);
+}
+
+/**
+ * Official JSONL durable-publish loads koffi and calls MoveFileExW the first
+ * time a session is written. That aborts Windows Electron children with
+ * STATUS_ACCESS_VIOLATION (0xC0000005) on session/prompt. Rewrite the installed
+ * packages onto Node fs and keep SQLite closed.
+ */
+export function patchDshAcpManagedRuntime(root: string): void {
+  patchManagedFile(
+    path.join(
+      root,
+      "node_modules",
+      "@deepseek-ai",
+      "dsh-session-persistence-jsonl",
+      "lib",
+      "index.js"
+    ),
+    [
+      [DSH_ACP_JSONL_WIN32_DISPATCH, DSH_ACP_JSONL_WIN32_DISPATCH_PATCHED],
+      [DSH_ACP_JSONL_SYNC_DIR, DSH_ACP_JSONL_SYNC_DIR_PATCHED]
+    ]
+  );
+  patchManagedFile(
+    path.join(
+      root,
+      "node_modules",
+      "@deepseek-ai",
+      "dsh-acp-demo",
+      "lib",
+      "index.js"
+    ),
+    [[DSH_ACP_DEMO_SQLITE, DSH_ACP_DEMO_SQLITE_PATCHED]]
+  );
+}
+
 /** Refresh the managed composition from the bundled default before spawn/install. */
 export function syncDshAcpManagedConfig(dataDir: string): string {
   const root = dshAcpManagedRoot(dataDir);
   mkdirSync(root, { recursive: true });
   copyFileSync(bundledDshAcpConfigPath(), path.join(root, "cordis.yml"));
+  patchDshAcpManagedRuntime(root);
   return root;
 }
 

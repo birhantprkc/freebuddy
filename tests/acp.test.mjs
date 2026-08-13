@@ -17,7 +17,9 @@ import {
   ensureDshAcpCwd,
   dshAcpManagedRoot,
   formatAcpAgentExitMessage,
-  isWindowsAccessViolationExit
+  isWindowsAccessViolationExit,
+  patchDshAcpManagedRuntime,
+  syncDshAcpManagedConfig
 } from "../dist-electron/cli/adapters.js";
 import {
   acpSessionListToItems,
@@ -507,9 +509,109 @@ test("formatAcpAgentExitMessage explains Windows access violation 0xC0000005", (
     /session\/prompt/
   );
   assert.match(
+    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    /MoveFileExW/
+  );
+  assert.doesNotMatch(
+    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    /请用本版本重新编译后再试。$/
+  );
+  assert.match(
     formatAcpAgentExitMessage(3221225477, "en"),
     /access violation/i
   );
+  assert.match(
+    formatAcpAgentExitMessage(3221225477, "en"),
+    /MoveFileExW/
+  );
+});
+
+const OFFICIAL_JSONL_MATERIALIZE = `		if (process.platform === "win32") await this.materializeWin32(project, dir, finalPath, meta.id, content);
+		else await this.materializePosix(project, dir, finalPath, meta.id, content);`;
+
+const OFFICIAL_JSONL_SYNC_DIR = `	async syncDirPosix(dir) {
+		const handle = await open(dir, "r");
+		try {
+			await handle.sync();
+		} finally {
+			await handle.close();
+		}
+	}`;
+
+const OFFICIAL_DEMO_SQLITE =
+  `const query = ctx.plugin(SqliteSessionQueryEngine, { path: join(persistenceRoot, "session-query.db") });`;
+
+function writeOfficialDshRuntimeSnippets(root) {
+  const jsonlDir = path.join(
+    root,
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-session-persistence-jsonl",
+    "lib"
+  );
+  const demoDir = path.join(
+    root,
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-acp-demo",
+    "lib"
+  );
+  fs.mkdirSync(jsonlDir, { recursive: true });
+  fs.mkdirSync(demoDir, { recursive: true });
+  const jsonl = path.join(jsonlDir, "index.js");
+  const demo = path.join(demoDir, "index.js");
+  fs.writeFileSync(
+    jsonl,
+    `${OFFICIAL_JSONL_MATERIALIZE}\n${OFFICIAL_JSONL_SYNC_DIR}\n`
+  );
+  fs.writeFileSync(demo, `${OFFICIAL_DEMO_SQLITE}\n`);
+  return { jsonl, demo };
+}
+
+test("patchDshAcpManagedRuntime is a no-op when DeepSeek packages are missing", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-missing-"));
+  assert.doesNotThrow(() => patchDshAcpManagedRuntime(root));
+});
+
+test("patchDshAcpManagedRuntime skips koffi MoveFileExW and SQLite on official snippets", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-patch-"));
+  const files = writeOfficialDshRuntimeSnippets(root);
+  patchDshAcpManagedRuntime(root);
+  const jsonl = fs.readFileSync(files.jsonl, "utf8");
+  const demo = fs.readFileSync(files.demo, "utf8");
+  assert.match(jsonl, /if \(false\) await this\.materializeWin32/);
+  assert.doesNotMatch(
+    jsonl,
+    /if \(process\.platform === "win32"\) await this\.materializeWin32/
+  );
+  assert.match(
+    jsonl,
+    /async syncDirPosix\(dir\) \{\s*if \(process\.platform === "win32"\) return;/
+  );
+  assert.match(demo, /openAt:\s*"never"/);
+  assert.doesNotMatch(
+    demo,
+    /SqliteSessionQueryEngine, \{ path: join\(persistenceRoot, "session-query\.db"\) \}/
+  );
+
+  const beforeJsonl = jsonl;
+  const beforeDemo = demo;
+  patchDshAcpManagedRuntime(root);
+  assert.equal(fs.readFileSync(files.jsonl, "utf8"), beforeJsonl);
+  assert.equal(fs.readFileSync(files.demo, "utf8"), beforeDemo);
+});
+
+test("syncDshAcpManagedConfig patches an already-installed DeepSeek runtime", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-sync-"));
+  const root = dshAcpManagedRoot(dataDir);
+  const files = writeOfficialDshRuntimeSnippets(root);
+  assert.equal(syncDshAcpManagedConfig(dataDir), root);
+  assert.equal(fs.existsSync(path.join(root, "cordis.yml")), true);
+  assert.match(
+    fs.readFileSync(files.jsonl, "utf8"),
+    /if \(false\) await this\.materializeWin32/
+  );
+  assert.match(fs.readFileSync(files.demo, "utf8"), /openAt:\s*"never"/);
 });
 
 test("buildCommand keeps Grok global flags before the ACP subcommand", () => {

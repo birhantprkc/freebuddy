@@ -12,6 +12,7 @@ import {
   dshAcpWindowsResiduePath,
   DSH_ACP_PLUGIN_TREE_MISSING,
   getCliCheckProbe,
+  patchDshAcpManagedRuntime,
   syncDshAcpManagedConfig
 } from "./adapters.js";
 import { getDataDir, getDb } from "./db.js";
@@ -946,6 +947,9 @@ export function cliInstall(command: string, adapter = "custom"): Promise<CliInst
       });
       child.on("close", (code) => {
         clearTimeout(timer);
+        if (adapter === "dsh-acp" && code === 0) {
+          patchDshAcpManagedRuntime(dshAcpManagedRoot(getDataDir()));
+        }
         reportSetup(
           timedOut ? "timeout" : code === 0 ? "installed" : "failed",
           timedOut ? "timeout" : code === 0 ? undefined : `process exited ${code ?? "unknown"}`
@@ -1072,6 +1076,9 @@ export function cliInstallStream(
       });
       child.on("close", (code) => {
         if (settled) return;
+        if (adapter === "dsh-acp" && code === 0) {
+          patchDshAcpManagedRuntime(dshAcpManagedRoot(getDataDir()));
+        }
         reportSetup(
           code === 0 ? "installed" : "failed",
           code === 0 ? undefined : `process exited ${code ?? "unknown"}`
