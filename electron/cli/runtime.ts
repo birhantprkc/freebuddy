@@ -8,7 +8,9 @@ import type { Readable, Writable } from "node:stream";
 import {
   buildCommand,
   buildDshAcpRuntimeDiagnostics,
+  dshAcpKoffiGuardPath,
   dshAcpManagedRoot,
+  dshAcpWindowsResiduePath,
   ensureDshAcpCwd,
   getAdapterDefinition,
   hasExplicitToolSessionArg,
@@ -292,7 +294,9 @@ export async function cliRun(
         `dsh-acp runtime ${JSON.stringify(
           buildDshAcpRuntimeDiagnostics({
             runtimeRoot: dshAcpManagedRoot(getDataDir()),
-            configPath
+            configPath,
+            spawnBin: built.bin,
+            spawnArgs: built.args
           })
         )}`
       );
@@ -340,7 +344,11 @@ export async function cliRun(
           ),
           ...(executionArgs.skills ?? []).map((skill) => skill.rootPath),
           ...(executionArgs.adapter === "dsh-acp"
-            ? [dshAcpManagedRoot(getDataDir())]
+            ? [
+                dshAcpManagedRoot(getDataDir()),
+                dshAcpKoffiGuardPath(),
+                dshAcpWindowsResiduePath() ?? ""
+              ].filter(Boolean)
             : [])
         ]
       });

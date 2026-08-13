@@ -865,7 +865,7 @@ export async function runAcpAgent({
       if (finished) return;
       appendLog(logStream, "system", `exit code=${exitCode}`);
       const status = exitCode === 0 ? "done" : "failed";
-      const stderrTail = recentStderr.slice(-10).join("\n").trim();
+      const stderrTail = recentStderr.slice(-40).join("\n").trim();
       const commandTail = lastToolCommand.slice(-500).trim();
       const agentTail = lastAgentText.slice(-800).trim();
       const crashMessage =

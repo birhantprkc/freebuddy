@@ -7,7 +7,7 @@ import {
   realpathSync as fsRealpath
 } from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const DSH_ACP_NPM_TAG = "next";
 
@@ -334,8 +334,12 @@ export function isDshAcpExperimentalWarningLine(line: string): boolean {
   return /Use `node --trace-warnings/i.test(text);
 }
 
+function dshAcpBinaryBaseName(binary: string): string {
+  return binary.split(/[/\\]/).pop()?.toLowerCase() ?? "";
+}
+
 function isNodeBinary(bin: string): boolean {
-  const base = path.basename(bin).toLowerCase();
+  const base = dshAcpBinaryBaseName(bin);
   return base === "node" || base === "node.exe";
 }
 
@@ -348,15 +352,76 @@ const DSH_ACP_DEFAULT_BINARIES = new Set([
 ]);
 
 /**
- * Settings persist `defaultBinary` even when the user did not pick a custom
- * path. That name must still launch the managed runtime, not a PATH global
- * install (global npm `dsh-acp-demo`).
+ * Settings persist `defaultBinary`, and Windows Check/PATH resolution often
+ * stores `%AppData%\\npm\\dsh-acp-demo.cmd`. Those are still the stock demo.
  */
 export function isDefaultDshAcpBinary(binary?: string): boolean {
   const trimmed = binary?.trim();
   if (!trimmed) return true;
-  if (/[\\/]/.test(trimmed)) return false;
-  return DSH_ACP_DEFAULT_BINARIES.has(path.basename(trimmed).toLowerCase());
+  const base = dshAcpBinaryBaseName(trimmed);
+  if (!DSH_ACP_DEFAULT_BINARIES.has(base)) return false;
+  if (!/[\\/]/.test(trimmed)) return true;
+  const normalized = trimmed.replace(/\\/g, "/").toLowerCase();
+  return (
+    /\/npm\/dsh-acp-demo(?:\.cmd|\.exe|\.bat|\.ps1)?$/i.test(normalized) ||
+    /\/node_modules\/@deepseek-ai\/dsh-acp-demo\/lib\/bin\.js$/i.test(normalized)
+  );
+}
+
+function dshAcpDemoBinJsFromDir(demoDir: string): string | undefined {
+  const binJs = path.join(demoDir, "lib", "bin.js");
+  return existsSync(binJs) ? binJs : undefined;
+}
+
+function dshAcpDemoBinJsFromBinaryHint(binary?: string): string | undefined {
+  const trimmed = binary?.trim();
+  if (!trimmed || !/[\\/]/.test(trimmed)) return undefined;
+  if (/dsh-acp-demo[/\\]lib[/\\]bin\.js$/i.test(trimmed) && existsSync(trimmed)) {
+    return trimmed;
+  }
+  const demoDir = resolveDshAcpDemoDirFromBinary(trimmed);
+  return demoDir ? dshAcpDemoBinJsFromDir(demoDir) : undefined;
+}
+
+function wellKnownGlobalDshAcpDemoBinJs(
+  env: NodeJS.ProcessEnv = process.env
+): string | undefined {
+  const residue =
+    dshAcpWindowsResiduePath(env) ??
+    (env.APPDATA?.trim()
+      ? path.join(env.APPDATA.trim(), "npm", "node_modules", "@deepseek-ai")
+      : undefined);
+  if (!residue) return undefined;
+  return dshAcpDemoBinJsFromDir(path.join(residue, "dsh-acp-demo"));
+}
+
+/** Resolve the `dsh-acp-demo` entry we should spawn with `node`, if any. */
+export function resolveDshAcpDemoBinJs(input: {
+  binary?: string;
+  dshAcpRuntimeRoot?: string;
+}): string | undefined {
+  const managedBin = input.dshAcpRuntimeRoot
+    ? path.join(
+        input.dshAcpRuntimeRoot,
+        "node_modules",
+        "@deepseek-ai",
+        "dsh-acp-demo",
+        "lib",
+        "bin.js"
+      )
+    : "";
+  const managedReady =
+    Boolean(managedBin) &&
+    existsSync(managedBin) &&
+    dshAcpCompositionReady(managedBin);
+  if (isDefaultDshAcpBinary(input.binary) && managedReady) return managedBin;
+  const fromHint = dshAcpDemoBinJsFromBinaryHint(input.binary);
+  if (fromHint) return fromHint;
+  if (isDefaultDshAcpBinary(input.binary)) {
+    const globalBin = wellKnownGlobalDshAcpDemoBinJs();
+    if (globalBin) return globalBin;
+  }
+  return undefined;
 }
 
 const ELECTRON_CHILD_ENV_BLOCKLIST = [
@@ -681,7 +746,10 @@ export function dshAcpKoffiGuardPath(): string {
 export function dshAcpKoffiGuardImportFlag(): string | undefined {
   const file = dshAcpKoffiGuardPath();
   if (!existsSync(file)) return undefined;
-  return `--import=${pathToFileURL(file).href}`;
+  // Use a filesystem path. `file:///C:/...` is misparsed inside Windows
+  // NODE_OPTIONS because of the drive colon, and PATH `.cmd` shims only
+  // receive the guard through NODE_OPTIONS.
+  return `--import=${file}`;
 }
 
 export interface DshAcpRuntimeDiagnostics {
@@ -694,7 +762,32 @@ export interface DshAcpRuntimeDiagnostics {
   persistenceCompressionNone: boolean;
   sandboxDisabledOnWin32: boolean;
   koffiGuardPresent: boolean;
+  spawnBin?: string;
+  spawnKind?: string;
+  koffiGuardOnArgv?: boolean;
   jsonlRelatives: Array<{ path: string; usesKoffi: boolean }>;
+}
+
+function classifyDshAcpSpawnKind(
+  spawnBin: string | undefined,
+  spawnArgs: string[] | undefined,
+  runtimeRoot: string
+): string | undefined {
+  if (!spawnBin) return undefined;
+  if (!isNodeBinary(spawnBin)) return dshAcpBinaryBaseName(spawnBin);
+  const entry = spawnArgs?.find((arg) =>
+    /dsh-acp-demo[/\\]lib[/\\]bin\.js$/i.test(arg)
+  );
+  if (!entry) return "node";
+  const posix = entry.split(path.sep).join("/");
+  const managed = runtimeRoot.split(path.sep).join("/");
+  if (managed && posix.toLowerCase().includes(managed.toLowerCase())) {
+    return "managed-node";
+  }
+  if (/\/npm\/node_modules\/@deepseek-ai\/dsh-acp-demo\/lib\/bin\.js$/i.test(posix)) {
+    return "npm-global-node";
+  }
+  return "node-entry";
 }
 
 /** Snapshot of the managed DeepSeek runtime for debug-log export. */
@@ -702,6 +795,8 @@ export function buildDshAcpRuntimeDiagnostics(input: {
   runtimeRoot: string;
   overlayDir?: string;
   configPath?: string;
+  spawnBin?: string;
+  spawnArgs?: string[];
 }): DshAcpRuntimeDiagnostics {
   const root = input.runtimeRoot;
   const overlayDir = input.overlayDir ?? dshHarnessOverlayDir();
@@ -727,6 +822,15 @@ export function buildDshAcpRuntimeDiagnostics(input: {
     sandboxDisabledOnWin32:
       /dsh-sandbox-local[\s\S]{0,400}disabled:/.test(cordis),
     koffiGuardPresent: existsSync(dshAcpKoffiGuardPath()),
+    spawnBin: input.spawnBin ? dshAcpBinaryBaseName(input.spawnBin) : undefined,
+    spawnKind: classifyDshAcpSpawnKind(
+      input.spawnBin,
+      input.spawnArgs,
+      root
+    ),
+    koffiGuardOnArgv: Boolean(
+      input.spawnArgs?.some((arg) => arg.includes("koffi-guard"))
+    ),
     jsonlRelatives
   };
 }
@@ -834,9 +938,12 @@ export function resolveDshAcpDemoDirFromBinary(
         /node_modules[/\\]@deepseek-ai[/\\]dsh-acp-demo[/\\]lib[/\\]bin\.js/i
       );
       if (match) {
+        const relative = match[0]
+          .replace(/[/\\]lib[/\\]bin\.js$/i, "")
+          .replace(/\\/g, "/");
         const pkg = path.resolve(
           path.dirname(current),
-          match[0].replace(/[/\\]lib[/\\]bin\.js$/i, "")
+          ...relative.split("/").filter(Boolean)
         );
         if (existsSync(path.join(pkg, "package.json"))) return pkg;
       }
@@ -1206,21 +1313,10 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
       };
     }
     case "dsh-acp": {
-      const managedBin = input.dshAcpRuntimeRoot
-        ? path.join(
-            input.dshAcpRuntimeRoot,
-            "node_modules",
-            "@deepseek-ai",
-            "dsh-acp-demo",
-            "lib",
-            "bin.js"
-          )
-        : "";
-      const useManaged =
-        isDefaultDshAcpBinary(input.binary) &&
-        Boolean(managedBin) &&
-        existsSync(managedBin) &&
-        dshAcpCompositionReady(managedBin);
+      const nodeEntry = resolveDshAcpDemoBinJs({
+        binary: input.binary,
+        dshAcpRuntimeRoot: input.dshAcpRuntimeRoot
+      });
       const args = extraArgsHaveDshConfig(extra)
         ? [...extra]
         : [
@@ -1228,10 +1324,10 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
             resolveDshAcpConfigPath(input.cwd, input.dshAcpRuntimeRoot),
             ...extra
           ];
-      if (useManaged) {
+      if (nodeEntry) {
         return withDshAcpSqliteWarningSuppressed({
           bin: "node",
-          args: [managedBin, ...args],
+          args: [nodeEntry, ...args],
           promptViaStdin: false,
           protocol: "acp"
         });

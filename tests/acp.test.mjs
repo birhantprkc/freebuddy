@@ -25,7 +25,8 @@ import {
   patchDshAcpRuntimeFromBin,
   buildDshAcpRuntimeDiagnostics,
   dshAcpKoffiGuardPath,
-  dshAcpKoffiGuardImportFlag
+  dshAcpKoffiGuardImportFlag,
+  isDefaultDshAcpBinary
 } from "../dist-electron/cli/adapters.js";
 import {
   acpSessionListToItems,
@@ -426,6 +427,91 @@ test("buildCommand keeps an explicit custom DeepSeek binary path", () => {
   assert.equal(built.args.includes(path.join(root, "node_modules", "@deepseek-ai", "dsh-acp-demo", "lib", "bin.js")), false);
 });
 
+test("isDefaultDshAcpBinary treats npm-global shims as the stock demo", () => {
+  assert.equal(isDefaultDshAcpBinary(undefined), true);
+  assert.equal(isDefaultDshAcpBinary("dsh-acp-demo"), true);
+  assert.equal(isDefaultDshAcpBinary("dsh-acp-demo.cmd"), true);
+  assert.equal(
+    isDefaultDshAcpBinary(
+      "C:/Users/Morefine/AppData/Roaming/npm/dsh-acp-demo.cmd"
+    ),
+    true
+  );
+  assert.equal(
+    isDefaultDshAcpBinary(path.join(os.tmpdir(), "custom-dsh", "dsh-acp-demo")),
+    false
+  );
+});
+
+test("buildCommand launches a PATH npm-global demo through node so koffi --import is on argv", () => {
+  const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-global-"));
+  const demo = path.join(prefix, "node_modules", "@deepseek-ai", "dsh-acp-demo");
+  fs.mkdirSync(path.join(demo, "lib"), { recursive: true });
+  fs.writeFileSync(path.join(demo, "package.json"), "{}");
+  const binJs = path.join(demo, "lib", "bin.js");
+  fs.writeFileSync(binJs, "");
+  const cmd = path.join(prefix, "dsh-acp-demo.cmd");
+  fs.writeFileSync(
+    cmd,
+    `@ECHO off\r\nnode "%~dp0\\node_modules\\@deepseek-ai\\dsh-acp-demo\\lib\\bin.js" %*\r\n`
+  );
+
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    binary: cmd,
+    prompt: "hello",
+    dshAcpRuntimeRoot: path.join(prefix, "missing-managed")
+  });
+
+  assert.equal(built.bin, "node");
+  assert.equal(built.args.includes(binJs), true);
+  const importFlag = dshAcpKoffiGuardImportFlag();
+  assert.ok(importFlag);
+  assert.equal(built.args.includes(importFlag), true);
+});
+
+test("buildCommand prefers managed runtime over a resolved npm-global demo shim", () => {
+  const { root, binJs } = writeManagedDshRuntime();
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    binary: "C:/Users/Morefine/AppData/Roaming/npm/dsh-acp-demo.cmd",
+    prompt: "hello",
+    dshAcpRuntimeRoot: root
+  });
+  assert.equal(built.bin, "node");
+  assert.equal(built.args.includes(binJs), true);
+});
+
+test("buildCommand uses a well-known npm-global demo when managed runtime is missing", () => {
+  const appdata = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-appdata-"));
+  const demo = path.join(
+    appdata,
+    "npm",
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-acp-demo"
+  );
+  fs.mkdirSync(path.join(demo, "lib"), { recursive: true });
+  fs.writeFileSync(path.join(demo, "package.json"), "{}");
+  const binJs = path.join(demo, "lib", "bin.js");
+  fs.writeFileSync(binJs, "");
+  const previous = process.env.APPDATA;
+  process.env.APPDATA = appdata;
+  try {
+    const built = buildCommand({
+      adapter: "dsh-acp",
+      binary: "dsh-acp-demo",
+      prompt: "hello",
+      dshAcpRuntimeRoot: path.join(appdata, "missing-managed")
+    });
+    assert.equal(built.bin, "node");
+    assert.equal(built.args.includes(binJs), true);
+  } finally {
+    if (previous === undefined) delete process.env.APPDATA;
+    else process.env.APPDATA = previous;
+  }
+});
+
 test("buildCommand keeps extra DeepSeek args after the bundled config", () => {
   const built = buildCommand({
     adapter: "dsh-acp",
@@ -719,6 +805,7 @@ test("buildDshAcpRuntimeDiagnostics reports leftover koffi and cordis safety fla
   assert.equal(before.persistenceCompressionNone, true);
   assert.equal(before.sandboxDisabledOnWin32, true);
   assert.equal(before.koffiGuardPresent, true);
+  assert.equal(before.koffiGuardOnArgv, false);
   assert.equal(before.jsonlRelatives[0]?.usesKoffi, true);
   assert.doesNotMatch(JSON.stringify(before), /home|Users|AppData/i);
 
