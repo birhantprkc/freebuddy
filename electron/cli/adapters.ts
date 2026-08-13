@@ -49,6 +49,11 @@ export interface CLIAdapterDefinition {
 export interface CliCheckProbe {
   args: string[];
   versionOptional: boolean;
+  /**
+   * Skip spawning the binary. Used for ACP stdio servers that have no
+   * `--version` and would otherwise hang on stdin.
+   */
+  skipSpawn?: boolean;
 }
 
 const legacyAdapterDefinitions: CLIAdapterDefinition[] = [
@@ -233,7 +238,8 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     id: "dsh-acp",
     label: "DeepSeek",
     defaultBinary: "dsh-acp-demo",
-    checkProbe: { args: ["--version"], versionOptional: true },
+    // The bin only accepts `--config`; `--version` exits non-zero via parseArgs.
+    checkProbe: { args: [], versionOptional: true, skipSpawn: true },
     streamMode: "raw",
     commandGroup: "deepseek",
     capabilities: {

@@ -54,8 +54,9 @@ test("agy-acp checks agy-acp binary probe", () => {
 
 test("dsh-acp install uses next plus optional koffi prebuilds", () => {
   assert.deepEqual(getCliCheckProbe("dsh-acp"), {
-    args: ["--version"],
-    versionOptional: true
+    args: [],
+    versionOptional: true,
+    skipSpawn: true
   });
   assert.equal(
     getAdapterDefinition("dsh-acp")?.installHint,

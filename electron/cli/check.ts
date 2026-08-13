@@ -368,6 +368,12 @@ export async function cliCheck(
     return { installed: false };
   }
   const probe = getCliCheckProbe(adapter);
+  if (probe.skipSpawn) {
+    const result: CliCheckResult = { installed: true, path: resolved };
+    upsertRuntime(runtimeKey, true, resolved);
+    trackAgentSetup(adapter, "check", "detected");
+    return result;
+  }
   const probeResult = await runCheckProbe(
     resolved,
     probe.args,
