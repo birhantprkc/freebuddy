@@ -2,6 +2,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync as fsRealpath
 } from "node:fs";
@@ -423,7 +424,7 @@ export function formatAcpAgentExitMessage(
 ): string {
   if (isWindowsAccessViolationExit(code)) {
     return language === "zh-CN"
-      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL 首次落盘会用 koffi 调用 MoveFileExW；本版本会用 harness 薄补丁整文件覆盖该包并改走 Node 文件系统。若仍看到此错误，请确认已重新编译本版本（无需重装 DeepSeek）。"
+      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL 会用 koffi 调 MoveFileExW；本版本会覆盖所有嵌套副本并在 Windows 上关掉 ACL sandbox。请再编一次本版本（无需重装 DeepSeek）。"
       : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL publishes the first log with koffi MoveFileExW; this build overlays the harness fork (Node fs) onto the installed package. If this still happens, rebuild this version — you do not need to reinstall DeepSeek.";
   }
   return `ACP agent exited with code ${code}`;
@@ -531,22 +532,8 @@ export function dshAcpManagedRoot(dataDir: string): string {
   return path.join(dataDir, "runtimes", "dsh-acp");
 }
 
-const DSH_HARNESS_OVERLAY_FILES = [
-  [
-    path.join("dsh-session-persistence-jsonl", "lib", "index.js"),
-    [
-      "node_modules",
-      "@deepseek-ai",
-      "dsh-session-persistence-jsonl",
-      "lib",
-      "index.js"
-    ]
-  ],
-  [
-    path.join("dsh-acp-demo", "lib", "index.js"),
-    ["node_modules", "@deepseek-ai", "dsh-acp-demo", "lib", "index.js"]
-  ]
-] as const;
+const DSH_JSONL_PACKAGE = "@deepseek-ai/dsh-session-persistence-jsonl";
+const DSH_DEMO_PACKAGE = "@deepseek-ai/dsh-acp-demo";
 
 /** Packaged extraResources, else the repo `third_party/deepseek-harness/overlays`. */
 export function dshHarnessOverlayDir(): string {
@@ -570,15 +557,98 @@ export function dshHarnessOverlayDir(): string {
  * Copy the thin harness-fork overlays onto an installed official runtime.
  * Official JSONL durable-publish aborts Windows Electron children with
  * STATUS_ACCESS_VIOLATION (0xC0000005) on session/prompt.
+ *
+ * Walk every nested `node_modules` copy. npm may hoist the JSONL package or
+ * nest it under another `@deepseek-ai/*` plugin; covering only the prefix
+ * root left the running import unpatched.
  */
-export function patchDshAcpManagedRuntime(root: string): void {
+export function findDshPackageLibIndex(
+  root: string,
+  packageName: string
+): string[] {
+  const found = new Set<string>();
+  const visit = (dir: string, depth: number) => {
+    if (depth > 8) return;
+    const nm = path.join(dir, "node_modules");
+    if (!existsSync(nm)) return;
+    const index = path.join(nm, packageName, "lib", "index.js");
+    if (existsSync(index)) found.add(index);
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(nm);
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      if (name === ".bin" || name.startsWith(".")) continue;
+      const child = path.join(nm, name);
+      if (name.startsWith("@")) {
+        let scoped: string[] = [];
+        try {
+          scoped = readdirSync(child);
+        } catch {
+          continue;
+        }
+        for (const pkg of scoped) visit(path.join(child, pkg), depth + 1);
+      } else {
+        visit(child, depth + 1);
+      }
+    }
+  };
+  visit(root, 0);
+  return [...found];
+}
+
+export function dshAcpJsonlStillUsesKoffi(root: string): string[] {
+  return findDshPackageLibIndex(root, DSH_JSONL_PACKAGE).filter((file) =>
+    /(?:import\(|from\s+|load\()["']koffi["']|koffi\.load/.test(
+      readFileSync(file, "utf8")
+    )
+  );
+}
+
+export function patchDshAcpManagedRuntime(root: string): number {
   const overlayRoot = dshHarnessOverlayDir();
-  for (const [rel, destParts] of DSH_HARNESS_OVERLAY_FILES) {
-    const from = path.join(overlayRoot, rel);
-    const to = path.join(root, ...destParts);
-    if (!existsSync(from) || !existsSync(to)) continue;
-    copyFileSync(from, to);
+  const jsonlFrom = path.join(
+    overlayRoot,
+    "dsh-session-persistence-jsonl",
+    "lib",
+    "index.js"
+  );
+  const demoFrom = path.join(overlayRoot, "dsh-acp-demo", "lib", "index.js");
+  let count = 0;
+  if (existsSync(jsonlFrom)) {
+    for (const dest of findDshPackageLibIndex(root, DSH_JSONL_PACKAGE)) {
+      copyFileSync(jsonlFrom, dest);
+      count += 1;
+    }
   }
+  if (existsSync(demoFrom)) {
+    for (const dest of findDshPackageLibIndex(root, DSH_DEMO_PACKAGE)) {
+      copyFileSync(demoFrom, dest);
+    }
+  }
+  return count;
+}
+
+/** Overlay the npm prefix that owns a `dsh-acp-demo` bin, including PATH installs. */
+export function patchDshAcpRuntimeFromBin(binPath: string): void {
+  const demoDir = resolveDshAcpDemoDirFromBinary(binPath);
+  if (!demoDir) return;
+  const scoped = path.dirname(demoDir);
+  const nodeModules = path.dirname(scoped);
+  const prefix = path.dirname(nodeModules);
+  patchDshAcpManagedRuntime(prefix);
+}
+
+export function patchDshAcpRuntimeFromCommand(command: {
+  bin: string;
+  args: string[];
+}): void {
+  const entry = isNodeBinary(command.bin)
+    ? command.args.find((arg) => /dsh-acp-demo[/\\]lib[/\\]bin\.js$/i.test(arg))
+    : command.bin;
+  if (entry) patchDshAcpRuntimeFromBin(entry);
 }
 
 /** Refresh the managed composition from the bundled default before spawn/install. */

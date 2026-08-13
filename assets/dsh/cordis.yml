@@ -27,6 +27,10 @@
 # ctx.sandboxPolicy; agent calls resolve both families against the session cwd.
 - id: sandbox
   name: '@deepseek-ai/dsh-sandbox-local'
+  # windows-acl loads koffi at import and calls native Win32 APIs on the first
+  # confined spawn. That has aborted Windows Electron children with
+  # STATUS_ACCESS_VIOLATION. Chat/prompt can run without this runner.
+  disabled: !!js process.platform === 'win32'
 
 - id: sandbox-policy
   name: '@deepseek-ai/dsh-sandbox-policy'

@@ -20,7 +20,9 @@ import {
   isWindowsAccessViolationExit,
   patchDshAcpManagedRuntime,
   syncDshAcpManagedConfig,
-  dshHarnessOverlayDir
+  dshHarnessOverlayDir,
+  dshAcpJsonlStillUsesKoffi,
+  patchDshAcpRuntimeFromBin
 } from "../dist-electron/cli/adapters.js";
 import {
   acpSessionListToItems,
@@ -601,6 +603,42 @@ test("syncDshAcpManagedConfig patches an already-installed DeepSeek runtime", ()
   assert.equal(fs.existsSync(path.join(root, "cordis.yml")), true);
   assert.doesNotMatch(fs.readFileSync(files.jsonl, "utf8"), /koffi/);
   assert.match(fs.readFileSync(files.demo, "utf8"), /openAt:\s*"never"/);
+});
+
+test("patchDshAcpManagedRuntime overlays nested node_modules copies", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-nested-"));
+  const nested = path.join(
+    root,
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-acp",
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-session-persistence-jsonl",
+    "lib"
+  );
+  fs.mkdirSync(nested, { recursive: true });
+  const dest = path.join(nested, "index.js");
+  fs.writeFileSync(dest, 'await import("koffi");\n');
+  patchDshAcpManagedRuntime(root);
+  assert.doesNotMatch(fs.readFileSync(dest, "utf8"), /koffi/);
+  assert.deepEqual(dshAcpJsonlStillUsesKoffi(root), []);
+});
+
+test("patchDshAcpRuntimeFromBin overlays the install prefix of a demo bin", () => {
+  const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-bin-"));
+  const files = writePlaceholderDshRuntime(prefix);
+  const demo = path.join(
+    prefix,
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-acp-demo"
+  );
+  fs.writeFileSync(path.join(demo, "package.json"), "{}");
+  const bin = path.join(demo, "lib", "bin.js");
+  fs.writeFileSync(bin, "");
+  patchDshAcpRuntimeFromBin(bin);
+  assert.doesNotMatch(fs.readFileSync(files.jsonl, "utf8"), /koffi/);
 });
 
 test("buildCommand keeps Grok global flags before the ACP subcommand", () => {

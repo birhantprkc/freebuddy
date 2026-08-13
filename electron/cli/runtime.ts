@@ -12,6 +12,7 @@ import {
   getAdapterDefinition,
   hasExplicitToolSessionArg,
   mergeNodeOptions,
+  patchDshAcpRuntimeFromCommand,
   sanitizeCliAgentEnv,
   syncDshAcpManagedConfig
 } from "./adapters.js";
@@ -271,6 +272,9 @@ export async function cliRun(
           ? dshAcpManagedRoot(getDataDir())
           : undefined
     });
+    if (executionArgs.adapter === "dsh-acp") {
+      patchDshAcpRuntimeFromCommand(built);
+    }
   } catch (e) {
     const msg = `build command failed: ${(e as Error)?.message || e}`;
     appendLog(logStream, "system", msg);
