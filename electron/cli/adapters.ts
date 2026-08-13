@@ -3,8 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  realpathSync as fsRealpath,
-  writeFileSync
+  realpathSync as fsRealpath
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -424,8 +423,8 @@ export function formatAcpAgentExitMessage(
 ): string {
   if (isWindowsAccessViolationExit(code)) {
     return language === "zh-CN"
-      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL 首次落盘会用 koffi 调用 MoveFileExW；本版本启动时会改走 Node 文件系统。若仍看到此错误，请确认已重新编译本版本（无需重装 DeepSeek）。"
-      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL publishes the first log with koffi MoveFileExW; this build rewrites that path onto Node fs at spawn. If this still happens, rebuild this version — you do not need to reinstall DeepSeek.";
+      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL 首次落盘会用 koffi 调用 MoveFileExW；本版本会用 harness 薄补丁整文件覆盖该包并改走 Node 文件系统。若仍看到此错误，请确认已重新编译本版本（无需重装 DeepSeek）。"
+      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL publishes the first log with koffi MoveFileExW; this build overlays the harness fork (Node fs) onto the installed package. If this still happens, rebuild this version — you do not need to reinstall DeepSeek.";
   }
   return `ACP agent exited with code ${code}`;
 }
@@ -532,73 +531,54 @@ export function dshAcpManagedRoot(dataDir: string): string {
   return path.join(dataDir, "runtimes", "dsh-acp");
 }
 
-const DSH_ACP_JSONL_WIN32_DISPATCH =
-  'if (process.platform === "win32") await this.materializeWin32';
-const DSH_ACP_JSONL_WIN32_DISPATCH_PATCHED =
-  "if (false) await this.materializeWin32";
-const DSH_ACP_JSONL_SYNC_DIR =
-  'async syncDirPosix(dir) {\n\t\tconst handle = await open(dir, "r");';
-const DSH_ACP_JSONL_SYNC_DIR_PATCHED =
-  'async syncDirPosix(dir) {\n\t\tif (process.platform === "win32") return;\n\t\tconst handle = await open(dir, "r");';
-const DSH_ACP_DEMO_SQLITE =
-  'ctx.plugin(SqliteSessionQueryEngine, { path: join(persistenceRoot, "session-query.db") })';
-const DSH_ACP_DEMO_SQLITE_PATCHED =
-  'ctx.plugin(SqliteSessionQueryEngine, { path: join(persistenceRoot, "session-query.db"), openAt: "never" })';
-
-function replaceOnceIfNeeded(
-  text: string,
-  find: string,
-  replace: string
-): string {
-  if (text.includes(replace) || !text.includes(find)) return text;
-  return text.replace(find, replace);
-}
-
-function patchManagedFile(
-  file: string,
-  replacements: Array<[string, string]>
-): void {
-  if (!existsSync(file)) return;
-  const original = readFileSync(file, "utf8");
-  let next = original;
-  for (const [find, replace] of replacements) {
-    next = replaceOnceIfNeeded(next, find, replace);
-  }
-  if (next !== original) writeFileSync(file, next);
-}
-
-/**
- * Official JSONL durable-publish loads koffi and calls MoveFileExW the first
- * time a session is written. That aborts Windows Electron children with
- * STATUS_ACCESS_VIOLATION (0xC0000005) on session/prompt. Rewrite the installed
- * packages onto Node fs and keep SQLite closed.
- */
-export function patchDshAcpManagedRuntime(root: string): void {
-  patchManagedFile(
-    path.join(
-      root,
+const DSH_HARNESS_OVERLAY_FILES = [
+  [
+    path.join("dsh-session-persistence-jsonl", "lib", "index.js"),
+    [
       "node_modules",
       "@deepseek-ai",
       "dsh-session-persistence-jsonl",
       "lib",
       "index.js"
-    ),
-    [
-      [DSH_ACP_JSONL_WIN32_DISPATCH, DSH_ACP_JSONL_WIN32_DISPATCH_PATCHED],
-      [DSH_ACP_JSONL_SYNC_DIR, DSH_ACP_JSONL_SYNC_DIR_PATCHED]
     ]
+  ],
+  [
+    path.join("dsh-acp-demo", "lib", "index.js"),
+    ["node_modules", "@deepseek-ai", "dsh-acp-demo", "lib", "index.js"]
+  ]
+] as const;
+
+/** Packaged extraResources, else the repo `third_party/deepseek-harness/overlays`. */
+export function dshHarnessOverlayDir(): string {
+  const fromSource = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "third_party",
+    "deepseek-harness",
+    "overlays"
   );
-  patchManagedFile(
-    path.join(
-      root,
-      "node_modules",
-      "@deepseek-ai",
-      "dsh-acp-demo",
-      "lib",
-      "index.js"
-    ),
-    [[DSH_ACP_DEMO_SQLITE, DSH_ACP_DEMO_SQLITE_PATCHED]]
-  );
+  const packaged =
+    typeof process.resourcesPath === "string"
+      ? path.join(process.resourcesPath, "dsh-harness-overlays")
+      : "";
+  if (packaged && existsSync(packaged)) return packaged;
+  return fromSource;
+}
+
+/**
+ * Copy the thin harness-fork overlays onto an installed official runtime.
+ * Official JSONL durable-publish aborts Windows Electron children with
+ * STATUS_ACCESS_VIOLATION (0xC0000005) on session/prompt.
+ */
+export function patchDshAcpManagedRuntime(root: string): void {
+  const overlayRoot = dshHarnessOverlayDir();
+  for (const [rel, destParts] of DSH_HARNESS_OVERLAY_FILES) {
+    const from = path.join(overlayRoot, rel);
+    const to = path.join(root, ...destParts);
+    if (!existsSync(from) || !existsSync(to)) continue;
+    copyFileSync(from, to);
+  }
 }
 
 /** Refresh the managed composition from the bundled default before spawn/install. */

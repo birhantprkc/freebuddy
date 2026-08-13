@@ -20,6 +20,8 @@ extraResources:
     to: skills
   - from: assets/dsh
     to: dsh
+  - from: third_party/deepseek-harness/overlays
+    to: dsh-harness-overlays
   - from: assets/app-icon.png
     to: app-icon.png
   - from: assets/sidebar-logo.png
