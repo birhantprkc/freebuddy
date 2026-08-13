@@ -9,7 +9,8 @@ import {
   buildCommand,
   dshAcpManagedRoot,
   getAdapterDefinition,
-  hasExplicitToolSessionArg
+  hasExplicitToolSessionArg,
+  mergeNodeOptions
 } from "./adapters.js";
 import { runAcpAgent } from "./acpRuntime.js";
 import { runLegacyCliAgent } from "./legacyRuntime.js";
@@ -151,7 +152,9 @@ export function mergeBuiltEnv(
     next[key] =
       key === "OPENCODE_CONFIG_CONTENT" || key === "CODEX_CONFIG"
         ? mergeJsonEnvValue(next[key], value)
-        : value;
+        : key === "NODE_OPTIONS"
+          ? mergeNodeOptions(next[key], value)
+          : value;
   }
   return next;
 }

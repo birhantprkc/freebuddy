@@ -9,7 +9,10 @@ import {
   cliAdapterDefinitions,
   adapterAcceptsClientMcpServers,
   extraArgsHaveDshConfig,
-  resolveDshAcpConfigPath
+  resolveDshAcpConfigPath,
+  DSH_ACP_NODE_DISABLE_WARNING,
+  isDshAcpExperimentalWarningLine,
+  mergeNodeOptions
 } from "../dist-electron/cli/adapters.js";
 import {
   acpSessionListToItems,
@@ -361,7 +364,13 @@ test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
   });
 
   assert.equal(built.bin, "node");
-  assert.deepEqual(built.args, [binJs, "--config", config]);
+  assert.deepEqual(built.args, [
+    DSH_ACP_NODE_DISABLE_WARNING,
+    binJs,
+    "--config",
+    config
+  ]);
+  assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
   assert.equal(built.protocol, "acp");
 });
 
@@ -405,6 +414,54 @@ test("DeepSeek Harness ACP rejects client MCP servers", () => {
   assert.equal(adapterAcceptsClientMcpServers("dsh-acp"), false);
   assert.equal(adapterAcceptsClientMcpServers("codex-acp"), true);
   assert.equal(adapterAcceptsClientMcpServers("agy-acp"), true);
+});
+
+test("buildCommand silences Node SQLite ExperimentalWarning for DeepSeek ACP", () => {
+  const built = buildCommand({ adapter: "dsh-acp", prompt: "hello" });
+
+  assert.equal(built.bin, "dsh-acp-demo");
+  assert.equal(built.args.includes(DSH_ACP_NODE_DISABLE_WARNING), false);
+  assert.equal(built.env?.NODE_OPTIONS, DSH_ACP_NODE_DISABLE_WARNING);
+});
+
+test("isDshAcpExperimentalWarningLine matches Node sqlite warning stderr", () => {
+  assert.equal(
+    isDshAcpExperimentalWarningLine(
+      "(node:16676) ExperimentalWarning: SQLite is an experimental feature and might change at any time (Use `node --trace-warnings ...` to show where the warning was created)"
+    ),
+    true
+  );
+  assert.equal(
+    isDshAcpExperimentalWarningLine(
+      "(node:16676) ExperimentalWarning: SQLite is an experimental feature and might change at any time"
+    ),
+    true
+  );
+  assert.equal(
+    isDshAcpExperimentalWarningLine(
+      "(Use `node --trace-warnings ...` to show where the warning was created)"
+    ),
+    true
+  );
+  assert.equal(
+    isDshAcpExperimentalWarningLine("plugin tree failed to load"),
+    false
+  );
+});
+
+test("mergeNodeOptions appends the DeepSeek warning flag without dropping existing options", () => {
+  assert.equal(
+    mergeNodeOptions(undefined, DSH_ACP_NODE_DISABLE_WARNING),
+    DSH_ACP_NODE_DISABLE_WARNING
+  );
+  assert.equal(
+    mergeNodeOptions("--preserve-symlinks", DSH_ACP_NODE_DISABLE_WARNING),
+    `--preserve-symlinks ${DSH_ACP_NODE_DISABLE_WARNING}`
+  );
+  assert.equal(
+    mergeNodeOptions(DSH_ACP_NODE_DISABLE_WARNING, DSH_ACP_NODE_DISABLE_WARNING),
+    DSH_ACP_NODE_DISABLE_WARNING
+  );
 });
 
 test("buildCommand keeps Grok global flags before the ACP subcommand", () => {

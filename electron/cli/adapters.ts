@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const DSH_ACP_NPM_TAG = "next";
 
+/** Node 22+ emits this for `node:sqlite`; DeepSeek ACP uses it via session-query-sqlite. */
+export const DSH_ACP_NODE_DISABLE_WARNING =
+  "--disable-warning=ExperimentalWarning";
+
 export type CLIAdapterId =
   | "codex"
   | "codex-acp"
@@ -299,6 +303,54 @@ export function getCliCheckProbe(adapter: string): CliCheckProbe {
  */
 export function adapterAcceptsClientMcpServers(adapter: string): boolean {
   return adapter !== "dsh-acp";
+}
+
+export function mergeNodeOptions(
+  current: string | undefined,
+  patch: string
+): string {
+  const tokens: string[] = [];
+  const seen = new Set<string>();
+  for (const token of [...(current ?? "").split(/\s+/), ...patch.split(/\s+/)]) {
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    tokens.push(token);
+  }
+  return tokens.join(" ");
+}
+
+export function isDshAcpExperimentalWarningLine(line: string): boolean {
+  const text = line.trim();
+  if (/ExperimentalWarning:\s*SQLite is an experimental feature/i.test(text)) {
+    return true;
+  }
+  return /Use `node --trace-warnings/i.test(text);
+}
+
+function isNodeBinary(bin: string): boolean {
+  const base = path.basename(bin).toLowerCase();
+  return base === "node" || base === "node.exe";
+}
+
+function withDshAcpSqliteWarningSuppressed(command: BuiltCommand): BuiltCommand {
+  const env = {
+    ...command.env,
+    NODE_OPTIONS: mergeNodeOptions(
+      command.env?.NODE_OPTIONS,
+      DSH_ACP_NODE_DISABLE_WARNING
+    )
+  };
+  if (
+    !isNodeBinary(command.bin) ||
+    command.args.includes(DSH_ACP_NODE_DISABLE_WARNING)
+  ) {
+    return { ...command, env };
+  }
+  return {
+    ...command,
+    args: [DSH_ACP_NODE_DISABLE_WARNING, ...command.args],
+    env
+  };
 }
 
 /**
@@ -827,19 +879,19 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
             ...extra
           ];
       if (useManaged) {
-        return {
+        return withDshAcpSqliteWarningSuppressed({
           bin: "node",
           args: [managedBin, ...args],
           promptViaStdin: false,
           protocol: "acp"
-        };
+        });
       }
-      return {
+      return withDshAcpSqliteWarningSuppressed({
         bin,
         args,
         promptViaStdin: false,
         protocol: "acp"
-      };
+      });
     }
     case "claude": {
       const args: string[] = [

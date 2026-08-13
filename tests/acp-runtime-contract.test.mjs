@@ -143,6 +143,27 @@ test("acpRuntime skips client MCP servers for adapters that reject them", () => 
   );
 });
 
+test("ACP runtime hides DeepSeek Node SQLite ExperimentalWarning from UI stderr", () => {
+  assert.match(acpRuntimeSource, /isDshAcpExperimentalWarningLine/);
+  const stderrHandler = acpRuntimeSource.slice(
+    acpRuntimeSource.indexOf('rlErr.on("line"'),
+    acpRuntimeSource.indexOf("child.on(\"close\"")
+  );
+  assert.match(stderrHandler, /args\.adapter === "dsh-acp"/);
+  assert.match(stderrHandler, /isDshAcpExperimentalWarningLine\(line\)/);
+  assert.match(stderrHandler, /recentStderr\.push\(line\)/);
+  assert.ok(
+    stderrHandler.indexOf("isDshAcpExperimentalWarningLine(line)") <
+      stderrHandler.indexOf("recentStderr.push(line)"),
+    "SQLite ExperimentalWarning is skipped before it becomes UI stderr or crash text"
+  );
+});
+
+test("cliRun merges NODE_OPTIONS instead of overwriting them", () => {
+  assert.match(runtimeSource, /key === "NODE_OPTIONS"/);
+  assert.match(runtimeSource, /mergeNodeOptions/);
+});
+
 test("cliRun passes workspaceRoots into buildCommand", () => {
   assert.match(runtimeSource, /workspaceRoots:\s*args\.workspaceRoots/);
 });

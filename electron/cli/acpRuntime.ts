@@ -98,7 +98,10 @@ import {
 import { isPathWithinRoots } from "../shared/workspaceRoots.js";
 import { clearSessionOwner } from "./sessionOwners.js";
 import { getLanguage } from "./settings.js";
-import { adapterAcceptsClientMcpServers } from "./adapters.js";
+import {
+  adapterAcceptsClientMcpServers,
+  isDshAcpExperimentalWarningLine
+} from "./adapters.js";
 
 const PERMISSION_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 // An ACP turn blocks on a single session/prompt request that only resolves
@@ -841,6 +844,12 @@ export async function runAcpAgent({
     rlErr.on("line", (line) => {
       if (epoch !== connectionEpoch) return;
       appendLog(logStream, "stderr", line);
+      if (
+        args.adapter === "dsh-acp" &&
+        isDshAcpExperimentalWarningLine(line)
+      ) {
+        return;
+      }
       recentStderr.push(line);
       if (recentStderr.length > 50) recentStderr.shift();
       if (args.showStderr !== false) emit({ type: "stderr", content: line });
