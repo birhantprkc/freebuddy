@@ -1,6 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const DSH_ACP_NPM_TAG = "next";
 
 export type CLIAdapterId =
   | "codex"
@@ -252,11 +254,12 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     toolSessionArgPrefixes: [],
     // `latest` is still 0.0.1-rc.1; that release's peer packages 404 on the
     // public registry. The working public line is currently tagged `next`.
-    // koffi's install script rebuilds from source when the optional platform
-    // binary is missing; that CMake path exceeds Windows MAX_PATH under the
-    // nested global install, so keep the prebuild and skip lifecycle scripts.
-    installHint:
-      "npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next",
+    // The published ACP demo has no runtime dependencies; cordis.yml plugins
+    // must be installed alongside it. koffi's install script rebuilds from
+    // source when the optional platform binary is missing; that CMake path
+    // exceeds Windows MAX_PATH under the nested global install, so keep the
+    // prebuild and skip lifecycle scripts.
+    installHint: dshAcpInstallCommand(),
     docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
     protocol: "acp"
   }
@@ -363,6 +366,34 @@ export function resolveDshAcpConfigPath(cwd?: string): string {
     if (existsSync(local)) return local;
   }
   return bundledDshAcpConfigPath();
+}
+
+/** Bare npm package names referenced by the bundled ACP composition. */
+export function parseDshAcpCompositionPackages(yamlText: string): string[] {
+  const names = new Set<string>(["@deepseek-ai/dsh-acp-demo"]);
+  for (const match of yamlText.matchAll(/^\s*name:\s*'(@deepseek-ai\/[^']+)'/gm)) {
+    names.add(match[1].split("/").slice(0, 2).join("/"));
+  }
+  return [...names];
+}
+
+/**
+ * `dsh-acp-demo` ships with `deps: none`. Installing only the bin leaves
+ * cordis unable to import `@deepseek-ai/dsh-llm-deepseek` and the rest of
+ * the official ACP plugin tree (`ERR_MODULE_NOT_FOUND`).
+ */
+export function dshAcpInstallCommand(
+  yamlText = readFileSync(bundledDshAcpConfigPath(), "utf8")
+): string {
+  const specs = parseDshAcpCompositionPackages(yamlText).map(
+    (pkg) => `${pkg}@${DSH_ACP_NPM_TAG}`
+  );
+  specs.sort((a, b) => {
+    if (a.startsWith("@deepseek-ai/dsh-acp-demo@")) return -1;
+    if (b.startsWith("@deepseek-ai/dsh-acp-demo@")) return 1;
+    return a.localeCompare(b);
+  });
+  return `npm install -g --include=optional --ignore-scripts ${specs.join(" ")}`;
 }
 
 export function hasExplicitToolSessionArg(

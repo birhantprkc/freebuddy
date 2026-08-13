@@ -173,7 +173,7 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     toolSessionArgs: [],
     toolSessionArgPrefixes: [],
     installHint:
-      "npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next",
+      "npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next @deepseek-ai/dsh-bash-sandbox@next @deepseek-ai/dsh-compaction-basic@next @deepseek-ai/dsh-fs-observation-policy@next @deepseek-ai/dsh-fs-sandbox@next @deepseek-ai/dsh-hooks-claude-code@next @deepseek-ai/dsh-hooks-codex@next @deepseek-ai/dsh-llm-deepseek@next @deepseek-ai/dsh-repeat-tool-reminder@next @deepseek-ai/dsh-sandbox-local@next @deepseek-ai/dsh-sandbox-policy@next @deepseek-ai/dsh-session-projection@next @deepseek-ai/dsh-subagent-fork-in-process@next @deepseek-ai/dsh-subagent-spawn-in-process@next @deepseek-ai/dsh-subagent@next @deepseek-ai/dsh-subprocess-local@next @deepseek-ai/dsh-token-meter@next @deepseek-ai/dsh-tool-fs@next @deepseek-ai/dsh-tool-ralph@next @deepseek-ai/dsh-tool-subagent-control@next @deepseek-ai/dsh-tool-subagent-report@next @deepseek-ai/dsh-tool-subagent@next @deepseek-ai/dsh-tool-todo@next @deepseek-ai/dsh-tool-workflow@next @deepseek-ai/dsh-user-approval@next @deepseek-ai/dsh-workflow-worker-thread@next",
     docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
     protocol: "acp"
   }

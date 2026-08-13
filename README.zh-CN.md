@@ -76,9 +76,9 @@ FreeBuddy 兼容**所有基于 CLI 的 AI 编码工具** —— 只要它能在�
 | **Kimi** | `kimi` | `curl -fsSL https://code.kimi.com/kimi-code/install.sh \| bash` | ✅ |
 | **Qoder** | `qodercli` | `curl -fsSL https://qoder.com/install \| bash` | ✅ |
 | **CodeBuddy** | `codebuddy` | `npm install -g @tencent-ai/codebuddy-code` | 🆕 |
-| **DeepSeek** | `dsh-acp-demo` | `npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next` | 🆕 |
+| **DeepSeek** | `dsh-acp-demo` | 设置 → 编码 Agent → **安装**（`@deepseek-ai/dsh-acp-demo@next` 以及官方 ACP 插件树） | 🆕 |
 
-FreeBuddy 启动 DeepSeek 时会带上内置的 `cordis.yml`（`--config`）。工作区根目录若已有 `cordis.yml` 则优先使用。请在 **设置 → 编码 Agent** 中配置 `DEEPSEEK_API_KEY`。
+FreeBuddy 启动 DeepSeek 时会带上内置的 `cordis.yml`（`--config`）。工作区根目录若已有 `cordis.yml` 则优先使用。发布到 npm 的 ACP demo **不含运行时依赖**，所以安装还会一并拉取 `@deepseek-ai/dsh-llm-deepseek` 等插件包。请在 **设置 → 编码 Agent** 中配置 `DEEPSEEK_API_KEY`。
 
 </details>
 

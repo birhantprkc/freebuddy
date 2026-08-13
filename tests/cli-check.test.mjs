@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
-import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath } from "../dist-electron/cli/adapters.js";
+import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath, dshAcpInstallCommand, parseDshAcpCompositionPackages, bundledDshAcpConfigPath } from "../dist-electron/cli/adapters.js";
 
 test("Codex ACP checks the new Agent Client Protocol package version", () => {
   assert.deepEqual(getCliCheckProbe("codex-acp"), {
@@ -58,11 +59,25 @@ test("dsh-acp install uses next plus optional koffi prebuilds", () => {
     versionOptional: true,
     skipSpawn: true
   });
-  assert.equal(
-    getAdapterDefinition("dsh-acp")?.installHint,
-    "npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next"
-  );
+  const hint = getAdapterDefinition("dsh-acp")?.installHint;
+  assert.equal(hint, dshAcpInstallCommand());
+  assert.match(hint ?? "", /^npm install -g --include=optional --ignore-scripts /);
+  assert.match(hint ?? "", /@deepseek-ai\/dsh-acp-demo@next/);
+  assert.match(hint ?? "", /@deepseek-ai\/dsh-llm-deepseek@next/);
   assert.equal(getAdapterDefinition("dsh-acp")?.defaultBinary, "dsh-acp-demo");
+});
+
+test("dsh-acp install command includes every bundled cordis plugin package", () => {
+  const yaml = fs.readFileSync(bundledDshAcpConfigPath(), "utf8");
+  const hint = dshAcpInstallCommand();
+  for (const pkg of parseDshAcpCompositionPackages(yaml)) {
+    assert.match(hint, new RegExp(`${pkg.replace("/", "\\/")}@next`));
+  }
+  const renderer = fs.readFileSync(
+    new URL("../src/config/cliAdapters.ts", import.meta.url),
+    "utf8"
+  );
+  assert.equal(renderer.includes(hint), true);
 });
 
 test("dsh-acp npm installs skip koffi rebuild scripts", () => {
