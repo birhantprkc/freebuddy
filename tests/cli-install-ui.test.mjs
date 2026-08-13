@@ -101,6 +101,11 @@ test("concurrent agent installs keep stream events scoped to their request", () 
   assert.equal(ipcSource.includes("BrowserWindow.getFocusedWindow()?.webContents"), false);
 });
 
+test("DeepSeek ACP install skips koffi source rebuilds and clears Windows residue", () => {
+  assert.match(checkSource, /applyDshAcpNpmInstallEnv/);
+  assert.match(checkSource, /removeDshAcpWindowsResidue/);
+});
+
 test("agent version probes preserve actionable failure categories", () => {
   assert.match(checkSource, /timeoutMs = 15_000/);
   assert.match(checkSource, /CPU lacks AVX support/);

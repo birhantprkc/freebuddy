@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getAdapterDefinition, getCliCheckProbe } from "../dist-electron/cli/adapters.js";
+import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath } from "../dist-electron/cli/adapters.js";
 
 test("Codex ACP checks the new Agent Client Protocol package version", () => {
   assert.deepEqual(getCliCheckProbe("codex-acp"), {
@@ -62,4 +62,26 @@ test("dsh-acp install uses next plus optional koffi prebuilds", () => {
     "npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next"
   );
   assert.equal(getAdapterDefinition("dsh-acp")?.defaultBinary, "dsh-acp-demo");
+});
+
+test("dsh-acp npm installs skip koffi rebuild scripts", () => {
+  const env = applyDshAcpNpmInstallEnv("dsh-acp", { PATH: "/usr/bin" });
+  assert.equal(env.npm_config_ignore_scripts, "true");
+  assert.equal(env.npm_config_include, "optional");
+  assert.equal(env.npm_config_optional, "true");
+  assert.equal(
+    applyDshAcpNpmInstallEnv("codex-acp", { PATH: "/usr/bin" }).npm_config_ignore_scripts,
+    undefined
+  );
+  if (process.platform === "win32") {
+    assert.equal(
+      dshAcpWindowsResiduePath({ APPDATA: "C:\\Users\\x\\AppData\\Roaming" }),
+      "C:\\Users\\x\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai"
+    );
+  } else {
+    assert.equal(
+      dshAcpWindowsResiduePath({ APPDATA: "C:\\Users\\x\\AppData\\Roaming" }),
+      undefined
+    );
+  }
 });

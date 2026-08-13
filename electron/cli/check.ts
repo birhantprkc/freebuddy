@@ -2,7 +2,12 @@ import path from "node:path";
 import fs from "node:fs";
 import spawn from "cross-spawn";
 import { BrowserWindow } from "electron";
-import { adapterBinary, getCliCheckProbe } from "./adapters.js";
+import {
+  adapterBinary,
+  applyDshAcpNpmInstallEnv,
+  dshAcpWindowsResiduePath,
+  getCliCheckProbe
+} from "./adapters.js";
 import { getDb } from "./db.js";
 import { safeSendToWebContents } from "./ipcSend.js";
 import { compareSemver, extractSemver } from "./version.js";
@@ -763,7 +768,12 @@ async function prepareInstallEnvironment(
   adapter: string
 ): Promise<InstallPreflightResult> {
   const tool = requiredInstallTool(command);
-  if (!tool) return { env: { ...process.env }, command };
+  if (!tool) {
+    return {
+      env: applyDshAcpNpmInstallEnv(adapter, { ...process.env }),
+      command
+    };
+  }
 
   const env = await getFreshWindowsEnvironment(process.env);
   const executable = await which(tool, env as Record<string, string>);
@@ -780,6 +790,7 @@ async function prepareInstallEnvironment(
   env.PATH = [path.dirname(executable), env.PATH || ""]
     .filter(Boolean)
     .join(path.delimiter);
+  Object.assign(env, applyDshAcpNpmInstallEnv(adapter, env));
 
   if (
     tool === "npm" &&
@@ -809,70 +820,101 @@ async function prepareInstallEnvironment(
   return { env, ...absoluteInstallCommand(command, executable) };
 }
 
+function windowsExtendedPath(target: string): string {
+  if (process.platform !== "win32") return target;
+  if (target.startsWith("\\\\?\\")) return target;
+  return `\\\\?\\${path.resolve(target)}`;
+}
+
+async function removeDshAcpWindowsResidue(
+  env: NodeJS.ProcessEnv = process.env
+): Promise<void> {
+  const target = dshAcpWindowsResiduePath(env);
+  if (!target) return;
+  await fs.promises
+    .rm(windowsExtendedPath(target), {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 250
+    })
+    .catch(() => undefined);
+}
+
 export function cliInstall(command: string, adapter = "custom"): Promise<CliInstallResult> {
   return new Promise((resolve, reject) => {
-    const trimmed = command.trim();
-    if (!trimmed) return reject(new Error("install command required"));
+    void (async () => {
+      const trimmed = command.trim();
+      if (!trimmed) {
+        reject(new Error("install command required"));
+        return;
+      }
 
-    const isWindows = process.platform === "win32";
-    const isPowerShellCommand =
-      /^irm\s/i.test(trimmed) ||
-      /\|\s*iex\b/i.test(trimmed) ||
-      /Invoke-(WebRequest|Expression)/i.test(trimmed);
+      if (adapter === "dsh-acp") {
+        await removeDshAcpWindowsResidue();
+      }
 
-    let shell: string;
-    let args: string[];
-    if (isWindows && isPowerShellCommand) {
-      shell = "powershell";
-      args = [
-        "-ExecutionPolicy", "Bypass",
-        "-OutputFormat", "Text",
-        "-Command",
-        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; " +
-          trimmed
-      ];
-    } else if (isWindows) {
-      shell = "cmd";
-      args = ["/C", trimmed];
-    } else {
-      shell = process.env.SHELL || "/bin/sh";
-      args = ["-lc", trimmed];
-    }
+      const isWindows = process.platform === "win32";
+      const isPowerShellCommand =
+        /^irm\s/i.test(trimmed) ||
+        /\|\s*iex\b/i.test(trimmed) ||
+        /Invoke-(WebRequest|Expression)/i.test(trimmed);
 
-    const child = spawn(shell, args, { env: process.env });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let setupTracked = false;
-    const reportSetup = (result: "installed" | "failed" | "timeout", error?: unknown) => {
-      if (setupTracked) return;
-      setupTracked = true;
-      trackAgentSetup(adapter, "install", result, error);
-    };
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, 10 * 60 * 1000);
-    child.stdout!.on("data", (d) => (stdout += d.toString()));
-    child.stderr!.on("data", (d) => (stderr += d.toString()));
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reportSetup("failed", err);
-      reject(err);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      reportSetup(
-        timedOut ? "timeout" : code === 0 ? "installed" : "failed",
-        timedOut ? "timeout" : code === 0 ? undefined : `process exited ${code ?? "unknown"}`
-      );
-      resolve({
-        success: code === 0,
-        exitCode: code,
-        stdout,
-        stderr
+      let shell: string;
+      let args: string[];
+      if (isWindows && isPowerShellCommand) {
+        shell = "powershell";
+        args = [
+          "-ExecutionPolicy", "Bypass",
+          "-OutputFormat", "Text",
+          "-Command",
+          "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; " +
+            trimmed
+        ];
+      } else if (isWindows) {
+        shell = "cmd";
+        args = ["/C", trimmed];
+      } else {
+        shell = process.env.SHELL || "/bin/sh";
+        args = ["-lc", trimmed];
+      }
+
+      const env = applyDshAcpNpmInstallEnv(adapter, { ...process.env });
+      const child = spawn(shell, args, { env });
+      let stdout = "";
+      let stderr = "";
+      let timedOut = false;
+      let setupTracked = false;
+      const reportSetup = (result: "installed" | "failed" | "timeout", error?: unknown) => {
+        if (setupTracked) return;
+        setupTracked = true;
+        trackAgentSetup(adapter, "install", result, error);
+      };
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, 10 * 60 * 1000);
+      child.stdout!.on("data", (d) => (stdout += d.toString()));
+      child.stderr!.on("data", (d) => (stderr += d.toString()));
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reportSetup("failed", err);
+        reject(err);
       });
-    });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        reportSetup(
+          timedOut ? "timeout" : code === 0 ? "installed" : "failed",
+          timedOut ? "timeout" : code === 0 ? undefined : `process exited ${code ?? "unknown"}`
+        );
+        resolve({
+          success: code === 0,
+          exitCode: code,
+          stdout,
+          stderr
+        });
+      });
+    })().catch(reject);
   });
 }
 
@@ -892,6 +934,9 @@ export function cliInstallStream(
       if (!trimmed) throw new Error("install command required");
 
       const preflight = await prepareInstallEnvironment(trimmed, adapter);
+      if (adapter === "dsh-acp") {
+        await removeDshAcpWindowsResidue(preflight.env);
+      }
       if (preflight.failureCode) {
         const error = preflight.error || "Install environment check failed";
         const exitCode = preflight.failureCode === "tool_missing" ? 127 : 1;

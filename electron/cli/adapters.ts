@@ -290,6 +290,33 @@ export function adapterAcceptsClientMcpServers(adapter: string): boolean {
   return adapter !== "dsh-acp";
 }
 
+/**
+ * Force koffi to keep its optional platform prebuild. Its install script
+ * otherwise rebuilds from source, and that CMake path exceeds Windows MAX_PATH
+ * under the nested global `@deepseek-ai/dsh-acp-demo` install.
+ */
+export function applyDshAcpNpmInstallEnv(
+  adapter: string,
+  env: NodeJS.ProcessEnv
+): NodeJS.ProcessEnv {
+  if (adapter !== "dsh-acp") return env;
+  return {
+    ...env,
+    npm_config_ignore_scripts: "true",
+    npm_config_include: "optional",
+    npm_config_optional: "true"
+  };
+}
+
+export function dshAcpWindowsResiduePath(
+  env: NodeJS.ProcessEnv = process.env
+): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  const appdata = env.APPDATA?.trim();
+  if (!appdata) return undefined;
+  return path.join(appdata, "npm", "node_modules", "@deepseek-ai");
+}
+
 export function hasExplicitToolSessionArg(
   adapter: string | null | undefined,
   extraArgs: string[] | null | undefined
