@@ -135,6 +135,14 @@ test("acpRuntime registers workspace FS MCP only for multi-root", () => {
   assert.match(acpRuntimeSource, /roots\.length\s*>\s*1/);
 });
 
+test("acpRuntime skips client MCP servers for adapters that reject them", () => {
+  assert.match(acpRuntimeSource, /adapterAcceptsClientMcpServers\(args\.adapter\)/);
+  assert.match(
+    acpRuntimeSource,
+    /DeepSeek Harness ACP rejects non-empty mcpServers/
+  );
+});
+
 test("cliRun passes workspaceRoots into buildCommand", () => {
   assert.match(runtimeSource, /workspaceRoots:\s*args\.workspaceRoots/);
 });

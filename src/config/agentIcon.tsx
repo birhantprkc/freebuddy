@@ -13,7 +13,8 @@ const defaultAgentIcon: Partial<Record<CLIAdapterId, string>> = {
   "qoder-acp": "Qoder",
   "codebuddy-acp": "CodeBuddy",
   "grok-acp": "Grok",
-  "agy-acp": "Gemini"
+  "agy-acp": "Gemini",
+  "dsh-acp": "DeepSeek"
 };
 
 /**

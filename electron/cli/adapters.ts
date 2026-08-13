@@ -13,6 +13,7 @@ export type CLIAdapterId =
   | "codebuddy-acp"
   | "grok-acp"
   | "agy-acp"
+  | "dsh-acp"
   | (string & {});
 
 export type CLIStreamMode =
@@ -227,6 +228,23 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     installHint: "npm install -g agy-acp-bridge",
     docsUrl: "https://github.com/maojindao55/agy-acp",
     protocol: "acp"
+  },
+  {
+    id: "dsh-acp",
+    label: "DeepSeek",
+    defaultBinary: "dsh-acp-demo",
+    checkProbe: { args: ["--version"], versionOptional: true },
+    streamMode: "raw",
+    commandGroup: "deepseek",
+    capabilities: {
+      toolSession: true,
+      skills: { mode: "native", nativeDirs: [".dsh/skills"], reloadPolicy: "process-start" }
+    },
+    toolSessionArgs: [],
+    toolSessionArgPrefixes: [],
+    installHint: "npm install -g @deepseek-ai/dsh-acp-demo",
+    docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
+    protocol: "acp"
   }
 ];
 
@@ -256,6 +274,14 @@ export function getCliCheckProbe(adapter: string): CliCheckProbe {
       versionOptional: false
     }
   );
+}
+
+/**
+ * DeepSeek Harness ACP is automation-only and rejects non-empty `mcpServers`
+ * on `session/new`. Other adapters accept FreeBuddy's Draft/Browser/skill MCP.
+ */
+export function adapterAcceptsClientMcpServers(adapter: string): boolean {
+  return adapter !== "dsh-acp";
 }
 
 export function hasExplicitToolSessionArg(
@@ -563,6 +589,15 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
       };
     }
     case "agy-acp": {
+      const args: string[] = [...extra];
+      return {
+        bin,
+        args,
+        promptViaStdin: false,
+        protocol: "acp"
+      };
+    }
+    case "dsh-acp": {
       const args: string[] = [...extra];
       return {
         bin,

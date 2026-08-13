@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-import { buildCommand, cliAdapterDefinitions } from "../dist-electron/cli/adapters.js";
+import { buildCommand, cliAdapterDefinitions, adapterAcceptsClientMcpServers } from "../dist-electron/cli/adapters.js";
 import {
   acpSessionListToItems,
   acpSessionSetupToItems,
@@ -133,7 +133,8 @@ test("visible adapter definitions are ACP-only with product names", () => {
       { id: "qoder-acp", label: "Qoder", protocol: "acp" },
       { id: "codebuddy-acp", label: "CodeBuddy", protocol: "acp" },
       { id: "grok-acp", label: "Grok", protocol: "acp" },
-      { id: "agy-acp", label: "Antigravity", protocol: "acp" }
+      { id: "agy-acp", label: "Antigravity", protocol: "acp" },
+      { id: "dsh-acp", label: "DeepSeek", protocol: "acp" }
     ]
   );
 });
@@ -306,6 +307,32 @@ test("buildCommand starts Grok through its ACP stdio agent", () => {
   assert.deepEqual(built.args, ["agent", "stdio"]);
   assert.equal(built.promptViaStdin, false);
   assert.equal(built.protocol, "acp");
+});
+
+test("buildCommand starts DeepSeek Harness through its ACP demo server", () => {
+  const built = buildCommand({ adapter: "dsh-acp", prompt: "hello" });
+
+  assert.equal(built.bin, "dsh-acp-demo");
+  assert.deepEqual(built.args, []);
+  assert.equal(built.promptViaStdin, false);
+  assert.equal(built.protocol, "acp");
+});
+
+test("buildCommand forwards DeepSeek Harness extra args including cordis config", () => {
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    prompt: "hello",
+    extraArgs: ["-c", "/tmp/acp-agent/cordis.yml"]
+  });
+
+  assert.deepEqual(built.args, ["-c", "/tmp/acp-agent/cordis.yml"]);
+  assert.equal(built.protocol, "acp");
+});
+
+test("DeepSeek Harness ACP rejects client MCP servers", () => {
+  assert.equal(adapterAcceptsClientMcpServers("dsh-acp"), false);
+  assert.equal(adapterAcceptsClientMcpServers("codex-acp"), true);
+  assert.equal(adapterAcceptsClientMcpServers("agy-acp"), true);
 });
 
 test("buildCommand keeps Grok global flags before the ACP subcommand", () => {

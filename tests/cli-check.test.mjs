@@ -51,3 +51,15 @@ test("agy-acp checks agy-acp binary probe", () => {
     versionOptional: true
   });
 });
+
+test("dsh-acp checks dsh-acp-demo binary probe", () => {
+  assert.deepEqual(getCliCheckProbe("dsh-acp"), {
+    args: ["--version"],
+    versionOptional: true
+  });
+  assert.equal(
+    getAdapterDefinition("dsh-acp")?.installHint,
+    "npm install -g @deepseek-ai/dsh-acp-demo"
+  );
+  assert.equal(getAdapterDefinition("dsh-acp")?.defaultBinary, "dsh-acp-demo");
+});

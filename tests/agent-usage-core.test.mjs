@@ -21,6 +21,7 @@ test("usage adapter mapping only includes session-attributable tokscale clients"
   assert.equal(tokscaleClientForAdapter("cursor-agent-acp"), undefined);
   assert.equal(tokscaleClientForAdapter("qoder-acp"), undefined);
   assert.equal(tokscaleClientForAdapter("agy-acp"), undefined);
+  assert.equal(tokscaleClientForAdapter("dsh-acp"), undefined);
 });
 
 test("Codex rollout filenames and ACP UUIDs normalize to the same session key", () => {
