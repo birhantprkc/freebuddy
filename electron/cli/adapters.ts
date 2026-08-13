@@ -339,6 +339,26 @@ function isNodeBinary(bin: string): boolean {
   return base === "node" || base === "node.exe";
 }
 
+const DSH_ACP_DEFAULT_BINARIES = new Set([
+  "dsh-acp-demo",
+  "dsh-acp-demo.cmd",
+  "dsh-acp-demo.exe",
+  "dsh-acp-demo.bat",
+  "dsh-acp-demo.ps1"
+]);
+
+/**
+ * Settings persist `defaultBinary` even when the user did not pick a custom
+ * path. That name must still launch the managed runtime, not a PATH global
+ * install (global npm `dsh-acp-demo`).
+ */
+export function isDefaultDshAcpBinary(binary?: string): boolean {
+  const trimmed = binary?.trim();
+  if (!trimmed) return true;
+  if (/[\\/]/.test(trimmed)) return false;
+  return DSH_ACP_DEFAULT_BINARIES.has(path.basename(trimmed).toLowerCase());
+}
+
 const ELECTRON_CHILD_ENV_BLOCKLIST = [
   "ELECTRON_RUN_AS_NODE",
   "ELECTRON_NO_ASAR",
@@ -424,8 +444,8 @@ export function formatAcpAgentExitMessage(
 ): string {
   if (isWindowsAccessViolationExit(code)) {
     return language === "zh-CN"
-      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL / Windows ACL 会用 koffi 调 Win32（含 MoveFileExW）；本版本会覆盖 JSONL、关掉 ACL sandbox，并用 Node --import 拦截 koffi。请重新编译本版本后再试（无需重装 DeepSeek）。若仍崩溃，请用「导出调试日志」把 zip 发回来。"
-      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL / Windows ACL call Win32 through koffi (including MoveFileExW). This build overlays JSONL, disables the ACL sandbox, and intercepts koffi with Node --import. Rebuild this version — you do not need to reinstall DeepSeek. If it still crashes, export debug logs and send the zip.";
+      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL / Windows ACL 会用 koffi 调 Win32（含 MoveFileExW）；本版本会覆盖 JSONL，并用 Node --import 拦截 koffi。请重新编译本版本后再试（无需重装 DeepSeek）。若仍崩溃，请用「导出调试日志」把 zip 发回来。"
+      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL / Windows ACL call Win32 through koffi (including MoveFileExW). This build overlays JSONL and intercepts koffi with Node --import. Rebuild this version — you do not need to reinstall DeepSeek. If it still crashes, export debug logs and send the zip.";
   }
   return `ACP agent exited with code ${code}`;
 }
@@ -1197,7 +1217,7 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
           )
         : "";
       const useManaged =
-        !input.binary?.trim() &&
+        isDefaultDshAcpBinary(input.binary) &&
         Boolean(managedBin) &&
         existsSync(managedBin) &&
         dshAcpCompositionReady(managedBin);

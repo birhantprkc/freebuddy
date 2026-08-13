@@ -76,9 +76,9 @@ test("bundled DeepSeek ACP config disables zstd persistence on Windows-safe defa
     yaml,
     /persistenceCompression:\s*!!js "process\.env\.DSH_SNAPSHOT === undefined \? 'zstd'/
   );
-  assert.match(
+  assert.doesNotMatch(
     yaml,
-    /name:\s*'@deepseek-ai\/dsh-sandbox-local'[\s\S]*disabled:\s*!!js process\.platform === 'win32'/
+    /dsh-sandbox-local'[\s\S]*disabled:\s*!!js process\.platform === 'win32'/
   );
 });
 

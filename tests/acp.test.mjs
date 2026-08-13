@@ -357,7 +357,7 @@ test("buildCommand uses a workspace cordis.yml when present", () => {
   assert.deepEqual(built.args, ["--config", local]);
 });
 
-test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
+function writeManagedDshRuntime() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-managed-"));
   const demo = path.join(root, "node_modules", "@deepseek-ai", "dsh-acp-demo");
   fs.mkdirSync(path.join(demo, "lib"), { recursive: true });
@@ -369,6 +369,11 @@ test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
   fs.writeFileSync(path.join(probe, "package.json"), "{}");
   const config = path.join(root, "cordis.yml");
   fs.writeFileSync(config, "- id: acp-agent\n");
+  return { root, binJs, config };
+}
+
+test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
+  const { root, binJs, config } = writeManagedDshRuntime();
 
   const built = buildCommand({
     adapter: "dsh-acp",
@@ -389,6 +394,36 @@ test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
   assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
   assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
   assert.equal(built.protocol, "acp");
+});
+
+test("buildCommand prefers managed DeepSeek runtime when binary is the default demo name", () => {
+  const { root, binJs } = writeManagedDshRuntime();
+
+  for (const binary of ["dsh-acp-demo", "dsh-acp-demo.cmd", "dsh-acp-demo.exe"]) {
+    const built = buildCommand({
+      adapter: "dsh-acp",
+      binary,
+      prompt: "hello",
+      dshAcpRuntimeRoot: root
+    });
+    assert.equal(built.bin, "node", binary);
+    assert.equal(built.args.includes(binJs), true, binary);
+  }
+});
+
+test("buildCommand keeps an explicit custom DeepSeek binary path", () => {
+  const { root } = writeManagedDshRuntime();
+  const custom = path.join(os.tmpdir(), "custom-dsh", "dsh-acp-demo");
+
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    binary: custom,
+    prompt: "hello",
+    dshAcpRuntimeRoot: root
+  });
+
+  assert.equal(built.bin, custom);
+  assert.equal(built.args.includes(path.join(root, "node_modules", "@deepseek-ai", "dsh-acp-demo", "lib", "bin.js")), false);
 });
 
 test("buildCommand keeps extra DeepSeek args after the bundled config", () => {
@@ -526,6 +561,14 @@ test("formatAcpAgentExitMessage explains Windows access violation 0xC0000005", (
   assert.match(
     formatAcpAgentExitMessage(3221225477, "zh-CN"),
     /导出调试日志/
+  );
+  assert.doesNotMatch(
+    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    /关掉 ACL sandbox/
+  );
+  assert.doesNotMatch(
+    formatAcpAgentExitMessage(3221225477, "en"),
+    /disables the ACL sandbox/
   );
   assert.doesNotMatch(
     formatAcpAgentExitMessage(3221225477, "zh-CN"),
