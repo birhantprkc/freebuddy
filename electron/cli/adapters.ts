@@ -244,7 +244,11 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     toolSessionArgPrefixes: [],
     // `latest` is still 0.0.1-rc.1; that release's peer packages 404 on the
     // public registry. The working public line is currently tagged `next`.
-    installHint: "npm install -g @deepseek-ai/dsh-acp-demo@next",
+    // koffi's install script rebuilds from source when the optional platform
+    // binary is missing; that CMake path exceeds Windows MAX_PATH under the
+    // nested global install, so keep the prebuild and skip lifecycle scripts.
+    installHint:
+      "npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next",
     docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
     protocol: "acp"
   }

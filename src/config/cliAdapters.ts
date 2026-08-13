@@ -172,7 +172,8 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     capabilities: { toolSession: true },
     toolSessionArgs: [],
     toolSessionArgPrefixes: [],
-    installHint: "npm install -g @deepseek-ai/dsh-acp-demo@next",
+    installHint:
+      "npm install -g --include=optional --ignore-scripts @deepseek-ai/dsh-acp-demo@next",
     docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
     protocol: "acp"
   }
