@@ -133,7 +133,7 @@ test("dsh-acp composition ready requires llm-deepseek beside the demo", () => {
   fs.mkdirSync(probe, { recursive: true });
   fs.writeFileSync(path.join(probe, "package.json"), "{}");
   assert.equal(dshAcpCompositionReady(bin), true);
-  assert.equal(resolveDshAcpDemoDirFromBinary(bin), demo);
+  assert.equal(resolveDshAcpDemoDirFromBinary(bin), fs.realpathSync(demo));
   assert.equal(
     dshAcpManagedDemoBin("/data"),
     path.join(

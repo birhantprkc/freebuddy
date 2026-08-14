@@ -859,7 +859,11 @@ export async function runAcpAgent({
       if (epoch !== connectionEpoch) return;
       const exitCode = code ?? -1;
       for (const waiter of pending.values()) {
-        waiter.reject(new Error(formatAcpAgentExitMessage(exitCode, getLanguage())));
+        waiter.reject(
+          new Error(
+            formatAcpAgentExitMessage(exitCode, getLanguage(), args.adapter)
+          )
+        );
       }
       pending.clear();
       if (finished) return;
@@ -873,7 +877,7 @@ export async function runAcpAgent({
           ? stderrTail ||
             (commandTail ? `Last command before exit: ${commandTail}` : "") ||
             (agentTail ? `Agent output before exit: ${agentTail}` : "") ||
-            formatAcpAgentExitMessage(exitCode, getLanguage())
+            formatAcpAgentExitMessage(exitCode, getLanguage(), args.adapter)
           : undefined;
       finish(status, exitCode, crashMessage);
     });

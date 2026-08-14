@@ -663,45 +663,56 @@ test("formatAcpAgentExitMessage explains Windows access violation 0xC0000005", (
   assert.equal(isWindowsAccessViolationExit(-1073741819), true);
   assert.equal(isWindowsAccessViolationExit(1), false);
   assert.match(
-    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    formatAcpAgentExitMessage(3221225477, "zh-CN", "dsh-acp"),
     /访问冲突/
   );
   assert.match(
-    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    formatAcpAgentExitMessage(3221225477, "zh-CN", "dsh-acp"),
     /session\/prompt/
   );
   assert.match(
-    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    formatAcpAgentExitMessage(3221225477, "zh-CN", "dsh-acp"),
     /MoveFileExW/
   );
   assert.match(
-    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    formatAcpAgentExitMessage(3221225477, "zh-CN", "dsh-acp"),
     /导出调试日志/
   );
   assert.doesNotMatch(
-    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    formatAcpAgentExitMessage(3221225477, "zh-CN", "dsh-acp"),
     /关掉 ACL sandbox/
   );
   assert.doesNotMatch(
-    formatAcpAgentExitMessage(3221225477, "en"),
+    formatAcpAgentExitMessage(3221225477, "en", "dsh-acp"),
     /disables the ACL sandbox/
   );
   assert.doesNotMatch(
-    formatAcpAgentExitMessage(3221225477, "zh-CN"),
+    formatAcpAgentExitMessage(3221225477, "zh-CN", "dsh-acp"),
     /请用本版本重新编译后再试。$/
   );
   assert.match(
-    formatAcpAgentExitMessage(3221225477, "en"),
+    formatAcpAgentExitMessage(3221225477, "en", "dsh-acp"),
     /access violation/i
   );
   assert.match(
-    formatAcpAgentExitMessage(3221225477, "en"),
+    formatAcpAgentExitMessage(3221225477, "en", "dsh-acp"),
     /MoveFileExW/
   );
   assert.match(
-    formatAcpAgentExitMessage(3221225477, "en"),
+    formatAcpAgentExitMessage(3221225477, "en", "dsh-acp"),
     /debug logs/i
   );
+
+  // Other ACP adapters must receive generic error messages without DeepSeek/koffi mentions
+  const genericZh = formatAcpAgentExitMessage(3221225477, "zh-CN", "codex");
+  assert.match(genericZh, /访问冲突/);
+  assert.doesNotMatch(genericZh, /DeepSeek/i);
+  assert.doesNotMatch(genericZh, /MoveFileExW/);
+
+  const genericEn = formatAcpAgentExitMessage(3221225477, "en", "codex");
+  assert.match(genericEn, /access violation/i);
+  assert.doesNotMatch(genericEn, /DeepSeek/i);
+  assert.doesNotMatch(genericEn, /MoveFileExW/);
 });
 
 function writePlaceholderDshRuntime(root) {

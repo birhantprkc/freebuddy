@@ -253,7 +253,6 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     id: "dsh-acp",
     label: "DeepSeek Harness",
     defaultBinary: "dsh-acp-demo",
-    // The bin only accepts `--config`; `--version` exits non-zero via parseArgs.
     checkProbe: { args: [], versionOptional: true, skipSpawn: true },
     streamMode: "raw",
     commandGroup: "deepseek",
@@ -263,13 +262,6 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     },
     toolSessionArgs: [],
     toolSessionArgPrefixes: [],
-    // `latest` is still 0.0.1-rc.1; that release's peer packages 404 on the
-    // public registry. The working public line is currently tagged `next`.
-    // The published ACP demo has no runtime dependencies; cordis.yml plugins
-    // must be installed alongside it. koffi's install script rebuilds from
-    // source when the optional platform binary is missing; that CMake path
-    // exceeds Windows MAX_PATH under the nested global install, so keep the
-    // prebuild and skip lifecycle scripts.
     installHint: dshAcpInstallCommand(),
     docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
     protocol: "acp"
@@ -344,6 +336,16 @@ function isNodeBinary(bin: string): boolean {
 }
 
 const DSH_ACP_DEFAULT_BINARIES = new Set([
+  "deepseek-harness-acp",
+  "deepseek-harness-acp.cmd",
+  "deepseek-harness-acp.exe",
+  "deepseek-harness-acp.bat",
+  "deepseek-harness-acp.ps1",
+  "dsh-acp",
+  "dsh-acp.cmd",
+  "dsh-acp.exe",
+  "dsh-acp.bat",
+  "dsh-acp.ps1",
   "dsh-acp-demo",
   "dsh-acp-demo.cmd",
   "dsh-acp-demo.exe",
@@ -505,12 +507,18 @@ export function ensureDshAcpCwd(
 
 export function formatAcpAgentExitMessage(
   code: number,
-  language?: string
+  language?: string,
+  adapter?: string
 ): string {
   if (isWindowsAccessViolationExit(code)) {
+    if (adapter === "dsh-acp") {
+      return language === "zh-CN"
+        ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL / Windows ACL 会用 koffi 调 Win32（含 MoveFileExW）；本版本会覆盖 JSONL，并用 Node --import 拦截 koffi。请重新编译本版本后再试（无需重装 DeepSeek）。若仍崩溃，请用「导出调试日志」把 zip 发回来。"
+        : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL / Windows ACL call Win32 through koffi (including MoveFileExW). This build overlays JSONL and intercepts koffi with Node --import. Rebuild this version — you do not need to reinstall DeepSeek. If it still crashes, export debug logs and send the zip.";
+    }
     return language === "zh-CN"
-      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL / Windows ACL 会用 koffi 调 Win32（含 MoveFileExW）；本版本会覆盖 JSONL，并用 Node --import 拦截 koffi。请重新编译本版本后再试（无需重装 DeepSeek）。若仍崩溃，请用「导出调试日志」把 zip 发回来。"
-      : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL / Windows ACL call Win32 through koffi (including MoveFileExW). This build overlays JSONL and intercepts koffi with Node --import. Rebuild this version — you do not need to reinstall DeepSeek. If it still crashes, export debug logs and send the zip.";
+      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。进程异常终止，请检查原生依赖或系统安全软件。"
+      : "ACP agent crashed with a Windows access violation (0xC0000005). The process aborted unexpectedly.";
   }
   return `ACP agent exited with code ${code}`;
 }
@@ -905,28 +913,44 @@ export function patchDshAcpManagedRuntime(root: string): number {
   );
   const demoFrom = path.join(overlayRoot, "dsh-acp-demo", "lib", "index.js");
   let count = 0;
-  if (existsSync(jsonlFrom)) {
-    for (const dest of findDshPackageLibIndex(root, DSH_JSONL_PACKAGE)) {
-      copyFileSync(jsonlFrom, dest);
-      count += 1;
+  try {
+    if (existsSync(jsonlFrom)) {
+      for (const dest of findDshPackageLibIndex(root, DSH_JSONL_PACKAGE)) {
+        try {
+          copyFileSync(jsonlFrom, dest);
+          count += 1;
+        } catch {
+          /* ignore unwriteable / permission-restricted files */
+        }
+      }
     }
-  }
-  if (existsSync(demoFrom)) {
-    for (const dest of findDshPackageLibIndex(root, DSH_DEMO_PACKAGE)) {
-      copyFileSync(demoFrom, dest);
+    if (existsSync(demoFrom)) {
+      for (const dest of findDshPackageLibIndex(root, DSH_DEMO_PACKAGE)) {
+        try {
+          copyFileSync(demoFrom, dest);
+        } catch {
+          /* ignore unwriteable / permission-restricted files */
+        }
+      }
     }
+  } catch {
+    /* ignore unreadable overlay dirs */
   }
   return count;
 }
 
 /** Overlay the npm prefix that owns a `dsh-acp-demo` bin, including PATH installs. */
 export function patchDshAcpRuntimeFromBin(binPath: string): void {
-  const demoDir = resolveDshAcpDemoDirFromBinary(binPath);
-  if (!demoDir) return;
-  const scoped = path.dirname(demoDir);
-  const nodeModules = path.dirname(scoped);
-  const prefix = path.dirname(nodeModules);
-  patchDshAcpManagedRuntime(prefix);
+  try {
+    const demoDir = resolveDshAcpDemoDirFromBinary(binPath);
+    if (!demoDir) return;
+    const scoped = path.dirname(demoDir);
+    const nodeModules = path.dirname(scoped);
+    const prefix = path.dirname(nodeModules);
+    patchDshAcpManagedRuntime(prefix);
+  } catch {
+    /* ignore permission / traversal errors */
+  }
 }
 
 export function patchDshAcpRuntimeFromCommand(command: {
@@ -942,8 +966,12 @@ export function patchDshAcpRuntimeFromCommand(command: {
 /** Refresh the managed composition from the bundled default before spawn/install. */
 export function syncDshAcpManagedConfig(dataDir: string): string {
   const root = dshAcpManagedRoot(dataDir);
-  mkdirSync(root, { recursive: true });
-  copyFileSync(bundledDshAcpConfigPath(), path.join(root, "cordis.yml"));
+  try {
+    mkdirSync(root, { recursive: true });
+    copyFileSync(bundledDshAcpConfigPath(), path.join(root, "cordis.yml"));
+  } catch {
+    /* ignore permission errors */
+  }
   patchDshAcpManagedRuntime(root);
   return root;
 }
