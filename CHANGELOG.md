@@ -2,6 +2,34 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.7.10] - 2026-08-14
+
+### 新功能
+
+- support deepseek-harness-acp standalone binary and enhance runtime error handling
+- fix
+- overlay a thin DeepSeek Harness fork on the official ACP runtime
+- add DeepSeek Harness ACP adapter
+
+### 问题修复
+
+- wait for electron build before app start
+- drop native sandbox for DeepSeek ACP on Windows to stop koffi crash
+- spawn global dsh-acp-demo through node so koffi --import sticks
+- keep DeepSeek sandbox enabled and prefer managed dsh-acp-demo
+- stub koffi on DeepSeek ACP spawn and export runtime diagnostics
+- overlay every DeepSeek JSONL copy and disable Windows ACL sandbox
+- patch DeepSeek JSONL off koffi MoveFileExW on Windows
+- stop DeepSeek ACP Windows access violation on session/prompt
+- hide Node SQLite ExperimentalWarning from DeepSeek ACP
+- install DeepSeek ACP into a local runtime and detect a bare bin
+- install DeepSeek ACP composition plugins with the demo
+- pass bundled cordis.yml when starting DeepSeek ACP
+- treat dsh-acp-demo as installed without --version
+- force skip koffi rebuild during DeepSeek ACP install
+- skip koffi source rebuild when installing DeepSeek ACP
+- install DeepSeek ACP from the next dist-tag
+
 ## [0.7.9] - 2026-08-11
 
 ### 新功能
