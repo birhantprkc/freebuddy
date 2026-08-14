@@ -251,7 +251,7 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
   },
   {
     id: "dsh-acp",
-    label: "DeepSeek",
+    label: "DeepSeek Harness",
     defaultBinary: "dsh-acp-demo",
     // The bin only accepts `--config`; `--version` exits non-zero via parseArgs.
     checkProbe: { args: [], versionOptional: true, skipSpawn: true },
@@ -544,9 +544,17 @@ function withDshAcpSqliteWarningSuppressed(command: BuiltCommand): BuiltCommand 
   const configUsesNativeSandbox = dshAcpConfigUsesNativeSandbox(
     dshAcpConfigPathFromArgs(command.args) ?? bundledDshAcpConfigPath()
   );
+  // The koffi guard stubs the native addon so the Win32 calls return 0
+  // (a catchable JS error) instead of aborting Electron children with
+  // STATUS_ACCESS_VIOLATION (0xC0000005). On macOS/Linux the real koffi
+  // loads cleanly and `dsh-sandbox-windows-acl` asserts its struct layouts
+  // (STARTUPINFOW=104, PROCESS_INFORMATION=24) against real koffi at import,
+  // so the stub must stay Windows-only.
+  const needsKoffiGuard =
+    process.platform === "win32" && configUsesNativeSandbox;
   const flags = [
     DSH_ACP_NODE_DISABLE_WARNING,
-    configUsesNativeSandbox ? dshAcpKoffiGuardImportFlag() : undefined
+    needsKoffiGuard ? dshAcpKoffiGuardImportFlag() : undefined
   ].filter((flag): flag is string => Boolean(flag));
   let env = command.env;
   for (const flag of flags) {

@@ -15,6 +15,18 @@ function func() {
   return failClosed;
 }
 
+// `dsh-sandbox-windows-acl` builds its FFI type table at module import
+// (top-level `koffi.struct(...)`/`koffi.pointer(...)`), so the stub must
+// expose every API referenced there or the import throws before the
+// package's platform guard can skip the Win32 calls on non-Windows.
+function struct() {
+  return {};
+}
+
+function encode() {
+  return undefined;
+}
+
 function load() {
   return {
     func,
@@ -23,9 +35,11 @@ function load() {
     pointer() {
       return {};
     },
+    struct,
     alloc() {
       return {};
     },
+    encode,
     decode() {
       return null;
     },
@@ -41,9 +55,11 @@ const api = {
   pointer() {
     return {};
   },
+  struct,
   alloc() {
     return {};
   },
+  encode,
   decode() {
     return null;
   },

@@ -159,7 +159,7 @@ test("visible adapter definitions are ACP-only with product names", () => {
       { id: "codebuddy-acp", label: "CodeBuddy", protocol: "acp" },
       { id: "grok-acp", label: "Grok", protocol: "acp" },
       { id: "agy-acp", label: "Antigravity", protocol: "acp" },
-      { id: "dsh-acp", label: "DeepSeek", protocol: "acp" }
+      { id: "dsh-acp", label: "DeepSeek Harness", protocol: "acp" }
     ]
   );
 });
@@ -358,6 +358,22 @@ test("buildCommand uses a workspace cordis.yml when present", () => {
   assert.deepEqual(built.args, ["--config", local]);
 });
 
+function withPlatform(platform, fn) {
+  const original = process.platform;
+  Object.defineProperty(process, "platform", {
+    value: platform,
+    configurable: true
+  });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(process, "platform", {
+      value: original,
+      configurable: true
+    });
+  }
+}
+
 function writeManagedDshRuntime() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-managed-"));
   const demo = path.join(root, "node_modules", "@deepseek-ai", "dsh-acp-demo");
@@ -385,15 +401,19 @@ test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
   assert.equal(built.bin, "node");
   const importFlag = dshAcpKoffiGuardImportFlag();
   assert.ok(importFlag);
+  // The koffi guard is Windows-only; real koffi loads on macOS/Linux.
+  const guardArgs = process.platform === "win32" ? [importFlag] : [];
   assert.deepEqual(built.args, [
     DSH_ACP_NODE_DISABLE_WARNING,
-    importFlag,
+    ...guardArgs,
     binJs,
     "--config",
     config
   ]);
   assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
-  assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
+  if (process.platform === "win32") {
+    assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
+  }
   assert.equal(built.protocol, "acp");
 });
 
@@ -443,31 +463,36 @@ test("isDefaultDshAcpBinary treats npm-global shims as the stock demo", () => {
   );
 });
 
-test("buildCommand launches a PATH npm-global demo through node so koffi --import is on argv", () => {
-  const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-acp-global-"));
-  const demo = path.join(prefix, "node_modules", "@deepseek-ai", "dsh-acp-demo");
-  fs.mkdirSync(path.join(demo, "lib"), { recursive: true });
-  fs.writeFileSync(path.join(demo, "package.json"), "{}");
-  const binJs = path.join(demo, "lib", "bin.js");
-  fs.writeFileSync(binJs, "");
-  const cmd = path.join(prefix, "dsh-acp-demo.cmd");
+test("buildCommand puts koffi --import on argv on Windows when the composition uses the native sandbox", () => {
+  const { root, binJs } = writeManagedDshRuntime();
+  // The managed cordis.yml must mount the native sandbox for the guard to apply.
   fs.writeFileSync(
-    cmd,
-    `@ECHO off\r\nnode "%~dp0\\node_modules\\@deepseek-ai\\dsh-acp-demo\\lib\\bin.js" %*\r\n`
+    path.join(root, "cordis.yml"),
+    "- name: '@deepseek-ai/dsh-sandbox-local'\n"
   );
 
-  const built = buildCommand({
-    adapter: "dsh-acp",
-    binary: cmd,
-    prompt: "hello",
-    dshAcpRuntimeRoot: path.join(prefix, "missing-managed")
+  withPlatform("win32", () => {
+    const built = buildCommand({
+      adapter: "dsh-acp",
+      prompt: "hello",
+      dshAcpRuntimeRoot: root
+    });
+
+    assert.equal(built.bin, "node");
+    assert.equal(built.args.includes(binJs), true);
+    const importFlag = dshAcpKoffiGuardImportFlag();
+    assert.ok(importFlag);
+    assert.equal(built.args.includes(importFlag), true);
   });
 
-  assert.equal(built.bin, "node");
-  assert.equal(built.args.includes(binJs), true);
+  // On the real (non-Windows) host the guard must stay absent.
+  const built = buildCommand({
+    adapter: "dsh-acp",
+    prompt: "hello",
+    dshAcpRuntimeRoot: root
+  });
   const importFlag = dshAcpKoffiGuardImportFlag();
-  assert.ok(importFlag);
-  assert.equal(built.args.includes(importFlag), true);
+  assert.equal(built.args.includes(importFlag), false);
 });
 
 test("buildCommand prefers managed runtime over a resolved npm-global demo shim", () => {
@@ -560,7 +585,12 @@ test("buildCommand silences Node SQLite ExperimentalWarning for DeepSeek ACP", (
   assert.equal(built.bin, "dsh-acp-demo");
   assert.equal(built.args.includes(DSH_ACP_NODE_DISABLE_WARNING), false);
   assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
-  assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
+  // The koffi guard is Windows-only; real koffi loads on macOS/Linux.
+  if (process.platform === "win32") {
+    assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
+  } else {
+    assert.doesNotMatch(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
+  }
 });
 
 test("isDshAcpExperimentalWarningLine matches Node sqlite warning stderr", () => {
