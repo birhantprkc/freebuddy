@@ -412,6 +412,18 @@ export function resolveDshAcpDemoBinJs(input: {
   binary?: string;
   dshAcpRuntimeRoot?: string;
 }): string | undefined {
+  const standaloneManagedBin = input.dshAcpRuntimeRoot
+    ? path.join(
+        input.dshAcpRuntimeRoot,
+        "node_modules",
+        "deepseek-harness-acp",
+        "lib",
+        "bin.js"
+      )
+    : "";
+  if (isDefaultDshAcpBinary(input.binary) && standaloneManagedBin && existsSync(standaloneManagedBin)) {
+    return standaloneManagedBin;
+  }
   const managedBin = input.dshAcpRuntimeRoot
     ? path.join(
         input.dshAcpRuntimeRoot,
