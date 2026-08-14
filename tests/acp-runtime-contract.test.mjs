@@ -171,17 +171,22 @@ test("cliRun sanitizes Electron env and gives DeepSeek a workspace when cwd is u
   assert.match(acpRuntimeSource, /formatAcpAgentExitMessage/);
 });
 
-test("managed DeepSeek spawn patches koffi MoveFileExW before the agent starts", () => {
+test("managed DeepSeek spawn overlays the harness fork before the agent starts", () => {
   const adaptersSource = fs.readFileSync(
     new URL("../electron/cli/adapters.ts", import.meta.url),
     "utf8"
   );
   assert.match(adaptersSource, /patchDshAcpManagedRuntime\(root\)/);
-  assert.match(
-    adaptersSource,
-    /if \(process\.platform === "win32"\) await this\.materializeWin32/
-  );
-  assert.match(adaptersSource, /openAt: "never"/);
+  assert.match(adaptersSource, /patchDshAcpRuntimeFromBin/);
+  assert.match(adaptersSource, /dshHarnessOverlayDir/);
+  assert.match(adaptersSource, /dsh-harness-overlays/);
+  assert.match(adaptersSource, /dshAcpKoffiGuardImportFlag/);
+  assert.match(adaptersSource, /resolveDshAcpDemoBinJs/);
+  assert.match(adaptersSource, /spawnKind/);
+  assert.match(runtimeSource, /patchDshAcpRuntimeFromCommand/);
+  assert.match(runtimeSource, /buildDshAcpRuntimeDiagnostics/);
+  assert.match(runtimeSource, /spawnArgs:\s*built\.args/);
+  assert.match(acpRuntimeSource, /recentStderr\.slice\(-40\)/);
 });
 
 test("cliRun passes workspaceRoots into buildCommand", () => {

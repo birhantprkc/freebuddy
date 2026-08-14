@@ -534,7 +534,7 @@ async function dispatchButlerAction(
           agentName: conv.agentName,
           adapter: conv.adapter
         },
-        hint: "Read README.txt, environment.json, logs/, and sessions/ under logDirectory, then produce a structured self-check report."
+        hint: "Read README.txt, environment.json, dsh-acp-runtime.json, logs/, and sessions/ under logDirectory, then produce a structured self-check report."
       };
     }
     case "conversation_messages": {

@@ -87,7 +87,7 @@ export const builtinCliMembers: CLIMember[] = [
   },
   {
     id: "cli-dsh-acp",
-    name: "DeepSeek",
+    name: "DeepSeek Harness",
     enabled: true,
     cli: { adapter: "dsh-acp", approvalMode: "auto", showStderr: true }
   }

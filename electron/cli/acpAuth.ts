@@ -7,6 +7,7 @@ import {
   buildCommand,
   dshAcpManagedRoot,
   ensureDshAcpCwd,
+  patchDshAcpRuntimeFromCommand,
   syncDshAcpManagedConfig,
   type CLIAdapterId
 } from "./adapters.js";
@@ -60,6 +61,7 @@ async function withAcpAgent<T>(
     dshAcpRuntimeRoot:
       args.adapter === "dsh-acp" ? dshAcpManagedRoot(getDataDir()) : undefined
   });
+  if (args.adapter === "dsh-acp") patchDshAcpRuntimeFromCommand(built);
   if (built.protocol !== "acp") {
     throw new Error("Authentication control requires an ACP agent.");
   }

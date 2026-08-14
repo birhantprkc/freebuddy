@@ -165,7 +165,7 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
   },
   {
     id: "dsh-acp",
-    label: "DeepSeek",
+    label: "DeepSeek Harness",
     defaultBinary: "dsh-acp-demo",
     streamMode: "raw",
     commandGroup: "deepseek",

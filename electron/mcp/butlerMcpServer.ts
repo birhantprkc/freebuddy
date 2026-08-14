@@ -509,7 +509,7 @@ export function createButlerMcpServer(): McpServer {
     {
       title: "Prepare Conversation Logs for Self-Check",
       description:
-        "Collect a failed conversation's full diagnostic logs (app logs + session transcripts + environment) into a temporary directory and return its path. Then use your file-reading tools to read README.txt, environment.json, logs/, and sessions/ under that directory and produce a structured self-check report (problem summary, evidence with timestamps, confirmed facts vs possible causes, remediation steps). Do not modify files in that directory.",
+        "Collect a failed conversation's full diagnostic logs (app logs + session transcripts + environment) into a temporary directory and return its path. Then use your file-reading tools to read README.txt, environment.json, dsh-acp-runtime.json, logs/, and sessions/ under that directory and produce a structured self-check report (problem summary, evidence with timestamps, confirmed facts vs possible causes, remediation steps). Do not modify files in that directory.",
       inputSchema: {
         conversationId: z.string().trim().min(1).describe("Conversation id to diagnose.")
       },

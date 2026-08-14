@@ -76,6 +76,10 @@ test("bundled DeepSeek ACP config disables zstd persistence on Windows-safe defa
     yaml,
     /persistenceCompression:\s*!!js "process\.env\.DSH_SNAPSHOT === undefined \? 'zstd'/
   );
+  assert.doesNotMatch(
+    yaml,
+    /dsh-sandbox-local'[\s\S]*disabled:\s*!!js process\.platform === 'win32'/
+  );
 });
 
 test("dsh-acp install command includes every bundled cordis plugin package", () => {

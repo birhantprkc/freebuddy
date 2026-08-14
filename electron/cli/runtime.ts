@@ -7,11 +7,15 @@ import type { Readable, Writable } from "node:stream";
 
 import {
   buildCommand,
+  buildDshAcpRuntimeDiagnostics,
+  dshAcpKoffiGuardPath,
   dshAcpManagedRoot,
+  dshAcpWindowsResiduePath,
   ensureDshAcpCwd,
   getAdapterDefinition,
   hasExplicitToolSessionArg,
   mergeNodeOptions,
+  patchDshAcpRuntimeFromCommand,
   sanitizeCliAgentEnv,
   syncDshAcpManagedConfig
 } from "./adapters.js";
@@ -271,6 +275,32 @@ export async function cliRun(
           ? dshAcpManagedRoot(getDataDir())
           : undefined
     });
+    if (executionArgs.adapter === "dsh-acp") {
+      patchDshAcpRuntimeFromCommand(built);
+      const configIdx = built.args.findIndex(
+        (arg) => arg === "--config" || arg === "-c"
+      );
+      const configPath =
+        configIdx >= 0
+          ? built.args[configIdx + 1]
+          : built.args
+              .find((arg) => arg.startsWith("--config=") || arg.startsWith("-c="))
+              ?.split("=")
+              .slice(1)
+              .join("=");
+      appendLog(
+        logStream,
+        "system",
+        `dsh-acp runtime ${JSON.stringify(
+          buildDshAcpRuntimeDiagnostics({
+            runtimeRoot: dshAcpManagedRoot(getDataDir()),
+            configPath,
+            spawnBin: built.bin,
+            spawnArgs: built.args
+          })
+        )}`
+      );
+    }
   } catch (e) {
     const msg = `build command failed: ${(e as Error)?.message || e}`;
     appendLog(logStream, "system", msg);
@@ -314,7 +344,11 @@ export async function cliRun(
           ),
           ...(executionArgs.skills ?? []).map((skill) => skill.rootPath),
           ...(executionArgs.adapter === "dsh-acp"
-            ? [dshAcpManagedRoot(getDataDir())]
+            ? [
+                dshAcpManagedRoot(getDataDir()),
+                dshAcpKoffiGuardPath(),
+                dshAcpWindowsResiduePath() ?? ""
+              ].filter(Boolean)
             : [])
         ]
       });

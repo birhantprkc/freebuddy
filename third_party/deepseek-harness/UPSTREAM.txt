@@ -1,0 +1,6 @@
+repository=https://github.com/deepseek-ai/deepseek-harness
+fork=https://github.com/maojindao55/deepseek-harness
+fork_branch=cursor/windows-jsonl-node-fs-255d
+npm_tag=next
+npm_version=0.1.0-rc.6
+packages=@deepseek-ai/dsh-session-persistence-jsonl @deepseek-ai/dsh-acp-demo
