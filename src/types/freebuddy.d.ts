@@ -667,7 +667,22 @@ declare global {
       runId: string
     ): Promise<Array<{ approvalId: string; runId: string }>>;
     stopRun(runId: string): Promise<boolean>;
+    pauseRun(runId: string): Promise<boolean>;
+    resumeRun(runId: string): Promise<boolean>;
+    hasRunForConversation(conversationId: string): Promise<boolean>;
+    followUp(input: {
+      conversationId: string;
+      prompt: string;
+    }): Promise<{ ok: true; runId: string } | { ok: false; error: string; code?: string }>;
     onChanged(cb: () => void): () => void;
+    onRunFinished(
+      cb: (event: {
+        runId: string;
+        conversationId?: string;
+        status: string;
+        name: string;
+      }) => void
+    ): () => void;
   }
 
   interface FreebuddyScheduledTasks {

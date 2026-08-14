@@ -1,6 +1,6 @@
 import { getDb } from "./db.js";
 import type { WorkflowRunStatus } from "./workflowTypes.js";
-import type { DelegationEvent, DelegationEventStatus } from "./delegationTeamTypes.js";
+import type { DelegationEvent, DelegationEventStatus, DelegationVerdict } from "./delegationTeamTypes.js";
 
 export interface CreateDelegationRunInput {
   goal: string;
@@ -14,6 +14,7 @@ export interface DelegationRunRow {
   id: string;
   kind: "delegation";
   conversationId: string | null;
+  name: string;
   goal: string;
   status: WorkflowRunStatus;
   cwd: string | null;
@@ -22,6 +23,47 @@ export interface DelegationRunRow {
   createdAt: string;
   updatedAt: string;
   endedAt: string | null;
+}
+
+export type DelegationRunFinishedEvent = {
+  runId: string;
+  conversationId?: string;
+  status: string;
+  name: string;
+};
+
+let delegationRunFinishedHandler:
+  | ((event: DelegationRunFinishedEvent) => void)
+  | null = null;
+
+export function bindDelegationRunFinishedNotifier(
+  fn: ((event: DelegationRunFinishedEvent) => void) | null
+): void {
+  delegationRunFinishedHandler = fn;
+}
+
+const TERMINAL_RUN_STATUSES = new Set<WorkflowRunStatus>([
+  "completed",
+  "failed",
+  "killed",
+  "partial"
+]);
+
+function mapDelegationRunRow(r: any): DelegationRunRow {
+  return {
+    id: r.id,
+    kind: "delegation",
+    conversationId: r.conversation_id,
+    name: typeof r.name === "string" && r.name.trim() ? r.name : r.goal,
+    goal: r.goal,
+    status: r.status,
+    cwd: r.cwd,
+    teamId: r.team_id,
+    teamSnapshotJson: r.team_snapshot_json,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    endedAt: r.ended_at
+  };
 }
 
 export function createDelegationRun(input: CreateDelegationRunInput): string {
@@ -54,19 +96,7 @@ export function getDelegationRun(id: string): DelegationRunRow | undefined {
     .prepare("SELECT * FROM workflow_runs WHERE id = ? AND kind = 'delegation'")
     .get(id) as any;
   if (!r) return undefined;
-  return {
-    id: r.id,
-    kind: "delegation",
-    conversationId: r.conversation_id,
-    goal: r.goal,
-    status: r.status,
-    cwd: r.cwd,
-    teamId: r.team_id,
-    teamSnapshotJson: r.team_snapshot_json,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    endedAt: r.ended_at
-  };
+  return mapDelegationRunRow(r);
 }
 
 export function getDelegationRunByConversation(
@@ -78,28 +108,33 @@ export function getDelegationRunByConversation(
     )
     .get(conversationId) as any;
   if (!r) return undefined;
-  return {
-    id: r.id,
-    kind: "delegation",
-    conversationId: r.conversation_id,
-    goal: r.goal,
-    status: r.status,
-    cwd: r.cwd,
-    teamId: r.team_id,
-    teamSnapshotJson: r.team_snapshot_json,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    endedAt: r.ended_at
-  };
+  return mapDelegationRunRow(r);
 }
 
 export function setDelegationRunStatus(id: string, status: WorkflowRunStatus): void {
+  const previous = getDelegationRun(id);
   const now = new Date().toISOString();
   getDb()
     .prepare(
       `UPDATE workflow_runs SET status = ?, updated_at = ?, ended_at = ? WHERE id = ? AND kind = 'delegation'`
     )
-    .run(status, now, ["completed", "failed", "killed", "partial"].includes(status) ? now : null, id);
+    .run(status, now, TERMINAL_RUN_STATUSES.has(status) ? now : null, id);
+
+  // Mirror workflow finalize: notify on first transition into a non-killed
+  // terminal status so unread / OS notification / pet broadcast can fire.
+  if (
+    previous &&
+    !TERMINAL_RUN_STATUSES.has(previous.status) &&
+    TERMINAL_RUN_STATUSES.has(status) &&
+    status !== "killed"
+  ) {
+    delegationRunFinishedHandler?.({
+      runId: id,
+      conversationId: previous.conversationId ?? undefined,
+      status,
+      name: previous.name || previous.goal || "Delegation run"
+    });
+  }
 }
 
 export type DelegationEventRow = DelegationEvent;
@@ -118,7 +153,9 @@ function rowToEvent(r: any): DelegationEventRow {
     resultSummary: r.result_summary,
     canWrite: r.can_write === 1 || r.can_write === true,
     startedAt: r.started_at,
-    endedAt: r.ended_at
+    endedAt: r.ended_at,
+    verdict: (r.verdict as DelegationVerdict | null) ?? null,
+    verdictSummary: r.verdict_summary ?? null,
   };
 }
 
@@ -155,6 +192,8 @@ export function insertDelegationEvent(input: InsertDelegationEventInput): string
 export interface UpdateDelegationEventPatch {
   status?: DelegationEventStatus;
   resultSummary?: string | null;
+  verdict?: DelegationVerdict | null;
+  verdictSummary?: string | null;
 }
 
 export function updateDelegationEvent(
@@ -174,6 +213,14 @@ export function updateDelegationEvent(
   if (patch.resultSummary !== undefined) {
     fields.push("result_summary = ?");
     params.push(patch.resultSummary);
+  }
+  if (patch.verdict !== undefined) {
+    fields.push("verdict = ?");
+    params.push(patch.verdict);
+  }
+  if (patch.verdictSummary !== undefined) {
+    fields.push("verdict_summary = ?");
+    params.push(patch.verdictSummary);
   }
   if (fields.length === 0) return;
   params.push(id);
@@ -224,6 +271,42 @@ export function countRunningDelegationEvents(runId: string): number {
     )
     .get(runId) as { n: number } | undefined;
   return row?.n ?? 0;
+}
+
+/**
+ * Active "leaf" delegates: running delegates (depth>=1) that currently have no
+ * active (pending or running) child. A delegatee that has spawned a child is
+ * parked waiting on that child and must not count against maxConcurrentDelegates.
+ */
+export function countActiveDelegateLeaves(runId: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM delegation_events AS d
+       WHERE d.run_id = ? AND d.parent_event_id IS NOT NULL AND d.status = 'running'
+         AND NOT EXISTS (
+           SELECT 1 FROM delegation_events AS c
+           WHERE c.run_id = d.run_id AND c.parent_event_id = d.id
+             AND c.status IN ('running','pending')
+         )`
+    )
+    .get(runId) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
+/** Cancel all pending/running events under a run. Returns cancelled ids. */
+export function cancelActiveDelegationEvents(runId: string, reason: string): string[] {
+  const active = listDelegationEvents(runId).filter(
+    (e) => e.status === "pending" || e.status === "running"
+  );
+  const ids: string[] = [];
+  for (const ev of active) {
+    updateDelegationEvent(ev.id, {
+      status: "cancelled",
+      resultSummary: reason
+    });
+    ids.push(ev.id);
+  }
+  return ids;
 }
 
 /** Active (non-terminal) child events of a given parent event. */

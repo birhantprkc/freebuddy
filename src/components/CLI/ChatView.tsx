@@ -1872,6 +1872,24 @@ export function ChatView({
         notify(t("contextShare.linkAttached"));
       }
 
+      // Delegation conversations: follow-ups go through the async bus (park/wake),
+      // not bare cli:run (which has no wake loop).
+      if (
+        delegationClient.isAvailable() &&
+        (await delegationClient.hasRunForConversation(conv.id))
+      ) {
+        const res = await delegationClient.followUp({
+          conversationId: conv.id,
+          prompt: composeMessageWithAttachments(prompt, attachmentsToSend)
+        });
+        if (!res.ok) {
+          throw new Error(res.error);
+        }
+        await useConversationStore.getState().loadMessages(conv.id);
+        setSubmitPreview(null);
+        return;
+      }
+
       await sendMessage({
         conversationId: conv.id,
         prompt,

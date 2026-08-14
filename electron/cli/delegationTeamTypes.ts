@@ -41,6 +41,8 @@ export type DelegationEventStatus =
   | "timeout"
   | "cancelled";
 
+export type DelegationVerdict = "pass" | "needs_changes" | "fail";
+
 export interface DelegationEvent {
   id: string;
   runId: string;
@@ -55,6 +57,8 @@ export interface DelegationEvent {
   canWrite: boolean;
   startedAt: string | null;
   endedAt: string | null;
+  verdict: DelegationVerdict | null;
+  verdictSummary: string | null;
 }
 
 export function defaultDelegationPolicy(): DelegationPolicy {

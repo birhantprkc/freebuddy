@@ -13,6 +13,10 @@ import {
   recoverInterruptedDelegationRuns
 } from "./delegationRuntime.js";
 import { createDelegateAgentRunner } from "./delegationRunner.js";
+import {
+  conversationHasDelegationRun,
+  handleDelegationFollowUp
+} from "./delegation/adapter/ipcFollowUp.js";
 
 let runtime: DelegationRuntime | null = null;
 
@@ -126,6 +130,35 @@ export function registerDelegationIpc(): void {
     (event, runId: string) => {
       ensureDelegationRuntime(event).stopRun(runId);
       return true;
+    }
+  );
+
+  registerHandler(
+    "delegation:pauseRun",
+    (event, runId: string) => ensureDelegationRuntime(event).pauseRun(runId)
+  );
+
+  registerHandler(
+    "delegation:resumeRun",
+    async (event, runId: string) => {
+      const ok = await ensureDelegationRuntime(event).resumeRun(runId);
+      return ok;
+    }
+  );
+
+  registerHandler(
+    "delegation:hasRunForConversation",
+    (_event, conversationId: string) => conversationHasDelegationRun(conversationId)
+  );
+
+  registerHandler(
+    "delegation:followUp",
+    async (
+      event,
+      input: { conversationId: string; prompt: string }
+    ) => {
+      const rt = ensureDelegationRuntime(event);
+      return handleDelegationFollowUp(rt, input);
     }
   );
 }

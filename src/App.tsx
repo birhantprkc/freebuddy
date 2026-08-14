@@ -293,7 +293,15 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const off = window.freebuddy?.workflow?.onRunFinished?.((event) => {
+    const handleTeamRunFinished = (
+      event: {
+        runId: string;
+        conversationId?: string;
+        status: string;
+        name: string;
+      },
+      source: "workflow" | "delegation"
+    ) => {
       const success = event.status === "completed" || event.status === "partial";
       if (success) playTaskSuccess(true);
       else playTaskFailure(true);
@@ -316,14 +324,22 @@ function App() {
             : i18next.t("notifications.taskFailedBody", { title: event.name }),
           event.conversationId,
           {
-            eventId: `workflow:${event.runId}`,
+            eventId: `${source}:${event.runId}`,
             taskTitle: event.name
           }
         );
       }
+    };
+
+    const offWorkflow = window.freebuddy?.workflow?.onRunFinished?.((event) => {
+      handleTeamRunFinished(event, "workflow");
+    });
+    const offDelegation = window.freebuddy?.delegation?.onRunFinished?.((event) => {
+      handleTeamRunFinished(event, "delegation");
     });
     return () => {
-      off?.();
+      offWorkflow?.();
+      offDelegation?.();
     };
   }, []);
 
@@ -482,7 +498,16 @@ function App() {
   const activeConversationRunning = useConversationStore((s) => {
     if (!activeId) return false;
     const status = s.live[activeId]?.status;
-    return status === "running" || status === "starting";
+    if (status === "running" || status === "starting") return true;
+    // Delegation turns stream via workflow://message (DB message status), not
+    // conversationStore.live — still count them as in-progress for the pet.
+    return (
+      s.messages[activeId]?.some(
+        (message) =>
+          message.role === "assistant" &&
+          (message.status === "running" || message.status === "starting")
+      ) ?? false
+    );
   });
   // Keep the selector primitive so root rendering does not follow every stream
   // chunk. The value changes only when the set of running conversations does.
@@ -490,7 +515,14 @@ function App() {
     s.conversations
       .filter((conversation) => {
         const status = s.live[conversation.id]?.status;
-        return status === "running" || status === "starting";
+        if (status === "running" || status === "starting") return true;
+        return (
+          s.messages[conversation.id]?.some(
+            (message) =>
+              message.role === "assistant" &&
+              (message.status === "running" || message.status === "starting")
+          ) ?? false
+        );
       })
       .map((conversation) => conversation.id)
       .join("\u001f")

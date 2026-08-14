@@ -1,0 +1,215 @@
+import type { DelegationRosterEntry } from "../../delegationTeamTypes.js";
+import type { DelegationVerdict } from "../../delegationTeamTypes.js";
+
+/** Canonical async-delegation protocol. Skill / MCP / roster prompts derive from here. */
+
+export const PROTOCOL_RULES = {
+  delegateReturnsPending:
+    'Call `delegate(teammate_id, task)` — returns IMMEDIATELY with `{request_id, status:"pending"}`. The teammate runs asynchronously.',
+  pendingMeansQueued:
+    'status `pending` = queued behind the concurrency limit (not started yet). Keep this turn open; poll `check_delegate_result` after a few seconds. Do NOT end your turn while pending.',
+  runningMeansEndTurn:
+    'status `running` = teammate is executing. END THIS TURN IMMEDIATELY. Do NOT call `check_delegate_result` again for this request. The system will automatically wake you with the result when it settles.',
+  /** Returned on `check_delegate_result` when status is running — shown at decision time. */
+  runningCheckInstruction:
+    "End this turn now. Do not poll check_delegate_result again; you will be woken when it settles.",
+  terminalMeansUseResult:
+    'status `done`/`failed`/`timeout` = terminal. Use `result` to continue (retry, delegate elsewhere, or do it yourself).',
+  noBounce: "Do NOT bounce work back to your caller or any ancestor on the call chain.",
+  noWholeTask:
+    "Do NOT delegate the entire task you were given (near-identical copy). Split a real sub-task, or do it yourself.",
+  preferSelf: "Prefer work you can finish yourself; do not abuse delegation.",
+  depthAwareness:
+    "Your current delegation depth and the team roster are in the prompt header. Near the depth cap, prefer doing the work yourself."
+} as const;
+
+export function mcpListTeammatesDescription(): string {
+  return "List the teammates available to delegate to in the current delegation run (excluding yourself and any caller/ancestor on the call chain — those cannot be delegated to). Each entry has id, label, capability (what to delegate to it), and canWrite. Read-only. An empty list means do the work yourself.";
+}
+
+export function mcpDelegateDescription(): string {
+  return [
+    "Asynchronously delegate a sub-task to a teammate.",
+    PROTOCOL_RULES.delegateReturnsPending,
+    "Pick the teammate by matching its capability to the sub-task.",
+    PROTOCOL_RULES.preferSelf,
+    PROTOCOL_RULES.noBounce,
+    PROTOCOL_RULES.noWholeTask
+  ].join(" ");
+}
+
+export function mcpCheckResultDescription(): string {
+  return [
+    "Poll a delegate call's result. Returns {status, result, request_id}.",
+    PROTOCOL_RULES.pendingMeansQueued,
+    PROTOCOL_RULES.runningMeansEndTurn,
+    PROTOCOL_RULES.terminalMeansUseResult
+  ].join(" ");
+}
+
+export function mcpSubmitVerdictDescription(): string {
+  return [
+    "Submit a structured verdict for the current delegated task before you finish.",
+    "Required for review/audit sub-tasks.",
+    "verdict must be one of: pass (ready to close), needs_changes (caller must fix then re-delegate review), fail (blocking).",
+    "Optional summary: one or two sentences."
+  ].join(" ");
+}
+
+function writeFlag(canWrite: boolean): string {
+  return canWrite ? "可写" : "只读";
+}
+
+export function buildDelegationRosterPrompt(
+  roster: DelegationRosterEntry[],
+  selfId: string,
+  depth: number,
+  maxDepth: number
+): string {
+  const lines = roster
+    .filter((r) => r.id !== selfId)
+    .map((r) => `- [${r.id}] ${r.label} (${writeFlag(r.canWrite)})："${r.capability}"`)
+    .join("\n");
+  return [
+    "## 协作团队（可委派）",
+    "某子任务更适合某队友时：",
+    '1. 调 delegate(teammate_id, task) —— 立即返回 {request_id, status:"pending"}',
+    "2. 调 check_delegate_result(request_id) 查看结果：",
+    "   - status 为 done/failed/timeout —— 直接用 result 继续工作。",
+    "   - status 为 running —— 子任务正在跑；应当立即结束本轮，禁止再对同一 request_id 调用 check_delegate_result；结果就绪后系统会自动唤醒你。",
+    "   - status 为 pending —— 还在排队（前面的子任务没跑完），稍等几秒再查，本轮先别结束。",
+    "3. 用返回的 result 继续你的工作。",
+    "优先自己能完成的；别滥用委派；别反弹回调用方；别把整份任务原样外派。",
+    `当前深度 ${depth} / 上限 ${maxDepth}。`,
+    "队友：",
+    lines || "- （无其他队友）"
+  ].join("\n");
+}
+
+export function buildDelegateTaskPrompt(
+  task: string,
+  roster: DelegationRosterEntry[],
+  selfId: string,
+  depth: number,
+  maxDepth: number
+): string {
+  return [buildDelegationRosterPrompt(roster, selfId, depth, maxDepth), "", "## 本次任务", task].join(
+    "\n"
+  );
+}
+
+export interface DelegateWakeInfo {
+  taskText: string;
+  roleLabel: string;
+  status: string;
+  resultSummary: string;
+  verdict?: DelegationVerdict | null;
+  verdictSummary?: string | null;
+}
+
+export function buildDelegateWakePrompt(
+  info: DelegateWakeInfo,
+  roster: DelegationRosterEntry[],
+  selfId: string,
+  depth: number,
+  maxDepth: number
+): string {
+  const summary = info.resultSummary?.trim() || "(无输出)";
+  const verdict = info.verdict ?? null;
+  const verdictLine =
+    verdict === null
+      ? "结构化结论：未提交 verdict（按 needs_changes 保守处理）。"
+      : `结构化结论：verdict=${verdict}${info.verdictSummary ? `；摘要：${info.verdictSummary}` : ""}`;
+
+  let nextSteps: string;
+  if (verdict === "pass") {
+    nextSteps =
+      "评审已通过（pass）。若无新待办可以收尾；不要无故再开一轮复审。";
+  } else {
+    // needs_changes | fail | null
+    nextSteps = [
+      "存在待改项或未通过（或对方未提交 verdict）。",
+      "请先按上方结果修改。",
+      `改完后必须再 delegate 给角色「${info.roleLabel}」做复审（用 list_teammates 选对应 id）。`,
+      "在复审返回 verdict=pass 之前，不要宣布收尾。"
+    ].join("");
+  }
+
+  return [
+    buildDelegationRosterPrompt(roster, selfId, depth, maxDepth),
+    "",
+    "## 委派结果返回（你被唤醒）",
+    `你之前委派给「${info.roleLabel}」的子任务已结束（status: ${info.status}）。`,
+    verdictLine,
+    "子任务：",
+    info.taskText,
+    "",
+    "结果：",
+    summary,
+    "",
+    nextSteps
+  ].join("\n");
+}
+
+/** English SKILL.md body (frontmatter supplied by assets file / seed). */
+export function buildDelegationSkillMarkdown(): string {
+  return [
+    "---",
+    "name: delegation",
+    "description: Collaborate with teammate agents in a self-organizing delegation run. Discover teammates and delegate sub-tasks asynchronously; the system wakes you when results settle.",
+    "version: 1.2.1",
+    "---",
+    "",
+    "# Delegation",
+    "",
+    "You are part of a self-organizing team. You can delegate sub-tasks to teammates and receive delegated sub-tasks from your caller.",
+    "",
+    "## When to delegate",
+    "Delegate a sub-task ONLY when:",
+    "- It falls clearly in a teammate's `capability` (read it via `list_teammates`), AND",
+    "- It is non-trivial work you are not best suited to do yourself.",
+    "",
+    "Do NOT delegate:",
+    "- Small things you can do directly.",
+    "- Back to your caller or any ancestor (no ping-pong).",
+    "- The entire task you were given (near-identical copy).",
+    "",
+    "## How to delegate",
+    `1. Call \`list_teammates\` to see who is available.`,
+    `2. ${PROTOCOL_RULES.delegateReturnsPending}`,
+    `3. Call \`check_delegate_result(request_id)\`:`,
+    `   - ${PROTOCOL_RULES.terminalMeansUseResult}`,
+    `   - ${PROTOCOL_RULES.runningMeansEndTurn}`,
+    `   - ${PROTOCOL_RULES.pendingMeansQueued}`,
+    "",
+    "## Handle the result",
+    "- `status: \"done\"` → use `result`.",
+    "- `status: \"failed\"` / `\"timeout\"` → decide: retry, delegate to a different teammate, or do it yourself. Do not loop forever.",
+    "",
+    "## Review verdicts",
+    "For review/audit sub-tasks, call `submit_verdict` before you finish:",
+    "- `pass` — ready to close",
+    "- `needs_changes` — caller must fix, then re-delegate review",
+    "- `fail` — blocking",
+    "",
+    "## After a wake with needs_changes/fail",
+    "Fix first, then `delegate` review again. Do not declare done until a later wake has `verdict=pass`.",
+    "",
+    "## Current context",
+    PROTOCOL_RULES.depthAwareness
+  ].join("\n");
+}
+
+/** Phrases that Skill / MCP / roster text must all surface (for snapshot tests). */
+export function protocolCanonicalPhrases(): string[] {
+  return [
+    'status:"pending"',
+    "running",
+    "wake",
+    "pending",
+    "no ping-pong",
+    "entire task",
+    "submit_verdict",
+    "needs_changes"
+  ];
+}

@@ -1,6 +1,7 @@
 import "./fixtures/electron-stub.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 let Database;
 let bindingAvailable = true;
@@ -48,7 +49,7 @@ test("migration creates delegation_events table with expected columns", async (t
     for (const name of [
       "id", "run_id", "parent_event_id", "agent_id", "agent_name", "role_label",
       "task_text", "depth", "status", "result_summary", "can_write",
-      "started_at", "ended_at"
+      "started_at", "ended_at", "verdict", "verdict_summary"
     ]) {
       assert.ok(cols.includes(name), `delegation_events.${name} missing`);
     }
@@ -158,6 +159,84 @@ test("createDelegationRun inserts a kind=delegation run row", async (t) => {
     assert.equal(run.goal, "实现登录页");
     assert.equal(run.status, "running");
     assert.equal(run.teamId, "team-del-1");
+  });
+});
+
+test("App wires delegation onRunFinished like workflow completion notifications", () => {
+  const src = fs.readFileSync(
+    new URL("../src/App.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(src, /delegation\?\.onRunFinished/);
+  assert.match(src, /handleTeamRunFinished/);
+  assert.match(src, /source: "workflow" \| "delegation"/);
+  assert.match(src, /eventId: `\$\{source\}:\$\{event\.runId\}`/);
+});
+
+test("preload exposes delegation.onRunFinished bridge", () => {
+  const src = fs.readFileSync(
+    new URL("../electron/preload.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(src, /delegation:\/\/finished/);
+  assert.match(src, /onRunFinished/);
+});
+
+test("setDelegationRunStatus notifies finished handler on terminal transition", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const {
+      createDelegationRun,
+      setDelegationRunStatus,
+      bindDelegationRunFinishedNotifier
+    } = await import("../dist-electron/cli/delegationRuns.js");
+
+    const events = [];
+    bindDelegationRunFinishedNotifier((event) => {
+      events.push(event);
+    });
+
+    const id = createDelegationRun({
+      goal: "ship feature X",
+      teamId: "t",
+      teamSnapshotJson: "{}",
+      conversationId: "conv-1"
+    });
+
+    setDelegationRunStatus(id, "running");
+    setDelegationRunStatus(id, "blocked");
+    assert.equal(events.length, 0, "non-terminal must not notify");
+
+    setDelegationRunStatus(id, "completed");
+    assert.equal(events.length, 1);
+    assert.equal(events[0].runId, id);
+    assert.equal(events[0].conversationId, "conv-1");
+    assert.equal(events[0].status, "completed");
+    assert.match(events[0].name, /ship feature/);
+
+    setDelegationRunStatus(id, "completed");
+    assert.equal(events.length, 1, "repeat terminal must not re-notify");
+
+    const id2 = createDelegationRun({
+      goal: "fail me",
+      teamId: "t",
+      teamSnapshotJson: "{}",
+      conversationId: "conv-2"
+    });
+    setDelegationRunStatus(id2, "failed");
+    assert.equal(events.length, 2);
+    assert.equal(events[1].status, "failed");
+
+    const id3 = createDelegationRun({
+      goal: "kill me",
+      teamId: "t",
+      teamSnapshotJson: "{}",
+      conversationId: "conv-3"
+    });
+    setDelegationRunStatus(id3, "killed");
+    assert.equal(events.length, 2, "killed must not notify (user stop)");
+
+    bindDelegationRunFinishedNotifier(null);
   });
 });
 

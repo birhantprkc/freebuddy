@@ -169,7 +169,9 @@ const ALLOW = [
   "delegation:listPendingApprovals",
   "delegation:listTeams",
   "delegation:stopRun",
-  "delegation:updateTeam"
+  "delegation:updateTeam",
+  "delegation:hasRunForConversation",
+  "delegation:followUp"
 ] as const;
 
 const ADMIN_ONLY = [
