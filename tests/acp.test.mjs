@@ -338,7 +338,7 @@ test("buildCommand starts DeepSeek Harness through its ACP demo server", () => {
   const built = buildCommand({ adapter: "dsh-acp", prompt: "hello" });
   const config = resolveDshAcpConfigPath();
 
-  assert.equal(built.bin, "dsh-acp-demo");
+  assert.equal(built.bin, "deepseek-harness-acp");
   assert.deepEqual(built.args, ["--config", config]);
   assert.equal(fs.existsSync(config), true);
   assert.equal(built.promptViaStdin, false);
@@ -578,7 +578,7 @@ test("DeepSeek Harness ACP rejects client MCP servers", () => {
 test("buildCommand silences Node SQLite ExperimentalWarning for DeepSeek ACP", () => {
   const built = buildCommand({ adapter: "dsh-acp", prompt: "hello" });
 
-  assert.equal(built.bin, "dsh-acp-demo");
+  assert.equal(built.bin, "deepseek-harness-acp");
   assert.equal(built.args.includes(DSH_ACP_NODE_DISABLE_WARNING), false);
   assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
   assert.doesNotMatch(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);

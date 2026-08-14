@@ -252,7 +252,7 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
   {
     id: "dsh-acp",
     label: "DeepSeek Harness",
-    defaultBinary: "dsh-acp-demo",
+    defaultBinary: "deepseek-harness-acp",
     checkProbe: { args: [], versionOptional: true, skipSpawn: true },
     streamMode: "raw",
     commandGroup: "deepseek",
@@ -365,8 +365,8 @@ export function isDefaultDshAcpBinary(binary?: string): boolean {
   if (!/[\\/]/.test(trimmed)) return true;
   const normalized = trimmed.replace(/\\/g, "/").toLowerCase();
   return (
-    /\/npm\/dsh-acp-demo(?:\.cmd|\.exe|\.bat|\.ps1)?$/i.test(normalized) ||
-    /\/node_modules\/@deepseek-ai\/dsh-acp-demo\/lib\/bin\.js$/i.test(normalized)
+    /\/npm\/(?:dsh-acp-demo|deepseek-harness-acp|dsh-acp)(?:\.cmd|\.exe|\.bat|\.ps1)?$/i.test(normalized) ||
+    /\/node_modules\/(@deepseek-ai\/dsh-acp-demo|deepseek-harness-acp)\/lib\/bin\.js$/i.test(normalized)
   );
 }
 
@@ -378,7 +378,7 @@ function dshAcpDemoBinJsFromDir(demoDir: string): string | undefined {
 function dshAcpDemoBinJsFromBinaryHint(binary?: string): string | undefined {
   const trimmed = binary?.trim();
   if (!trimmed || !/[\\/]/.test(trimmed)) return undefined;
-  if (/dsh-acp-demo[/\\]lib[/\\]bin\.js$/i.test(trimmed) && existsSync(trimmed)) {
+  if (/(?:dsh-acp-demo|deepseek-harness-acp)[/\\]lib[/\\]bin\.js$/i.test(trimmed) && existsSync(trimmed)) {
     return trimmed;
   }
   const demoDir = resolveDshAcpDemoDirFromBinary(trimmed);
@@ -393,8 +393,18 @@ function wellKnownGlobalDshAcpDemoBinJs(
     (env.APPDATA?.trim()
       ? path.join(env.APPDATA.trim(), "npm", "node_modules", "@deepseek-ai")
       : undefined);
-  if (!residue) return undefined;
-  return dshAcpDemoBinJsFromDir(path.join(residue, "dsh-acp-demo"));
+  if (residue) {
+    const demo = dshAcpDemoBinJsFromDir(path.join(residue, "dsh-acp-demo"));
+    if (demo) return demo;
+  }
+  const appdata = env.APPDATA?.trim();
+  if (appdata) {
+    const standalone = dshAcpDemoBinJsFromDir(
+      path.join(appdata, "npm", "node_modules", "deepseek-harness-acp")
+    );
+    if (standalone) return standalone;
+  }
+  return undefined;
 }
 
 /** Resolve the `dsh-acp-demo` entry we should spawn with `node`, if any. */
@@ -977,8 +987,17 @@ export function syncDshAcpManagedConfig(dataDir: string): string {
 }
 
 export function dshAcpManagedDemoBin(dataDir: string): string {
+  const root = dshAcpManagedRoot(dataDir);
+  const standalone = path.join(
+    root,
+    "node_modules",
+    "deepseek-harness-acp",
+    "lib",
+    "bin.js"
+  );
+  if (existsSync(standalone)) return standalone;
   return path.join(
-    dshAcpManagedRoot(dataDir),
+    root,
     "node_modules",
     "@deepseek-ai",
     "dsh-acp-demo",
@@ -1023,7 +1042,7 @@ export function resolveDshAcpDemoDirFromBinary(
     try {
       const text = readFileSync(current, "utf8");
       const match = text.match(
-        /node_modules[/\\]@deepseek-ai[/\\]dsh-acp-demo[/\\]lib[/\\]bin\.js/i
+        /node_modules[/\\](@deepseek-ai[/\\]dsh-acp-demo|deepseek-harness-acp)[/\\]lib[/\\]bin\.js/i
       );
       if (match) {
         const relative = match[0]
@@ -1046,8 +1065,23 @@ export function resolveDshAcpDemoDirFromBinary(
   return undefined;
 }
 
+export function isStandaloneDshAcpBinary(binary?: string): boolean {
+  const base = dshAcpBinaryBaseName(binary ?? "");
+  return base.startsWith("deepseek-harness-acp") || base.startsWith("dsh-acp");
+}
+
 export function dshAcpCompositionReady(binPath: string): boolean {
   const pkgDir = resolveDshAcpDemoDirFromBinary(binPath) ?? path.dirname(binPath);
+  if (
+    pkgDir.endsWith("deepseek-harness-acp") ||
+    isStandaloneDshAcpBinary(binPath)
+  ) {
+    return (
+      existsSync(path.join(pkgDir, "package.json")) ||
+      nodeModulesHasPackage(pkgDir, "deepseek-harness-acp") ||
+      nodeModulesHasPackage(pkgDir, DSH_ACP_PROBE_PACKAGE)
+    );
+  }
   return nodeModulesHasPackage(pkgDir, DSH_ACP_PROBE_PACKAGE);
 }
 
@@ -1069,20 +1103,10 @@ export function dshAcpInstallCommand(options?: {
   yamlText?: string;
   prefix?: string;
 }): string {
-  const yamlText =
-    options?.yamlText ?? readFileSync(bundledDshAcpConfigPath(), "utf8");
-  const specs = parseDshAcpCompositionPackages(yamlText).map(
-    (pkg) => `${pkg}@${DSH_ACP_NPM_TAG}`
-  );
-  specs.sort((a, b) => {
-    if (a.startsWith("@deepseek-ai/dsh-acp-demo@")) return -1;
-    if (b.startsWith("@deepseek-ai/dsh-acp-demo@")) return 1;
-    return a.localeCompare(b);
-  });
   const target = options?.prefix
     ? `--prefix ${quoteForShell(options.prefix)}`
     : "-g";
-  return `npm install ${target} --include=optional --ignore-scripts ${specs.join(" ")}`;
+  return `npm install ${target} deepseek-harness-acp`;
 }
 
 export function hasExplicitToolSessionArg(
