@@ -10,7 +10,8 @@ const KNOWN_ADAPTERS = new Set([
   "qoder-acp",
   "codebuddy-acp",
   "grok-acp",
-  "agy-acp"
+  "agy-acp",
+  "dsh-acp"
 ]);
 
 export type TelemetryErrorCategory =

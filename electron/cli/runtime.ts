@@ -7,12 +7,21 @@ import type { Readable, Writable } from "node:stream";
 
 import {
   buildCommand,
+  buildDshAcpRuntimeDiagnostics,
+  dshAcpKoffiGuardPath,
+  dshAcpManagedRoot,
+  dshAcpWindowsResiduePath,
+  ensureDshAcpCwd,
   getAdapterDefinition,
-  hasExplicitToolSessionArg
+  hasExplicitToolSessionArg,
+  mergeNodeOptions,
+  patchDshAcpRuntimeFromCommand,
+  sanitizeCliAgentEnv,
+  syncDshAcpManagedConfig
 } from "./adapters.js";
 import { runAcpAgent } from "./acpRuntime.js";
 import { runLegacyCliAgent } from "./legacyRuntime.js";
-import { getLogDir } from "./db.js";
+import { getDataDir, getLogDir } from "./db.js";
 import { updateRuntimeRun, waitForCodexToolchainAutoUpdate } from "./check.js";
 import { safeSendToWebContents } from "./ipcSend.js";
 import { getToolSession } from "./store.js";
@@ -144,15 +153,17 @@ export function mergeBuiltEnv(
   base: Record<string, string | undefined>,
   patch?: Record<string, string>
 ) {
-  if (!patch) return base;
-  const next = { ...base };
+  if (!patch) return sanitizeCliAgentEnv(base);
+  const next: Record<string, string | undefined> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
     next[key] =
       key === "OPENCODE_CONFIG_CONTENT" || key === "CODEX_CONFIG"
         ? mergeJsonEnvValue(next[key], value)
-        : value;
+        : key === "NODE_OPTIONS"
+          ? mergeNodeOptions(next[key], value)
+          : value;
   }
-  return next;
+  return sanitizeCliAgentEnv(next);
 }
 
 export async function cliRun(
@@ -232,12 +243,22 @@ export async function cliRun(
     args.announceSkills && args.skills?.length
       ? { ...args, prompt: buildSkillAnnouncement(args.prompt, args.skills) }
       : args;
+  const withWorkspace: CliRunArgs =
+    effectiveArgs.adapter === "dsh-acp"
+      ? {
+          ...effectiveArgs,
+          cwd: ensureDshAcpCwd(effectiveArgs.cwd, getDataDir())
+        }
+      : effectiveArgs;
+  if (withWorkspace.adapter === "dsh-acp") {
+    syncDshAcpManagedConfig(getDataDir());
+  }
   const isolatedCwd = remoteIsolated
-    ? await isolateRemoteCwdForCaller(effectiveArgs.cwd)
-    : effectiveArgs.cwd;
+    ? await isolateRemoteCwdForCaller(withWorkspace.cwd)
+    : withWorkspace.cwd;
   const executionArgs: CliRunArgs = remoteIsolated
-    ? { ...effectiveArgs, cwd: sandboxWorkingDirectory(isolatedCwd) }
-    : effectiveArgs;
+    ? { ...withWorkspace, cwd: sandboxWorkingDirectory(isolatedCwd) }
+    : { ...withWorkspace, cwd: isolatedCwd };
 
   let built;
   try {
@@ -248,8 +269,38 @@ export async function cliRun(
       extraArgs: executionArgs.extraArgs,
       cwd: executionArgs.cwd,
       toolSessionId,
-      workspaceRoots: args.workspaceRoots
+      workspaceRoots: args.workspaceRoots,
+      dshAcpRuntimeRoot:
+        executionArgs.adapter === "dsh-acp"
+          ? dshAcpManagedRoot(getDataDir())
+          : undefined
     });
+    if (executionArgs.adapter === "dsh-acp") {
+      patchDshAcpRuntimeFromCommand(built);
+      const configIdx = built.args.findIndex(
+        (arg) => arg === "--config" || arg === "-c"
+      );
+      const configPath =
+        configIdx >= 0
+          ? built.args[configIdx + 1]
+          : built.args
+              .find((arg) => arg.startsWith("--config=") || arg.startsWith("-c="))
+              ?.split("=")
+              .slice(1)
+              .join("=");
+      appendLog(
+        logStream,
+        "system",
+        `dsh-acp runtime ${JSON.stringify(
+          buildDshAcpRuntimeDiagnostics({
+            runtimeRoot: dshAcpManagedRoot(getDataDir()),
+            configPath,
+            spawnBin: built.bin,
+            spawnArgs: built.args
+          })
+        )}`
+      );
+    }
   } catch (e) {
     const msg = `build command failed: ${(e as Error)?.message || e}`;
     appendLog(logStream, "system", msg);
@@ -291,7 +342,14 @@ export async function cliRun(
           ...(executionArgs.promptAttachments ?? []).map(
             (attachment) => attachment.path
           ),
-          ...(executionArgs.skills ?? []).map((skill) => skill.rootPath)
+          ...(executionArgs.skills ?? []).map((skill) => skill.rootPath),
+          ...(executionArgs.adapter === "dsh-acp"
+            ? [
+                dshAcpManagedRoot(getDataDir()),
+                dshAcpKoffiGuardPath(),
+                dshAcpWindowsResiduePath() ?? ""
+              ].filter(Boolean)
+            : [])
         ]
       });
     } catch (error) {

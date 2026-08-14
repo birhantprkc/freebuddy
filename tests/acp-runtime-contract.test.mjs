@@ -135,6 +135,60 @@ test("acpRuntime registers workspace FS MCP only for multi-root", () => {
   assert.match(acpRuntimeSource, /roots\.length\s*>\s*1/);
 });
 
+test("acpRuntime skips client MCP servers for adapters that reject them", () => {
+  assert.match(acpRuntimeSource, /adapterAcceptsClientMcpServers\(args\.adapter\)/);
+  assert.match(
+    acpRuntimeSource,
+    /DeepSeek Harness ACP rejects non-empty mcpServers/
+  );
+});
+
+test("ACP runtime hides DeepSeek Node SQLite ExperimentalWarning from UI stderr", () => {
+  assert.match(acpRuntimeSource, /isDshAcpExperimentalWarningLine/);
+  const stderrHandler = acpRuntimeSource.slice(
+    acpRuntimeSource.indexOf('rlErr.on("line"'),
+    acpRuntimeSource.indexOf("child.on(\"close\"")
+  );
+  assert.match(stderrHandler, /args\.adapter === "dsh-acp"/);
+  assert.match(stderrHandler, /isDshAcpExperimentalWarningLine\(line\)/);
+  assert.match(stderrHandler, /recentStderr\.push\(line\)/);
+  assert.ok(
+    stderrHandler.indexOf("isDshAcpExperimentalWarningLine(line)") <
+      stderrHandler.indexOf("recentStderr.push(line)"),
+    "SQLite ExperimentalWarning is skipped before it becomes UI stderr or crash text"
+  );
+});
+
+test("cliRun merges NODE_OPTIONS instead of overwriting them", () => {
+  assert.match(runtimeSource, /key === "NODE_OPTIONS"/);
+  assert.match(runtimeSource, /mergeNodeOptions/);
+});
+
+test("cliRun sanitizes Electron env and gives DeepSeek a workspace when cwd is unset", () => {
+  assert.match(runtimeSource, /sanitizeCliAgentEnv/);
+  assert.match(runtimeSource, /ensureDshAcpCwd/);
+  assert.match(runtimeSource, /syncDshAcpManagedConfig/);
+  assert.match(acpRuntimeSource, /formatAcpAgentExitMessage/);
+});
+
+test("managed DeepSeek spawn overlays the harness fork before the agent starts", () => {
+  const adaptersSource = fs.readFileSync(
+    new URL("../electron/cli/adapters.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(adaptersSource, /patchDshAcpManagedRuntime\(root\)/);
+  assert.match(adaptersSource, /patchDshAcpRuntimeFromBin/);
+  assert.match(adaptersSource, /dshHarnessOverlayDir/);
+  assert.match(adaptersSource, /dsh-harness-overlays/);
+  assert.match(adaptersSource, /dshAcpKoffiGuardImportFlag/);
+  assert.match(adaptersSource, /resolveDshAcpDemoBinJs/);
+  assert.match(adaptersSource, /spawnKind/);
+  assert.match(runtimeSource, /patchDshAcpRuntimeFromCommand/);
+  assert.match(runtimeSource, /buildDshAcpRuntimeDiagnostics/);
+  assert.match(runtimeSource, /spawnArgs:\s*built\.args/);
+  assert.match(acpRuntimeSource, /recentStderr\.slice\(-40\)/);
+});
+
 test("cliRun passes workspaceRoots into buildCommand", () => {
   assert.match(runtimeSource, /workspaceRoots:\s*args\.workspaceRoots/);
 });

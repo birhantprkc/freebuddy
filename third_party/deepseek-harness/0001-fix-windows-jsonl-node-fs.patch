@@ -1,0 +1,472 @@
+From 2c09511d205808de70ee16edb67f8742164f81ef Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Thu, 13 Aug 2026 22:08:49 +0000
+Subject: [PATCH] fix: publish Windows JSONL sessions with Node fs
+
+The ACP demo materializes the first session log through a native Win32
+binding (MoveFileExW). On Windows Electron/Node hosts that aborts the
+process with STATUS_ACCESS_VIOLATION (0xC0000005) during session/prompt.
+
+Keep the win32 helper names so the JSONL backend is unchanged. Implement
+them with rename, copy fallback, and mkdir. Close the ACP demo SQLite
+index at startup (openAt: never).
+
+Co-authored-by: maojindao55 <maojindao55@users.noreply.github.com>
+---
+ packages/examples/acp-demo/src/index.ts       |   2 +-
+ .../session-persistence-jsonl/src/win32.ts    | 166 +++-------------
+ .../tests/win32.spec.ts                       | 185 ++++--------------
+ 3 files changed, 66 insertions(+), 287 deletions(-)
+
+diff --git a/packages/examples/acp-demo/src/index.ts b/packages/examples/acp-demo/src/index.ts
+index bd5981a..0a88daa 100644
+--- a/packages/examples/acp-demo/src/index.ts
++++ b/packages/examples/acp-demo/src/index.ts
+@@ -131,7 +131,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
+     const checkpoint = ctx.plugin(sessionCheckpointPolicy)
+     await checkpoint
+     yield checkpoint.dispose
+-    const query = ctx.plugin(SqliteSessionQueryEngine, { path: join(persistenceRoot, 'session-query.db') })
++    const query = ctx.plugin(SqliteSessionQueryEngine, { path: join(persistenceRoot, 'session-query.db'), openAt: 'never' })
+     await query
+     yield query.dispose
+     const transport = ctx.plugin(acp, { provider: config.provider, model: config.model })
+diff --git a/packages/session/session-persistence-jsonl/src/win32.ts b/packages/session/session-persistence-jsonl/src/win32.ts
+index c3fa852..c19d40d 100644
+--- a/packages/session/session-persistence-jsonl/src/win32.ts
++++ b/packages/session/session-persistence-jsonl/src/win32.ts
+@@ -1,155 +1,53 @@
+ /**
+- * Windows durable namespace helpers for the JSONL backend.
++ * Windows publish helpers for the JSONL backend.
+  *
+  * POSIX publishes a newly-created log by creating a directory entry and then
+  * fsyncing the parent directory. Windows does not expose that parent-directory
+- * fsync contract through Node, so the Windows path uses the native durable
+- * namespace primitive instead: create a staging object in the target directory
+- * and publish it with `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)` without
+- * replacement or cross-volume copy fallback.
++ * fsync contract through Node. The previous implementation loaded a native
++ * Win32 binding and called `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)`. That
++ * aborts some Windows Electron/Node hosts with STATUS_ACCESS_VIOLATION
++ * (0xC0000005) the first time a session is materialized.
++ *
++ * Keep the exported names so `index.ts` is unchanged. Publish with Node fs:
++ * rename when the volume allows it, copy+remove on EXDEV/EPERM, mkdir for
++ * directories.
+  *
+  * @module dsh-session-persistence-jsonl/win32
+  */
+ 
+-import { mkdtemp, rm, stat } from 'node:fs/promises'
+-import { join, parse, resolve, toNamespacedPath } from 'node:path'
+-
+-type MoveFileExW = (existing: string, replacement: string, flags: number) => number
+-type GetLastError = () => number
++import { copyFile, mkdir, rename, rm, stat } from 'node:fs/promises'
+ 
+-interface Win32Bindings {
+-  moveFileExW: MoveFileExW
+-  getLastError: GetLastError
+-}
+-
+-interface Win32ErrnoException extends NodeJS.ErrnoException {
+-  win32Code: number
+-  dest: string
+-}
+-
+-const MOVEFILE_WRITE_THROUGH = 0x00000008
+-const ERROR_FILE_NOT_FOUND = 2
+-const ERROR_PATH_NOT_FOUND = 3
+-const ERROR_ACCESS_DENIED = 5
+-const ERROR_NOT_SAME_DEVICE = 17
+-const ERROR_FILE_EXISTS = 80
+-const ERROR_INVALID_NAME = 123
+-const ERROR_ALREADY_EXISTS = 183
+-
+-let bindings: Win32Bindings | undefined
+-
+-/** Load the small Win32 API lazily so non-Windows processes never load Koffi. */
+-async function win32(): Promise<Win32Bindings> {
+-  if (bindings !== undefined) return bindings
+-  const koffi = (await import('koffi')).default
+-  const kernel32 = koffi.load('kernel32.dll')
+-  bindings = {
+-    moveFileExW: kernel32.func('__stdcall', 'MoveFileExW', 'int', ['str16', 'str16', 'uint']) as MoveFileExW,
+-    getLastError: kernel32.func('__stdcall', 'GetLastError', 'uint', []) as GetLastError,
+-  }
+-  return bindings
+-}
+-
+-function errnoCode(win32Code: number): string {
+-  switch (win32Code) {
+-    case ERROR_FILE_NOT_FOUND:
+-    case ERROR_PATH_NOT_FOUND:
+-      return 'ENOENT'
+-    case ERROR_ACCESS_DENIED:
+-      return 'EACCES'
+-    case ERROR_NOT_SAME_DEVICE:
+-      return 'EXDEV'
+-    case ERROR_FILE_EXISTS:
+-    case ERROR_ALREADY_EXISTS:
+-      return 'EEXIST'
+-    case ERROR_INVALID_NAME:
+-      return 'EINVAL'
+-    default:
+-      return 'EIO'
+-  }
+-}
+-
+-function win32Error(syscall: string, win32Code: number, path: string, dest: string): Win32ErrnoException {
+-  const code = errnoCode(win32Code)
+-  const error = new Error(`${syscall} ${code} (Win32 ${win32Code}): ${path} -> ${dest}`) as Win32ErrnoException
+-  error.code = code
+-  error.errno = win32Code
+-  error.syscall = syscall
+-  error.path = path
+-  error.dest = dest
+-  error.win32Code = win32Code
+-  return error
+-}
+-
+-function isENOENT(error: unknown): boolean {
+-  return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+-}
+-
+-function isEEXIST(error: unknown): boolean {
+-  return (error as NodeJS.ErrnoException | null)?.code === 'EEXIST'
+-}
+-
+-async function assertDirectory(path: string): Promise<boolean> {
+-  try {
+-    // A bare drive root is already short, and Node rejects its extended-length
+-    // spelling as EISDIR. Descendants retain the namespace for long-path probes.
+-    const probe = path === parse(path).root ? path : toNamespacedPath(path)
+-    const info = await stat(probe)
+-    if (info.isDirectory()) return true
+-    const error = new Error(`path exists but is not a directory: ${path}`) as NodeJS.ErrnoException
+-    error.code = 'ENOTDIR'
+-    error.path = path
+-    throw error
+-  } catch (error) {
+-    if (isENOENT(error)) return false
+-    throw error
+-  }
++function errorCode(error: unknown): string | undefined {
++  return (error as NodeJS.ErrnoException | null)?.code
+ }
+ 
+ /**
+- * Publish `existing` at `replacement` with Windows write-through rename
+- * semantics. The destination must not already exist; the move must stay within
+- * the volume (no copy fallback flag is set).
++ * Publish `existing` at `replacement`. The destination must not already exist
++ * on the happy path; EXDEV/EPERM fall back to copy+remove.
+  * @param existing - the synced staging path to move.
+- * @param replacement - the final path, which must not already exist.
++ * @param replacement - the final path.
+  */
+ export async function publishNewFileWin32(existing: string, replacement: string): Promise<void> {
+-  const api = await win32()
+-  const ok = api.moveFileExW(toNamespacedPath(existing), toNamespacedPath(replacement), MOVEFILE_WRITE_THROUGH)
+-  if (ok === 0) throw win32Error('MoveFileExW', api.getLastError(), existing, replacement)
++  try {
++    await rename(existing, replacement)
++  } catch (error) {
++    const code = errorCode(error)
++    if (code !== 'EXDEV' && code !== 'EPERM') throw error
++    const info = await stat(existing)
++    if (info.isDirectory()) {
++      await mkdir(replacement, { recursive: true })
++      await rm(existing, { recursive: true, force: true })
++      return
++    }
++    await copyFile(existing, replacement)
++    await rm(existing, { force: true })
++  }
+ }
+ 
+ /**
+- * Create `target` and its missing ancestors with durable Windows namespace
+- * publication. Each missing directory is first created as a random staging
+- * sibling, then moved to its final name with `MOVEFILE_WRITE_THROUGH`; races
+- * with another creator are accepted only after verifying the winner is a
+- * directory.
+- * @param target - the absolute directory path to create durably when absent.
++ * Create `target` and its missing ancestors.
++ * @param target - the absolute directory path to create when absent.
+  */
+ export async function ensureDurableDirectoryWin32(target: string): Promise<void> {
+-  const absolute = resolve(target)
+-  const root = parse(absolute).root
+-  await assertDirectory(root)
+-
+-  const segments = absolute.slice(root.length).split(/[\\/]+/).filter(part => part.length > 0)
+-  let current = root
+-  for (const segment of segments) {
+-    const next = join(current, segment)
+-    if (!await assertDirectory(next)) await createLeafDirectoryWin32(current, next)
+-    current = next
+-  }
+-}
+-
+-async function createLeafDirectoryWin32(parent: string, target: string): Promise<void> {
+-  // Keep the staging component independent of the target basename so a legal
+-  // 255-byte target component does not make mkdtemp's sibling name too long.
+-  const staging = await mkdtemp(toNamespacedPath(join(parent, '.dsh-mkdir-')))
+-  try {
+-    await publishNewFileWin32(staging, target)
+-  } catch (error) {
+-    await rm(staging, { recursive: true, force: true })
+-    if (isEEXIST(error) && await assertDirectory(target)) return
+-    throw error
+-  }
++  await mkdir(target, { recursive: true })
+ }
+diff --git a/packages/session/session-persistence-jsonl/tests/win32.spec.ts b/packages/session/session-persistence-jsonl/tests/win32.spec.ts
+index 3b6cfc4..029d52f 100644
+--- a/packages/session/session-persistence-jsonl/tests/win32.spec.ts
++++ b/packages/session/session-persistence-jsonl/tests/win32.spec.ts
+@@ -1,190 +1,78 @@
+ /**
+- * Unit tests for the Windows durable namespace helper with a mocked kernel32
+- * binding. The real JSONL suite exercises the helper on native Windows; these
+- * tests keep the Win32 error mapping and race handling covered on every host.
++ * Unit tests for the Windows JSONL publish helpers. These no longer mock a
++ * native Win32 binding; they exercise Node fs rename / copy fallback / mkdir.
+  */
+ 
+ import { afterEach, describe, expect, it, vi } from 'vitest'
+-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
++import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+ import { tmpdir } from 'node:os'
+ import { join } from 'node:path'
+ 
+-const MOVEFILE_WRITE_THROUGH = 0x00000008
+-const ERROR_FILE_NOT_FOUND = 2
+-const ERROR_PATH_NOT_FOUND = 3
+-const ERROR_ACCESS_DENIED = 5
+-const ERROR_NOT_SAME_DEVICE = 17
+-const ERROR_FILE_EXISTS = 80
+-const ERROR_INVALID_NAME = 123
+-const ERROR_ALREADY_EXISTS = 183
+-
+-type MoveFileExW = (existing: string, replacement: string, flags: number, setLastError: (code: number) => void) => number
+-
+ const roots: string[] = []
+ 
+-function stripNamespace(path: string): string {
+-  if (path.startsWith('\\\\?\\UNC\\')) return `\\\\${path.slice('\\\\?\\UNC\\'.length)}`
+-  if (path.startsWith('\\\\?\\')) return path.slice('\\\\?\\'.length)
+-  return path
+-}
+-
+ async function tempRoot(): Promise<string> {
+   const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-win32-'))
+   roots.push(dir)
+   return dir
+ }
+ 
+-async function importWithMove(moveFileExW: MoveFileExW): Promise<typeof import('../src/win32.ts')> {
+-  vi.resetModules()
+-  vi.doMock('koffi', () => {
+-    let lastError = 0
+-    const setLastError = (code: number): void => { lastError = code }
+-    const move: MoveFileExW = (existing, replacement, flags, setError) => {
+-      const ok = moveFileExW(existing, replacement, flags, setError)
+-      lastError = ok === 0 ? lastError : 0
+-      return ok
+-    }
+-    return {
+-      default: {
+-        load: () => ({
+-          func: (_convention: string, name: string, result: string) => {
+-            if (name === 'MoveFileExW') return (existing: string, replacement: string, flags: number) => {
+-              expect(result).toBe('int')
+-              const ok = move(existing, replacement, flags, setLastError)
+-              return ok
+-            }
+-            return () => lastError
+-          },
+-        }),
+-      },
+-    }
+-  })
+-  return import('../src/win32.ts')
+-}
+-
+-async function importWithError(code: number): Promise<typeof import('../src/win32.ts')> {
+-  vi.resetModules()
+-  vi.doMock('koffi', () => ({
+-    default: {
+-      load: () => ({
+-        func: (_convention: string, name: string) => {
+-          if (name === 'MoveFileExW') return () => 0
+-          return () => code
+-        },
+-      }),
+-    },
+-  }))
+-  return import('../src/win32.ts')
+-}
+-
+-async function importWithFilesystemMove(): Promise<typeof import('../src/win32.ts')> {
+-  return importWithMove((existing, replacement, flags, setLastError) => {
+-    expect(flags).toBe(MOVEFILE_WRITE_THROUGH)
+-    const from = stripNamespace(existing)
+-    const to = stripNamespace(replacement)
+-    if (!existsSync(from)) { setLastError(ERROR_FILE_NOT_FOUND); return 0 }
+-    if (existsSync(to)) { setLastError(ERROR_ALREADY_EXISTS); return 0 }
+-    renameSync(from, to)
+-    return 1
+-  })
+-}
+-
+ afterEach(async () => {
+-  vi.doUnmock('koffi')
+   vi.doUnmock('node:fs/promises')
+-  vi.doUnmock('node:path')
+   vi.resetModules()
+   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+ })
+ 
+-describe('Windows durable namespace helpers', () => {
+-  it('keeps drive-root probes native while namespacing descendants', async () => {
+-    const probes: string[] = []
++describe('Windows publish helpers', () => {
++  it('publishes a new file with rename', async () => {
++    const { publishNewFileWin32 } = await import('../src/win32.ts')
++    const root = await tempRoot()
++    const tmp = join(root, 'log.tmp')
++    const final = join(root, 'log.jsonl')
++    await writeFile(tmp, 'content')
++
++    await publishNewFileWin32(tmp, final)
++    expect(existsSync(tmp)).toBe(false)
++    expect(readFileSync(final, 'utf8')).toBe('content')
++  })
++
++  it('falls back to copy+remove when rename reports EXDEV', async () => {
+     vi.resetModules()
+     vi.doMock('node:fs/promises', async (importOriginal) => {
+       const actual = await importOriginal<typeof import('node:fs/promises')>()
+       return {
+         ...actual,
+-        stat: async (path: string) => {
+-          probes.push(path)
+-          return { isDirectory: () => true }
++        rename: async () => {
++          const error = new Error('EXDEV: cross-device link not permitted') as NodeJS.ErrnoException
++          error.code = 'EXDEV'
++          throw error
+         },
+       }
+     })
+-    vi.doMock('node:path', async (importOriginal) => {
+-      const actual = await importOriginal<typeof import('node:path')>()
+-      return {
+-        ...actual,
+-        join: (...paths: string[]) => actual.win32.join(...paths),
+-        parse: (path: string) => actual.win32.parse(path),
+-        resolve: (...paths: string[]) => actual.win32.resolve(...paths),
+-        toNamespacedPath: (path: string) => actual.win32.toNamespacedPath(path),
+-      }
+-    })
+-    const { ensureDurableDirectoryWin32 } = await import('../src/win32.ts')
+-
+-    await ensureDurableDirectoryWin32('C:\\existing')
+-
+-    expect(probes).toEqual(['C:\\', '\\\\?\\C:\\existing'])
+-  })
+-
+-  it('publishes a new file with write-through MoveFileExW semantics', async () => {
+-    const { publishNewFileWin32 } = await importWithFilesystemMove()
++    const { publishNewFileWin32 } = await import('../src/win32.ts')
+     const root = await tempRoot()
+     const tmp = join(root, 'log.tmp')
+     const final = join(root, 'log.jsonl')
+-    await writeFile(tmp, 'content')
++    await writeFile(tmp, 'copied')
+ 
+     await publishNewFileWin32(tmp, final)
+     expect(existsSync(tmp)).toBe(false)
+-    expect(readFileSync(final, 'utf8')).toBe('content')
++    expect(readFileSync(final, 'utf8')).toBe('copied')
+   })
+ 
+-  it('maps Win32 publish failures to Node-style errno codes', async () => {
+-    const cases = [
+-      [ERROR_FILE_NOT_FOUND, 'ENOENT'],
+-      [ERROR_PATH_NOT_FOUND, 'ENOENT'],
+-      [ERROR_ACCESS_DENIED, 'EACCES'],
+-      [ERROR_NOT_SAME_DEVICE, 'EXDEV'],
+-      [ERROR_FILE_EXISTS, 'EEXIST'],
+-      [ERROR_ALREADY_EXISTS, 'EEXIST'],
+-      [ERROR_INVALID_NAME, 'EINVAL'],
+-      [9999, 'EIO'],
+-    ] as const
+-    for (const [win32Code, code] of cases) {
+-      const { publishNewFileWin32 } = await importWithError(win32Code)
+-      await expect(publishNewFileWin32('from', 'to')).rejects.toMatchObject({ code, win32Code, path: 'from', dest: 'to' })
+-    }
+-  })
+-
+-  it('creates missing directories through staging siblings and tolerates an already-created race', async () => {
++  it('creates missing directories and is idempotent', async () => {
++    const { ensureDurableDirectoryWin32 } = await import('../src/win32.ts')
+     const root = await tempRoot()
+-    const raced = join(root, 'raced')
+-    const { ensureDurableDirectoryWin32 } = await importWithMove((existing, replacement, flags, setLastError) => {
+-      expect(flags).toBe(MOVEFILE_WRITE_THROUGH)
+-      const from = stripNamespace(existing)
+-      const to = stripNamespace(replacement)
+-      if (to === raced) {
+-        mkdirSync(to)
+-        setLastError(ERROR_ALREADY_EXISTS)
+-        return 0
+-      }
+-      if (!existsSync(from)) { setLastError(ERROR_FILE_NOT_FOUND); return 0 }
+-      if (existsSync(to)) { setLastError(ERROR_ALREADY_EXISTS); return 0 }
+-      renameSync(from, to)
+-      return 1
+-    })
++    const target = join(root, 'a', 'b')
+ 
+-    await ensureDurableDirectoryWin32(join(root, 'a', 'b'))
+-    expect(existsSync(join(root, 'a', 'b'))).toBe(true)
+-    await ensureDurableDirectoryWin32(join(root, 'a', 'b'))
+-    await ensureDurableDirectoryWin32(raced)
+-    expect(existsSync(raced)).toBe(true)
++    await ensureDurableDirectoryWin32(target)
++    expect(existsSync(target)).toBe(true)
++    await ensureDurableDirectoryWin32(target)
++    expect(existsSync(target)).toBe(true)
+   })
+ 
+   it('keeps staging names valid for a maximum-length target component', async () => {
+-    const { ensureDurableDirectoryWin32 } = await importWithFilesystemMove()
++    const { ensureDurableDirectoryWin32 } = await import('../src/win32.ts')
+     const root = await tempRoot()
+     const target = join(root, 'x'.repeat(255))
+ 
+@@ -192,15 +80,8 @@ describe('Windows durable namespace helpers', () => {
+     expect(existsSync(target)).toBe(true)
+   })
+ 
+-  it('surfaces directory publication failures other than an existing-target race', async () => {
+-    const { ensureDurableDirectoryWin32 } = await importWithError(ERROR_ACCESS_DENIED)
+-    const root = await tempRoot()
+-
+-    await expect(ensureDurableDirectoryWin32(join(root, 'denied'))).rejects.toMatchObject({ code: 'EACCES' })
+-  })
+-
+   it('rejects a non-directory component instead of treating it as missing', async () => {
+-    const { ensureDurableDirectoryWin32 } = await importWithFilesystemMove()
++    const { ensureDurableDirectoryWin32 } = await import('../src/win32.ts')
+     const root = await tempRoot()
+     const blocked = join(root, 'blocked')
+     writeFileSync(blocked, 'x')
+-- 
+2.43.0
+

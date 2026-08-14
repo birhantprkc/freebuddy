@@ -84,5 +84,11 @@ export const builtinCliMembers: CLIMember[] = [
     name: "Antigravity",
     enabled: true,
     cli: { adapter: "agy-acp", approvalMode: "auto", showStderr: true }
+  },
+  {
+    id: "cli-dsh-acp",
+    name: "DeepSeek Harness",
+    enabled: true,
+    cli: { adapter: "dsh-acp", approvalMode: "auto", showStderr: true }
   }
 ];

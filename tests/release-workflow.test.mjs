@@ -32,6 +32,10 @@ test("electron-builder config packages FreeBuddy for desktop platforms", () => {
   assert.match(builderConfig, /extraResources:[\s\S]*from:\s+assets\/app-icon\.png[\s\S]*to:\s+app-icon\.png/m);
   assert.match(builderConfig, /beforePack:\s+scripts\/prepare-tokscale-for-pack\.mjs/);
   assert.match(builderConfig, /extraResources:[\s\S]*from:\s+\.build\/tokscale[\s\S]*to:\s+tokscale/m);
+  assert.match(
+    builderConfig,
+    /extraResources:[\s\S]*from:\s+third_party\/deepseek-harness\/overlays[\s\S]*to:\s+dsh-harness-overlays/m
+  );
 });
 
 test("release workflow uploads version-suffixed assets and update metadata for every platform", () => {

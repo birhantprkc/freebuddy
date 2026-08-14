@@ -1047,6 +1047,7 @@
       "checkTimedOut": "版本检测超时，请重试或检查安全软件是否阻止程序启动。",
       "installBroken": "安装损坏 — 请重试",
       "commandNotFound": "未找到命令",
+      "dshAcpPluginTreeMissing": "已找到 dsh-acp-demo，但 ACP 插件包未安装。请再点一次安装。",
       "codexAcpUpgradeRequired": "需要新版 Codex ACP — 请安装",
       "checkProbeFailed": "检测失败 — 请重试",
       "checkInstalled": "{{label}} 检查完成：已安装{{version}}",

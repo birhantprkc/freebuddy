@@ -1,4 +1,19 @@
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync as fsRealpath
+} from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const DSH_ACP_NPM_TAG = "next";
+
+/** Node 22+ emits this for `node:sqlite`; DeepSeek ACP uses it via session-query-sqlite. */
+export const DSH_ACP_NODE_DISABLE_WARNING =
+  "--disable-warning=ExperimentalWarning";
 
 export type CLIAdapterId =
   | "codex"
@@ -13,6 +28,7 @@ export type CLIAdapterId =
   | "codebuddy-acp"
   | "grok-acp"
   | "agy-acp"
+  | "dsh-acp"
   | (string & {});
 
 export type CLIStreamMode =
@@ -48,6 +64,11 @@ export interface CLIAdapterDefinition {
 export interface CliCheckProbe {
   args: string[];
   versionOptional: boolean;
+  /**
+   * Skip spawning the binary. Used for ACP stdio servers that have no
+   * `--version` and would otherwise hang on stdin.
+   */
+  skipSpawn?: boolean;
 }
 
 const legacyAdapterDefinitions: CLIAdapterDefinition[] = [
@@ -227,6 +248,23 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     installHint: "npm install -g agy-acp-bridge",
     docsUrl: "https://github.com/maojindao55/agy-acp",
     protocol: "acp"
+  },
+  {
+    id: "dsh-acp",
+    label: "DeepSeek Harness",
+    defaultBinary: "dsh-acp-demo",
+    checkProbe: { args: [], versionOptional: true, skipSpawn: true },
+    streamMode: "raw",
+    commandGroup: "deepseek",
+    capabilities: {
+      toolSession: true,
+      skills: { mode: "native", nativeDirs: [".dsh/skills"], reloadPolicy: "process-start" }
+    },
+    toolSessionArgs: [],
+    toolSessionArgPrefixes: [],
+    installHint: dshAcpInstallCommand(),
+    docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
+    protocol: "acp"
   }
 ];
 
@@ -258,6 +296,795 @@ export function getCliCheckProbe(adapter: string): CliCheckProbe {
   );
 }
 
+/**
+ * DeepSeek Harness ACP is automation-only and rejects non-empty `mcpServers`
+ * on `session/new`. Other adapters accept FreeBuddy's Draft/Browser/skill MCP.
+ */
+export function adapterAcceptsClientMcpServers(adapter: string): boolean {
+  return adapter !== "dsh-acp";
+}
+
+export function mergeNodeOptions(
+  current: string | undefined,
+  patch: string
+): string {
+  const tokens: string[] = [];
+  const seen = new Set<string>();
+  for (const token of [...(current ?? "").split(/\s+/), ...patch.split(/\s+/)]) {
+    if (!token || seen.has(token)) continue;
+    seen.add(token);
+    tokens.push(token);
+  }
+  return tokens.join(" ");
+}
+
+export function isDshAcpExperimentalWarningLine(line: string): boolean {
+  const text = line.trim();
+  if (/ExperimentalWarning:\s*SQLite is an experimental feature/i.test(text)) {
+    return true;
+  }
+  return /Use `node --trace-warnings/i.test(text);
+}
+
+function dshAcpBinaryBaseName(binary: string): string {
+  return binary.split(/[/\\]/).pop()?.toLowerCase() ?? "";
+}
+
+function isNodeBinary(bin: string): boolean {
+  const base = dshAcpBinaryBaseName(bin);
+  return base === "node" || base === "node.exe";
+}
+
+const DSH_ACP_DEFAULT_BINARIES = new Set([
+  "deepseek-harness-acp",
+  "deepseek-harness-acp.cmd",
+  "deepseek-harness-acp.exe",
+  "deepseek-harness-acp.bat",
+  "deepseek-harness-acp.ps1",
+  "dsh-acp",
+  "dsh-acp.cmd",
+  "dsh-acp.exe",
+  "dsh-acp.bat",
+  "dsh-acp.ps1",
+  "dsh-acp-demo",
+  "dsh-acp-demo.cmd",
+  "dsh-acp-demo.exe",
+  "dsh-acp-demo.bat",
+  "dsh-acp-demo.ps1"
+]);
+
+/**
+ * Settings persist `defaultBinary`, and Windows Check/PATH resolution often
+ * stores `%AppData%\\npm\\dsh-acp-demo.cmd`. Those are still the stock demo.
+ */
+export function isDefaultDshAcpBinary(binary?: string): boolean {
+  const trimmed = binary?.trim();
+  if (!trimmed) return true;
+  const base = dshAcpBinaryBaseName(trimmed);
+  if (!DSH_ACP_DEFAULT_BINARIES.has(base)) return false;
+  if (!/[\\/]/.test(trimmed)) return true;
+  const normalized = trimmed.replace(/\\/g, "/").toLowerCase();
+  return (
+    /\/npm\/dsh-acp-demo(?:\.cmd|\.exe|\.bat|\.ps1)?$/i.test(normalized) ||
+    /\/node_modules\/@deepseek-ai\/dsh-acp-demo\/lib\/bin\.js$/i.test(normalized)
+  );
+}
+
+function dshAcpDemoBinJsFromDir(demoDir: string): string | undefined {
+  const binJs = path.join(demoDir, "lib", "bin.js");
+  return existsSync(binJs) ? binJs : undefined;
+}
+
+function dshAcpDemoBinJsFromBinaryHint(binary?: string): string | undefined {
+  const trimmed = binary?.trim();
+  if (!trimmed || !/[\\/]/.test(trimmed)) return undefined;
+  if (/dsh-acp-demo[/\\]lib[/\\]bin\.js$/i.test(trimmed) && existsSync(trimmed)) {
+    return trimmed;
+  }
+  const demoDir = resolveDshAcpDemoDirFromBinary(trimmed);
+  return demoDir ? dshAcpDemoBinJsFromDir(demoDir) : undefined;
+}
+
+function wellKnownGlobalDshAcpDemoBinJs(
+  env: NodeJS.ProcessEnv = process.env
+): string | undefined {
+  const residue =
+    dshAcpWindowsResiduePath(env) ??
+    (env.APPDATA?.trim()
+      ? path.join(env.APPDATA.trim(), "npm", "node_modules", "@deepseek-ai")
+      : undefined);
+  if (!residue) return undefined;
+  return dshAcpDemoBinJsFromDir(path.join(residue, "dsh-acp-demo"));
+}
+
+/** Resolve the `dsh-acp-demo` entry we should spawn with `node`, if any. */
+export function resolveDshAcpDemoBinJs(input: {
+  binary?: string;
+  dshAcpRuntimeRoot?: string;
+}): string | undefined {
+  const managedBin = input.dshAcpRuntimeRoot
+    ? path.join(
+        input.dshAcpRuntimeRoot,
+        "node_modules",
+        "@deepseek-ai",
+        "dsh-acp-demo",
+        "lib",
+        "bin.js"
+      )
+    : "";
+  const managedReady =
+    Boolean(managedBin) &&
+    existsSync(managedBin) &&
+    dshAcpCompositionReady(managedBin);
+  if (isDefaultDshAcpBinary(input.binary) && managedReady) return managedBin;
+  const fromHint = dshAcpDemoBinJsFromBinaryHint(input.binary);
+  if (fromHint) return fromHint;
+  if (isDefaultDshAcpBinary(input.binary)) {
+    const globalBin = wellKnownGlobalDshAcpDemoBinJs();
+    if (globalBin) return globalBin;
+  }
+  return undefined;
+}
+
+const ELECTRON_CHILD_ENV_BLOCKLIST = [
+  "ELECTRON_RUN_AS_NODE",
+  "ELECTRON_NO_ASAR",
+  "ELECTRON_NO_ATTACH_CONSOLE",
+  "CHROME_CRASHPAD_PIPE_NAME",
+  "ELECTRON_CRASHPAD_PIPE_NAME"
+] as const;
+
+/** NTSTATUS STATUS_ACCESS_VIOLATION; Node reports it as signed or unsigned. */
+export const WINDOWS_STATUS_ACCESS_VIOLATION = 0xc0000005;
+
+export function isWindowsAccessViolationExit(code: number): boolean {
+  return (code >>> 0) === WINDOWS_STATUS_ACCESS_VIOLATION;
+}
+
+/**
+ * Chromium/Electron env inherited by `spawn("node")` can make native addons
+ * (koffi, node:sqlite) abort with 0xC0000005 on Windows.
+ */
+export function sanitizeCliAgentEnv(
+  env: Record<string, string | undefined>
+): Record<string, string | undefined> {
+  const next = { ...env };
+  for (const key of ELECTRON_CHILD_ENV_BLOCKLIST) {
+    delete next[key];
+  }
+  if (typeof next.NODE_OPTIONS === "string") {
+    const kept = sanitizeNodeOptions(next.NODE_OPTIONS);
+    if (kept) next.NODE_OPTIONS = kept;
+    else delete next.NODE_OPTIONS;
+  }
+  return next;
+}
+
+const NODE_OPTIONS_PATH_FLAGS = new Set([
+  "--require",
+  "-r",
+  "--import",
+  "--loader",
+  "--experimental-loader"
+]);
+
+function sanitizeNodeOptions(value: string): string | undefined {
+  const tokens = value.split(/\s+/).filter(Boolean);
+  const kept: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (/electron|asar/i.test(token)) continue;
+    const eq = token.indexOf("=");
+    const flag = eq === -1 ? token : token.slice(0, eq);
+    const inline = eq === -1 ? "" : token.slice(eq + 1);
+    if (NODE_OPTIONS_PATH_FLAGS.has(flag)) {
+      const arg = inline || tokens[i + 1];
+      if (arg && /electron|asar/i.test(arg)) {
+        if (!inline) i += 1;
+        continue;
+      }
+    }
+    kept.push(token);
+  }
+  return kept.length ? kept.join(" ") : undefined;
+}
+
+export function dshAcpFallbackWorkspace(dataDir: string): string {
+  return path.join(dshAcpManagedRoot(dataDir), "workspace");
+}
+
+/** DeepSeek's sandbox/persistence use `process.cwd()`; never spawn with no cwd. */
+export function ensureDshAcpCwd(
+  cwd: string | undefined,
+  dataDir: string
+): string {
+  const trimmed = cwd?.trim();
+  if (trimmed) return trimmed;
+  const fallback = dshAcpFallbackWorkspace(dataDir);
+  mkdirSync(fallback, { recursive: true });
+  return fallback;
+}
+
+export function formatAcpAgentExitMessage(
+  code: number,
+  language?: string,
+  adapter?: string
+): string {
+  if (isWindowsAccessViolationExit(code)) {
+    if (adapter === "dsh-acp") {
+      return language === "zh-CN"
+        ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。initialize / session/new 已成功，崩溃发生在 session/prompt。官方 JSONL / Windows ACL 会用 koffi 调 Win32（含 MoveFileExW）；本版本会覆盖 JSONL，并用 Node --import 拦截 koffi。请重新编译本版本后再试（无需重装 DeepSeek）。若仍崩溃，请用「导出调试日志」把 zip 发回来。"
+        : "ACP agent crashed with a Windows access violation (0xC0000005). initialize and session/new succeeded; the abort happened on session/prompt. Official JSONL / Windows ACL call Win32 through koffi (including MoveFileExW). This build overlays JSONL and intercepts koffi with Node --import. Rebuild this version — you do not need to reinstall DeepSeek. If it still crashes, export debug logs and send the zip.";
+    }
+    return language === "zh-CN"
+      ? "ACP 进程发生 Windows 访问冲突 (0xC0000005)。进程异常终止，请检查原生依赖或系统安全软件。"
+      : "ACP agent crashed with a Windows access violation (0xC0000005). The process aborted unexpectedly.";
+  }
+  return `ACP agent exited with code ${code}`;
+}
+
+/** Whether a composition file mounts the native `dsh-sandbox-local` (the only koffi source). */
+function dshAcpConfigUsesNativeSandbox(configPath: string | undefined): boolean {
+  // Unknown or missing config: assume it may use the native sandbox so the guard still applies.
+  if (!configPath || !existsSync(configPath)) return true;
+  return /name:\s*'@deepseek-ai\/dsh-sandbox-local'/.test(
+    readFileSync(configPath, "utf8")
+  );
+}
+
+/** Extract the `--config`/`-c` value from a dsh-acp argv, if present. */
+function dshAcpConfigPathFromArgs(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i];
+    if (token === "--config" || token === "-c") return args[i + 1];
+    const match = token?.match(/^(?:--config|-c)=(.+)$/);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+function withDshAcpSqliteWarningSuppressed(command: BuiltCommand): BuiltCommand {
+  // The koffi guard intercepts `dsh-sandbox-windows-acl` (loaded by
+  // `dsh-sandbox-local`). Compositions that omit the native sandbox never load
+  // koffi, so the guard is unnecessary — and its bare-path `--import` aborts
+  // Node 24+ with ERR_UNSUPPORTED_ESM_URL_SCHEME, so injecting it there would
+  // break the spawn. Apply it only when the active composition needs it.
+  const configUsesNativeSandbox = dshAcpConfigUsesNativeSandbox(
+    dshAcpConfigPathFromArgs(command.args) ?? bundledDshAcpConfigPath()
+  );
+  // The koffi guard stubs the native addon so the Win32 calls return 0
+  // (a catchable JS error) instead of aborting Electron children with
+  // STATUS_ACCESS_VIOLATION (0xC0000005). On macOS/Linux the real koffi
+  // loads cleanly and `dsh-sandbox-windows-acl` asserts its struct layouts
+  // (STARTUPINFOW=104, PROCESS_INFORMATION=24) against real koffi at import,
+  // so the stub must stay Windows-only.
+  const needsKoffiGuard =
+    process.platform === "win32" && configUsesNativeSandbox;
+  const flags = [
+    DSH_ACP_NODE_DISABLE_WARNING,
+    needsKoffiGuard ? dshAcpKoffiGuardImportFlag() : undefined
+  ].filter((flag): flag is string => Boolean(flag));
+  let env = command.env;
+  for (const flag of flags) {
+    env = {
+      ...env,
+      NODE_OPTIONS: mergeNodeOptions(env?.NODE_OPTIONS, flag)
+    };
+  }
+  if (!isNodeBinary(command.bin)) {
+    return { ...command, env };
+  }
+  const prepend = flags.filter((flag) => !command.args.includes(flag));
+  return {
+    ...command,
+    args: [...prepend, ...command.args],
+    env
+  };
+}
+
+/**
+ * Force koffi to keep its optional platform prebuild. Its install script
+ * otherwise rebuilds from source, and that CMake path exceeds Windows MAX_PATH
+ * under the nested global `@deepseek-ai/dsh-acp-demo` install.
+ */
+export function applyDshAcpNpmInstallEnv(
+  adapter: string,
+  env: NodeJS.ProcessEnv
+): NodeJS.ProcessEnv {
+  if (adapter !== "dsh-acp") return env;
+  return {
+    ...env,
+    npm_config_ignore_scripts: "true",
+    npm_config_include: "optional",
+    npm_config_optional: "true"
+  };
+}
+
+export function dshAcpWindowsResiduePath(
+  env: NodeJS.ProcessEnv = process.env
+): string | undefined {
+  if (process.platform !== "win32") return undefined;
+  const appdata = env.APPDATA?.trim();
+  if (!appdata) return undefined;
+  return path.join(appdata, "npm", "node_modules", "@deepseek-ai");
+}
+
+export function extraArgsHaveDshConfig(args: string[]): boolean {
+  return args.some(
+    (arg) =>
+      arg === "-c" ||
+      arg === "--config" ||
+      arg.startsWith("-c=") ||
+      arg.startsWith("--config=")
+  );
+}
+
+/**
+ * The platform-specific composition basename. Windows mounts
+ * `cordis.win32.yml`, which replaces the native sandbox stack
+ * (`dsh-sandbox-local` → `dsh-sandbox-windows-acl` → `koffi`) with the
+ * non-sandboxed `dsh-bash-local` executor; koffi aborts Windows ACP children
+ * with STATUS_ACCESS_VIOLATION (0xC0000005). Other platforms use `cordis.yml`.
+ */
+function bundledDshAcpConfigBasename(): string {
+  return process.platform === "win32" ? "cordis.win32.yml" : "cordis.yml";
+}
+
+/** Packaged extraResources, else the repo `assets/dsh/cordis.yml` used in dev. */
+export function bundledDshAcpConfigPath(): string {
+  const basename = bundledDshAcpConfigBasename();
+  const fromSource = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "assets",
+    "dsh",
+    basename
+  );
+  const packaged =
+    typeof process.resourcesPath === "string"
+      ? path.join(process.resourcesPath, "dsh", basename)
+      : "";
+  if (packaged && existsSync(packaged)) return packaged;
+  // Fall back to the cross-platform file if the platform variant is absent
+  // (e.g. an older packaged build without cordis.win32.yml).
+  if (basename !== "cordis.yml" && !existsSync(fromSource)) {
+    return path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "assets",
+      "dsh",
+      "cordis.yml"
+    );
+  }
+  return fromSource;
+}
+
+/**
+ * `dsh-acp-demo` defaults to `./cordis.yml` in the session cwd. Prefer a
+ * workspace file when present; otherwise use FreeBuddy's bundled default.
+ */
+export function resolveDshAcpConfigPath(
+  cwd?: string,
+  runtimeRoot?: string
+): string {
+  if (cwd) {
+    const local = path.join(cwd, "cordis.yml");
+    if (existsSync(local)) return local;
+  }
+  if (runtimeRoot) {
+    const managed = path.join(runtimeRoot, "cordis.yml");
+    if (existsSync(managed)) return managed;
+  }
+  return bundledDshAcpConfigPath();
+}
+
+export const DSH_ACP_PLUGIN_TREE_MISSING = "DeepSeek ACP plugin tree missing";
+export const DSH_ACP_PROBE_PACKAGE = "@deepseek-ai/dsh-llm-deepseek";
+
+export function dshAcpManagedRoot(dataDir: string): string {
+  return path.join(dataDir, "runtimes", "dsh-acp");
+}
+
+const DSH_JSONL_PACKAGE = "@deepseek-ai/dsh-session-persistence-jsonl";
+const DSH_DEMO_PACKAGE = "@deepseek-ai/dsh-acp-demo";
+
+/** Packaged extraResources, else the repo `third_party/deepseek-harness/overlays`. */
+export function dshHarnessOverlayDir(): string {
+  const fromSource = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "third_party",
+    "deepseek-harness",
+    "overlays"
+  );
+  const packaged =
+    typeof process.resourcesPath === "string"
+      ? path.join(process.resourcesPath, "dsh-harness-overlays")
+      : "";
+  if (packaged && existsSync(packaged)) return packaged;
+  return fromSource;
+}
+
+/**
+ * Copy the thin harness-fork overlays onto an installed official runtime.
+ * Official JSONL durable-publish aborts Windows Electron children with
+ * STATUS_ACCESS_VIOLATION (0xC0000005) on session/prompt.
+ *
+ * Walk every nested `node_modules` copy. npm may hoist the JSONL package or
+ * nest it under another `@deepseek-ai/*` plugin; covering only the prefix
+ * root left the running import unpatched.
+ */
+export function findDshPackageDirs(root: string, packageName: string): string[] {
+  const found = new Set<string>();
+  const visit = (dir: string, depth: number) => {
+    if (depth > 8) return;
+    const nm = path.join(dir, "node_modules");
+    if (!existsSync(nm)) return;
+    const pkg = path.join(nm, packageName);
+    if (existsSync(pkg)) found.add(pkg);
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(nm);
+    } catch {
+      return;
+    }
+    for (const name of entries) {
+      if (name === ".bin" || name.startsWith(".")) continue;
+      const child = path.join(nm, name);
+      if (name.startsWith("@")) {
+        let scoped: string[] = [];
+        try {
+          scoped = readdirSync(child);
+        } catch {
+          continue;
+        }
+        for (const nested of scoped) visit(path.join(child, nested), depth + 1);
+      } else {
+        visit(child, depth + 1);
+      }
+    }
+  };
+  visit(root, 0);
+  return [...found];
+}
+
+export function findDshPackageLibIndex(
+  root: string,
+  packageName: string
+): string[] {
+  return findDshPackageDirs(root, packageName)
+    .map((dir) => path.join(dir, "lib", "index.js"))
+    .filter((file) => existsSync(file));
+}
+
+const DSH_KOFFI_IMPORT_RE =
+  /(?:import\(|from\s+|load\()["']koffi["']|koffi\.load/;
+
+function fileUsesKoffi(file: string): boolean {
+  try {
+    return DSH_KOFFI_IMPORT_RE.test(readFileSync(file, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+function packageJsUsesKoffi(pkgDir: string): boolean {
+  const lib = path.join(pkgDir, "lib");
+  let names: string[] = [];
+  try {
+    names = existsSync(lib) ? readdirSync(lib) : [];
+  } catch {
+    return false;
+  }
+  return names.some(
+    (name) => name.endsWith(".js") && fileUsesKoffi(path.join(lib, name))
+  );
+}
+
+function toPosixRelative(root: string, file: string): string {
+  return path.relative(root, file).split(path.sep).join("/");
+}
+
+export function dshAcpJsonlStillUsesKoffi(root: string): string[] {
+  return findDshPackageLibIndex(root, DSH_JSONL_PACKAGE).filter(fileUsesKoffi);
+}
+
+const DSH_WINDOWS_ACL_PACKAGE = "@deepseek-ai/dsh-sandbox-windows-acl";
+
+export function dshAcpKoffiGuardPath(): string {
+  const fromSource = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "assets",
+    "dsh",
+    "koffi-guard.mjs"
+  );
+  const packaged =
+    typeof process.resourcesPath === "string"
+      ? path.join(process.resourcesPath, "dsh", "koffi-guard.mjs")
+      : "";
+  if (packaged && existsSync(packaged)) return packaged;
+  return fromSource;
+}
+
+export function dshAcpKoffiGuardImportFlag(): string | undefined {
+  const file = dshAcpKoffiGuardPath();
+  if (!existsSync(file)) return undefined;
+  // Use a filesystem path. `file:///C:/...` is misparsed inside Windows
+  // NODE_OPTIONS because of the drive colon, and PATH `.cmd` shims only
+  // receive the guard through NODE_OPTIONS.
+  return `--import=${file}`;
+}
+
+export interface DshAcpRuntimeDiagnostics {
+  runtimePresent: boolean;
+  overlayDirPresent: boolean;
+  jsonlCopyCount: number;
+  jsonlKoffiCopyCount: number;
+  windowsAclPresent: boolean;
+  windowsAclUsesKoffi: boolean;
+  persistenceCompressionNone: boolean;
+  sandboxDisabledOnWin32: boolean;
+  koffiGuardPresent: boolean;
+  spawnBin?: string;
+  spawnKind?: string;
+  koffiGuardOnArgv?: boolean;
+  jsonlRelatives: Array<{ path: string; usesKoffi: boolean }>;
+}
+
+function classifyDshAcpSpawnKind(
+  spawnBin: string | undefined,
+  spawnArgs: string[] | undefined,
+  runtimeRoot: string
+): string | undefined {
+  if (!spawnBin) return undefined;
+  if (!isNodeBinary(spawnBin)) return dshAcpBinaryBaseName(spawnBin);
+  const entry = spawnArgs?.find((arg) =>
+    /dsh-acp-demo[/\\]lib[/\\]bin\.js$/i.test(arg)
+  );
+  if (!entry) return "node";
+  const posix = entry.split(path.sep).join("/");
+  const managed = runtimeRoot.split(path.sep).join("/");
+  if (managed && posix.toLowerCase().includes(managed.toLowerCase())) {
+    return "managed-node";
+  }
+  if (/\/npm\/node_modules\/@deepseek-ai\/dsh-acp-demo\/lib\/bin\.js$/i.test(posix)) {
+    return "npm-global-node";
+  }
+  return "node-entry";
+}
+
+/** Snapshot of the managed DeepSeek runtime for debug-log export. */
+export function buildDshAcpRuntimeDiagnostics(input: {
+  runtimeRoot: string;
+  overlayDir?: string;
+  configPath?: string;
+  spawnBin?: string;
+  spawnArgs?: string[];
+}): DshAcpRuntimeDiagnostics {
+  const root = input.runtimeRoot;
+  const overlayDir = input.overlayDir ?? dshHarnessOverlayDir();
+  const jsonlFiles = findDshPackageLibIndex(root, DSH_JSONL_PACKAGE);
+  const jsonlRelatives = jsonlFiles.map((file) => ({
+    path: toPosixRelative(root, file),
+    usesKoffi: fileUsesKoffi(file)
+  }));
+  const aclDirs = findDshPackageDirs(root, DSH_WINDOWS_ACL_PACKAGE);
+  const configPath =
+    input.configPath && existsSync(input.configPath)
+      ? input.configPath
+      : path.join(root, "cordis.yml");
+  const cordis = existsSync(configPath) ? readFileSync(configPath, "utf8") : "";
+  return {
+    runtimePresent: existsSync(root),
+    overlayDirPresent: existsSync(overlayDir),
+    jsonlCopyCount: jsonlFiles.length,
+    jsonlKoffiCopyCount: jsonlRelatives.filter((file) => file.usesKoffi).length,
+    windowsAclPresent: aclDirs.length > 0,
+    windowsAclUsesKoffi: aclDirs.some((dir) => packageJsUsesKoffi(dir)),
+    persistenceCompressionNone: /persistenceCompression:\s*none/.test(cordis),
+    sandboxDisabledOnWin32:
+      /dsh-sandbox-local[\s\S]{0,400}disabled:/.test(cordis),
+    koffiGuardPresent: existsSync(dshAcpKoffiGuardPath()),
+    spawnBin: input.spawnBin ? dshAcpBinaryBaseName(input.spawnBin) : undefined,
+    spawnKind: classifyDshAcpSpawnKind(
+      input.spawnBin,
+      input.spawnArgs,
+      root
+    ),
+    koffiGuardOnArgv: Boolean(
+      input.spawnArgs?.some((arg) => arg.includes("koffi-guard"))
+    ),
+    jsonlRelatives
+  };
+}
+
+export function patchDshAcpManagedRuntime(root: string): number {
+  const overlayRoot = dshHarnessOverlayDir();
+  const jsonlFrom = path.join(
+    overlayRoot,
+    "dsh-session-persistence-jsonl",
+    "lib",
+    "index.js"
+  );
+  const demoFrom = path.join(overlayRoot, "dsh-acp-demo", "lib", "index.js");
+  let count = 0;
+  try {
+    if (existsSync(jsonlFrom)) {
+      for (const dest of findDshPackageLibIndex(root, DSH_JSONL_PACKAGE)) {
+        try {
+          copyFileSync(jsonlFrom, dest);
+          count += 1;
+        } catch {
+          /* ignore unwriteable / permission-restricted files */
+        }
+      }
+    }
+    if (existsSync(demoFrom)) {
+      for (const dest of findDshPackageLibIndex(root, DSH_DEMO_PACKAGE)) {
+        try {
+          copyFileSync(demoFrom, dest);
+        } catch {
+          /* ignore unwriteable / permission-restricted files */
+        }
+      }
+    }
+  } catch {
+    /* ignore unreadable overlay dirs */
+  }
+  return count;
+}
+
+/** Overlay the npm prefix that owns a `dsh-acp-demo` bin, including PATH installs. */
+export function patchDshAcpRuntimeFromBin(binPath: string): void {
+  try {
+    const demoDir = resolveDshAcpDemoDirFromBinary(binPath);
+    if (!demoDir) return;
+    const scoped = path.dirname(demoDir);
+    const nodeModules = path.dirname(scoped);
+    const prefix = path.dirname(nodeModules);
+    patchDshAcpManagedRuntime(prefix);
+  } catch {
+    /* ignore permission / traversal errors */
+  }
+}
+
+export function patchDshAcpRuntimeFromCommand(command: {
+  bin: string;
+  args: string[];
+}): void {
+  const entry = isNodeBinary(command.bin)
+    ? command.args.find((arg) => /dsh-acp-demo[/\\]lib[/\\]bin\.js$/i.test(arg))
+    : command.bin;
+  if (entry) patchDshAcpRuntimeFromBin(entry);
+}
+
+/** Refresh the managed composition from the bundled default before spawn/install. */
+export function syncDshAcpManagedConfig(dataDir: string): string {
+  const root = dshAcpManagedRoot(dataDir);
+  try {
+    mkdirSync(root, { recursive: true });
+    copyFileSync(bundledDshAcpConfigPath(), path.join(root, "cordis.yml"));
+  } catch {
+    /* ignore permission errors */
+  }
+  patchDshAcpManagedRuntime(root);
+  return root;
+}
+
+export function dshAcpManagedDemoBin(dataDir: string): string {
+  return path.join(
+    dshAcpManagedRoot(dataDir),
+    "node_modules",
+    "@deepseek-ai",
+    "dsh-acp-demo",
+    "lib",
+    "bin.js"
+  );
+}
+
+export function quoteForShell(value: string): string {
+  if (process.platform === "win32") {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Walk up from `startDir` looking for `node_modules/<package>`. */
+export function nodeModulesHasPackage(
+  startDir: string,
+  packageName: string
+): boolean {
+  let dir = path.resolve(startDir);
+  for (;;) {
+    if (existsSync(path.join(dir, "node_modules", packageName, "package.json"))) {
+      return true;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+export function resolveDshAcpDemoDirFromBinary(
+  binPath: string
+): string | undefined {
+  let current = path.resolve(binPath);
+  try {
+    current = fsRealpath(binPath);
+  } catch {
+    /* keep resolved path */
+  }
+  if (/\.(cmd|ps1|bat)$/i.test(current)) {
+    try {
+      const text = readFileSync(current, "utf8");
+      const match = text.match(
+        /node_modules[/\\]@deepseek-ai[/\\]dsh-acp-demo[/\\]lib[/\\]bin\.js/i
+      );
+      if (match) {
+        const relative = match[0]
+          .replace(/[/\\]lib[/\\]bin\.js$/i, "")
+          .replace(/\\/g, "/");
+        const pkg = path.resolve(
+          path.dirname(current),
+          ...relative.split("/").filter(Boolean)
+        );
+        if (existsSync(path.join(pkg, "package.json"))) return pkg;
+      }
+    } catch {
+      /* ignore unreadable shims */
+    }
+  }
+  if (current.endsWith(`${path.sep}lib${path.sep}bin.js`)) {
+    const pkg = path.dirname(path.dirname(current));
+    if (existsSync(path.join(pkg, "package.json"))) return pkg;
+  }
+  return undefined;
+}
+
+export function dshAcpCompositionReady(binPath: string): boolean {
+  const pkgDir = resolveDshAcpDemoDirFromBinary(binPath) ?? path.dirname(binPath);
+  return nodeModulesHasPackage(pkgDir, DSH_ACP_PROBE_PACKAGE);
+}
+
+/** Bare npm package names referenced by the bundled ACP composition. */
+export function parseDshAcpCompositionPackages(yamlText: string): string[] {
+  const names = new Set<string>(["@deepseek-ai/dsh-acp-demo"]);
+  for (const match of yamlText.matchAll(/^\s*name:\s*'(@deepseek-ai\/[^']+)'/gm)) {
+    names.add(match[1].split("/").slice(0, 2).join("/"));
+  }
+  return [...names];
+}
+
+/**
+ * `dsh-acp-demo` ships with `deps: none`. Installing only the bin leaves
+ * cordis unable to import `@deepseek-ai/dsh-llm-deepseek` and the rest of
+ * the official ACP plugin tree (`ERR_MODULE_NOT_FOUND`).
+ */
+export function dshAcpInstallCommand(options?: {
+  yamlText?: string;
+  prefix?: string;
+}): string {
+  const yamlText =
+    options?.yamlText ?? readFileSync(bundledDshAcpConfigPath(), "utf8");
+  const specs = parseDshAcpCompositionPackages(yamlText).map(
+    (pkg) => `${pkg}@${DSH_ACP_NPM_TAG}`
+  );
+  specs.sort((a, b) => {
+    if (a.startsWith("@deepseek-ai/dsh-acp-demo@")) return -1;
+    if (b.startsWith("@deepseek-ai/dsh-acp-demo@")) return 1;
+    return a.localeCompare(b);
+  });
+  const target = options?.prefix
+    ? `--prefix ${quoteForShell(options.prefix)}`
+    : "-g";
+  return `npm install ${target} --include=optional --ignore-scripts ${specs.join(" ")}`;
+}
+
 export function hasExplicitToolSessionArg(
   adapter: string | null | undefined,
   extraArgs: string[] | null | undefined
@@ -281,6 +1108,8 @@ export interface BuildCommandInput {
   toolSessionId?: string;
   /** Absolute multi-folder project roots; OpenCode gets external_directory allows when length > 1. */
   workspaceRoots?: string[];
+  /** FreeBuddy-managed `runtimes/dsh-acp` prefix; used when no custom binary. */
+  dshAcpRuntimeRoot?: string;
 }
 
 export interface BuiltCommand {
@@ -570,6 +1399,33 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
         promptViaStdin: false,
         protocol: "acp"
       };
+    }
+    case "dsh-acp": {
+      const nodeEntry = resolveDshAcpDemoBinJs({
+        binary: input.binary,
+        dshAcpRuntimeRoot: input.dshAcpRuntimeRoot
+      });
+      const args = extraArgsHaveDshConfig(extra)
+        ? [...extra]
+        : [
+            "--config",
+            resolveDshAcpConfigPath(input.cwd, input.dshAcpRuntimeRoot),
+            ...extra
+          ];
+      if (nodeEntry) {
+        return withDshAcpSqliteWarningSuppressed({
+          bin: "node",
+          args: [nodeEntry, ...args],
+          promptViaStdin: false,
+          protocol: "acp"
+        });
+      }
+      return withDshAcpSqliteWarningSuppressed({
+        bin,
+        args,
+        promptViaStdin: false,
+        protocol: "acp"
+      });
     }
     case "claude": {
       const args: string[] = [

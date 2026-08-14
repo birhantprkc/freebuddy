@@ -120,5 +120,14 @@ export const builtinCliMembers: CLIMember[] = [
     source: "builtin",
     enabled: true,
     cli: { adapter: "agy-acp", approvalMode: "auto", showStderr: true }
+  },
+  {
+    id: "cli-dsh-acp",
+    kind: "cli",
+    name: "DeepSeek Harness",
+    description: "Local DeepSeek Harness coding agent via ACP.",
+    source: "builtin",
+    enabled: true,
+    cli: { adapter: "dsh-acp", approvalMode: "auto", showStderr: true }
   }
 ];

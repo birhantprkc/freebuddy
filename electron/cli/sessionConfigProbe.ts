@@ -13,7 +13,8 @@ import {
   parseAcpLine,
   type AcpMessage
 } from "./acp.js";
-import { buildCommand, getAdapterDefinition } from "./adapters.js";
+import { buildCommand, dshAcpManagedRoot, ensureDshAcpCwd, getAdapterDefinition, patchDshAcpRuntimeFromCommand, syncDshAcpManagedConfig } from "./adapters.js";
+import { getDataDir } from "./db.js";
 import { waitForCodexToolchainAutoUpdate } from "./check.js";
 import { killProcessTree } from "./process-kill.js";
 import { mergeBuiltEnv } from "./runtime.js";
@@ -137,13 +138,21 @@ export async function inspectSessionConfigOptions(
   if (definition?.protocol !== "acp") return [];
 
   await waitForCodexToolchainAutoUpdate(input.adapter);
+  const cwd =
+    input.adapter === "dsh-acp"
+      ? ensureDshAcpCwd(input.cwd, getDataDir())
+      : input.cwd;
+  if (input.adapter === "dsh-acp") syncDshAcpManagedConfig(getDataDir());
   const built = buildCommand({
     adapter: input.adapter,
     binary: input.binary,
     extraArgs: input.extraArgs,
     prompt: "",
-    cwd: input.cwd
+    cwd,
+    dshAcpRuntimeRoot:
+      input.adapter === "dsh-acp" ? dshAcpManagedRoot(getDataDir()) : undefined
   });
+  if (input.adapter === "dsh-acp") patchDshAcpRuntimeFromCommand(built);
   if (built.protocol !== "acp") return [];
 
   const env = mergeBuiltEnv(
@@ -158,7 +167,7 @@ export async function inspectSessionConfigOptions(
     )
   );
   const child = spawn(built.bin, built.args, {
-    cwd: input.cwd,
+    cwd,
     env,
     stdio: ["pipe", "pipe", "pipe"]
   }) as ChildProcessByStdio<Writable, Readable, Readable>;
