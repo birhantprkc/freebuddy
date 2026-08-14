@@ -55,7 +55,7 @@ test("agy-acp checks agy-acp binary probe", () => {
   });
 });
 
-test("dsh-acp install uses next plus optional koffi prebuilds", () => {
+test("dsh-acp uses standalone deepseek-harness-acp package", () => {
   assert.deepEqual(getCliCheckProbe("dsh-acp"), {
     args: [],
     versionOptional: true,
@@ -63,10 +63,8 @@ test("dsh-acp install uses next plus optional koffi prebuilds", () => {
   });
   const hint = getAdapterDefinition("dsh-acp")?.installHint;
   assert.equal(hint, dshAcpInstallCommand());
-  assert.match(hint ?? "", /^npm install -g --include=optional --ignore-scripts /);
-  assert.match(hint ?? "", /@deepseek-ai\/dsh-acp-demo@next/);
-  assert.match(hint ?? "", /@deepseek-ai\/dsh-llm-deepseek@next/);
-  assert.equal(getAdapterDefinition("dsh-acp")?.defaultBinary, "dsh-acp-demo");
+  assert.equal(hint, "npm install -g deepseek-harness-acp");
+  assert.equal(getAdapterDefinition("dsh-acp")?.defaultBinary, "deepseek-harness-acp");
 });
 
 test("bundled DeepSeek ACP config disables zstd persistence on Windows-safe defaults", () => {
@@ -82,22 +80,14 @@ test("bundled DeepSeek ACP config disables zstd persistence on Windows-safe defa
   );
 });
 
-test("dsh-acp install command includes every bundled cordis plugin package", () => {
-  const yaml = fs.readFileSync(bundledDshAcpConfigPath(), "utf8");
+test("dsh-acp install command matches standalone deepseek-harness-acp package", () => {
   const hint = dshAcpInstallCommand();
-  for (const pkg of parseDshAcpCompositionPackages(yaml)) {
-    assert.match(hint, new RegExp(`${pkg.replace("/", "\\/")}@next`));
-  }
-  const defaultYaml = fs.readFileSync(
-    new URL("../assets/dsh/cordis.yml", import.meta.url),
-    "utf8"
-  );
-  const defaultHint = dshAcpInstallCommand({ yamlText: defaultYaml });
+  assert.equal(hint, "npm install -g deepseek-harness-acp");
   const renderer = fs.readFileSync(
     new URL("../src/config/cliAdapters.ts", import.meta.url),
     "utf8"
   );
-  assert.equal(renderer.includes(defaultHint), true);
+  assert.equal(renderer.includes(hint), true);
   const prefixed = dshAcpInstallCommand({ prefix: "/tmp/freebuddy-dsh" });
   assert.match(prefixed, /--prefix /);
   assert.equal(prefixed.includes(" -g "), false);

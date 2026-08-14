@@ -12,6 +12,7 @@ import {
   dshAcpWindowsResiduePath,
   DSH_ACP_PLUGIN_TREE_MISSING,
   getCliCheckProbe,
+  isDefaultDshAcpBinary,
   patchDshAcpManagedRuntime,
   syncDshAcpManagedConfig
 } from "./adapters.js";
@@ -368,7 +369,17 @@ export async function cliCheck(
     ...process.env,
     ...(env || {})
   });
-  const resolved = await which(bin, effectiveEnv as Record<string, string>);
+  let resolved = await which(bin, effectiveEnv as Record<string, string>);
+  if (adapter === "dsh-acp" && !resolved && (!binary?.trim() || isDefaultDshAcpBinary(binary))) {
+    for (const alt of ["deepseek-harness-acp", "dsh-acp", "dsh-acp-demo"]) {
+      if (alt === bin) continue;
+      const found = await which(alt, effectiveEnv as Record<string, string>);
+      if (found) {
+        resolved = found;
+        break;
+      }
+    }
+  }
   if (adapter === "dsh-acp") {
     const managedBin = dshAcpManagedDemoBin(getDataDir());
     if (fs.existsSync(managedBin) && dshAcpCompositionReady(managedBin)) {
