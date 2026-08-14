@@ -88,11 +88,16 @@ test("dsh-acp install command includes every bundled cordis plugin package", () 
   for (const pkg of parseDshAcpCompositionPackages(yaml)) {
     assert.match(hint, new RegExp(`${pkg.replace("/", "\\/")}@next`));
   }
+  const defaultYaml = fs.readFileSync(
+    new URL("../assets/dsh/cordis.yml", import.meta.url),
+    "utf8"
+  );
+  const defaultHint = dshAcpInstallCommand({ yamlText: defaultYaml });
   const renderer = fs.readFileSync(
     new URL("../src/config/cliAdapters.ts", import.meta.url),
     "utf8"
   );
-  assert.equal(renderer.includes(hint), true);
+  assert.equal(renderer.includes(defaultHint), true);
   const prefixed = dshAcpInstallCommand({ prefix: "/tmp/freebuddy-dsh" });
   assert.match(prefixed, /--prefix /);
   assert.equal(prefixed.includes(" -g "), false);

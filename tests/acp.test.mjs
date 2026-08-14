@@ -401,19 +401,14 @@ test("buildCommand starts a managed DeepSeek ACP runtime with node", () => {
   assert.equal(built.bin, "node");
   const importFlag = dshAcpKoffiGuardImportFlag();
   assert.ok(importFlag);
-  // The koffi guard is Windows-only; real koffi loads on macOS/Linux.
-  const guardArgs = process.platform === "win32" ? [importFlag] : [];
   assert.deepEqual(built.args, [
     DSH_ACP_NODE_DISABLE_WARNING,
-    ...guardArgs,
     binJs,
     "--config",
     config
   ]);
   assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
-  if (process.platform === "win32") {
-    assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
-  }
+  assert.doesNotMatch(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
   assert.equal(built.protocol, "acp");
 });
 
@@ -485,14 +480,15 @@ test("buildCommand puts koffi --import on argv on Windows when the composition u
     assert.equal(built.args.includes(importFlag), true);
   });
 
-  // On the real (non-Windows) host the guard must stay absent.
-  const built = buildCommand({
-    adapter: "dsh-acp",
-    prompt: "hello",
-    dshAcpRuntimeRoot: root
+  withPlatform("darwin", () => {
+    const built = buildCommand({
+      adapter: "dsh-acp",
+      prompt: "hello",
+      dshAcpRuntimeRoot: root
+    });
+    const importFlag = dshAcpKoffiGuardImportFlag();
+    assert.equal(built.args.includes(importFlag), false);
   });
-  const importFlag = dshAcpKoffiGuardImportFlag();
-  assert.equal(built.args.includes(importFlag), false);
 });
 
 test("buildCommand prefers managed runtime over a resolved npm-global demo shim", () => {
@@ -585,12 +581,7 @@ test("buildCommand silences Node SQLite ExperimentalWarning for DeepSeek ACP", (
   assert.equal(built.bin, "dsh-acp-demo");
   assert.equal(built.args.includes(DSH_ACP_NODE_DISABLE_WARNING), false);
   assert.match(built.env?.NODE_OPTIONS ?? "", /--disable-warning=ExperimentalWarning/);
-  // The koffi guard is Windows-only; real koffi loads on macOS/Linux.
-  if (process.platform === "win32") {
-    assert.match(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
-  } else {
-    assert.doesNotMatch(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
-  }
+  assert.doesNotMatch(built.env?.NODE_OPTIONS ?? "", /koffi-guard/);
 });
 
 test("isDshAcpExperimentalWarningLine matches Node sqlite warning stderr", () => {
