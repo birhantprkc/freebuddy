@@ -515,10 +515,38 @@ export function formatAcpAgentExitMessage(
   return `ACP agent exited with code ${code}`;
 }
 
+/** Whether a composition file mounts the native `dsh-sandbox-local` (the only koffi source). */
+function dshAcpConfigUsesNativeSandbox(configPath: string | undefined): boolean {
+  // Unknown or missing config: assume it may use the native sandbox so the guard still applies.
+  if (!configPath || !existsSync(configPath)) return true;
+  return /name:\s*'@deepseek-ai\/dsh-sandbox-local'/.test(
+    readFileSync(configPath, "utf8")
+  );
+}
+
+/** Extract the `--config`/`-c` value from a dsh-acp argv, if present. */
+function dshAcpConfigPathFromArgs(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i];
+    if (token === "--config" || token === "-c") return args[i + 1];
+    const match = token?.match(/^(?:--config|-c)=(.+)$/);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
 function withDshAcpSqliteWarningSuppressed(command: BuiltCommand): BuiltCommand {
+  // The koffi guard intercepts `dsh-sandbox-windows-acl` (loaded by
+  // `dsh-sandbox-local`). Compositions that omit the native sandbox never load
+  // koffi, so the guard is unnecessary — and its bare-path `--import` aborts
+  // Node 24+ with ERR_UNSUPPORTED_ESM_URL_SCHEME, so injecting it there would
+  // break the spawn. Apply it only when the active composition needs it.
+  const configUsesNativeSandbox = dshAcpConfigUsesNativeSandbox(
+    dshAcpConfigPathFromArgs(command.args) ?? bundledDshAcpConfigPath()
+  );
   const flags = [
     DSH_ACP_NODE_DISABLE_WARNING,
-    dshAcpKoffiGuardImportFlag()
+    configUsesNativeSandbox ? dshAcpKoffiGuardImportFlag() : undefined
   ].filter((flag): flag is string => Boolean(flag));
   let env = command.env;
   for (const flag of flags) {
@@ -575,21 +603,45 @@ export function extraArgsHaveDshConfig(args: string[]): boolean {
   );
 }
 
+/**
+ * The platform-specific composition basename. Windows mounts
+ * `cordis.win32.yml`, which replaces the native sandbox stack
+ * (`dsh-sandbox-local` → `dsh-sandbox-windows-acl` → `koffi`) with the
+ * non-sandboxed `dsh-bash-local` executor; koffi aborts Windows ACP children
+ * with STATUS_ACCESS_VIOLATION (0xC0000005). Other platforms use `cordis.yml`.
+ */
+function bundledDshAcpConfigBasename(): string {
+  return process.platform === "win32" ? "cordis.win32.yml" : "cordis.yml";
+}
+
 /** Packaged extraResources, else the repo `assets/dsh/cordis.yml` used in dev. */
 export function bundledDshAcpConfigPath(): string {
+  const basename = bundledDshAcpConfigBasename();
   const fromSource = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
     "..",
     "assets",
     "dsh",
-    "cordis.yml"
+    basename
   );
   const packaged =
     typeof process.resourcesPath === "string"
-      ? path.join(process.resourcesPath, "dsh", "cordis.yml")
+      ? path.join(process.resourcesPath, "dsh", basename)
       : "";
   if (packaged && existsSync(packaged)) return packaged;
+  // Fall back to the cross-platform file if the platform variant is absent
+  // (e.g. an older packaged build without cordis.win32.yml).
+  if (basename !== "cordis.yml" && !existsSync(fromSource)) {
+    return path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "..",
+      "assets",
+      "dsh",
+      "cordis.yml"
+    );
+  }
   return fromSource;
 }
 
