@@ -6,6 +6,7 @@ import type { Readable, Writable } from "node:stream";
 import type { WebContents } from "electron";
 
 import {
+  acpPromptResultToItems,
   acpSessionListToItems,
   acpSessionSetupToItems,
   acpUpdateToItems,
@@ -1050,7 +1051,7 @@ export async function runAcpAgent({
     sessionWasResumed = false;
     armInactivityTimer();
     try {
-      await request(
+      const promptResult = await request(
         buildSessionPromptRequest(
           nextId(),
           activeAcpSessionId!,
@@ -1058,6 +1059,10 @@ export async function runAcpAgent({
           args.promptAttachments
         )
       );
+      const resultItems = acpPromptResultToItems(promptResult);
+      if (resultItems.length) {
+        emit({ type: "items", items: resultItems });
+      }
     } finally {
       disarmInactivityTimer();
     }
