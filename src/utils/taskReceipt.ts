@@ -109,9 +109,11 @@ export function buildTaskReceiptSummary(
 export function shouldAutoOpenTaskReceipt(
   summary: TaskReceiptSummary,
   result: TaskReceiptResult,
-  autoOpenedDay?: string
+  autoOpenedDay?: string,
+  enabled = false
 ): boolean {
   return (
+    enabled &&
     result === "success" &&
     summary.successCount >= TASK_RECEIPT_AUTO_OPEN_COUNT &&
     autoOpenedDay !== summary.dayKey

@@ -98,7 +98,11 @@ export function initAutoUpdater() {
   }, 4000);
 }
 
-export function registerUpdaterIpc() {
+export interface RegisterUpdaterIpcOptions {
+  beforeQuitAndInstall?: () => Promise<void> | void;
+}
+
+export function registerUpdaterIpc(options?: RegisterUpdaterIpcOptions) {
   registerHandler("app:getVersion", () => APP_VERSION);
 
   registerHandler("updater:check", async () => {
@@ -125,11 +129,26 @@ export function registerUpdaterIpc() {
     }
   });
 
-  registerHandler("updater:quitAndInstall", () => {
+  registerHandler("updater:quitAndInstall", async () => {
     try {
-      autoUpdater.quitAndInstall(false, true);
+      logMain().info("updater", "quitAndInstall requested");
+      if (options?.beforeQuitAndInstall) {
+        await options.beforeQuitAndInstall();
+      }
+      setImmediate(() => {
+        try {
+          autoUpdater.quitAndInstall(false, true);
+        } catch (err) {
+          logMain().error("updater", "quitAndInstall execution failed", {
+            message: (err as Error)?.message ?? String(err)
+          });
+        }
+      });
       return true;
-    } catch {
+    } catch (err) {
+      logMain().error("updater", "quitAndInstall preparation failed", {
+        message: (err as Error)?.message ?? String(err)
+      });
       return false;
     }
   });
