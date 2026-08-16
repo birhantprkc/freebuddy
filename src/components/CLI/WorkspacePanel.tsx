@@ -103,6 +103,10 @@ export function WorkspacePanel({
     mountedFolders[0];
   const isCodexAgent =
     active?.adapter === "codex-acp" || active?.agentId === "cli-codex-acp";
+  const isDshAgent =
+    active?.adapter === "dsh-acp" ||
+    active?.adapter === "dsh" ||
+    active?.agentId === "cli-dsh-acp";
 
   const status = displayLive?.status ?? "ready";
   const isLive = status === "running" || status === "starting";
@@ -168,13 +172,38 @@ export function WorkspacePanel({
       inputTokens?: number;
       outputTokens?: number;
       totalCost?: number;
+      cachedReadTokens?: number;
+      cachedWriteTokens?: number;
+      thoughtTokens?: number;
+      totalTokens?: number;
+      metrics?: {
+        turns?: number;
+        steps?: number;
+        llmDurationMs?: number;
+        avgTtftMs?: number;
+        tokensPerSecond?: number;
+        cacheHitRate?: number;
+        uncachedInputTokens?: number;
+        cachedReadTokens?: number;
+        cachedWriteTokens?: number;
+        outputTokens?: number;
+        thoughtTokens?: number;
+        totalTokens?: number;
+        rawSummary?: string;
+      };
     };
-    // Prefer billable main-turn usage. Agents like Claude also emit usage from
-    // a background model (e.g. title generation) that reports a different
-    // context window; preferring cost-bearing updates keeps the card on the
-    // main model and avoids flicker. Adapters that never report cost (Codex)
-    // fall back to the most recent usage item.
+    // Prefer billable main-turn usage or rich metrics-bearing usage.
     let fallback: UsageItem | undefined;
+
+    if (displayLive?.items) {
+      for (let j = displayLive.items.length - 1; j >= 0; j -= 1) {
+        const item = displayLive.items[j] as UsageItem;
+        if (item?.kind !== "usage") continue;
+        if (item.metrics != null || item.costAmount != null) return item;
+        if (!fallback) fallback = item;
+      }
+    }
+
     for (let i = displayMessages.length - 1; i >= 0; i -= 1) {
       const message = displayMessages[i];
       if (message.role !== "assistant") continue;
@@ -184,7 +213,7 @@ export function WorkspacePanel({
         for (let j = items.length - 1; j >= 0; j -= 1) {
           const item = items[j] as UsageItem;
           if (item?.kind !== "usage") continue;
-          if (item.costAmount != null) return item;
+          if (item.metrics != null || item.costAmount != null) return item;
           if (!fallback) fallback = item;
         }
       } catch {
@@ -192,7 +221,7 @@ export function WorkspacePanel({
       }
     }
     return fallback;
-  }, [displayMessages]);
+  }, [displayLive?.items, displayMessages]);
 
   const latestPlan = useMemo(
     () => (isTeamRun ? undefined : latestPlanFromMessages(displayMessages)),
@@ -422,6 +451,47 @@ export function WorkspacePanel({
               <dd>{formatDuration(durationMs)}</dd>
             </div>
           )}
+          {latestUsage?.metrics?.llmDurationMs != null && (
+            <div>
+              <dt>{t("workspace.llmDuration")}</dt>
+              <dd>{(latestUsage.metrics.llmDurationMs / 1000).toFixed(1)}s</dd>
+            </div>
+          )}
+          {latestUsage?.metrics?.avgTtftMs != null && latestUsage.metrics.avgTtftMs > 0 && (
+            <div>
+              <dt>{t("workspace.ttft")}</dt>
+              <dd>{(latestUsage.metrics.avgTtftMs / 1000).toFixed(1)}s</dd>
+            </div>
+          )}
+          {latestUsage?.metrics?.tokensPerSecond != null && latestUsage.metrics.tokensPerSecond > 0 && (
+            <div>
+              <dt>{t("workspace.speed")}</dt>
+              <dd>{latestUsage.metrics.tokensPerSecond} tok/s</dd>
+            </div>
+          )}
+          {(latestUsage?.metrics?.cacheHitRate != null || latestUsage?.cachedReadTokens != null) && (
+            <div>
+              <dt>{t("workspace.cacheHitRate")}</dt>
+              <dd>
+                {latestUsage?.metrics?.cacheHitRate != null
+                  ? `${Math.round(latestUsage.metrics.cacheHitRate * 100)}%`
+                  : latestUsage?.inputTokens
+                    ? `${Math.round(((latestUsage.cachedReadTokens ?? 0) / latestUsage.inputTokens) * 100)}%`
+                    : "0%"}
+                {latestUsage?.cachedReadTokens != null && latestUsage.cachedReadTokens > 0 && (
+                  <span style={{ fontSize: "11px", fontWeight: 400, marginLeft: "4px", color: "var(--fb-text-tertiary)" }}>
+                    ({formatTokens(latestUsage.cachedReadTokens)})
+                  </span>
+                )}
+              </dd>
+            </div>
+          )}
+          {latestUsage?.thoughtTokens != null && latestUsage.thoughtTokens > 0 && (
+            <div>
+              <dt>{t("workspace.thoughtTokens")}</dt>
+              <dd>{formatTokens(latestUsage.thoughtTokens)}</dd>
+            </div>
+          )}
           {latestUsage?.contextUsed != null && (
             <div>
               <dt>{t("workspace.context")}</dt>
@@ -447,8 +517,8 @@ export function WorkspacePanel({
                 <dt>{t("workspace.tokens")}</dt>
                 <dd>
                   {t("workspace.tokenBreakdown", {
-                    input: latestUsage.inputTokens ?? "\u2013",
-                    output: latestUsage.outputTokens ?? "\u2013"
+                    input: latestUsage.inputTokens != null ? formatTokens(latestUsage.inputTokens) : "\u2013",
+                    output: latestUsage.outputTokens != null ? formatTokens(latestUsage.outputTokens) : "\u2013"
                   })}
                 </dd>
               </div>

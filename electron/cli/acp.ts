@@ -174,6 +174,25 @@ export type AcpStreamItem =
       contextSize?: number;
       costAmount?: number;
       costCurrency?: string;
+      cachedReadTokens?: number;
+      cachedWriteTokens?: number;
+      thoughtTokens?: number;
+      totalTokens?: number;
+      metrics?: {
+        turns?: number;
+        steps?: number;
+        llmDurationMs?: number;
+        avgTtftMs?: number;
+        tokensPerSecond?: number;
+        cacheHitRate?: number;
+        uncachedInputTokens?: number;
+        cachedReadTokens?: number;
+        cachedWriteTokens?: number;
+        outputTokens?: number;
+        thoughtTokens?: number;
+        totalTokens?: number;
+        rawSummary?: string;
+      };
     }
   | {
       kind: "content-block";
@@ -1134,6 +1153,47 @@ export function acpSessionListToItems(
   return match ? acpSessionSetupToItems(sessionId, match) : [];
 }
 
+export function acpPromptResultToItems(result: any): AcpStreamItem[] {
+  if (!result || typeof result !== "object") return [];
+  const items: AcpStreamItem[] = [];
+  const usage = result.usage;
+  const meta = result._meta;
+  const metrics = meta?.metrics ?? result.metrics;
+
+  if (usage || metrics) {
+    items.push({
+      kind: "usage",
+      inputTokens: usage?.inputTokens ?? metrics?.totalInputTokens ?? metrics?.inputTokens,
+      outputTokens: usage?.outputTokens ?? metrics?.outputTokens,
+      cachedReadTokens: usage?.cachedReadTokens ?? metrics?.cachedReadTokens,
+      cachedWriteTokens: usage?.cachedWriteTokens ?? metrics?.cachedWriteTokens,
+      thoughtTokens: usage?.thoughtTokens ?? metrics?.thoughtTokens,
+      totalTokens: usage?.totalTokens ?? metrics?.totalTokens,
+      ...(metrics
+        ? {
+            metrics: {
+              turns: metrics.turns,
+              steps: metrics.steps,
+              llmDurationMs: metrics.llmDurationMs,
+              avgTtftMs: metrics.avgTtftMs,
+              tokensPerSecond: metrics.tokensPerSecond,
+              cacheHitRate: metrics.cacheHitRate,
+              uncachedInputTokens: metrics.uncachedInputTokens,
+              cachedReadTokens: metrics.cachedReadTokens,
+              cachedWriteTokens: metrics.cachedWriteTokens,
+              outputTokens: metrics.outputTokens,
+              thoughtTokens: metrics.thoughtTokens,
+              totalTokens: metrics.totalTokens,
+              rawSummary: metrics.rawSummary
+            }
+          }
+        : {})
+    });
+  }
+
+  return items;
+}
+
 /**
  * Reads `update._meta.codex.error`, the structured channel codex-acp uses to
  * relay retryable upstream gateway errors (e.g. HTTP 422 from the model
@@ -1294,7 +1354,23 @@ export function acpUpdateToItems(
                 costAmount: update.cost.amount,
                 costCurrency: typeof update.cost.currency === "string" ? update.cost.currency : undefined
               }
-            : {})
+            : {}),
+          ...(num(update, "inputTokens") != null
+            ? { inputTokens: num(update, "inputTokens") }
+            : {}),
+          ...(num(update, "outputTokens") != null
+            ? { outputTokens: num(update, "outputTokens") }
+            : {}),
+          ...(num(update, "cachedReadTokens") != null
+            ? { cachedReadTokens: num(update, "cachedReadTokens") }
+            : {}),
+          ...(num(update, "cachedWriteTokens") != null
+            ? { cachedWriteTokens: num(update, "cachedWriteTokens") }
+            : {}),
+          ...(num(update, "thoughtTokens") != null
+            ? { thoughtTokens: num(update, "thoughtTokens") }
+            : {}),
+          ...(update?._meta?.metrics ? { metrics: update._meta.metrics } : {})
         }
       ];
     case "plan":
