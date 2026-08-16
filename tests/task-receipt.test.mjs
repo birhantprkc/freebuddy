@@ -97,7 +97,7 @@ test("task receipt rejects malformed completion records", async () => {
   );
 });
 
-test("task receipt auto-opens once after the third success of the day", async () => {
+test("task receipt auto-open is disabled by default and can be enabled explicitly", async () => {
   const mod = await loadModule();
   const summary = {
     dayKey: "2026-08-09",
@@ -107,10 +107,17 @@ test("task receipt auto-opens once after the third success of the day", async ()
     streakDays: 1,
     representativeTasks: []
   };
-  assert.equal(mod.shouldAutoOpenTaskReceipt(summary, "success"), true);
+  assert.equal(mod.shouldAutoOpenTaskReceipt(summary, "success"), false);
   assert.equal(
-    mod.shouldAutoOpenTaskReceipt(summary, "success", "2026-08-09"),
+    mod.shouldAutoOpenTaskReceipt(summary, "success", "2026-08-09", true),
     false
   );
-  assert.equal(mod.shouldAutoOpenTaskReceipt(summary, "failure"), false);
+  assert.equal(
+    mod.shouldAutoOpenTaskReceipt(summary, "success", undefined, true),
+    true
+  );
+  assert.equal(
+    mod.shouldAutoOpenTaskReceipt(summary, "failure", undefined, true),
+    false
+  );
 });

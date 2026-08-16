@@ -2,6 +2,80 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.7.17] - 2026-08-16
+
+### 问题修复
+
+- unblock updater restart on mac and disable intrusive task receipt auto-popup
+
+## [0.7.16] - 2026-08-16
+
+### 新功能
+
+- display DSH performance and token metrics in run state card
+
+## [0.7.15] - 2026-08-16
+
+### 其他更新
+
+- 常规维护与稳定性改进
+
+## [0.7.14] - 2026-08-14
+
+### 问题修复
+
+- prefer standalone deepseek-harness-acp in dsh-acp adapter
+
+## [0.7.13] - 2026-08-14
+
+### 新功能
+
+- sync clean cordis config and match installHint
+
+### 问题修复
+
+- support standalone deepseek-harness-acp probe on Windows and macOS
+
+## [0.7.12] - 2026-08-14
+
+### 问题修复
+
+- fix Windows test assertions for DeepSeek ACP runtime
+
+## [0.7.11] - 2026-08-14
+
+### 其他更新
+
+- 常规维护与稳定性改进
+
+## [0.7.10] - 2026-08-14
+
+### 新功能
+
+- support deepseek-harness-acp standalone binary and enhance runtime error handling
+- fix
+- overlay a thin DeepSeek Harness fork on the official ACP runtime
+- add DeepSeek Harness ACP adapter
+
+### 问题修复
+
+- wait for electron build before app start
+- drop native sandbox for DeepSeek ACP on Windows to stop koffi crash
+- spawn global dsh-acp-demo through node so koffi --import sticks
+- keep DeepSeek sandbox enabled and prefer managed dsh-acp-demo
+- stub koffi on DeepSeek ACP spawn and export runtime diagnostics
+- overlay every DeepSeek JSONL copy and disable Windows ACL sandbox
+- patch DeepSeek JSONL off koffi MoveFileExW on Windows
+- stop DeepSeek ACP Windows access violation on session/prompt
+- hide Node SQLite ExperimentalWarning from DeepSeek ACP
+- install DeepSeek ACP into a local runtime and detect a bare bin
+- install DeepSeek ACP composition plugins with the demo
+- pass bundled cordis.yml when starting DeepSeek ACP
+- treat dsh-acp-demo as installed without --version
+- force skip koffi rebuild during DeepSeek ACP install
+- skip koffi source rebuild when installing DeepSeek ACP
+- install DeepSeek ACP from the next dist-tag
+
 ## [0.7.9] - 2026-08-11
 
 ### 新功能

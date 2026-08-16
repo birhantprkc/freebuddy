@@ -9,9 +9,9 @@ import { safeSendToWebContents } from "./ipcSend.js";
 import { appendMessage, createConversation, getConversation } from "./conversations.js";
 import { listCliMembers } from "./members.js";
 import { getCallerUserId, isCallerAdmin, runAsCaller } from "./callerContext.js";
-import { createCliStepExecutor, WorkflowRuntime } from "./workflowRuntime.js";
 import { extractVisibleStepOutput } from "./workflowScheduler.js";
 import type { WorkflowAgentRef, WorkflowPlan } from "./workflowTypes.js";
+import type { WorkflowRuntime } from "./workflowRuntime.js";
 import { isolateRemoteCwdForCaller } from "./remoteWorkspaceAccess.js";
 import {
   buildScheduledTaskPrompt,
@@ -488,7 +488,12 @@ function workflowAgents(): WorkflowAgentRef[] {
   }));
 }
 
-function createRuntime(webContents: WebContents): WorkflowRuntime {
+async function createRuntime(webContents: WebContents): Promise<WorkflowRuntime> {
+  // Dynamic import breaks the static cycle:
+  // workflowRuntime -> runtime -> acpRuntime -> butlerToolService -> scheduledTasks
+  const { createCliStepExecutor, WorkflowRuntime } = await import(
+    "./workflowRuntime.js"
+  );
   return new WorkflowRuntime({
     executor: createCliStepExecutor(webContents),
     webContents,
@@ -630,7 +635,7 @@ async function executeScheduledTask(
         }
       ]
     };
-    const runtime = createRuntime(webContents);
+    const runtime = await createRuntime(webContents);
     const created = runtime.createPendingRun({
       conversationId,
       plan,

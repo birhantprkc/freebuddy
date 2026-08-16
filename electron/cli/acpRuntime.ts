@@ -6,6 +6,7 @@ import type { Readable, Writable } from "node:stream";
 import type { WebContents } from "electron";
 
 import {
+  acpPromptResultToItems,
   acpSessionListToItems,
   acpSessionSetupToItems,
   acpUpdateToItems,
@@ -103,6 +104,11 @@ import {
 import { isPathWithinRoots } from "../shared/workspaceRoots.js";
 import { clearSessionOwner } from "./sessionOwners.js";
 import { getLanguage } from "./settings.js";
+import {
+  adapterAcceptsClientMcpServers,
+  formatAcpAgentExitMessage,
+  isDshAcpExperimentalWarningLine
+} from "./adapters.js";
 
 const PERMISSION_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 // An ACP turn blocks on a single session/prompt request that only resolves
@@ -855,6 +861,12 @@ export async function runAcpAgent({
     rlErr.on("line", (line) => {
       if (epoch !== connectionEpoch) return;
       appendLog(logStream, "stderr", line);
+      if (
+        args.adapter === "dsh-acp" &&
+        isDshAcpExperimentalWarningLine(line)
+      ) {
+        return;
+      }
       recentStderr.push(line);
       if (recentStderr.length > 50) recentStderr.shift();
       if (args.showStderr !== false) emit({ type: "stderr", content: line });
@@ -863,13 +875,17 @@ export async function runAcpAgent({
       if (epoch !== connectionEpoch) return;
       const exitCode = code ?? -1;
       for (const waiter of pending.values()) {
-        waiter.reject(new Error(`ACP agent exited with code ${exitCode}`));
+        waiter.reject(
+          new Error(
+            formatAcpAgentExitMessage(exitCode, getLanguage(), args.adapter)
+          )
+        );
       }
       pending.clear();
       if (finished) return;
       appendLog(logStream, "system", `exit code=${exitCode}`);
       const status = exitCode === 0 ? "done" : "failed";
-      const stderrTail = recentStderr.slice(-10).join("\n").trim();
+      const stderrTail = recentStderr.slice(-40).join("\n").trim();
       const commandTail = lastToolCommand.slice(-500).trim();
       const agentTail = lastAgentText.slice(-800).trim();
       const crashMessage =
@@ -877,7 +893,7 @@ export async function runAcpAgent({
           ? stderrTail ||
             (commandTail ? `Last command before exit: ${commandTail}` : "") ||
             (agentTail ? `Agent output before exit: ${agentTail}` : "") ||
-            `ACP agent exited with code ${exitCode}`
+            formatAcpAgentExitMessage(exitCode, getLanguage(), args.adapter)
           : undefined;
       finish(status, exitCode, crashMessage);
     });
@@ -1050,7 +1066,7 @@ export async function runAcpAgent({
     sessionWasResumed = false;
     armInactivityTimer();
     try {
-      await request(
+      const promptResult = await request(
         buildSessionPromptRequest(
           nextId(),
           activeAcpSessionId!,
@@ -1058,6 +1074,10 @@ export async function runAcpAgent({
           args.promptAttachments
         )
       );
+      const resultItems = acpPromptResultToItems(promptResult);
+      if (resultItems.length) {
+        emit({ type: "items", items: resultItems });
+      }
     } finally {
       disarmInactivityTimer();
     }
@@ -1212,63 +1232,66 @@ export async function runAcpAgent({
     // and launch an Electron child process. Remote WebUI callers use the
     // authenticated HTTP Draft endpoints instead, so do not expose either
     // desktop-only capability to isolated remote users.
-    if (args.conversationId && !remoteIsolated) {
-      mcpServers.push(
-        await registerDraftToolSession({
-          taskSessionId: args.sessionId,
-          conversationId: args.conversationId,
-          // Keep an unscoped conversation unscoped. ACP itself requires a cwd
-          // and falls back to process.cwd(), but Draft must not treat the app's
-          // launch directory as a user-selected workspace.
-          cwd: args.cwd ?? "",
-          webContents
-        }),
-        await registerBrowserToolSession(args.sessionId)
-      );
-    }
-    if (args.skills?.length) {
-      mcpServers.push(registerSkillToolSession(args.sessionId, args.skills));
-    }
-    if (args.agentId === BUTLERBUDDY_AGENT_ID && !remoteIsolated) {
-      mcpServers.push(
-        await registerButlerToolSession({
-          taskSessionId: args.sessionId,
-          agentId: args.agentId,
-          userId: getCallerUserId(),
-          webContents
-        })
-      );
-    }
-    if (args.delegation && !remoteIsolated) {
-      mcpServers.push(
-        await registerDelegateToolSession({
-          taskSessionId: args.sessionId,
-          runId: args.delegation.runId,
-          parentEventId: args.delegation.parentEventId,
-          depth: args.delegation.depth,
-          selfAgentId: args.delegation.selfAgentId,
-          selfLabel: args.delegation.selfLabel,
-          webContents
-        })
-      );
-    }
-    if (args.contextReferences?.length) {
-      mcpServers.push(
-        registerContextToolSession(args.sessionId, args.contextReferences)
-      );
-    }
-    const roots = (args.workspaceRoots ?? [])
-      .map((root) => (typeof root === "string" ? root.trim() : ""))
-      .filter(Boolean);
-    if (roots.length > 1) {
-      const primary = args.cwd || roots[0];
-      mcpServers.push(
-        await registerWorkspaceFsToolSession({
-          taskSessionId: args.sessionId,
-          roots,
-          primary
-        })
-      );
+    // DeepSeek Harness ACP rejects non-empty mcpServers on session/new.
+    if (adapterAcceptsClientMcpServers(args.adapter)) {
+      if (args.conversationId && !remoteIsolated) {
+        mcpServers.push(
+          await registerDraftToolSession({
+            taskSessionId: args.sessionId,
+            conversationId: args.conversationId,
+            // Keep an unscoped conversation unscoped. ACP itself requires a cwd
+            // and falls back to process.cwd(), but Draft must not treat the app's
+            // launch directory as a user-selected workspace.
+            cwd: args.cwd ?? "",
+            webContents
+          }),
+          await registerBrowserToolSession(args.sessionId)
+        );
+      }
+      if (args.skills?.length) {
+        mcpServers.push(registerSkillToolSession(args.sessionId, args.skills));
+      }
+      if (args.agentId === BUTLERBUDDY_AGENT_ID && !remoteIsolated) {
+        mcpServers.push(
+          await registerButlerToolSession({
+            taskSessionId: args.sessionId,
+            agentId: args.agentId,
+            userId: getCallerUserId(),
+            webContents
+          })
+        );
+      }
+      if (args.delegation && !remoteIsolated) {
+        mcpServers.push(
+          await registerDelegateToolSession({
+            taskSessionId: args.sessionId,
+            runId: args.delegation.runId,
+            parentEventId: args.delegation.parentEventId,
+            depth: args.delegation.depth,
+            selfAgentId: args.delegation.selfAgentId,
+            selfLabel: args.delegation.selfLabel,
+            webContents
+          })
+        );
+      }
+      if (args.contextReferences?.length) {
+        mcpServers.push(
+          registerContextToolSession(args.sessionId, args.contextReferences)
+        );
+      }
+      const roots = (args.workspaceRoots ?? [])
+        .map((root) => (typeof root === "string" ? root.trim() : ""))
+        .filter(Boolean);
+      if (roots.length > 1) {
+        const primary = args.cwd || roots[0];
+        mcpServers.push(
+          await registerWorkspaceFsToolSession({
+            taskSessionId: args.sessionId,
+            roots,
+            primary
+          })
+        );
+      }
     }
     if (mcpServers.length) {
       appendLog(

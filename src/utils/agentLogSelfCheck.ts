@@ -22,7 +22,7 @@ export function buildAgentLogSelfCheckPrompt(input: {
 
 \u65e5\u5fd7\u76ee\u5f55\uff1a${logDirectory}
 
-\u8bf7\u5148\u8bfb\u53d6\u8be5\u4e34\u65f6\u76ee\u5f55\u4e2d\u7684 README.txt\u3001environment.json\u3001logs/ \u548c sessions/\u3002
+\u8bf7\u5148\u8bfb\u53d6\u8be5\u4e34\u65f6\u76ee\u5f55\u4e2d\u7684 README.txt\u3001environment.json\u3001dsh-acp-runtime.json\u3001logs/ \u548c sessions/\u3002
 
 \u8981\u6c42\uff1a
 1. \u5148\u603b\u7ed3\u95ee\u9898\uff0c\u518d\u5217\u51fa\u7531\u65f6\u95f4\u6233\u6216\u51c6\u786e\u65e5\u5fd7\u6761\u76ee\u652f\u6301\u7684\u5173\u952e\u8bc1\u636e\u3002
@@ -39,7 +39,7 @@ export function buildAgentLogSelfCheckPrompt(input: {
 
 Log directory: ${logDirectory}
 
-Read README.txt, environment.json, logs/, and sessions/ from this temporary directory before writing the report.
+Read README.txt, environment.json, dsh-acp-runtime.json, logs/, and sessions/ from this temporary directory before writing the report.
 
 Requirements:
 1. Start with a problem summary, then list key evidence supported by timestamps or exact log entries.

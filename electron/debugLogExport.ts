@@ -8,9 +8,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { debugLogDir, mainLogDroppedLines } from "./debugLog.js";
-import { getDb, getLogDir } from "./cli/db.js";
+import { getDataDir, getDb, getLogDir } from "./cli/db.js";
 import { getSetting } from "./cli/settings.js";
-import { cliAdapterDefinitions } from "./cli/adapters.js";
+import {
+  buildDshAcpRuntimeDiagnostics,
+  cliAdapterDefinitions,
+  dshAcpManagedRoot,
+  dshHarnessOverlayDir
+} from "./cli/adapters.js";
 import { LOG_RETENTION_DAYS } from "./shared/debugLogCore.js";
 import { buildEnvironmentInfo } from "./shared/environmentInfo.js";
 import {
@@ -235,10 +240,24 @@ function readSessionLogFiles(
   return out;
 }
 
+function gatherDshAcpRuntime(): Record<string, unknown> {
+  try {
+    return {
+      ...buildDshAcpRuntimeDiagnostics({
+        runtimeRoot: dshAcpManagedRoot(getDataDir()),
+        overlayDir: dshHarnessOverlayDir()
+      })
+    };
+  } catch (err) {
+    return { error: (err as Error)?.message ?? String(err) };
+  }
+}
+
 function collectBundle(mode: ExportMode, exportedAt: string, conversationId?: string) {
   const masks = gatherPathMasks();
   return {
     environment: gatherEnvironment(mode, exportedAt, conversationId ? "conversation" : "all"),
+    dshAcpRuntime: gatherDshAcpRuntime(),
     appLogs: readAppLogFiles(mode, masks),
     sessionLogs: readSessionLogFiles(mode, masks, conversationId)
   };
@@ -292,7 +311,7 @@ export async function prepareAgentSelfCheckLogs(
   conversationId: string
 ): Promise<{ path: string }> {
   const exportedAt = formatLocalTimestamp(new Date());
-  const { environment, appLogs, sessionLogs } = collectBundle(
+  const { environment, dshAcpRuntime, appLogs, sessionLogs } = collectBundle(
     "full",
     exportedAt,
     conversationId
@@ -312,6 +331,11 @@ export async function prepareAgentSelfCheckLogs(
     fs.writeFileSync(
       path.join(target, "environment.json"),
       JSON.stringify(environment, null, 2),
+      { encoding: "utf8", mode: 0o600 }
+    );
+    fs.writeFileSync(
+      path.join(target, "dsh-acp-runtime.json"),
+      JSON.stringify(dshAcpRuntime, null, 2),
       { encoding: "utf8", mode: 0o600 }
     );
     fs.writeFileSync(
@@ -355,6 +379,7 @@ function readmeText(mode: ExportMode, exportedAt: string, scope: "conversation" 
     "logs/       app logs (JSONL: {ts, level, scope, msg, data?})",
     "sessions/   agent session transcripts (JSONL: {ts, type, content})",
     "environment.json  environment snapshot",
+    "dsh-acp-runtime.json  DeepSeek ACP overlay / koffi / cordis snapshot",
     "",
     "Please attach this file to a GitHub issue or send it to the developers."
   ].join("\n");
@@ -377,9 +402,10 @@ export async function exportDebugLogs(
 
   let zip: AdmZip;
   try {
-    const { environment, appLogs, sessionLogs } = collectBundle(mode, exportedAt, conversationId);
+    const { environment, dshAcpRuntime, appLogs, sessionLogs } = collectBundle(mode, exportedAt, conversationId);
     zip = new AdmZip();
     zip.addFile("environment.json", Buffer.from(JSON.stringify(environment, null, 2)));
+    zip.addFile("dsh-acp-runtime.json", Buffer.from(JSON.stringify(dshAcpRuntime, null, 2)));
     zip.addFile(
       "README.txt",
       Buffer.from(readmeText(mode, exportedAt, conversationId ? "conversation" : "all"))

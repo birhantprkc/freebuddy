@@ -31,7 +31,7 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   );
   assert.match(
     runtime,
-    /await isolateRemoteCwdForCaller\(effectiveArgs\.cwd\)/,
+    /await isolateRemoteCwdForCaller\((?:effectiveArgs|withWorkspace)\.cwd\)/,
     "every remote agent run must map its cwd to a managed clone"
   );
   assert.match(

@@ -101,6 +101,33 @@ test("concurrent agent installs keep stream events scoped to their request", () 
   assert.equal(ipcSource.includes("BrowserWindow.getFocusedWindow()?.webContents"), false);
 });
 
+test("DeepSeek ACP install skips koffi source rebuilds and clears Windows residue", () => {
+  assert.match(checkSource, /applyDshAcpNpmInstallEnv/);
+  assert.match(checkSource, /removeDshAcpWindowsResidue/);
+});
+
+test("DeepSeek ACP install patches koffi MoveFileExW after a successful npm install", () => {
+  assert.match(checkSource, /patchDshAcpManagedRuntime/);
+  const installClose = checkSource.slice(checkSource.indexOf("export function cliInstall("));
+  const streamClose = checkSource.slice(
+    checkSource.indexOf("export function cliInstallStream(")
+  );
+  assert.match(
+    installClose,
+    /adapter === "dsh-acp" && code === 0[\s\S]*patchDshAcpManagedRuntime/
+  );
+  assert.match(
+    streamClose,
+    /adapter === "dsh-acp" && code === 0[\s\S]*patchDshAcpManagedRuntime/
+  );
+});
+
+test("DeepSeek ACP check treats PATH resolution as installed without --version", () => {
+  assert.match(checkSource, /probe\.skipSpawn/);
+  assert.match(checkSource, /DSH_ACP_PLUGIN_TREE_MISSING/);
+  assert.match(checkSource, /prepareDshAcpManagedInstall/);
+});
+
 test("agent version probes preserve actionable failure categories", () => {
   assert.match(checkSource, /timeoutMs = 15_000/);
   assert.match(checkSource, /CPU lacks AVX support/);

@@ -5,8 +5,13 @@ import spawn from "cross-spawn";
 
 import {
   buildCommand,
+  dshAcpManagedRoot,
+  ensureDshAcpCwd,
+  patchDshAcpRuntimeFromCommand,
+  syncDshAcpManagedConfig,
   type CLIAdapterId
 } from "./adapters.js";
+import { getDataDir } from "./db.js";
 import {
   buildInitializeRequest,
   buildLogoutRequest,
@@ -42,13 +47,21 @@ async function withAcpAgent<T>(
   args: CliAuthControlArgs,
   operation: (request: (message: AcpMessage) => Promise<any>) => Promise<T>
 ): Promise<T> {
+  const cwd =
+    args.adapter === "dsh-acp"
+      ? ensureDshAcpCwd(args.cwd, getDataDir())
+      : args.cwd;
+  if (args.adapter === "dsh-acp") syncDshAcpManagedConfig(getDataDir());
   const built = buildCommand({
     adapter: args.adapter,
     binary: args.binary,
     extraArgs: args.extraArgs,
     prompt: "",
-    cwd: args.cwd
+    cwd,
+    dshAcpRuntimeRoot:
+      args.adapter === "dsh-acp" ? dshAcpManagedRoot(getDataDir()) : undefined
   });
+  if (args.adapter === "dsh-acp") patchDshAcpRuntimeFromCommand(built);
   if (built.protocol !== "acp") {
     throw new Error("Authentication control requires an ACP agent.");
   }
@@ -64,7 +77,7 @@ async function withAcpAgent<T>(
     )
   );
   const child = spawn(built.bin, built.args, {
-    cwd: args.cwd,
+    cwd,
     env,
     stdio: ["pipe", "pipe", "pipe"]
   }) as ChildProcessByStdio<Writable, Readable, Readable>;

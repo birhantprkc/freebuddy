@@ -1583,7 +1583,30 @@ app.whenReady().then(async () => {
       safeSendToWebContents(win.webContents, "delegation://finished", event);
     }
   });
-  registerUpdaterIpc();
+  registerUpdaterIpc({
+    beforeQuitAndInstall: async () => {
+      isQuittingApp = true;
+      closeButlerScreenBallWindow();
+      if (butlerBuddySleepBoundaryTimer !== null) {
+        clearTimeout(butlerBuddySleepBoundaryTimer);
+        butlerBuddySleepBoundaryTimer = null;
+      }
+      butlerBuddyStateCoordinator.dispose();
+      trayController?.destroy();
+      trayController = null;
+      closeButlerBuddyWindows();
+      if (!telemetryShutdownStarted) {
+        telemetryShutdownStarted = true;
+        await shutdownTelemetry().catch(() => {});
+      }
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.removeAllListeners("close");
+          win.destroy();
+        }
+      }
+    }
+  });
   const appIcon = loadAppIcon();
   if (process.platform === "darwin" && app.dock) {
     void app.dock.show();

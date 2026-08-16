@@ -118,6 +118,25 @@ export type CliStreamItem =
       /** ACP usage_update: cumulative cost amount. */
       costAmount?: number;
       costCurrency?: string;
+      cachedReadTokens?: number;
+      cachedWriteTokens?: number;
+      thoughtTokens?: number;
+      totalTokens?: number;
+      metrics?: {
+        turns?: number;
+        steps?: number;
+        llmDurationMs?: number;
+        avgTtftMs?: number;
+        tokensPerSecond?: number;
+        cacheHitRate?: number;
+        uncachedInputTokens?: number;
+        cachedReadTokens?: number;
+        cachedWriteTokens?: number;
+        outputTokens?: number;
+        thoughtTokens?: number;
+        totalTokens?: number;
+        rawSummary?: string;
+      };
     }
   | {
       kind: "content-block";

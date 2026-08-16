@@ -76,4 +76,5 @@ test("builtin members module exports the ACP agents", () => {
   assert.match(members, /cli-codebuddy-acp/);
   assert.match(members, /cli-grok-acp/);
   assert.match(members, /cli-agy-acp/);
+  assert.match(members, /cli-dsh-acp/);
 });

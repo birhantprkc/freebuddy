@@ -11,6 +11,7 @@ export type CLIAdapterId =
   | "codebuddy-acp"
   | "grok-acp"
   | "agy-acp"
+  | "dsh-acp"
   | (string & {});
 
 export type CLIStreamMode =
@@ -160,6 +161,19 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     toolSessionArgPrefixes: [],
     installHint: "npm install -g agy-acp-bridge",
     docsUrl: "https://github.com/maojindao55/agy-acp",
+    protocol: "acp"
+  },
+  {
+    id: "dsh-acp",
+    label: "DeepSeek Harness",
+    defaultBinary: "deepseek-harness-acp",
+    streamMode: "raw",
+    commandGroup: "deepseek",
+    capabilities: { toolSession: true },
+    toolSessionArgs: [],
+    toolSessionArgPrefixes: [],
+    installHint: "npm install -g deepseek-harness-acp",
+    docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
     protocol: "acp"
   }
 ];

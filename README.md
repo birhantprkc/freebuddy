@@ -10,7 +10,7 @@
 
 **A desktop workbench for local coding agents.** ⚡
 
-Use Codex, ClaudeCode, OpenCode, Cursor, Kimi, Qoder, and CodeBuddy side by side in one interface — each agent runs in its own workspace, with all tasks tracked in one place. Two modes are supported:
+Use Codex, ClaudeCode, OpenCode, Cursor, Kimi, Qoder, CodeBuddy, and DeepSeek Harness side by side in one interface — each agent runs in its own workspace, with all tasks tracked in one place. Two modes are supported:
 * **Normal Mode**
 ![hero](assets/fbd-hero.png)
 
@@ -59,6 +59,7 @@ FreeBuddy is compatible with **all CLI-based AI coding tools** — if it runs in
   <a href="https://code.kimi.com"><kbd><img src="https://www.google.com/s2/favicons?domain=moonshot.cn&sz=64" alt="Kimi logo" width="16" valign="middle" /> Kimi</kbd></a> &nbsp;
   <a href="https://qoder.com/install"><kbd><img src="https://www.google.com/s2/favicons?domain=qoder.com&sz=64" alt="Qoder logo" width="16" valign="middle" /> Qoder</kbd></a> &nbsp;
   <a href="https://www.npmjs.com/package/@tencent-ai/codebuddy-code"><kbd><img src="https://www.google.com/s2/favicons?domain=codebuddy.cn&sz=64" alt="CodeBuddy logo" width="16" valign="middle" /> CodeBuddy</kbd></a> &nbsp;
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><kbd><img src="https://www.google.com/s2/favicons?domain=deepseek.com&sz=64" alt="DeepSeek logo" width="16" valign="middle" /> DeepSeek</kbd></a> &nbsp;
   <kbd>+ any CLI agent</kbd>
 </p>
 
@@ -74,6 +75,9 @@ FreeBuddy is compatible with **all CLI-based AI coding tools** — if it runs in
 | **Kimi** | `kimi` | `curl -fsSL https://code.kimi.com/kimi-code/install.sh \| bash` | ✅ |
 | **Qoder** | `qodercli` | `curl -fsSL https://qoder.com/install \| bash` | ✅ |
 | **CodeBuddy** | `codebuddy` | `npm install -g @tencent-ai/codebuddy-code` | 🆕 |
+| **DeepSeek** | `dsh-acp-demo` | Settings → Coding Agents → **Install** (`@deepseek-ai/dsh-acp-demo@next` plus the official ACP plugin tree) | 🆕 |
+
+FreeBuddy starts DeepSeek with a bundled `cordis.yml` (`--config`). A `cordis.yml` in the workspace root wins if present. The published ACP demo has no runtime dependencies, so Install pulls `@deepseek-ai/dsh-llm-deepseek` and the rest of that plugin tree into FreeBuddy's own runtime directory (not a bin-only global install). Set `DEEPSEEK_API_KEY` under **Settings → Coding Agents**.
 
 </details>
 

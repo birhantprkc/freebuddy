@@ -10,7 +10,7 @@
 
 **面向本地编码 Agent 的桌面工作台。** ⚡
 
-把 Codex、ClaudeCode、OpenCode、Cursor、Kimi、Qoder 和 CodeBuddy 放在一个界面里并行使用 —— 每个 Agent 在独立的工作区运行，所有任务统一追踪。支持两大模式：
+把 Codex、ClaudeCode、OpenCode、Cursor、Kimi、Qoder、CodeBuddy 和 DeepSeek Harness 放在一个界面里并行使用 —— 每个 Agent 在独立的工作区运行，所有任务统一追踪。支持两大模式：
 * **普通模式**
 ![hero](assets/fbd-hero.png)
 
@@ -60,6 +60,7 @@ FreeBuddy 兼容**所有基于 CLI 的 AI 编码工具** —— 只要它能在�
   <a href="https://code.kimi.com"><kbd><img src="https://www.google.com/s2/favicons?domain=moonshot.cn&sz=64" alt="Kimi logo" width="16" valign="middle" /> Kimi</kbd></a> &nbsp;
   <a href="https://qoder.com/install"><kbd><img src="https://www.google.com/s2/favicons?domain=qoder.com&sz=64" alt="Qoder logo" width="16" valign="middle" /> Qoder</kbd></a> &nbsp;
   <a href="https://www.npmjs.com/package/@tencent-ai/codebuddy-code"><kbd><img src="https://www.google.com/s2/favicons?domain=codebuddy.cn&sz=64" alt="CodeBuddy logo" width="16" valign="middle" /> CodeBuddy</kbd></a> &nbsp;
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><kbd><img src="https://www.google.com/s2/favicons?domain=deepseek.com&sz=64" alt="DeepSeek logo" width="16" valign="middle" /> DeepSeek</kbd></a> &nbsp;
   <kbd>+ any CLI agent</kbd>
 </p>
 
@@ -75,6 +76,9 @@ FreeBuddy 兼容**所有基于 CLI 的 AI 编码工具** —— 只要它能在�
 | **Kimi** | `kimi` | `curl -fsSL https://code.kimi.com/kimi-code/install.sh \| bash` | ✅ |
 | **Qoder** | `qodercli` | `curl -fsSL https://qoder.com/install \| bash` | ✅ |
 | **CodeBuddy** | `codebuddy` | `npm install -g @tencent-ai/codebuddy-code` | 🆕 |
+| **DeepSeek** | `dsh-acp-demo` | 设置 → 编码 Agent → **安装**（`@deepseek-ai/dsh-acp-demo@next` 以及官方 ACP 插件树） | 🆕 |
+
+FreeBuddy 启动 DeepSeek 时会带上内置的 `cordis.yml`（`--config`）。工作区根目录若已有 `cordis.yml` 则优先使用。发布到 npm 的 ACP demo **不含运行时依赖**，所以安装会把 `@deepseek-ai/dsh-llm-deepseek` 等插件装进 FreeBuddy 自己的运行时目录，而不是只装一个全局 bin。请在 **设置 → 编码 Agent** 中配置 `DEEPSEEK_API_KEY`。
 
 </details>
 
