@@ -873,7 +873,9 @@ export function migrate(db: DB) {
       depth INTEGER NOT NULL,
       status TEXT NOT NULL,
       result_summary TEXT,
+      result_json TEXT,
       can_write INTEGER NOT NULL DEFAULT 0,
+      accepted_at TEXT,
       started_at TEXT,
       ended_at TEXT,
       verdict TEXT,
@@ -892,6 +894,13 @@ export function migrate(db: DB) {
   }
   if (!delegationEventCols.some((c) => c.name === "verdict_summary")) {
     db.exec("ALTER TABLE delegation_events ADD COLUMN verdict_summary TEXT");
+  }
+  if (!delegationEventCols.some((c) => c.name === "result_json")) {
+    db.exec("ALTER TABLE delegation_events ADD COLUMN result_json TEXT");
+  }
+  if (!delegationEventCols.some((c) => c.name === "accepted_at")) {
+    db.exec("ALTER TABLE delegation_events ADD COLUMN accepted_at TEXT");
+    db.exec("UPDATE delegation_events SET accepted_at = started_at WHERE accepted_at IS NULL");
   }
 
   const scheduledTaskCols = db

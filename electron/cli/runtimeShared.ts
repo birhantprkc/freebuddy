@@ -46,6 +46,8 @@ export interface CliRunArgs {
   toolSessionId?: string;
   env?: Record<string, string>;
   approvalMode?: "auto" | "ask";
+  /** Enforced by the process sandbox for delegation roles that may not mutate the workspace. */
+  workspaceAccess?: "read-only" | "read-write";
   configOptionOverrides?: Record<string, string>;
   showStderr?: boolean;
   resumeToolSession?: boolean;
@@ -164,6 +166,8 @@ export interface Running {
   child: ChildProcessByStdio<Writable, Readable, Readable>;
   pid: number;
   cancel?: () => void;
+  /** End the current turn successfully without marking the task as killed. */
+  yield?: () => void;
 }
 
 export function channelName(sessionId: string) {

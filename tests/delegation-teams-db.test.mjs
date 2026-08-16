@@ -49,12 +49,46 @@ test("migration creates delegation_events table with expected columns", async (t
     for (const name of [
       "id", "run_id", "parent_event_id", "agent_id", "agent_name", "role_label",
       "task_text", "depth", "status", "result_summary", "can_write",
-      "started_at", "ended_at", "verdict", "verdict_summary"
+      "accepted_at", "started_at", "ended_at", "verdict", "verdict_summary", "result_json"
     ]) {
       assert.ok(cols.includes(name), `delegation_events.${name} missing`);
     }
     const indexes = db.prepare("PRAGMA index_list('delegation_events')").all().map((i) => i.name);
     assert.ok(indexes.includes("idx_delegation_events_run"), "idx_delegation_events_run index missing");
+  });
+});
+
+test("delegation event terminal states reject late executor writes", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const {
+      createDelegationRun,
+      getDelegationEvent,
+      insertDelegationEvent,
+      transitionDelegationEvent
+    } = await import("../dist-electron/cli/delegationRuns.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "t", teamSnapshotJson: "{}" });
+    const eventId = insertDelegationEvent({
+      runId,
+      parentEventId: null,
+      agentId: "a",
+      agentName: "A",
+      roleLabel: "A",
+      taskText: "slow task",
+      depth: 0,
+      canWrite: false,
+      status: "pending"
+    });
+
+    assert.equal(transitionDelegationEvent(eventId, "running"), true);
+    assert.equal(transitionDelegationEvent(eventId, "cancelled", "用户停止"), true);
+    assert.equal(
+      transitionDelegationEvent(eventId, "done", "late success"),
+      false,
+      "a late executor result must not overwrite cancellation"
+    );
+    assert.equal(getDelegationEvent(eventId)?.status, "cancelled");
+    assert.equal(getDelegationEvent(eventId)?.resultSummary, "用户停止");
   });
 });
 
@@ -160,6 +194,83 @@ test("createDelegationRun inserts a kind=delegation run row", async (t) => {
     assert.equal(run.status, "running");
     assert.equal(run.teamId, "team-del-1");
   });
+});
+
+test("delegation run and event reads are scoped to the conversation owner", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { runAsCaller } = await import("../dist-electron/cli/callerContext.js");
+    const { createConversation } = await import("../dist-electron/cli/conversations.js");
+    const {
+      callerCanAccessDelegationRun,
+      createDelegationRun,
+      getDelegationRun,
+      insertDelegationEvent,
+      listDelegationEvents
+    } = await import("../dist-electron/cli/delegationRuns.js");
+    const conversationId = "conv-owned-delegation";
+    runAsCaller("alice", () => {
+      createConversation({
+        id: conversationId,
+        title: "owned",
+        agentId: "a",
+        agentName: "A",
+        adapter: "codex-acp"
+      });
+    });
+    const runId = createDelegationRun({
+      goal: "g",
+      teamId: "t",
+      teamSnapshotJson: "{}",
+      conversationId
+    });
+    insertDelegationEvent({
+      runId,
+      parentEventId: null,
+      agentId: "a",
+      agentName: "A",
+      roleLabel: "entry",
+      taskText: "g",
+      depth: 0,
+      canWrite: true,
+      status: "running"
+    });
+
+    runAsCaller("bob", () => {
+      assert.equal(callerCanAccessDelegationRun(runId), false);
+      assert.equal(getDelegationRun(runId), undefined);
+      assert.deepEqual(listDelegationEvents(runId), []);
+    });
+    runAsCaller("alice", () => {
+      assert.equal(callerCanAccessDelegationRun(runId), true);
+      assert.equal(getDelegationRun(runId)?.id, runId);
+      assert.equal(listDelegationEvents(runId).length, 1);
+    });
+    runAsCaller("admin", () => {
+      assert.equal(getDelegationRun(runId)?.id, runId);
+    }, true);
+  });
+});
+
+test("read-only delegation roles are enforced by workspace sandbox policy", () => {
+  const runtime = fs.readFileSync(
+    new URL("../electron/cli/runtime.ts", import.meta.url),
+    "utf8"
+  );
+  const sandbox = fs.readFileSync(
+    new URL("../electron/cli/sandboxRuntime.ts", import.meta.url),
+    "utf8"
+  );
+  const acpRuntime = fs.readFileSync(
+    new URL("../electron/cli/acpRuntime.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(runtime, /shouldSandboxCurrentCaller\(\) \|\| readOnlyWorkspace/);
+  assert.match(runtime, /!readOnlyWorkspace[\s\S]*reconcileNativeSkillLinks/);
+  assert.match(sandbox, /readOnlyWorkspace \? \[workspaceRoot\] : \[\]/);
+  assert.match(sandbox, /denyWrite/);
+  assert.match(acpRuntime, /shouldSandboxCurrentCaller\(\) \|\| readOnlyWorkspace/);
+  assert.match(acpRuntime, /readOnlyWorkspace/);
 });
 
 test("App wires delegation onRunFinished like workflow completion notifications", () => {

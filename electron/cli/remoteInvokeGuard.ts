@@ -87,7 +87,8 @@ const CWD_CHANNELS = new Set([
   "cli:inspectSessionConfigOptions",
   "cli:getCachedSessionConfigOptions",
   "cli:createConversation",
-  "cli:searchWorkspaceFiles"
+  "cli:searchWorkspaceFiles",
+  "workflow:createDelegationRun"
 ]);
 
 /**

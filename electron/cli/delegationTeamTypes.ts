@@ -43,6 +43,28 @@ export type DelegationEventStatus =
 
 export type DelegationVerdict = "pass" | "needs_changes" | "fail";
 
+export interface DelegationArtifact {
+  kind: "file" | "url" | "text";
+  label: string;
+  uri?: string;
+}
+
+/** Versioned terminal result contract; resultSummary remains as a v0 compatibility field. */
+export interface DelegationResult {
+  schemaVersion: 1;
+  status: Exclude<DelegationEventStatus, "pending" | "running">;
+  summary: string;
+  exitCode: number | null;
+  error: {
+    code: "delegate_failed" | "delegate_timeout" | "delegate_cancelled";
+    message: string;
+    retryable: boolean;
+  } | null;
+  artifacts: DelegationArtifact[];
+  verdict: DelegationVerdict | null;
+  verdictSummary: string | null;
+}
+
 export interface DelegationEvent {
   id: string;
   runId: string;
@@ -54,7 +76,9 @@ export interface DelegationEvent {
   depth: number;
   status: DelegationEventStatus;
   resultSummary: string | null;
+  result: DelegationResult | null;
   canWrite: boolean;
+  acceptedAt: string | null;
   startedAt: string | null;
   endedAt: string | null;
   verdict: DelegationVerdict | null;

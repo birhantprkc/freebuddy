@@ -41,6 +41,49 @@ export interface DelegationRunRow {
   endedAt: string | null;
 }
 
+export type DelegationEventStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | "timeout"
+  | "cancelled";
+
+export interface DelegationResult {
+  schemaVersion: 1;
+  status: Exclude<DelegationEventStatus, "pending" | "running">;
+  summary: string;
+  exitCode: number | null;
+  error: {
+    code: "delegate_failed" | "delegate_timeout" | "delegate_cancelled";
+    message: string;
+    retryable: boolean;
+  } | null;
+  artifacts: Array<{ kind: "file" | "url" | "text"; label: string; uri?: string }>;
+  verdict: "pass" | "needs_changes" | "fail" | null;
+  verdictSummary: string | null;
+}
+
+export interface DelegationEventRow {
+  id: string;
+  runId: string;
+  parentEventId: string | null;
+  agentId: string;
+  agentName: string;
+  roleLabel: string;
+  taskText: string;
+  depth: number;
+  status: DelegationEventStatus;
+  resultSummary: string | null;
+  result: DelegationResult | null;
+  canWrite: boolean;
+  acceptedAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  verdict: "pass" | "needs_changes" | "fail" | null;
+  verdictSummary: string | null;
+}
+
 export type DelegationRunFinishedEvent = {
   runId: string;
   conversationId?: string;
@@ -118,7 +161,7 @@ export const delegationClient = {
     return api().getRunByConversation(conversationId);
   },
 
-  listEvents(runId: string): Promise<unknown[]> {
+  listEvents(runId: string): Promise<DelegationEventRow[]> {
     return api().listEvents(runId);
   },
 

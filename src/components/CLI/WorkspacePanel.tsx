@@ -28,6 +28,7 @@ import {
 import { AgentAvatar } from "./AgentAvatar";
 import { InfoCardHost } from "../InfoCards/InfoCardHost";
 import { WorkflowRunPanel } from "../Workflows/WorkflowRunPanel";
+import { DelegationTeamCard } from "../Workflows/DelegationTeamCard";
 import { mergeSessionMetaItems } from "@/store/sessionMetaUtils";
 import { conversationDisplayCwd } from "./conversationProjectGrouping";
 
@@ -341,6 +342,9 @@ export function WorkspacePanel({
   return (
     <div className="workspace-cards" aria-label={t("workspace.panelAria")}>
       <WorkflowRunPanel />
+      {activeId && isDelegationConv ? (
+        <DelegationTeamCard conversationId={activeId} />
+      ) : null}
 
       {isTeamRun ? null : (
         <section className="side-card active-agent-card">

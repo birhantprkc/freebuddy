@@ -1,7 +1,7 @@
 ---
 name: delegation
 description: Collaborate with teammate agents in a self-organizing delegation run. Discover teammates and delegate sub-tasks asynchronously; the system wakes you when results settle.
-version: 1.2.1
+version: 1.4.0
 ---
 
 # Delegation
@@ -20,14 +20,15 @@ Do NOT delegate:
 
 ## How to delegate
 1. Call `list_teammates` to see who is available.
-2. Call `delegate(teammate_id, task)` — returns IMMEDIATELY with `{request_id, status:"pending"}`. The teammate runs asynchronously.
-3. Call `check_delegate_result(request_id)`:
-   - status `done`/`failed`/`timeout` = terminal. Use `result` to continue (retry, delegate elsewhere, or do it yourself).
-   - status `running` = teammate is executing. END THIS TURN IMMEDIATELY. Do NOT call `check_delegate_result` again for this request. The system will automatically wake you with the result when it settles.
-   - status `pending` = queued behind the concurrency limit (not started yet). Keep this turn open; poll `check_delegate_result` after a few seconds. Do NOT end your turn while pending.
+2. For one sub-task, Call `delegate(teammate_id, task)` — returns IMMEDIATELY with a durable acceptance receipt `{request_id, status:"pending"}`. No receipt means the sub-task was not accepted.
+3. For multiple independent sub-tasks, Use `delegate_many(delegations)` for independent sub-tasks. Acceptance is atomic: either every item returns a request handle, or none are created.
+4. After one or more requests are accepted, call `yield_to_delegates(request_ids)` once. It only yields when at least one owned request is still active; otherwise it returns an error and you must keep working.
+5. When yield succeeds, the runtime parks this turn automatically and wakes you with a settled result.
+
+Do not poll `check_delegate_result`. It is only for inspecting a request when recovery or diagnostics require it.
 
 ## Handle the result
-- `status: "done"` → use `result`.
+- `status: "done"` → prefer structured `outcome`; use legacy `result` as a fallback.
 - `status: "failed"` / `"timeout"` → decide: retry, delegate to a different teammate, or do it yourself. Do not loop forever.
 
 ## Review verdicts

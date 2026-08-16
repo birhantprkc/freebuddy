@@ -160,8 +160,6 @@ const ALLOW = [
   "workflowTeams:update",
 
   // Delegation team CRUD and run/event reads (scoped like workflow teams).
-  "delegation:createTeam",
-  "delegation:deleteTeam",
   "delegation:getRun",
   "delegation:getRunByConversation",
   "delegation:getTeam",
@@ -169,12 +167,16 @@ const ALLOW = [
   "delegation:listPendingApprovals",
   "delegation:listTeams",
   "delegation:stopRun",
-  "delegation:updateTeam",
   "delegation:hasRunForConversation",
   "delegation:followUp"
 ] as const;
 
 const ADMIN_ONLY = [
+  // Delegation teams are shared host configuration, not per-user resources.
+  "delegation:createTeam",
+  "delegation:deleteTeam",
+  "delegation:updateTeam",
+
   // Editing an override rewrites the executable and environment used by every
   // later run, so it must not be reachable from a member's browser.
   "cli:upsertOverride",
@@ -199,6 +201,11 @@ const ADMIN_ONLY = [
 ] as const;
 
 const DENY = [
+  // Delegation pause/resume mutate live host processes and do not yet enforce
+  // per-owner access. Keep them desktop-only until that guard exists.
+  "delegation:pauseRun",
+  "delegation:resumeRun",
+
   // Debug log export is desktop-only (privacy).
   "debugLog:write",
   "debugLogs:preview",

@@ -8,7 +8,9 @@ test("protocol text is the single source for roster / MCP / skill phrases", asyn
   const {
     buildDelegationRosterPrompt,
     mcpDelegateDescription,
+    mcpDelegateManyDescription,
     mcpCheckResultDescription,
+    mcpYieldToDelegatesDescription,
     buildDelegationSkillMarkdown,
     PROTOCOL_RULES
   } = await import("../dist-electron/cli/delegation/protocol/text.js");
@@ -19,8 +21,9 @@ test("protocol text is the single source for roster / MCP / skill phrases", asyn
   ];
   const prompt = buildDelegationRosterPrompt(roster, "r-impl", 0, 3);
   assert.match(prompt, /pending/);
-  assert.match(prompt, /running/);
-  assert.match(prompt, /立即结束本轮|禁止再.*check_delegate_result/);
+  assert.match(prompt, /delegate_many/);
+  assert.match(prompt, /yield_to_delegates/);
+  assert.match(prompt, /自动 park/);
   assert.match(prompt, /唤醒/);
   assert.match(prompt, /别反弹/);
   assert.match(prompt, /整份任务/);
@@ -30,26 +33,36 @@ test("protocol text is the single source for roster / MCP / skill phrases", asyn
   assert.match(del, /no ping-pong|bounce/i);
   assert.match(del, /entire task/i);
 
+  const many = mcpDelegateManyDescription();
+  assert.match(many, /atomic/i);
+  assert.match(many, /none are created/i);
+
+  const yieldDescription = mcpYieldToDelegatesDescription();
+  assert.match(yieldDescription, /yield_to_delegates/);
+  assert.match(yieldDescription, /at least one owned request is still active/i);
+
   const check = mcpCheckResultDescription();
-  assert.match(check, /wake/i);
+  assert.match(check, /Do not use this tool for polling/i);
   assert.match(check, /pending/i);
   assert.match(check, /running/i);
-  assert.match(check, /END THIS TURN IMMEDIATELY/i);
-  assert.match(check, /Do NOT call `check_delegate_result` again/i);
+  assert.match(check, /yield_to_delegates/i);
 
   const skill = buildDelegationSkillMarkdown();
   assert.match(skill, /no ping-pong/);
   assert.match(skill, /entire task/);
   assert.match(skill, /wake/i);
   assert.match(skill, /submit_verdict/);
-  assert.match(skill, /1\.2\.1/);
-  assert.match(skill, /END THIS TURN IMMEDIATELY/);
+  assert.match(skill, /1\.4\.0/);
+  assert.match(skill, /parks this turn automatically/);
+  assert.match(skill, /delegate_many/);
+  assert.match(skill, /yield_to_delegates/);
+  assert.match(skill, /Do not poll `check_delegate_result`/);
   assert.doesNotMatch(skill, /every 3-5 seconds until status is/);
   assert.doesNotMatch(skill, /You MAY end your turn/);
 
-  assert.ok(PROTOCOL_RULES.runningMeansEndTurn.includes("wake"));
-  assert.ok(PROTOCOL_RULES.runningMeansEndTurn.includes("END THIS TURN IMMEDIATELY"));
-  assert.match(PROTOCOL_RULES.runningCheckInstruction, /End this turn now/i);
+  assert.ok(PROTOCOL_RULES.yieldInstruction.includes("wake"));
+  assert.ok(PROTOCOL_RULES.yieldInstruction.includes("parking this turn now"));
+  assert.match(PROTOCOL_RULES.runningCheckInstruction, /yield_to_delegates/i);
 });
 
 test("checked-in SKILL.md matches protocol skill generator key rules", async () => {
@@ -60,8 +73,11 @@ test("checked-in SKILL.md matches protocol skill generator key rules", async () 
   assert.match(disk, /wake/i);
   assert.match(disk, /pending/);
   assert.match(disk, /submit_verdict/);
-  assert.match(disk, /1\.2\.1/);
-  assert.match(disk, /END THIS TURN IMMEDIATELY/);
+  assert.match(disk, /1\.4\.0/);
+  assert.match(disk, /parks this turn automatically/);
+  assert.match(disk, /delegate_many/);
+  assert.match(disk, /yield_to_delegates/);
+  assert.match(disk, /Do not poll `check_delegate_result`/);
   assert.doesNotMatch(disk, /Poll `check_delegate_result\(request_id\)` every 3-5 seconds\. When `status` is `"done"`/);
   assert.doesNotMatch(disk, /You MAY end your turn/);
 });

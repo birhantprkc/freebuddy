@@ -89,6 +89,9 @@ test("submit_verdict writes and check_delegate_result returns it", async (t) => 
     assert.equal(checked.ok, true);
     assert.equal(checked.verdict, "needs_changes");
     assert.equal(checked.verdictSummary, "toast copy");
+    assert.equal(checked.outcome?.schemaVersion, 1);
+    assert.equal(checked.outcome?.verdict, "needs_changes");
+    assert.equal(checked.outcome?.verdictSummary, "toast copy");
     assert.equal(checked.instruction, undefined);
   });
 });

@@ -38,6 +38,7 @@ test("write-approval gate blocks until resolved true/false", async (t) => {
   if (!bindingAvailable) { t.skip(); return; }
   await withDb(async () => {
     const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
     const rt = new DelegationRuntime({ webContents: undefined, resolveAgent: () => undefined, runAgent: async () => ({ summary: "", exitCode: 0, error: null }) });
     const runId = rt.prepareRun({ goal: "g", teamId: "t", teamSnapshot: snap, cwd: "/r" });
     const teammate = roster[0];
@@ -46,11 +47,35 @@ test("write-approval gate blocks until resolved true/false", async (t) => {
     assert.equal(pending.length, 1);
     rt.resolveWriteApproval(pending[0].approvalId, true);
     assert.equal(await promise, true);
+    assert.equal(getDelegationRun(runId).status, "running");
 
     const promise2 = rt.requestWriteApproval(runId, teammate);
     const a2 = rt.listPendingApprovals()[0];
     rt.resolveWriteApproval(a2.approvalId, false);
     assert.equal(await promise2, false);
+    assert.equal(getDelegationRun(runId).status, "running", "a denial must unblock the parent run");
+  });
+});
+
+test("stopRun rejects pending write approvals", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { getDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: () => undefined,
+      runAgent: async () => ({ summary: "", exitCode: 0, error: null })
+    });
+    const runId = rt.prepareRun({ goal: "g", teamId: "t", teamSnapshot: snap, cwd: "/r" });
+    const approval = rt.requestWriteApproval(runId, roster[0]);
+    assert.equal(rt.listPendingApprovals().length, 1);
+
+    rt.stopRun(runId);
+
+    assert.equal(await approval, false);
+    assert.equal(rt.listPendingApprovals().length, 0);
+    assert.equal(getDelegationRun(runId).status, "killed");
   });
 });
 
@@ -194,6 +219,33 @@ test("delegated teammate runAgent receives configOptionOverrides from teammate m
     await tick(50);
     assert.equal(spawned.agentId, "cli-claude-agent-acp");
     assert.deepEqual(spawned.configOptionOverrides, { model: "claude-sonnet-4" });
+    assert.equal(spawned.workspaceAccess, "read-only");
+  });
+});
+
+test("delegation agent turns restore the run owner context", async (t) => {
+  if (!bindingAvailable) { t.skip(); return; }
+  await withDb(async () => {
+    const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
+    const { getCallerUserId, runAsCaller } = await import(
+      "../dist-electron/cli/callerContext.js"
+    );
+    const observedOwners = [];
+    const rt = new DelegationRuntime({
+      webContents: undefined,
+      resolveAgent: () => ({ adapter: "codex-acp", agentName: "Codex", skillIds: [] }),
+      runAgent: async () => {
+        observedOwners.push(getCallerUserId());
+        return { summary: "done", exitCode: 0, error: null };
+      }
+    });
+    const runId = runAsCaller("owner-alice", () =>
+      rt.prepareRun({ goal: "g", teamId: "t", teamSnapshot: snap, cwd: "/r" })
+    );
+
+    await rt.runEntry(runId, "g");
+
+    assert.deepEqual(observedOwners, ["owner-alice"]);
   });
 });
 

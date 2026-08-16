@@ -13006,6 +13006,10 @@ button.ghost:disabled {
   flex-shrink: 0;
 }
 
+.workspace-cards > .delegation-roster-stack {
+  flex: 0 0 auto;
+}
+
 .detail-resizer {
   position: fixed;
   top: 0;
@@ -17960,7 +17964,7 @@ button.ghost:focus-visible,
 }
 .delegation-roster-active {
   border-color: var(--fb-brand, #10b981);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.12);
 }
 .delegation-roster-status-running {
   color: var(--fb-brand, #10b981);
@@ -17968,92 +17972,195 @@ button.ghost:focus-visible,
 .delegation-roster-done {
   opacity: 0.6;
 }
-.delegation-run-tree {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 4px 14px 14px;
+.delegation-members-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+}
+.delegation-members-heading span {
+  color: var(--fb-text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.delegation-members-heading strong {
+  color: var(--fb-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.delegation-member-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
+  min-width: 0;
 }
-.delegation-run-tree-empty,
-.delegation-run-loading {
-  padding: 8px 14px 14px;
-  font-size: 12px;
-  color: var(--muted, #6b7280);
+.delegation-member-card {
+  min-width: 0;
+  overflow: hidden;
 }
-.delegation-run-error {
-  margin: 4px 14px;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: #991b1b;
-  background: #fee2e2;
-  border-radius: 6px;
-}
-.delegation-run-approval {
+.delegation-member-summary {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 11px;
+  padding: 13px 14px;
 }
-.delegation-run-approval-label {
-  font-size: 12px;
-  color: var(--fb-text);
+.delegation-member-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
 }
-.delegation-event-row {
+.delegation-member-identity {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--fb-border);
-  background: var(--fb-panel-bg);
 }
-.delegation-event-row.live {
-  border-color: var(--fb-brand, #10b981);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.12);
-}
-.delegation-event-head {
+.delegation-member-role-line {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
 }
-.delegation-event-agent {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fb-text);
+.delegation-member-role-line span {
+  overflow: hidden;
+  color: var(--fb-text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-.delegation-event-role {
+.delegation-member-role-line em {
+  padding: 1px 5px;
+  border-radius: 999px;
+  color: var(--fb-brand);
+  background: color-mix(in srgb, var(--fb-brand) 10%, transparent);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+}
+.delegation-member-identity > strong {
+  overflow: hidden;
+  color: var(--fb-text-primary);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 19px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delegation-member-identity > small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fb-text-tertiary);
   font-size: 11px;
-  color: var(--muted, #6b7280);
+  line-height: 15px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+.delegation-member-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.delegation-member-state,
+.delegation-member-access {
+  white-space: nowrap;
+}
+.delegation-member-state {
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--fb-text-secondary);
+  background: var(--fb-panel-soft);
+  font-size: 10px;
+  font-weight: 650;
+}
+.delegation-member-state.running,
+.delegation-member-state.pending {
+  color: var(--fb-brand);
+  background: color-mix(in srgb, var(--fb-brand) 11%, transparent);
+}
+.delegation-member-state.failed,
+.delegation-member-state.timeout {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+.delegation-member-state.cancelled {
+  color: #92400e;
+  background: #fef3c7;
+}
+.delegation-member-state.done {
+  color: #166534;
+  background: #dcfce7;
+}
+.delegation-member-access {
+  color: var(--fb-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+}
+.delegation-member-activity {
+  border-top: 1px solid var(--fb-border);
+  background: color-mix(in srgb, var(--fb-panel-soft) 50%, transparent);
+}
+.delegation-activity-item {
+  position: relative;
+  padding: 10px 14px 10px 32px;
+}
+.delegation-activity-item:not(:last-of-type) {
+  border-bottom: 1px solid var(--fb-border);
+}
+.delegation-activity-head {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+  gap: 6px;
+}
+.delegation-activity-dot {
+  position: absolute;
+  top: 16px;
+  left: 15px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fb-text-tertiary);
+}
+.delegation-activity-dot.running,
+.delegation-activity-dot.pending {
+  background: var(--fb-brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fb-brand) 12%, transparent);
+}
+.delegation-activity-dot.done {
+  background: #16a34a;
+}
+.delegation-activity-dot.failed,
+.delegation-activity-dot.timeout {
+  background: #dc2626;
+}
+.delegation-activity-dot.cancelled {
+  background: #d97706;
 }
 .delegation-event-duration {
   font-size: 11px;
-  color: var(--muted, #6b7280);
+  color: var(--fb-text-tertiary);
   font-variant-numeric: tabular-nums;
-}
-.delegation-event-toggle {
-  margin-left: auto;
-  font-size: 11px;
-  background: transparent;
-  border: none;
-  color: var(--fb-brand, #10b981);
-  cursor: pointer;
-  padding: 0;
 }
 .delegation-event-status {
   font-size: 10px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 999px;
-  background: var(--surface-alt, #f3f4f6);
-  color: var(--muted, #6b7280);
-  font-weight: 500;
-  text-transform: capitalize;
+  background: var(--fb-panel-bg);
+  color: var(--fb-text-secondary);
+  font-weight: 650;
   white-space: nowrap;
 }
 .delegation-event-status.running {
-  background: rgba(16, 185, 129, 0.12);
-  color: var(--fb-brand, #10b981);
+  background: color-mix(in srgb, var(--fb-brand) 11%, transparent);
+  color: var(--fb-brand);
 }
 .delegation-event-status.failed,
 .delegation-event-status.timeout {
@@ -18068,25 +18175,113 @@ button.ghost:focus-visible,
   background: #dcfce7;
   color: #166534;
 }
-.delegation-event-task {
+.delegation-activity-detail-toggle,
+.delegation-member-history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--fb-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.delegation-activity-detail-toggle {
+  margin-left: auto;
+  padding: 2px 0 2px 6px;
+}
+.delegation-activity-detail-toggle:hover,
+.delegation-member-history-toggle:hover {
+  color: var(--fb-brand);
+}
+.delegation-activity-detail-toggle:focus-visible,
+.delegation-member-history-toggle:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid color-mix(in srgb, var(--fb-brand) 45%, transparent);
+  outline-offset: 2px;
+}
+.delegation-activity-detail-toggle svg,
+.delegation-member-history-toggle svg {
+  width: 12px;
+  height: 12px;
+}
+.delegation-activity-task {
+  display: -webkit-box;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--fb-text-primary);
   font-size: 12px;
-  color: var(--fb-text);
-  white-space: pre-wrap;
+  line-height: 17px;
   word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.delegation-activity-task.expanded {
+  display: block;
+  white-space: pre-wrap;
+}
+.delegation-activity-details {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--fb-border);
 }
 .delegation-event-result {
+  padding: 8px 9px;
+  border-radius: 7px;
+  background: var(--fb-panel-bg);
+}
+.delegation-event-result strong {
+  color: var(--fb-text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.delegation-event-result p {
+  margin: 4px 0 0;
+  color: var(--fb-text-secondary);
   font-size: 11px;
-  color: var(--muted, #6b7280);
+  line-height: 16px;
   white-space: pre-wrap;
   word-break: break-word;
-  border-top: 1px dashed var(--fb-border);
-  padding-top: 4px;
-  margin-top: 2px;
 }
 .delegation-event-timing {
   font-size: 10px;
-  color: var(--muted, #6b7280);
+  color: var(--fb-text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+.delegation-activity-verdict {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 6px;
+  color: var(--fb-text-secondary);
+  background: var(--fb-panel-bg);
+  font-size: 10px;
+  font-weight: 650;
+}
+.delegation-activity-verdict.pass {
+  color: #166534;
+  background: #dcfce7;
+}
+.delegation-activity-verdict.needs_changes,
+.delegation-activity-verdict.fail {
+  color: #92400e;
+  background: #fef3c7;
+}
+.delegation-member-history-toggle {
+  width: 100%;
+  justify-content: center;
+  padding: 8px 12px;
+  border-top: 1px solid var(--fb-border);
+}
+.delegation-member-empty {
+  padding: 10px 14px;
+  color: var(--fb-text-tertiary);
+  font-size: 11px;
 }
 .new-task-delegation-run {
   display: flex;

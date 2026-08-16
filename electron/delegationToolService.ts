@@ -6,7 +6,12 @@ import type { WebContents } from "electron";
 import { waitForActiveBridgePort } from "./agentBridge.js";
 import type { AcpStdioMcpServer } from "./shared/draftToolProtocol.js";
 import { sendJson, readJsonBody } from "./httpUtils.js";
-import { dispatchDelegateAction, type DelegateToolBinding } from "./cli/delegationDispatch.js";
+import {
+  dispatchDelegateAction,
+  notifyDelegateYieldRequested,
+  type DelegateToolBinding
+} from "./cli/delegationDispatch.js";
+import { runAsCaller } from "./cli/callerContext.js";
 
 const DELEGATE_TOOL_PATH = "/freebuddy/delegate-tool";
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -31,6 +36,7 @@ export async function registerDelegateToolSession(input: {
   depth: number;
   selfAgentId: string;
   selfLabel: string;
+  ownerId?: string | null;
   webContents: WebContents | undefined;
 }): Promise<AcpStdioMcpServer> {
   unregisterDelegateToolSession(input.taskSessionId);
@@ -43,7 +49,8 @@ export async function registerDelegateToolSession(input: {
     parentEventId: input.parentEventId,
     depth: input.depth,
     selfAgentId: input.selfAgentId,
-    selfLabel: input.selfLabel
+    selfLabel: input.selfLabel,
+    ...(input.ownerId ? { ownerId: input.ownerId } : {})
   };
   bindingsByToken.set(token, binding);
   tokensByTaskSession.set(input.taskSessionId, token);
@@ -110,8 +117,17 @@ export async function handleDelegateToolHttpRequest(
       body?.params && typeof body.params === "object" && !Array.isArray(body.params)
         ? body.params
         : {};
-    const result = await dispatchDelegateAction(binding, action, params);
+    const result = binding.ownerId
+      ? await runAsCaller(binding.ownerId, () =>
+          dispatchDelegateAction(binding, action, params)
+        )
+      : await dispatchDelegateAction(binding, action, params);
     sendJson(res, 200, result);
+    if (action === "yield_to_delegates" && result.ok && result.status === "running") {
+      // Let the MCP response leave the socket before cancelling the ACP prompt;
+      // otherwise the model may retry because it never observed acceptance.
+      setImmediate(() => notifyDelegateYieldRequested(binding));
+    }
   } catch (error) {
     sendJson(res, 500, { ok: false, error: (error as Error)?.message || String(error) });
   }

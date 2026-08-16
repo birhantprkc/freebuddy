@@ -5,16 +5,22 @@ import type { DelegationVerdict } from "../../delegationTeamTypes.js";
 
 export const PROTOCOL_RULES = {
   delegateReturnsPending:
-    'Call `delegate(teammate_id, task)` — returns IMMEDIATELY with `{request_id, status:"pending"}`. The teammate runs asynchronously.',
+    'Call `delegate(teammate_id, task)` — returns IMMEDIATELY with a durable acceptance receipt `{request_id, status:"pending"}`. No receipt means the sub-task was not accepted.',
+  delegateManyIsAtomic:
+    'Use `delegate_many(delegations)` for independent sub-tasks. Acceptance is atomic: either every item returns a request handle, or none are created.',
   pendingMeansQueued:
-    'status `pending` = queued behind the concurrency limit (not started yet). Keep this turn open; poll `check_delegate_result` after a few seconds. Do NOT end your turn while pending.',
+    'status `pending` = durably accepted and queued behind the concurrency limit. Do not poll it.',
   runningMeansEndTurn:
-    'status `running` = teammate is executing. END THIS TURN IMMEDIATELY. Do NOT call `check_delegate_result` again for this request. The system will automatically wake you with the result when it settles.',
+    'status `running` = accepted and executing. Do not poll it.',
+  yieldAfterAcceptance:
+    'After one or more requests are accepted, call `yield_to_delegates(request_ids)` once. It only yields when at least one owned request is still active; otherwise it returns an error and you must keep working.',
+  yieldInstruction:
+    "Delegation wait accepted. The runtime is parking this turn now. Do not poll; it will wake you when a requested delegate settles.",
   /** Returned on `check_delegate_result` when status is running — shown at decision time. */
   runningCheckInstruction:
-    "End this turn now. Do not poll check_delegate_result again; you will be woken when it settles.",
+    "This delegate is still active. Call yield_to_delegates with its request_id instead of polling.",
   terminalMeansUseResult:
-    'status `done`/`failed`/`timeout` = terminal. Use `result` to continue (retry, delegate elsewhere, or do it yourself).',
+    'status `done`/`failed`/`timeout` = terminal. Prefer the versioned `outcome`; `result` is the legacy summary fallback.',
   noBounce: "Do NOT bounce work back to your caller or any ancestor on the call chain.",
   noWholeTask:
     "Do NOT delegate the entire task you were given (near-identical copy). Split a real sub-task, or do it yourself.",
@@ -38,11 +44,31 @@ export function mcpDelegateDescription(): string {
   ].join(" ");
 }
 
+export function mcpDelegateManyDescription(): string {
+  return [
+    "Atomically delegate up to 8 independent sub-tasks.",
+    PROTOCOL_RULES.delegateManyIsAtomic,
+    PROTOCOL_RULES.yieldAfterAcceptance,
+    PROTOCOL_RULES.noBounce,
+    PROTOCOL_RULES.noWholeTask
+  ].join(" ");
+}
+
+export function mcpYieldToDelegatesDescription(): string {
+  return [
+    "Yield the current agent turn after delegation requests were durably accepted.",
+    PROTOCOL_RULES.yieldAfterAcceptance,
+    "Pass request handles returned by delegate or delegate_many.",
+    PROTOCOL_RULES.yieldInstruction
+  ].join(" ");
+}
+
 export function mcpCheckResultDescription(): string {
   return [
-    "Poll a delegate call's result. Returns {status, result, request_id}.",
+    "Inspect a delegate call's current result when needed. Returns {status, outcome, result, request_id}; outcome is the versioned contract and result is its legacy summary. Do not use this tool for polling.",
     PROTOCOL_RULES.pendingMeansQueued,
     PROTOCOL_RULES.runningMeansEndTurn,
+    "If it is still active, call `yield_to_delegates` instead.",
     PROTOCOL_RULES.terminalMeansUseResult
   ].join(" ");
 }
@@ -73,12 +99,11 @@ export function buildDelegationRosterPrompt(
   return [
     "## 协作团队（可委派）",
     "某子任务更适合某队友时：",
-    '1. 调 delegate(teammate_id, task) —— 立即返回 {request_id, status:"pending"}',
-    "2. 调 check_delegate_result(request_id) 查看结果：",
-    "   - status 为 done/failed/timeout —— 直接用 result 继续工作。",
-    "   - status 为 running —— 子任务正在跑；应当立即结束本轮，禁止再对同一 request_id 调用 check_delegate_result；结果就绪后系统会自动唤醒你。",
-    "   - status 为 pending —— 还在排队（前面的子任务没跑完），稍等几秒再查，本轮先别结束。",
-    "3. 用返回的 result 继续你的工作。",
+    '1. 单个子任务调 delegate(teammate_id, task)；多个独立子任务优先调 delegate_many(delegations)。',
+    '2. 只有拿到 {request_id, status:"pending"} 或批量 requests 才算受理成功；批量受理是全有或全无。',
+    "3. 受理成功后，把 request_id 列表一次传给 yield_to_delegates；不要轮询 check_delegate_result。",
+    "4. yield 成功后运行时会自动 park 当前轮。结果就绪后系统会自动唤醒你；若 yield 拒绝，说明没有可等待的活跃委派，应继续处理结果或自行完成。",
+    "5. 被唤醒后优先读取结构化 outcome；旧适配器可继续使用 result 摘要。",
     "优先自己能完成的；别滥用委派；别反弹回调用方；别把整份任务原样外派。",
     `当前深度 ${depth} / 上限 ${maxDepth}。`,
     "队友：",
@@ -157,7 +182,7 @@ export function buildDelegationSkillMarkdown(): string {
     "---",
     "name: delegation",
     "description: Collaborate with teammate agents in a self-organizing delegation run. Discover teammates and delegate sub-tasks asynchronously; the system wakes you when results settle.",
-    "version: 1.2.1",
+    "version: 1.4.0",
     "---",
     "",
     "# Delegation",
@@ -176,14 +201,15 @@ export function buildDelegationSkillMarkdown(): string {
     "",
     "## How to delegate",
     `1. Call \`list_teammates\` to see who is available.`,
-    `2. ${PROTOCOL_RULES.delegateReturnsPending}`,
-    `3. Call \`check_delegate_result(request_id)\`:`,
-    `   - ${PROTOCOL_RULES.terminalMeansUseResult}`,
-    `   - ${PROTOCOL_RULES.runningMeansEndTurn}`,
-    `   - ${PROTOCOL_RULES.pendingMeansQueued}`,
+    `2. For one sub-task, ${PROTOCOL_RULES.delegateReturnsPending}`,
+    `3. For multiple independent sub-tasks, ${PROTOCOL_RULES.delegateManyIsAtomic}`,
+    `4. ${PROTOCOL_RULES.yieldAfterAcceptance}`,
+    `5. When yield succeeds, the runtime parks this turn automatically and wakes you with a settled result.`,
+    "",
+    "Do not poll `check_delegate_result`. It is only for inspecting a request when recovery or diagnostics require it.",
     "",
     "## Handle the result",
-    "- `status: \"done\"` → use `result`.",
+    "- `status: \"done\"` → prefer structured `outcome`; use legacy `result` as a fallback.",
     "- `status: \"failed\"` / `\"timeout\"` → decide: retry, delegate to a different teammate, or do it yourself. Do not loop forever.",
     "",
     "## Review verdicts",
@@ -204,6 +230,8 @@ export function buildDelegationSkillMarkdown(): string {
 export function protocolCanonicalPhrases(): string[] {
   return [
     'status:"pending"',
+    "delegate_many",
+    "yield_to_delegates",
     "running",
     "wake",
     "pending",

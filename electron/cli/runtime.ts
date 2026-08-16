@@ -186,7 +186,10 @@ export async function cliRun(
   }
 
   const remoteIsolated = isRemoteIsolatedCaller();
-  const processSandboxed = shouldSandboxCurrentCaller();
+  const readOnlyWorkspace = args.workspaceAccess === "read-only";
+  // Read-only delegation roles fail closed inside the OS sandbox even for a
+  // desktop caller; this is the enforcement layer behind roster.canWrite.
+  const processSandboxed = shouldSandboxCurrentCaller() || readOnlyWorkspace;
   let toolSessionId: string | undefined;
   const toolSessionScope = args.toolSessionScope || args.cwd;
   const definition = getAdapterDefinition(args.adapter);
@@ -231,7 +234,12 @@ export async function cliRun(
   await waitForCodexToolchainAutoUpdate(args.adapter);
 
   const skillSupport = definition?.capabilities.skills;
-  if (args.cwd && args.skills && skillSupport?.nativeDirs?.length) {
+  if (
+    !readOnlyWorkspace &&
+    args.cwd &&
+    args.skills &&
+    skillSupport?.nativeDirs?.length
+  ) {
     reconcileNativeSkillLinks(
       args.cwd,
       skillSupport.nativeDirs,
@@ -336,7 +344,8 @@ export async function cliRun(
         adapter: executionArgs.adapter,
         bin: built.bin,
         args: built.args,
-        cwd: executionArgs.cwd!,
+        cwd: executionArgs.cwd ?? process.cwd(),
+        readOnlyWorkspace,
         env,
         extraReadPaths: [
           ...(executionArgs.promptAttachments ?? []).map(
@@ -498,6 +507,18 @@ export function cliKill(sessionId: string): boolean {
       }, 2000);
     }
     updateTaskStatus(sessionId, "killed");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Ask an ACP-backed agent to end its current turn successfully. */
+export function cliYield(sessionId: string): boolean {
+  const current = running.get(sessionId);
+  if (!current?.yield) return false;
+  try {
+    current.yield();
     return true;
   } catch {
     return false;

@@ -1120,6 +1120,8 @@ export async function prepareSandboxedSpawn(input: {
   workspaceRoot?: string;
   env: Record<string, string | undefined>;
   extraReadPaths?: string[];
+  /** Deny workspace mutations while still allowing adapter config/temp writes. */
+  readOnlyWorkspace?: boolean;
 }): Promise<SandboxedSpawn> {
   const binary = await resolveBinary(input.bin, input.env);
   const nodeLauncherEntry = binary
@@ -1156,10 +1158,13 @@ export async function prepareSandboxedSpawn(input: {
     ...allAssignedRepositoryRoots()
   ]);
   const allowWrite = existing([
-    workspaceRoot,
+    ...(input.readOnlyWorkspace ? [] : [workspaceRoot]),
     ...configPaths,
     ...adapterSandbox.readWritePaths
-  ]);
+  ]).filter(
+    (entry) => !input.readOnlyWorkspace || !isWithinPath(workspaceRoot, entry)
+  );
+  const denyWrite = existing(input.readOnlyWorkspace ? [workspaceRoot] : []);
 
   if (process.platform === "win32") {
     // Create junctions/stdin bridges only after any in-flight Windows reset
@@ -1240,7 +1245,7 @@ export async function prepareSandboxedSpawn(input: {
             denyRead,
             allowRead: allowedRead,
             allowWrite,
-            denyWrite: [],
+            denyWrite,
             allowGitConfig: false
           })
         };
@@ -1282,7 +1287,11 @@ export async function prepareSandboxedSpawn(input: {
         await initializeWindowsSandbox(launch.requiredConfig);
       } else if (
         !windowsInitializationConfig ||
-        !windowsConfigCovers(windowsInitializationConfig, launch.requiredConfig)
+        !windowsConfigCovers(windowsInitializationConfig, launch.requiredConfig) ||
+        (input.readOnlyWorkspace &&
+          windowsInitializationConfig.filesystem.allowWrite.some((entry) =>
+            isWithinPath(workspaceRoot, entry) || isWithinPath(entry, workspaceRoot)
+          ))
       ) {
         // Only block when another sandboxed command still holds the session.
         // Idle leftovers from a previous agent (or a slow reset) should recycle
@@ -1429,7 +1438,7 @@ export async function prepareSandboxedSpawn(input: {
         denyRead,
         allowRead: allowedRead,
         allowWrite,
-        denyWrite: []
+        denyWrite
       },
       git: { safeDirectories: [workspaceRoot] }
     },

@@ -64,7 +64,7 @@ import type {
   DelegationRosterEntry,
   DelegationPolicy
 } from "@/services/workflowTeams/types";
-import type { DelegationRunRow } from "@/services/delegation/client";
+import type { DelegationEventRow, DelegationRunRow } from "@/services/delegation/client";
 import type {
   AddFeedSourceInput,
   FeedItem,
@@ -662,7 +662,7 @@ declare global {
     getRunByConversation(
       conversationId: string
     ): Promise<DelegationRunRow | undefined>;
-    listEvents(runId: string): Promise<unknown[]>;
+    listEvents(runId: string): Promise<DelegationEventRow[]>;
     listPendingApprovals(
       runId: string
     ): Promise<Array<{ approvalId: string; runId: string }>>;

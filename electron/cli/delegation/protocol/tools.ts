@@ -1,8 +1,13 @@
-import type { DelegationRosterEntry, DelegationPolicy } from "../../delegationTeamTypes.js";
+import type {
+  DelegationResult,
+  DelegationRosterEntry,
+  DelegationPolicy
+} from "../../delegationTeamTypes.js";
 import type { DelegationVerdict } from "../../delegationTeamTypes.js";
 import {
   getDelegationEvent,
   insertDelegationEvent,
+  insertDelegationEventsAtomic,
   updateDelegationEvent,
   type DelegationEventRow
 } from "../../delegationRuns.js";
@@ -20,6 +25,8 @@ export interface DelegateToolBinding {
   depth: number;
   selfAgentId: string;
   selfLabel: string;
+  /** Remote owner restored around local MCP callbacks; never supplied by the model. */
+  ownerId?: string;
 }
 
 export interface DelegateRunContext {
@@ -34,9 +41,19 @@ export interface DelegateToolResponse {
   error?: string;
   status?: "pending" | "running" | "done" | "failed" | "timeout" | "cancelled";
   result?: string;
+  /** Versioned terminal result. `result` remains for older agents. */
+  outcome?: DelegationResult | null;
   teammates?: Array<{ id: string; label: string; capability: string; canWrite: boolean }>;
   event_id?: string | null;
   request_id?: string;
+  requests?: Array<{
+    request_id: string;
+    event_id: string;
+    teammate_id: string;
+    status: "pending";
+  }>;
+  request_ids?: string[];
+  accepted_count?: number;
   verdict?: DelegationVerdict | null;
   verdictSummary?: string | null;
   /** Present when status is running — model should end the turn. */
@@ -68,15 +85,46 @@ export function listTeammatesAction(
   return { ok: true, teammates };
 }
 
-export function checkDelegateResultAction(params: Record<string, unknown>): CheckResult {
+function getOwnedDirectChildEvent(
+  binding: DelegateToolBinding,
+  requestId: string
+): DelegationEventRow | undefined {
+  const event = getDelegationEvent(requestId);
+  if (
+    !event ||
+    event.runId !== binding.runId ||
+    event.parentEventId !== binding.parentEventId
+  ) {
+    return undefined;
+  }
+  return event;
+}
+
+function getOwnedEvent(
+  binding: DelegateToolBinding,
+  requestId: string
+): DelegationEventRow | undefined {
+  const event = getDelegationEvent(requestId);
+  if (!event || event.runId !== binding.runId) return undefined;
+  if (event.id === binding.parentEventId || event.parentEventId === binding.parentEventId) {
+    return event;
+  }
+  return undefined;
+}
+
+export function checkDelegateResultAction(
+  binding: DelegateToolBinding,
+  params: Record<string, unknown>
+): CheckResult {
   const requestId = String(params.request_id ?? "");
   if (!requestId) return { ok: false, error: "request_id required" };
-  const event = getDelegationEvent(requestId);
+  const event = getOwnedEvent(binding, requestId);
   if (!event) return { ok: false, error: "request not found" };
   const response: CheckResult = {
     ok: true,
     status: event.status,
     result: event.resultSummary ?? "",
+    outcome: event.result,
     request_id: requestId,
     verdict: event.verdict,
     verdictSummary: event.verdictSummary
@@ -85,6 +133,40 @@ export function checkDelegateResultAction(params: Record<string, unknown>): Chec
     response.instruction = PROTOCOL_RULES.runningCheckInstruction;
   }
   return response;
+}
+
+export function yieldToDelegatesAction(
+  binding: DelegateToolBinding,
+  params: Record<string, unknown>
+): DelegateToolResponse {
+  if (!Array.isArray(params.request_ids) || params.request_ids.length === 0) {
+    return { ok: false, error: "request_ids must be a non-empty array" };
+  }
+  const requestIds = [...new Set(params.request_ids.map((id) => String(id).trim()))];
+  if (requestIds.some((id) => !id)) {
+    return { ok: false, error: "request_ids must contain non-empty strings" };
+  }
+
+  const events = requestIds.map((id) => getOwnedDirectChildEvent(binding, id));
+  if (events.some((event) => !event)) {
+    return { ok: false, error: "one or more delegation requests were not found" };
+  }
+  const activeIds = events
+    .filter((event) => event!.status === "pending" || event!.status === "running")
+    .map((event) => event!.id);
+  if (activeIds.length === 0) {
+    return {
+      ok: false,
+      status: "failed",
+      error: "all requested delegations are already settled; inspect their results instead"
+    };
+  }
+  return {
+    ok: true,
+    status: "running",
+    request_ids: activeIds,
+    instruction: PROTOCOL_RULES.yieldInstruction
+  };
 }
 
 const VERDICTS = new Set(["pass", "needs_changes", "fail"]);
@@ -135,6 +217,10 @@ export function decideDelegate(opts: {
 }): DelegateDecision {
   const { binding, ctx, teammateId, task } = opts;
   if (!ctx) return { ok: false, error: "run context not found", status: "failed" };
+  const normalizedTask = task.trim();
+  if (!normalizedTask) {
+    return { ok: false, error: "task required", status: "failed" };
+  }
   const teammate = ctx.roster.find((r) => r.id === teammateId);
   if (!teammate) {
     return { ok: true, kind: "reject", status: "failed", result: `teammate not found: ${teammateId}` };
@@ -178,7 +264,7 @@ export function decideDelegate(opts: {
 
   const parentEvent = getEvent(binding.parentEventId);
   const parentTask = parentEvent?.taskText ?? "";
-  if (parentTask && isWholeTaskRedelegate(task, parentTask)) {
+  if (parentTask && isWholeTaskRedelegate(normalizedTask, parentTask)) {
     return {
       ok: true,
       kind: "reject",
@@ -187,7 +273,7 @@ export function decideDelegate(opts: {
     };
   }
 
-  return { ok: true, kind: "enqueue", teammate, task, childDepth };
+  return { ok: true, kind: "enqueue", teammate, task: normalizedTask, childDepth };
 }
 
 /** Insert a pending child event after a successful decideDelegate enqueue decision. */
@@ -209,4 +295,29 @@ export function insertPendingChildEvent(opts: {
     canWrite: opts.teammate.canWrite,
     status: "pending"
   });
+}
+
+/** Atomically persist a validated batch before any executor is started. */
+export function insertPendingChildEventsAtomic(
+  items: Array<{
+    runId: string;
+    parentEventId: string;
+    teammate: DelegationRosterEntry;
+    task: string;
+    childDepth: number;
+  }>
+): string[] {
+  return insertDelegationEventsAtomic(
+    items.map((item) => ({
+      runId: item.runId,
+      parentEventId: item.parentEventId,
+      agentId: item.teammate.agentId,
+      agentName: item.teammate.label,
+      roleLabel: item.teammate.label,
+      taskText: item.task,
+      depth: item.childDepth,
+      canWrite: item.teammate.canWrite,
+      status: "pending"
+    }))
+  );
 }

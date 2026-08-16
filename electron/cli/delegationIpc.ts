@@ -5,13 +5,15 @@ import { listCliMembers } from "./members.js";
 import {
   appendMessage,
   createConversation,
-  notifyConversationsChanged
+  notifyConversationsChanged,
+  requireOwnedConversation
 } from "./conversations.js";
 import { getDelegationTeam } from "./delegationTeams.js";
 import {
   DelegationRuntime,
   recoverInterruptedDelegationRuns
 } from "./delegationRuntime.js";
+import { callerCanAccessDelegationRun } from "./delegationRuns.js";
 import { createDelegateAgentRunner } from "./delegationRunner.js";
 import {
   conversationHasDelegationRun,
@@ -109,7 +111,15 @@ export function registerDelegationIpc(): void {
   registerHandler(
     "workflow:approveDelegateWrite",
     (event, args: { runId: string; approvalId: string; approved: boolean }) => {
-      ensureDelegationRuntime(event).resolveWriteApproval(
+      if (!callerCanAccessDelegationRun(args.runId)) return false;
+      const rt = ensureDelegationRuntime(event);
+      const ownsApproval = rt
+        .listPendingApprovals()
+        .some((approval) =>
+          approval.runId === args.runId && approval.approvalId === args.approvalId
+        );
+      if (!ownsApproval) return false;
+      rt.resolveWriteApproval(
         args.approvalId,
         args.approved
       );
@@ -119,15 +129,18 @@ export function registerDelegationIpc(): void {
 
   registerHandler(
     "delegation:listPendingApprovals",
-    (event, runId: string) =>
-      ensureDelegationRuntime(event)
+    (event, runId: string) => {
+      if (!callerCanAccessDelegationRun(runId)) return [];
+      return ensureDelegationRuntime(event)
         .listPendingApprovals()
-        .filter((p) => p.runId === runId)
+        .filter((p) => p.runId === runId);
+    }
   );
 
   registerHandler(
     "delegation:stopRun",
     (event, runId: string) => {
+      if (!callerCanAccessDelegationRun(runId)) return false;
       ensureDelegationRuntime(event).stopRun(runId);
       return true;
     }
@@ -135,12 +148,15 @@ export function registerDelegationIpc(): void {
 
   registerHandler(
     "delegation:pauseRun",
-    (event, runId: string) => ensureDelegationRuntime(event).pauseRun(runId)
+    (event, runId: string) =>
+      callerCanAccessDelegationRun(runId) &&
+      ensureDelegationRuntime(event).pauseRun(runId)
   );
 
   registerHandler(
     "delegation:resumeRun",
     async (event, runId: string) => {
+      if (!callerCanAccessDelegationRun(runId)) return false;
       const ok = await ensureDelegationRuntime(event).resumeRun(runId);
       return ok;
     }
@@ -148,7 +164,9 @@ export function registerDelegationIpc(): void {
 
   registerHandler(
     "delegation:hasRunForConversation",
-    (_event, conversationId: string) => conversationHasDelegationRun(conversationId)
+    (_event, conversationId: string) =>
+      Boolean(requireOwnedConversation(conversationId)) &&
+      conversationHasDelegationRun(conversationId)
   );
 
   registerHandler(
@@ -157,6 +175,9 @@ export function registerDelegationIpc(): void {
       event,
       input: { conversationId: string; prompt: string }
     ) => {
+      if (!requireOwnedConversation(input.conversationId)) {
+        return { ok: false as const, error: "conversation_not_found" };
+      }
       const rt = ensureDelegationRuntime(event);
       return handleDelegationFollowUp(rt, input);
     }

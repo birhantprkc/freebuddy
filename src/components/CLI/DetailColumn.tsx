@@ -8,7 +8,6 @@ import { useDetailLayoutStore, selectDetailWidth } from "@/store/detailLayoutSto
 import { useDraftPreviewStore } from "@/store/draftPreviewStore";
 import { DraftCanvas } from "../Draft/DraftCanvas";
 import { WorkspacePanel } from "./WorkspacePanel";
-import { DelegationTeamCard } from "../Workflows/DelegationTeamCard";
 
 export function DetailColumn({ runningCount }: { runningCount: number }) {
   const { t } = useTranslation();
@@ -102,7 +101,6 @@ export function DetailColumn({ runningCount }: { runningCount: number }) {
                 <PanelRight size={16} aria-hidden="true" />
               </button>
             </div>
-            {activeId && <DelegationTeamCard conversationId={activeId} />}
             <WorkspacePanel runningCount={runningCount} />
           </>
         ) : (

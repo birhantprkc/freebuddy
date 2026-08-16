@@ -321,7 +321,7 @@ export class DelegationOrchestrator {
     this.bus = state;
     // SpawnFollowUp is handled by runNodeLoop below; apply status reopen only.
     this.applyEffects(effects.filter((e) => e.type !== "SpawnFollowUp"));
-    setDelegationRunStatus(this.opts.runId, "running");
+    setDelegationRunStatus(this.opts.runId, "running", { allowReopen: true });
 
     return this.runNodeLoop({
       nodeId: opts.entryNodeId,

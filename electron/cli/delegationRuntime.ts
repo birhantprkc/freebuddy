@@ -8,10 +8,13 @@ import {
   setDelegationRunStatus,
   insertDelegationEvent,
   updateDelegationEvent,
+  transitionDelegationEvent,
   listDelegationEvents,
-  cancelActiveDelegationEvents
+  cancelActiveDelegationEvents,
+  getDelegationRunOwnerId
 } from "./delegationRuns.js";
-import { cliKill } from "./runtime.js";
+import { getCallerUserId, runAsCaller } from "./callerContext.js";
+import { cliKill, cliYield } from "./runtime.js";
 import type {
   DelegationRosterEntry,
   DelegationPolicy,
@@ -21,6 +24,7 @@ import { getDelegationTeam } from "./delegationTeams.js";
 import type { CLIAdapterId } from "./adapters.js";
 import { resolveSkillSnapshots } from "./skills.js";
 import {
+  cancelDelegatesForRun,
   setDelegateDeps,
   type DelegateRunContext,
   type DelegateExecArgs,
@@ -78,6 +82,7 @@ interface RunContext {
   entryRoleId: string;
   cwd?: string;
   conversationId?: string;
+  ownerId?: string;
   orchestrator?: DelegationOrchestrator;
   rootEventId?: string;
 }
@@ -132,6 +137,9 @@ export class DelegationRuntime {
           parentEventId,
           depth
         });
+      },
+      onYieldRequested: (binding) => {
+        cliYield(binding.taskSessionId);
       }
     });
   }
@@ -169,7 +177,8 @@ export class DelegationRuntime {
       policy: team.policy,
       entryRoleId: team.entryRoleId,
       cwd: run.cwd ?? undefined,
-      conversationId: run.conversationId ?? undefined
+      conversationId: run.conversationId ?? undefined,
+      ownerId: getDelegationRunOwnerId(runId) ?? undefined
     };
     this.contexts.set(runId, ctx);
     return ctx;
@@ -244,6 +253,7 @@ export class DelegationRuntime {
     };
     cwd?: string;
     conversationId?: string;
+    ownerId?: string;
   }): string {
     const runId = createDelegationRun({
       goal: input.goal,
@@ -259,7 +269,8 @@ export class DelegationRuntime {
       policy: input.teamSnapshot.policy,
       entryRoleId: input.teamSnapshot.entryRoleId,
       cwd: input.cwd,
-      conversationId: input.conversationId
+      conversationId: input.conversationId,
+      ownerId: input.ownerId ?? getCallerUserId() ?? undefined
     });
     return runId;
   }
@@ -380,7 +391,7 @@ export class DelegationRuntime {
     if (!orch.state) orch.bindEntry(root.id);
 
     // Reset root to running for the follow-up turn.
-    updateDelegationEvent(root.id, { status: "running", resultSummary: null });
+    transitionDelegationEvent(root.id, "running", null, { allowReopen: true });
 
     const prompt = buildDelegateTaskPrompt(
       userPrompt,
@@ -432,6 +443,7 @@ export class DelegationRuntime {
     parentEventId: string;
     depth: number;
     prompt: string;
+    signal?: AbortSignal;
   }): Promise<DelegateExecResult> {
     this.refreshTeamFromDb(opts.ctx);
     const agent =
@@ -444,8 +456,9 @@ export class DelegationRuntime {
     const sessions = this.activeSessionsByRun.get(opts.ctx.runId) ?? new Set<string>();
     sessions.add(opts.sessionId);
     this.activeSessionsByRun.set(opts.ctx.runId, sessions);
+    let removeSignalListener: (() => void) | undefined;
     try {
-      const result = await Promise.race([
+      const runAgent = () =>
         this.deps.runAgent({
           sessionId: opts.sessionId,
           conversationId: opts.ctx.conversationId,
@@ -461,6 +474,7 @@ export class DelegationRuntime {
           prompt: opts.prompt,
           cwd: opts.ctx.cwd,
           approvalMode: "auto",
+          workspaceAccess: agent.canWrite ? "read-write" : "read-only",
           ...(modelOverride ? { configOptionOverrides: modelOverride } : {}),
           skills: resolveSkillSnapshots([
             ...(agent.skillIds ?? []),
@@ -474,9 +488,31 @@ export class DelegationRuntime {
             selfAgentId: agent.id,
             selfLabel: agent.label
           }
-        }),
+        });
+      const races: Array<Promise<Awaited<ReturnType<DelegateAgentRunner>>>> = [
+        opts.ctx.ownerId
+          ? runAsCaller(opts.ctx.ownerId, runAgent)
+          : runAgent(),
         this.waitForAbort(opts.ctx.runId)
-      ]);
+      ];
+      if (opts.signal) {
+        races.push(
+          new Promise((_, reject) => {
+            const abort = () => {
+              cliKill(opts.sessionId);
+              const reason = opts.signal?.reason;
+              reject(reason instanceof Error ? reason : new Error(String(reason ?? "cancelled")));
+            };
+            if (opts.signal!.aborted) {
+              abort();
+              return;
+            }
+            opts.signal!.addEventListener("abort", abort, { once: true });
+            removeSignalListener = () => opts.signal?.removeEventListener("abort", abort);
+          })
+        );
+      }
+      const result = await Promise.race(races);
       if (this.pausedRunIds.has(opts.ctx.runId) || this.killedRunIds.has(opts.ctx.runId)) {
         return {
           summary: result.summary,
@@ -495,6 +531,7 @@ export class DelegationRuntime {
       }
       return { summary: "", exitCode: null, error: message };
     } finally {
+      removeSignalListener?.();
       const set = this.activeSessionsByRun.get(opts.ctx.runId);
       set?.delete(opts.sessionId);
       if (set && set.size === 0) this.activeSessionsByRun.delete(opts.ctx.runId);
@@ -560,7 +597,11 @@ export class DelegationRuntime {
     let lastError: string | null = null;
     let lastSummary = "";
 
-    while (!this.killedRunIds.has(args.runId) && !this.pausedRunIds.has(args.runId)) {
+    while (
+      !args.signal?.aborted &&
+      !this.killedRunIds.has(args.runId) &&
+      !this.pausedRunIds.has(args.runId)
+    ) {
       const turn = await this.runAgentTurn({
         ctx,
         agent: teammate,
@@ -569,11 +610,16 @@ export class DelegationRuntime {
         sessionId: delegationTurnSessionId(ctx.runId, args.childEventId),
         parentEventId: args.childEventId,
         depth: args.depth,
-        prompt
+        prompt,
+        signal: args.signal
       });
       lastError = turn.error;
       lastSummary = turn.summary ?? "";
-      if (this.killedRunIds.has(args.runId) || this.pausedRunIds.has(args.runId)) {
+      if (
+        args.signal?.aborted ||
+        this.killedRunIds.has(args.runId) ||
+        this.pausedRunIds.has(args.runId)
+      ) {
         lastError = lastError ?? (this.pausedRunIds.has(args.runId) ? "paused by user" : "killed");
         break;
       }
@@ -630,9 +676,14 @@ export class DelegationRuntime {
     const idx = this.pendingApprovals.findIndex((p) => p.approvalId === approvalId);
     if (idx < 0) return;
     const [pending] = this.pendingApprovals.splice(idx, 1);
-    if (approved) {
-      const ctx = this.contexts.get(pending.runId);
-      if (ctx) setDelegationRunStatus(pending.runId, "running");
+    const stillWaitingForRun = this.pendingApprovals.some((p) => p.runId === pending.runId);
+    if (
+      !stillWaitingForRun &&
+      !this.killedRunIds.has(pending.runId) &&
+      !this.pausedRunIds.has(pending.runId)
+    ) {
+      const run = getDelegationRun(pending.runId);
+      if (run?.status === "blocked") setDelegationRunStatus(pending.runId, "running");
     }
     pending.resolve(approved);
   }
@@ -651,6 +702,11 @@ export class DelegationRuntime {
       }
     }
     this.activeSessionsByRun.delete(runId);
+    cancelDelegatesForRun(runId, "用户停止");
+    for (const pending of [...this.pendingApprovals]) {
+      if (pending.runId !== runId) continue;
+      this.resolveWriteApproval(pending.approvalId, false);
+    }
     cancelActiveDelegationEvents(runId, "用户停止");
     setDelegationRunStatus(runId, "killed");
   }
@@ -691,6 +747,7 @@ export class DelegationRuntime {
       }
     }
     this.activeSessionsByRun.delete(runId);
+    cancelDelegatesForRun(runId, "用户暂停");
 
     for (const pending of [...this.pendingApprovals]) {
       if (pending.runId !== runId) continue;
@@ -839,10 +896,16 @@ export function recoverInterruptedDelegationRuns(): number {
   const update = getDb().prepare(
     "UPDATE workflow_runs SET status = 'failed', summary = COALESCE(summary, 'Interrupted by app restart.'), updated_at = ? WHERE id = ? AND status IN ('running','blocked')"
   );
-  const sweepEvents = getDb().prepare(
-    `UPDATE delegation_events SET status = 'failed', result_summary = COALESCE(result_summary, 'Interrupted by app restart.'), ended_at = ? WHERE status IN ('pending','running')`
-  );
+  const interruptedEvents = getDb()
+    .prepare("SELECT id FROM delegation_events WHERE status IN ('pending','running')")
+    .all() as Array<{ id: string }>;
   for (const row of rows) update.run(now, row.id);
-  sweepEvents.run(now);
+  for (const event of interruptedEvents) {
+    transitionDelegationEvent(
+      event.id,
+      "failed",
+      "Interrupted by app restart."
+    );
+  }
   return rows.length;
 }

@@ -77,12 +77,23 @@ test("delegate happy path: returns pending immediately, executor runs in backgro
     assert.equal(called.task, "审 auth");
     assert.equal(called.depth, 1);
     assert.equal(called.parentEventId, "evt-root");
-    assert.equal(called.signal, undefined, "no AbortSignal is passed in async mode");
+    assert.ok(called.signal instanceof AbortSignal, "each delegate receives a cancellation signal");
+    assert.equal(called.signal.aborted, false);
     // Poll for the result.
     const polled = await runDelegateAction(binding, "check_delegate_result", { request_id: res.request_id }, sentinelDeps());
     assert.equal(polled.ok, true);
     assert.equal(polled.status, "done");
     assert.equal(polled.result, "LGTM");
+    assert.deepEqual(polled.outcome, {
+      schemaVersion: 1,
+      status: "done",
+      summary: "LGTM",
+      exitCode: 0,
+      error: null,
+      artifacts: [],
+      verdict: null,
+      verdictSummary: null
+    });
     assert.equal(polled.request_id, res.request_id);
     const ev = listDelegationEvents(runId).find((e) => e.id === res.event_id);
     assert.equal(ev.status, "done");
@@ -116,9 +127,13 @@ test("delegate timeout: executor hanging -> pending now, poll -> timeout", async
     const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
     const binding = makeBinding(runId);
     const shortCtx = { roster, policy: { ...policy, delegateTimeoutMs: 30 }, teamId: "team-1", cwd: "/repo" };
+    let delegateSignal;
     const res = await runDelegateAction(binding, "delegate", { teammate_id: "r-rev", task: "x" }, {
       contextProvider: () => shortCtx,
-      executor: () => new Promise(() => {}), // never resolves
+      executor: (args) => {
+        delegateSignal = args.signal;
+        return new Promise(() => {}); // never resolves
+      },
       writeApproval: async () => true
     });
     assert.equal(res.status, "pending");
@@ -126,8 +141,13 @@ test("delegate timeout: executor hanging -> pending now, poll -> timeout", async
     await tick(80);
     const polled = await runDelegateAction(binding, "check_delegate_result", { request_id: res.request_id }, sentinelDeps(() => shortCtx));
     assert.equal(polled.status, "timeout");
+    assert.equal(polled.outcome?.schemaVersion, 1);
+    assert.equal(polled.outcome?.status, "timeout");
+    assert.equal(polled.outcome?.error?.code, "delegate_timeout");
+    assert.equal(polled.outcome?.error?.retryable, true);
     const ev = listDelegationEvents(runId).find((e) => e.id === res.request_id);
     assert.equal(ev.status, "timeout");
+    assert.equal(delegateSignal?.aborted, true, "timeout must abort the real delegate execution");
   });
 });
 
@@ -269,6 +289,42 @@ test("delegate executor failure -> pending now, poll -> failed", async (t) => {
   });
 });
 
+test("delegate synchronous start failure becomes terminal and settles the parent", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
+    let settledEventId = null;
+    const deps = {
+      contextProvider,
+      executor: () => { throw new Error("spawn failed"); },
+      writeApproval: async () => true,
+      onSettle: (eventId) => { settledEventId = eventId; }
+    };
+
+    const accepted = await runDelegateAction(
+      binding,
+      "delegate",
+      { teammate_id: "r-rev", task: "x" },
+      deps
+    );
+    assert.equal(accepted.status, "pending");
+    await tick(30);
+
+    const result = await runDelegateAction(
+      binding,
+      "check_delegate_result",
+      { request_id: accepted.request_id },
+      deps
+    );
+    assert.equal(result.status, "failed");
+    assert.match(result.result, /spawn failed/);
+    assert.equal(settledEventId, accepted.request_id);
+  });
+});
+
 test("allowWrites=false blocks writable teammate", async (t) => {
   if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
   await withDb(async () => {
@@ -403,8 +459,8 @@ test("check_delegate_result returns running while executor is still running", as
     // Poll immediately: the background executor is executing -> status is now the real "running".
     const polled = await runDelegateAction(binding, "check_delegate_result", { request_id: res.request_id }, sentinelDeps());
     assert.equal(polled.status, "running");
-    assert.match(String(polled.instruction ?? ""), /End this turn now/i);
-    assert.match(String(polled.instruction ?? ""), /Do not poll/i);
+    assert.match(String(polled.instruction ?? ""), /yield_to_delegates/i);
+    assert.match(String(polled.instruction ?? ""), /instead of polling/i);
     // Let it finish so no background timer is left dangling.
     await tick(250);
   });
@@ -448,5 +504,241 @@ test("maxConcurrentDelegates queues a second concurrent delegate until the first
     await tick(60);
     const poll2b = await runDelegateAction(binding, "check_delegate_result", { request_id: res2.request_id }, sentinelDeps());
     assert.equal(poll2b.status, "done");
+  });
+});
+
+test("delegate_many durably accepts an entire batch before starting executors", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, listDelegationEvents } = await import(
+      "../dist-electron/cli/delegationRuns.js"
+    );
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
+    let releaseFirst;
+    const seen = [];
+    const deps = {
+      contextProvider,
+      executor: (args) => {
+        seen.push(args.task);
+        if (args.task === "a") {
+          return new Promise((resolve) => {
+            releaseFirst = () => resolve({ summary: "A", exitCode: 0, error: null });
+          });
+        }
+        return Promise.resolve({ summary: "B", exitCode: 0, error: null });
+      },
+      writeApproval: async () => true
+    };
+
+    const result = await runDelegateAction(binding, "delegate_many", {
+      delegations: [
+        { teammate_id: "r-rev", task: "a" },
+        { teammate_id: "r-rev", task: "b" }
+      ]
+    }, deps);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "pending");
+    assert.equal(result.accepted_count, 2);
+    assert.equal(result.requests.length, 2);
+    assert.deepEqual(result.request_ids, result.requests.map((request) => request.request_id));
+    assert.equal(new Set(result.request_ids).size, 2);
+    assert.equal(listDelegationEvents(runId).length, 2, "the whole batch is visible after acceptance");
+    assert.deepEqual(seen, ["a"], "the concurrency queue starts only the first item");
+
+    releaseFirst();
+    await tick(80);
+    assert.deepEqual(seen, ["a", "b"]);
+  });
+});
+
+test("delegate_many rejects the entire batch when any item fails validation", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, listDelegationEvents } = await import(
+      "../dist-electron/cli/delegationRuns.js"
+    );
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    let execCalled = false;
+    const result = await runDelegateAction(makeBinding(runId), "delegate_many", {
+      delegations: [
+        { teammate_id: "r-rev", task: "valid" },
+        { teammate_id: "missing", task: "invalid" }
+      ]
+    }, {
+      contextProvider,
+      executor: async () => {
+        execCalled = true;
+        return { summary: "", exitCode: 0, error: null };
+      },
+      writeApproval: async () => true
+    });
+
+    assert.equal(result.status, "failed");
+    assert.match(result.result, /未受理任何子任务/);
+    assert.equal(listDelegationEvents(runId).length, 0);
+    assert.equal(execCalled, false);
+  });
+});
+
+test("delegation event batch rolls back when persistence fails partway", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const {
+      createDelegationRun,
+      insertDelegationEventsAtomic,
+      listDelegationEvents
+    } = await import("../dist-electron/cli/delegationRuns.js");
+    const { getDb } = await import("../dist-electron/cli/db.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    getDb().exec(`
+      CREATE TRIGGER reject_exploding_delegation
+      BEFORE INSERT ON delegation_events
+      WHEN NEW.task_text = 'explode'
+      BEGIN
+        SELECT RAISE(ABORT, 'simulated persistence failure');
+      END
+    `);
+    const event = (taskText) => ({
+      runId,
+      parentEventId: "evt-root",
+      agentId: "agent",
+      agentName: "agent",
+      roleLabel: "agent",
+      taskText,
+      depth: 1,
+      canWrite: false,
+      status: "pending"
+    });
+
+    assert.throws(
+      () => insertDelegationEventsAtomic([event("accepted first"), event("explode")]),
+      /simulated persistence failure/
+    );
+    assert.equal(listDelegationEvents(runId).length, 0, "the first insert must roll back too");
+  });
+});
+
+test("delegate_many rejects the entire batch when a write approval is denied", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, listDelegationEvents } = await import(
+      "../dist-electron/cli/delegationRuns.js"
+    );
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const thirdWriter = {
+      id: "r-write3", label: "写3", agentId: "cli-write3", capability: "写代码3", canWrite: true
+    };
+    const approvalCtx = {
+      roster: [...roster, writableOther, thirdWriter],
+      policy: { ...policy, requireApprovalBeforeDelegateWrite: true },
+      teamId: "team-1",
+      cwd: "/repo"
+    };
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    let approvals = 0;
+    const result = await runDelegateAction(makeBinding(runId), "delegate_many", {
+      delegations: [
+        { teammate_id: "r-write2", task: "write a" },
+        { teammate_id: "r-write3", task: "write b" }
+      ]
+    }, {
+      contextProvider: () => approvalCtx,
+      executor: async () => ({ summary: "", exitCode: 0, error: null }),
+      writeApproval: async () => {
+        approvals += 1;
+        return approvals === 1;
+      }
+    });
+
+    assert.equal(result.status, "failed");
+    assert.match(result.result, /未受理任何子任务/);
+    assert.equal(approvals, 2);
+    assert.equal(listDelegationEvents(runId).length, 0);
+  });
+});
+
+test("yield_to_delegates only yields for active, owned direct-child requests", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun } = await import("../dist-electron/cli/delegationRuns.js");
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const runId = createDelegationRun({ goal: "g", teamId: "team-1", teamSnapshotJson: "{}" });
+    const binding = makeBinding(runId);
+    let release;
+    const deps = {
+      contextProvider,
+      executor: () => new Promise((resolve) => {
+        release = () => resolve({ summary: "done", exitCode: 0, error: null });
+      }),
+      writeApproval: async () => true
+    };
+    const accepted = await runDelegateAction(
+      binding,
+      "delegate",
+      { teammate_id: "r-rev", task: "slow review" },
+      deps
+    );
+
+    const yielded = await runDelegateAction(binding, "yield_to_delegates", {
+      request_ids: [accepted.request_id]
+    }, sentinelDeps());
+    assert.equal(yielded.ok, true);
+    assert.equal(yielded.status, "running");
+    assert.deepEqual(yielded.request_ids, [accepted.request_id]);
+    assert.match(yielded.instruction, /parking this turn now/i);
+    assert.match(yielded.instruction, /Do not poll/i);
+
+    const wrongParent = await runDelegateAction(
+      { ...binding, parentEventId: "evt-other" },
+      "yield_to_delegates",
+      { request_ids: [accepted.request_id] },
+      sentinelDeps()
+    );
+    assert.equal(wrongParent.ok, false);
+    assert.match(wrongParent.error, /not found/);
+
+    release();
+    await tick(50);
+    const alreadySettled = await runDelegateAction(binding, "yield_to_delegates", {
+      request_ids: [accepted.request_id]
+    }, sentinelDeps());
+    assert.equal(alreadySettled.ok, false);
+    assert.match(alreadySettled.error, /already settled/);
+  });
+});
+
+test("check_delegate_result cannot read an event from another run", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, insertDelegationEvent } = await import(
+      "../dist-electron/cli/delegationRuns.js"
+    );
+    const { runDelegateAction } = await import("../dist-electron/cli/delegationDispatch.js");
+    const firstRunId = createDelegationRun({ goal: "a", teamId: "team-1", teamSnapshotJson: "{}" });
+    const secondRunId = createDelegationRun({ goal: "b", teamId: "team-1", teamSnapshotJson: "{}" });
+    const foreignEventId = insertDelegationEvent({
+      runId: firstRunId,
+      parentEventId: "evt-root",
+      agentId: "agent",
+      agentName: "agent",
+      roleLabel: "agent",
+      taskText: "secret",
+      depth: 1,
+      canWrite: false,
+      status: "done"
+    });
+
+    const result = await runDelegateAction(
+      makeBinding(secondRunId),
+      "check_delegate_result",
+      { request_id: foreignEventId },
+      sentinelDeps()
+    );
+    assert.equal(result.ok, false);
+    assert.match(result.error, /not found/);
   });
 });

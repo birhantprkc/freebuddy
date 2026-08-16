@@ -88,7 +88,10 @@ test("channels that spawn or reconfigure the host are not remotely callable", as
     "cli:updateProject",
     "cli:deleteProject",
     "skills:setTrusted",
-    "skills:delete"
+    "skills:delete",
+    "delegation:createTeam",
+    "delegation:updateTeam",
+    "delegation:deleteTeam"
   ]) {
     assert.equal(
       classifyRemoteChannel(channel),
@@ -111,6 +114,8 @@ test("channels that spawn or reconfigure the host are not remotely callable", as
     "remote:setUserRoots",
     "remote:listSessions",
     "remote:revokeSession",
+    "delegation:pauseRun",
+    "delegation:resumeRun",
     "debugLog:write",
     "debugLogs:preview",
     "debugLogs:export"
@@ -181,6 +186,11 @@ test("the arg guard replaces caller-supplied executables and clamps paths", () =
   assert.match(guard, /env: resolved\.env/, "env comes from host config");
   assert.match(guard, /forbidden_path/, "out-of-root paths are rejected");
   assert.match(guard, /forbidden_setting/, "settings keys are allow-listed");
+  assert.match(
+    guard,
+    /"workflow:createDelegationRun"/,
+    "remote delegation cwd must use the workspace-root guard"
+  );
 
   const roots = fs.readFileSync(new URL("cli/remoteRoots.ts", electronDir), "utf8");
   assert.match(

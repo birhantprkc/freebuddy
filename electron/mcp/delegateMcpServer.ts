@@ -7,8 +7,10 @@ import { z } from "zod";
 import {
   mcpCheckResultDescription,
   mcpDelegateDescription,
+  mcpDelegateManyDescription,
   mcpListTeammatesDescription,
-  mcpSubmitVerdictDescription
+  mcpSubmitVerdictDescription,
+  mcpYieldToDelegatesDescription
 } from "../cli/delegation/protocol/text.js";
 
 interface DelegateToolResponse {
@@ -101,6 +103,47 @@ export function createDelegateMcpServer(): McpServer {
     async (args) => {
       try {
         return toolResult(await invokeDelegateBridge("delegate", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "delegate_many",
+    {
+      title: "Atomically Delegate Multiple Sub-tasks",
+      description: mcpDelegateManyDescription(),
+      inputSchema: {
+        delegations: z.array(z.object({
+          teammate_id: z.string().describe("The roster entry id from list_teammates."),
+          task: z.string().describe("A self-contained description of the sub-task.")
+        })).min(1).max(8)
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeDelegateBridge("delegate_many", args));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    "yield_to_delegates",
+    {
+      title: "Yield to Accepted Delegates",
+      description: mcpYieldToDelegatesDescription(),
+      inputSchema: {
+        request_ids: z.array(z.string()).min(1).describe(
+          "Accepted request handles returned by delegate or delegate_many."
+        )
+      }
+    },
+    async (args) => {
+      try {
+        return toolResult(await invokeDelegateBridge("yield_to_delegates", args));
       } catch (error) {
         return toolError(error);
       }
