@@ -297,12 +297,12 @@ export function getCliCheckProbe(adapter: string): CliCheckProbe {
 }
 
 /**
- * DeepSeek Harness ACP is automation-only and rejects non-empty `mcpServers`
- * on `session/new`. Other adapters accept FreeBuddy's Draft/Browser/skill MCP.
+ * DeepSeek Harness ACP and other adapters accept FreeBuddy's Draft/Browser/skill MCP.
  */
-export function adapterAcceptsClientMcpServers(adapter: string): boolean {
-  return adapter !== "dsh-acp";
+export function adapterAcceptsClientMcpServers(_adapter: string): boolean {
+  return true;
 }
+
 
 export function mergeNodeOptions(
   current: string | undefined,
