@@ -52,8 +52,11 @@ test("coding agent settings expose Codex BYOK without echoing saved keys", () =>
   assert.equal(settingsSource.includes("settings.cli.byok.advanced"), true);
   assert.equal(settingsSource.includes("codexByok"), true);
   assert.equal(settingsSource.includes("claudeByok"), true);
+  assert.equal(settingsSource.includes("deepseekByok"), true);
   assert.equal(settingsSource.includes("ANTHROPIC_API_KEY"), true);
+  assert.equal(settingsSource.includes("DEEPSEEK_API_KEY"), true);
   assert.equal(settingsSource.includes("settings.cli.byok.baseUrlHintClaude"), true);
+  assert.equal(settingsSource.includes("settings.cli.byok.baseUrlHintDeepSeek"), true);
   assert.equal(settingsSource.includes("type=\"password\""), true);
   assert.equal(settingsSource.includes("apiKeyPreview"), true);
   assert.equal(settingsSource.includes("value={codexApiKey}"), true);
@@ -178,6 +181,22 @@ test("coding agent runtime stores Claude BYOK separately from Codex BYOK", () =>
   );
 });
 
+test("coding agent runtime stores DeepSeek BYOK separately and resolves env vars", () => {
+  const electronStoreSource = fs.readFileSync(
+    new URL("../electron/cli/store.ts", import.meta.url),
+    "utf8"
+  );
+  assert.equal(electronStoreSource.includes("deepseek_byok"), true);
+  assert.equal(electronStoreSource.includes("resolveDeepSeekByokEnv"), true);
+  assert.equal(electronStoreSource.includes("readDeepSeekByokPrivate"), true);
+  assert.equal(electronStoreSource.includes("normalizeDeepSeekByokForStorage"), true);
+  assert.equal(electronStoreSource.includes("DEEPSEEK_BASE_URL"), true);
+  assert.equal(electronStoreSource.includes("DEEPSEEK_API_KEY_ENV"), true);
+  assert.equal(electronStoreSource.includes("DEEPSEEK_WIRE_API"), true);
+  assert.equal(electronStoreSource.includes("DEEPSEEK_MODEL"), true);
+  assert.equal(electronStoreSource.includes("DSH_MODEL"), true);
+});
+
 test("coding agent settings let only cloned agents rename their display label", () => {
   assert.equal(settingsSource.includes("settings.cli.name"), true);
   assert.equal(settingsSource.includes("const [label, setLabel]"), true);
@@ -236,10 +255,14 @@ test("coding agent settings explain binary lookup failures separately", () => {
   assert.equal(settingsSource.includes("cliRuntimeErrorKey"), true);
   assert.equal(settingsSource.includes("binary not found"), true);
   assert.equal(settingsSource.includes("settings.cli.commandNotFound"), true);
+  assert.equal(settingsSource.includes("settings.cli.codexCliFoundAcpMissing"), true);
+  assert.equal(settingsSource.includes("settings.cli.claudeCliFoundAcpMissing"), true);
   assert.equal(settingsSource.includes("settings.cli.dshAcpPluginTreeMissing"), true);
   assert.equal(settingsSource.includes("settings.cli.codexAcpUpgradeRequired"), true);
   assert.equal(settingsSource.includes("settings.cli.checkProbeFailed"), true);
   assert.equal(zhLocale.settings.cli.commandNotFound, "未找到命令");
+  assert.match(zhLocale.settings.cli.codexCliFoundAcpMissing, /已找到 Codex CLI/);
+  assert.match(zhLocale.settings.cli.claudeCliFoundAcpMissing, /已找到 Claude Code CLI/);
   assert.equal(
     zhLocale.settings.cli.dshAcpPluginTreeMissing,
     "已找到 dsh-acp-demo，但 ACP 插件包未安装。请再点一次安装。"
@@ -247,6 +270,8 @@ test("coding agent settings explain binary lookup failures separately", () => {
   assert.equal(zhLocale.settings.cli.codexAcpUpgradeRequired, "需要新版 Codex ACP — 请安装");
   assert.equal(zhLocale.settings.cli.checkProbeFailed, "检测失败 — 请重试");
   assert.equal(enLocale.settings.cli.commandNotFound, "command not found");
+  assert.match(enLocale.settings.cli.codexCliFoundAcpMissing, /Codex CLI was found/);
+  assert.match(enLocale.settings.cli.claudeCliFoundAcpMissing, /Claude Code CLI was found/);
   assert.equal(
     enLocale.settings.cli.dshAcpPluginTreeMissing,
     "dsh-acp-demo is on PATH, but its ACP plugin packages are missing. Click Install again."

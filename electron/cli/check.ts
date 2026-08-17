@@ -38,6 +38,8 @@ const CODEX_ACP_ADAPTER = "codex-acp";
 const CODEX_CLI_ADAPTER = "codex";
 const CODEX_ACP_PACKAGE = "@agentclientprotocol/codex-acp";
 const CODEX_CLI_PACKAGE = "@openai/codex";
+const CODEX_CLI_FOUND_ACP_MISSING = "codex cli found; acp adapter missing";
+const CLAUDE_CLI_FOUND_ACP_MISSING = "claude cli found; acp adapter missing";
 const CODEX_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CLI_RUNTIME_CHANNEL = "cli://runtime";
 
@@ -136,6 +138,7 @@ function which(
           if (userProfile) {
             searchDirs.push(path.join(userProfile, "scoop", "shims"));
             searchDirs.push(path.join(userProfile, ".bun", "bin"));
+            searchDirs.push(path.join(userProfile, ".local", "bin"));
           }
           searchDirs.push(path.join(programFiles, "nodejs"));
           searchDirs.push(path.join(programFilesX86, "nodejs"));
@@ -410,8 +413,22 @@ export async function cliCheck(
     return result;
   }
   if (!resolved) {
-    upsertRuntime(runtimeKey, false, undefined, undefined, "binary not found");
-    trackAgentSetup(adapter, "check", "missing", "binary not found");
+    const nativeCli =
+      adapter === "codex-acp"
+        ? "codex"
+        : adapter === "claude-agent-acp"
+          ? "claude"
+          : undefined;
+    const nativeCliPath = nativeCli
+      ? await which(nativeCli, effectiveEnv as Record<string, string>)
+      : undefined;
+    const error = nativeCliPath
+      ? adapter === "codex-acp"
+        ? CODEX_CLI_FOUND_ACP_MISSING
+        : CLAUDE_CLI_FOUND_ACP_MISSING
+      : "binary not found";
+    upsertRuntime(runtimeKey, false, undefined, undefined, error);
+    trackAgentSetup(adapter, "check", "missing", error);
     return { installed: false };
   }
   const probe = getCliCheckProbe(adapter);

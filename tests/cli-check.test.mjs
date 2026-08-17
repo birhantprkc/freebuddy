@@ -55,6 +55,16 @@ test("agy-acp checks agy-acp binary probe", () => {
   });
 });
 
+test("Windows fallback search includes the native Claude installer directory", () => {
+  const source = fs.readFileSync(
+    new URL("../electron/cli/check.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(source, /path\.join\(userProfile, "\.local", "bin"\)/);
+  assert.match(source, /adapter === "codex-acp"[\s\S]*\? "codex"/);
+  assert.match(source, /adapter === "claude-agent-acp"[\s\S]*\? "claude"/);
+});
+
 test("dsh-acp uses standalone deepseek-harness-acp package", () => {
   assert.deepEqual(getCliCheckProbe("dsh-acp"), {
     args: [],

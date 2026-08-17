@@ -26,7 +26,7 @@
 | 功能 | 说明 | 演示 |
 |---------|-------------|-------------|
 | **多 Agent 支持** | 自动识别本地agent | ![多Agent](assets/FreeBuddy-multi-agents.gif) |
-| **BYOK 支持** | Codex和ClaudeCode支持BYOK，可以使用三方或中转站API | ![多Agent](assets/FreeBuddy-BYOK.gif) |
+| **BYOK 支持** | Codex、ClaudeCode 和 DeepSeek Harness 支持 BYOK，可以使用三方或中转站 API | ![多Agent](assets/FreeBuddy-BYOK.gif) |
 | **Codex限额用量卡片** | 实时查看 Codex 用量和速率限制重置时间。热切换账号，无需重新登录。 | ![用量卡](assets/FreeBuddy-limit-card.gif) |
 
 ### 🎬 工作流团队
