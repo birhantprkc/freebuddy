@@ -2,6 +2,96 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.8.0] - 2026-08-17
+
+### 新功能
+
+- harden delegation orchestration and activity UI
+- dsh-acp support mcpservers
+- pause/resume, finish notify, and keep streams alive
+- pass verdict into wake orchestration
+- branch wake prompts on structured verdict
+- expose submit_verdict MCP tool
+- add submit_verdict bridge action
+- persist verdict fields on delegation events
+- complete async orchestration bus (scheme B)
+- per-role model pickers, session isolation, park+wake + queued concurrency
+- async delegate+poll model (fixes MCP timeout)
+- highlight active agent in roster card during run
+- inject delegation MCP+skill on follow-up messages in delegation conversations
+- show team roster card in the detail column
+- subtle handoff divider between agents in chat
+- inline write-approval card in the conversation chat
+- navigate to conversation chat on run start; remove side run panel
+- create conversation + user-goal message on delegation run start
+- pass roleLabel + conversationId to agent run args
+- stream each agent's output into a conversation message
+- i18n keys for delegation UI
+- live delegation-tree run view with write-approval gate + stop
+- team picker, preview card, and start path
+- add delegation team editor and settings routing
+- add renderer client and team store
+- add team CRUD + run-read IPC and preload bridge
+- mirror renderer types and kind-scope getWorkflowTeam
+- add delegation run IPC handlers and preload bridge
+- type delegation context and inject freebuddy-delegate MCP into ACP sessions
+- add DelegationRuntime (gate, context, run start, recovery)
+- add real delegate runner (cliRun + harvest)
+- add roster/task prompt builders
+- add builtin delegation skill
+- add delegate tool HTTP bridge and register handler
+- add freebuddy-delegate MCP server (list_teammates + delegate)
+- add testable delegation dispatch core with guards
+- add inactivity-watchdog suppression API and guard armInactivityTimer
+- seed builtin delegation teams on startup
+- add delegation event CRUD for the runtime tree
+- add delegation run creation
+- add builtin delegation team and idempotent seeding
+- add delegation team types and CRUD
+- add kind columns and delegation_events table migration
+
+### 问题修复
+
+- harden verdict tests and summary overwrite
+- mint unique cli task id per wake/follow-up turn
+- English defaultValues + test assertions for async refactor + button merge
+- dropdown options to 工作流团队/自组织团队
+- merge new-team buttons into one dropdown
+- align new delegation team button style with new team button
+- remove preview card from new task page (consistent with normal mode)
+- extract model from conversation messages config-options items (reuse active-agent-card mechanism)
+- pass full member config to getCachedSessionConfigOptions (cache key match)
+- resolve member model from cached session config options
+- highlight entry agent via conversation live status (not just child events)
+- guard displayRun null in isTeamLive (white screen)
+- hide active-agent-card for delegation conversations (roster card handles it)
+- show model in roster card member detail
+- each roster member as its own side-card matching active-agent-card style
+- use AgentAvatar (adapter brand icon) in roster card
+- restyle roster card to match agent-lockup pattern
+- set roleLabel on follow-up messages so entry agent keeps its role badge
+- broadcast message updates so child agent output streams live
+- lazy-load context from DB + ensureDelegationRuntime on follow-up (deps not configured)
+- align team roster card with side-card style
+- exclude delegation runs from workflow queries; harden followup agent id (white-screen)
+- repair source-pattern tests (allTeams rename + preload namespace order)
+- preserve killed status, i18n kind badge, roster validation
+- key delegate mutex on caller session to allow recursive nesting (C1)
+- classify delegation run/approval channels in remote policy
+- return delegation runId immediately and run entry agent fire-and-forget
+- recover blocked (approval-pending) delegation runs on restart
+- summarize real AcpStreamItem shape (kind/content, tool-call)
+- ref-counted inactivity suppression + AbortSignal on delegate timeout
+- capture runId in tests, fix mutex leak + timer, document ok semantics
+- clear inactivity suppression on ACP session finish
+- type run status as WorkflowRunStatus, treat partial as terminal, add status tests
+- inline builtin agent ids and audit-log delegation seeding
+- wire delegation db test into test:handoff-db and align FK style
+
+### 体验优化
+
+- alias DelegationEventRow to DelegationEvent to avoid drift
+
 ## [0.7.17] - 2026-08-16
 
 ### 问题修复
