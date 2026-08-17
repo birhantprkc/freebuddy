@@ -972,6 +972,7 @@ function EditOverridePanel({
   const [deepseekWireApi, setDeepseekWireApi] = useState<"chat" | "responses">(
     savedDeepSeekByok?.wireApi ?? "chat"
   );
+  const [deepseekOfficialApiKey, setDeepseekOfficialApiKey] = useState("");
   const [codexApiKey, setCodexApiKey] = useState("");
   const [byokModels, setByokModels] = useState(
     savedByok?.models?.length
@@ -1072,12 +1073,14 @@ function EditOverridePanel({
           baseUrl: codexByokEnabled ? codexBaseUrl.trim() || undefined : undefined,
           envKey: codexByokEnabled ? codexEnvKey.trim() || undefined : undefined,
           wireApi: "chat" as const,
+          officialApiKey: deepseekOfficialApiKey.trim() || undefined,
+          officialApiKeyPreview: savedDeepSeekByok?.officialApiKeyPreview,
           apiKey: codexApiKey.trim() || undefined,
+          apiKeyPreview: savedDeepSeekByok?.apiKeyPreview,
           models: codexByokEnabled ? byokModels : [],
           contextWindow: codexByokEnabled
             ? parseByokContextWindow(byokContextWindow)
-            : undefined,
-          apiKeyPreview: savedDeepSeekByok?.apiKeyPreview
+            : undefined
         }
       : undefined;
 
@@ -1102,6 +1105,7 @@ function EditOverridePanel({
       await upsert(override);
       refreshMembers();
       setCodexApiKey("");
+      setDeepseekOfficialApiKey("");
       setSaveStatus("saved");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
@@ -1293,17 +1297,17 @@ function EditOverridePanel({
                   </span>
                   <input
                     type="password"
-                    value={codexApiKey}
+                    value={deepseekOfficialApiKey}
                     placeholder={
-                      savedDeepSeekByok?.apiKeyPreview ||
+                      savedDeepSeekByok?.officialApiKeyPreview ||
                       t("settings.cli.byok.apiKeyPlaceholder")
                     }
-                    onChange={(e) => setCodexApiKey(e.target.value)}
+                    onChange={(e) => setDeepseekOfficialApiKey(e.target.value)}
                   />
                   <span className="settings-field-hint">
-                    {savedDeepSeekByok?.apiKeyPreview
+                    {savedDeepSeekByok?.officialApiKeyPreview
                       ? t("settings.cli.byok.savedKeyHint", {
-                          preview: savedDeepSeekByok.apiKeyPreview
+                          preview: savedDeepSeekByok.officialApiKeyPreview
                         })
                       : t("settings.cli.byok.newKeyHint")}
                   </span>

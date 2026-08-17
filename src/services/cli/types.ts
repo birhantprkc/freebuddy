@@ -52,6 +52,8 @@ export interface CLIDeepSeekByokConfig {
   wireApi?: "chat" | "responses";
   apiKey?: string;
   apiKeyPreview?: string;
+  officialApiKey?: string;
+  officialApiKeyPreview?: string;
   models?: CLIByokModel[];
   /** Provider model context window in tokens. */
   contextWindow?: number;

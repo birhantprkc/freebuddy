@@ -45,6 +45,9 @@ export interface CLIDeepSeekByokConfig {
   apiKey?: string;
   apiKeyPreview?: string;
   apiKeyEncrypted?: string;
+  officialApiKey?: string;
+  officialApiKeyPreview?: string;
+  officialApiKeyEncrypted?: string;
   models?: CLIByokModel[];
   contextWindow?: number;
 }
@@ -333,14 +336,18 @@ function createCodexAppServerWrapper(
   return file;
 }
 
-function readByokPublic<T extends { apiKey?: string; apiKeyEncrypted?: string }>(
-  raw: string | null
-): Omit<T, "apiKey" | "apiKeyEncrypted"> | undefined {
+function readByokPublic<T>(raw: string | null): T | undefined {
   if (!raw) return undefined;
   try {
-    const parsed = JSON.parse(raw) as T;
-    const { apiKey, apiKeyEncrypted, ...publicConfig } = parsed;
-    return publicConfig;
+    const parsed = JSON.parse(raw) as any;
+    const {
+      apiKey,
+      apiKeyEncrypted,
+      officialApiKey,
+      officialApiKeyEncrypted,
+      ...publicConfig
+    } = parsed;
+    return publicConfig as T;
   } catch {
     return undefined;
   }
@@ -459,18 +466,39 @@ function normalizeDeepSeekByokForStorage(
   input: CLIDeepSeekByokConfig | undefined
 ): CLIDeepSeekByokConfig | undefined {
   const previous = readDeepSeekByokPrivate(id);
+
+  // Official Key (for official api.deepseek.com)
+  const officialApiKey = input?.officialApiKey?.trim();
+  const officialApiKeyEncrypted = officialApiKey
+    ? encryptSecret(officialApiKey)
+    : input?.officialApiKey === ""
+      ? undefined
+      : previous?.officialApiKeyEncrypted;
+  const officialApiKeyPreview = officialApiKey
+    ? redactApiKey(officialApiKey)
+    : input?.officialApiKey === ""
+      ? undefined
+      : input?.officialApiKeyPreview ?? previous?.officialApiKeyPreview;
+
+  // Custom BYOK Key (for custom proxy / Base URL)
   const apiKey = input?.apiKey?.trim();
   const apiKeyEncrypted = apiKey
     ? encryptSecret(apiKey)
-    : previous?.apiKeyEncrypted;
+    : input?.apiKey === ""
+      ? undefined
+      : previous?.apiKeyEncrypted;
   const apiKeyPreview = apiKey
     ? redactApiKey(apiKey)
-    : input?.apiKeyPreview ?? previous?.apiKeyPreview;
+    : input?.apiKey === ""
+      ? undefined
+      : input?.apiKeyPreview ?? previous?.apiKeyPreview;
 
   if (!input?.enabled) {
-    if (apiKeyEncrypted) {
+    if (officialApiKeyEncrypted || apiKeyEncrypted) {
       return {
         enabled: false,
+        officialApiKeyPreview,
+        officialApiKeyEncrypted,
         apiKeyPreview,
         apiKeyEncrypted
       };
@@ -492,6 +520,8 @@ function normalizeDeepSeekByokForStorage(
     wireApi: "chat",
     models: normalizeByokModels(input.models),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
+    officialApiKeyPreview,
+    officialApiKeyEncrypted,
     apiKeyPreview,
     apiKeyEncrypted
   };
@@ -739,16 +769,19 @@ export function resolveDeepSeekByokEnv(
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
   const byok = readDeepSeekByokPrivate(overrideId);
   if (!byok) return undefined;
-  const apiKey = decryptSecret(byok.apiKeyEncrypted);
   const env: Record<string, string> = {};
 
   if (!byok.enabled) {
-    if (apiKey) {
-      env.DEEPSEEK_API_KEY = apiKey;
+    const officialKey = decryptSecret(
+      byok.officialApiKeyEncrypted ?? byok.apiKeyEncrypted
+    );
+    if (officialKey) {
+      env.DEEPSEEK_API_KEY = officialKey;
     }
     return Object.keys(env).length ? env : undefined;
   }
 
+  const apiKey = decryptSecret(byok.apiKeyEncrypted);
   const envKey = byok.envKey?.trim() || "DEEPSEEK_API_KEY";
   const baseUrl = byok.baseUrl?.trim();
   if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
