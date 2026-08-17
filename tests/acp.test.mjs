@@ -569,8 +569,8 @@ test("buildCommand does not override DeepSeek --config= extra args", () => {
   assert.deepEqual(built.args, ["--config=/custom/cordis.yml"]);
 });
 
-test("DeepSeek Harness ACP rejects client MCP servers", () => {
-  assert.equal(adapterAcceptsClientMcpServers("dsh-acp"), false);
+test("DeepSeek Harness ACP accepts client MCP servers", () => {
+  assert.equal(adapterAcceptsClientMcpServers("dsh-acp"), true);
   assert.equal(adapterAcceptsClientMcpServers("codex-acp"), true);
   assert.equal(adapterAcceptsClientMcpServers("agy-acp"), true);
 });
