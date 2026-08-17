@@ -90,8 +90,12 @@ export function WorkflowRunPanel() {
     replayConvId === activeId && replayIndex >= 0
       ? replayFrames[replayIndex]?.workflow
       : undefined;
-  const activeRun = replaySnapshot?.run ?? storeActiveRun;
-  const steps = replaySnapshot?.steps ?? storeSteps;
+  const currentStoreRun =
+    activeId && storeActiveRun?.conversationId === activeId
+      ? storeActiveRun
+      : undefined;
+  const activeRun = replaySnapshot?.run ?? currentStoreRun;
+  const steps = replaySnapshot?.steps ?? (currentStoreRun ? storeSteps : []);
   const replayingWorkflow = Boolean(replaySnapshot);
 
   let plan: WorkflowPlan | null = null;
@@ -113,6 +117,10 @@ export function WorkflowRunPanel() {
     const id = window.setInterval(() => void refresh(activeRun.id), 1500);
     return () => window.clearInterval(id);
   }, [activeRun?.id, isLive, refresh, replayingWorkflow]);
+
+  useEffect(() => {
+    setSelectedId(undefined);
+  }, [activeRun?.id]);
 
   const progress = useMemo(() => {
     if (!steps.length) return { done: 0, total: 0, percent: 0 };

@@ -62,6 +62,9 @@ export function WorkspacePanel({
   const [resetCreditsExpanded, setResetCreditsExpanded] = useState(false);
   const [copiedSession, setCopiedSession] = useState(false);
   const loadWorkflowForConversation = useWorkflowStore((s) => s.loadForConversation);
+  const clearActiveWorkflowConversation = useWorkflowStore(
+    (s) => s.clearActiveConversation
+  );
   const activeRun = useWorkflowStore((s) => s.activeRun);
   const workflowSteps = useWorkflowStore((s) => s.steps);
   const replayConvId = useReplayStore((s) => s.conversationId);
@@ -69,9 +72,12 @@ export function WorkspacePanel({
   const replayFrames = useReplayStore((s) => s.frames);
 
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId) {
+      clearActiveWorkflowConversation();
+      return;
+    }
     void loadWorkflowForConversation(activeId);
-  }, [activeId, loadWorkflowForConversation]);
+  }, [activeId, clearActiveWorkflowConversation, loadWorkflowForConversation]);
 
   const replayFrame =
     replayConvId === activeId && replayIndex >= 0
@@ -82,7 +88,9 @@ export function WorkspacePanel({
     ? messages.slice(0, replayFrame.messageIndex + 1)
     : messages;
   const displayLive = replayFrame ? undefined : live;
-  const displayRun = replayWorkflow?.run ?? activeRun;
+  const currentWorkflowRun =
+    activeRun?.conversationId === activeId ? activeRun : undefined;
+  const displayRun = replayWorkflow?.run ?? currentWorkflowRun;
 
   const active = conversations.find((c) => c.id === activeId);
   const activeAgentName = displayAgentName(active?.agentName, active?.adapter);

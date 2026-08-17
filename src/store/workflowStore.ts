@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { workflowClient } from "@/services/workflows/client";
 import { workflowTeamsClient } from "@/services/workflowTeams/client";
 import { useConversationStore } from "@/store/conversationStore";
+import { WorkflowViewGuard } from "@/store/workflowViewGuard";
 import type {
   WorkflowPlan,
   WorkflowRunRow,
@@ -11,15 +12,18 @@ import type {
 } from "@/services/workflows/types";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const workflowViewGuard = new WorkflowViewGuard();
 
 interface State {
   pendingPlan: WorkflowPlan | null;
   pendingErrors: string[];
+  activeConversationId: string | null;
   activeRun: WorkflowRunRow | null;
   activeRuns: WorkflowRunRow[];
   steps: WorkflowStepRow[];
 
   loadForConversation(conversationId: string): Promise<void>;
+  clearActiveConversation(): void;
   loadActiveRuns(): Promise<void>;
   previewReviewLoop(input: {
     goal: string;
@@ -56,19 +60,31 @@ interface State {
 export const useWorkflowStore = create<State>((set, get) => ({
   pendingPlan: null,
   pendingErrors: [],
+  activeConversationId: null,
   activeRun: null,
   activeRuns: [],
   steps: [],
 
   async loadForConversation(conversationId) {
+    const viewToken = workflowViewGuard.select(conversationId);
+    set((state) => {
+      const keepCurrent = state.activeRun?.conversationId === conversationId;
+      return {
+        activeConversationId: conversationId,
+        activeRun: keepCurrent ? state.activeRun : null,
+        steps: keepCurrent ? state.steps : []
+      };
+    });
     if (!workflowClient.isAvailable()) return;
     const runs = await workflowClient.listRuns(conversationId);
+    if (!workflowViewGuard.isCurrent(viewToken)) return;
     const latest =
       runs.find((r) =>
         ["running", "paused", "blocked", "pending_approval"].includes(r.status)
       ) ?? runs[0];
     if (latest) {
       const steps = await workflowClient.getSteps(latest.id);
+      if (!workflowViewGuard.isCurrent(viewToken)) return;
       set({
         activeRun: latest,
         steps
@@ -80,6 +96,11 @@ export const useWorkflowStore = create<State>((set, get) => ({
       });
     }
     void get().loadActiveRuns();
+  },
+
+  clearActiveConversation() {
+    workflowViewGuard.select(null);
+    set({ activeConversationId: null, activeRun: null, steps: [] });
   },
 
   async loadActiveRuns() {
@@ -109,7 +130,14 @@ export const useWorkflowStore = create<State>((set, get) => ({
       set({ pendingErrors: res.errors });
       return false;
     }
-    set({ pendingPlan: null, pendingErrors: [], activeRun: res.run, steps: [] });
+    workflowViewGuard.select(res.run.conversationId ?? input.conversationId ?? null);
+    set({
+      pendingPlan: null,
+      pendingErrors: [],
+      activeConversationId: res.run.conversationId ?? input.conversationId ?? null,
+      activeRun: res.run,
+      steps: []
+    });
     await get().loadActiveRuns();
     await workflowClient.start(res.run.id);
     await get().refresh(res.run.id);
@@ -123,7 +151,14 @@ export const useWorkflowStore = create<State>((set, get) => ({
       set({ pendingErrors: res.errors });
       return false;
     }
-    set({ pendingPlan: null, pendingErrors: [], activeRun: res.run, steps: [] });
+    workflowViewGuard.select(res.run.conversationId ?? input.conversationId ?? null);
+    set({
+      pendingPlan: null,
+      pendingErrors: [],
+      activeConversationId: res.run.conversationId ?? input.conversationId ?? null,
+      activeRun: res.run,
+      steps: []
+    });
     await get().loadActiveRuns();
     await workflowClient.start(res.run.id);
     await get().refresh(res.run.id);
@@ -132,13 +167,26 @@ export const useWorkflowStore = create<State>((set, get) => ({
 
   async refresh(runId) {
     if (!workflowClient.isAvailable()) return;
+    const viewToken = workflowViewGuard.snapshot();
     const previousRun = get().activeRun?.id === runId ? get().activeRun : undefined;
     const [run, steps] = await Promise.all([
       workflowClient.getRun(runId),
       workflowClient.getSteps(runId)
     ]);
     if (run) {
-      set({ activeRun: run, steps });
+      const current = get();
+      const runBelongsToView = run.conversationId
+        ? run.conversationId === current.activeConversationId
+        : current.activeRun?.id === runId;
+      const runIsStillSelected =
+        current.activeRun === null || current.activeRun.id === runId;
+      if (
+        workflowViewGuard.isCurrent(viewToken) &&
+        runBelongsToView &&
+        runIsStillSelected
+      ) {
+        set({ activeRun: run, steps });
+      }
       const wasLive =
         previousRun &&
         ["running", "paused", "blocked", "pending_approval"].includes(previousRun.status);
