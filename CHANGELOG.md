@@ -2,6 +2,19 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.8.2] - 2026-08-17
+
+### 新功能
+
+- isolate official DeepSeek API key from custom BYOK API key
+- add official DeepSeek API key input in default mode
+- support BYOK for DeepSeek Harness (dsh-acp)
+- fix CLI agent detection
+
+### 问题修复
+
+- sync workflow progress across conversations
+
 ## [0.8.1] - 2026-08-17
 
 ### 其他更新
