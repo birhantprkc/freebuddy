@@ -458,15 +458,26 @@ function normalizeDeepSeekByokForStorage(
   id: string,
   input: CLIDeepSeekByokConfig | undefined
 ): CLIDeepSeekByokConfig | undefined {
-  if (!input?.enabled) return undefined;
   const previous = readDeepSeekByokPrivate(id);
-  const apiKey = input.apiKey?.trim();
+  const apiKey = input?.apiKey?.trim();
   const apiKeyEncrypted = apiKey
     ? encryptSecret(apiKey)
     : previous?.apiKeyEncrypted;
   const apiKeyPreview = apiKey
     ? redactApiKey(apiKey)
-    : input.apiKeyPreview ?? previous?.apiKeyPreview;
+    : input?.apiKeyPreview ?? previous?.apiKeyPreview;
+
+  if (!input?.enabled) {
+    if (apiKeyEncrypted) {
+      return {
+        enabled: false,
+        apiKeyPreview,
+        apiKeyEncrypted
+      };
+    }
+    return undefined;
+  }
+
   const hasContextWindowInput = Object.prototype.hasOwnProperty.call(
     input,
     "contextWindow"
@@ -478,7 +489,7 @@ function normalizeDeepSeekByokForStorage(
     enabled: true,
     baseUrl: input.baseUrl?.trim(),
     envKey: input.envKey?.trim() || "DEEPSEEK_API_KEY",
-    wireApi: input.wireApi === "responses" ? "responses" : "chat",
+    wireApi: "chat",
     models: normalizeByokModels(input.models),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     apiKeyPreview,
@@ -727,10 +738,18 @@ export function resolveDeepSeekByokEnv(
   if (adapter !== "dsh-acp") return undefined;
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
   const byok = readDeepSeekByokPrivate(overrideId);
-  if (!byok?.enabled) return undefined;
+  if (!byok) return undefined;
   const apiKey = decryptSecret(byok.apiKeyEncrypted);
-  const envKey = byok.envKey?.trim() || "DEEPSEEK_API_KEY";
   const env: Record<string, string> = {};
+
+  if (!byok.enabled) {
+    if (apiKey) {
+      env.DEEPSEEK_API_KEY = apiKey;
+    }
+    return Object.keys(env).length ? env : undefined;
+  }
+
+  const envKey = byok.envKey?.trim() || "DEEPSEEK_API_KEY";
   const baseUrl = byok.baseUrl?.trim();
   if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
   if (apiKey) {

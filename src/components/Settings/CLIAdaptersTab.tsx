@@ -1066,19 +1066,20 @@ function EditOverridePanel({
             apiKeyPreview: savedClaudeByok?.apiKeyPreview
           }
         : undefined;
-    const deepseekByokConfig =
-      isDeepSeek && codexByokEnabled
-        ? {
-            enabled: true,
-            baseUrl: codexBaseUrl.trim(),
-            envKey: codexEnvKey.trim() || "DEEPSEEK_API_KEY",
-            wireApi: deepseekWireApi,
-            apiKey: codexApiKey.trim() || undefined,
-            models: byokModels,
-            contextWindow: parseByokContextWindow(byokContextWindow),
-            apiKeyPreview: savedDeepSeekByok?.apiKeyPreview
-          }
-        : undefined;
+    const deepseekByokConfig = isDeepSeek
+      ? {
+          enabled: codexByokEnabled,
+          baseUrl: codexByokEnabled ? codexBaseUrl.trim() || undefined : undefined,
+          envKey: codexByokEnabled ? codexEnvKey.trim() || undefined : undefined,
+          wireApi: "chat" as const,
+          apiKey: codexApiKey.trim() || undefined,
+          models: codexByokEnabled ? byokModels : [],
+          contextWindow: codexByokEnabled
+            ? parseByokContextWindow(byokContextWindow)
+            : undefined,
+          apiKeyPreview: savedDeepSeekByok?.apiKeyPreview
+        }
+      : undefined;
 
     const override: CLIExecutorOverride = {
       id: ex.id,
@@ -1259,16 +1260,59 @@ function EditOverridePanel({
                 className={!codexByokEnabled ? "active" : undefined}
                 onClick={() => setCodexByokEnabled(false)}
               >
-                {t("settings.cli.byok.modeDefault")}
+                {t(
+                  isDeepSeek
+                    ? "settings.cli.byok.modeDefaultDeepSeek"
+                    : "settings.cli.byok.modeDefault"
+                )}
               </button>
               <button
                 type="button"
                 className={codexByokEnabled ? "active" : undefined}
                 onClick={() => setCodexByokEnabled(true)}
               >
-                {t("settings.cli.byok.modeCustom")}
+                {t(
+                  isDeepSeek
+                    ? "settings.cli.byok.modeCustomDeepSeek"
+                    : "settings.cli.byok.modeCustom"
+                )}
               </button>
             </div>
+
+            {!codexByokEnabled && isDeepSeek && (
+              <>
+                <p
+                  className="settings-field-hint"
+                  style={{ marginTop: "0.75rem", marginBottom: "0.75rem" }}
+                >
+                  {t("settings.cli.byok.modeDefaultHintDeepSeek")}
+                </p>
+                <label className="adapter-editor-field">
+                  <span className="adapter-editor-field-label">
+                    {t("settings.cli.byok.apiKey")}
+                  </span>
+                  <input
+                    type="password"
+                    value={codexApiKey}
+                    placeholder={
+                      savedDeepSeekByok?.apiKeyPreview ||
+                      t("settings.cli.byok.apiKeyPlaceholder")
+                    }
+                    onChange={(e) => setCodexApiKey(e.target.value)}
+                  />
+                  <span className="settings-field-hint">
+                    {savedDeepSeekByok?.apiKeyPreview
+                      ? t("settings.cli.byok.savedKeyHint", {
+                          preview: savedDeepSeekByok.apiKeyPreview
+                        })
+                      : t("settings.cli.byok.newKeyHint")}
+                  </span>
+                </label>
+                <p className="settings-secure-note">
+                  {t("settings.cli.byok.hint")}
+                </p>
+              </>
+            )}
 
             {codexByokEnabled && (
               <>
