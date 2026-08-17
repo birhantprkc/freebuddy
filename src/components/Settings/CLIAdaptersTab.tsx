@@ -94,6 +94,12 @@ function matchesQuery(ex: ResolvedExecutor, query: string): boolean {
 
 function cliRuntimeErrorKey(lastError: string | undefined): string {
   if (lastError === "binary not found") return "settings.cli.commandNotFound";
+  if (lastError === "codex cli found; acp adapter missing") {
+    return "settings.cli.codexCliFoundAcpMissing";
+  }
+  if (lastError === "claude cli found; acp adapter missing") {
+    return "settings.cli.claudeCliFoundAcpMissing";
+  }
   if (lastError === "DeepSeek ACP plugin tree missing") {
     return "settings.cli.dshAcpPluginTreeMissing";
   }
@@ -1127,6 +1133,13 @@ function EditOverridePanel({
           {ex.runtime?.installed ? (
             <span className="adapter-status adapter-editor-status ok">
               {t("settings.cli.installed")}
+            </span>
+          ) : ex.runtime ? (
+            <span
+              className="adapter-status adapter-editor-status warn"
+              title={ex.runtime.lastError}
+            >
+              {t("settings.cli.notInstalled")}
             </span>
           ) : (
             <span className="adapter-status adapter-editor-status muted">

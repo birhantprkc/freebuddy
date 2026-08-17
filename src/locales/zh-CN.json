@@ -963,7 +963,7 @@
     },
     "cli": {
       "title": "Cli Agents",
-      "description": "配置 FreeBuddy 中可用的本地 CLI Agent。",
+      "description": "配置 FreeBuddy 中可用的本地 CLI Agent。FreeBuddy 通过 ACP 适配器连接 Codex、Claude Code 等工具；仅安装原生 CLI 不等于已安装适配器。",
       "name": "名称",
       "commandOverride": "命令覆盖",
       "model": "模型",
@@ -1053,6 +1053,8 @@
       "checkTimedOut": "版本检测超时，请重试或检查安全软件是否阻止程序启动。",
       "installBroken": "安装损坏 — 请重试",
       "commandNotFound": "未找到命令",
+      "codexCliFoundAcpMissing": "已找到 Codex CLI，但 FreeBuddy 所需的 Codex ACP 适配器未安装。请点击安装。",
+      "claudeCliFoundAcpMissing": "已找到 Claude Code CLI，但 FreeBuddy 所需的 Claude ACP 适配器未安装。请点击安装。",
       "dshAcpPluginTreeMissing": "已找到 dsh-acp-demo，但 ACP 插件包未安装。请再点一次安装。",
       "codexAcpUpgradeRequired": "需要新版 Codex ACP — 请安装",
       "checkProbeFailed": "检测失败 — 请重试",

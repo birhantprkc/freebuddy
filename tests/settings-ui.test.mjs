@@ -236,10 +236,14 @@ test("coding agent settings explain binary lookup failures separately", () => {
   assert.equal(settingsSource.includes("cliRuntimeErrorKey"), true);
   assert.equal(settingsSource.includes("binary not found"), true);
   assert.equal(settingsSource.includes("settings.cli.commandNotFound"), true);
+  assert.equal(settingsSource.includes("settings.cli.codexCliFoundAcpMissing"), true);
+  assert.equal(settingsSource.includes("settings.cli.claudeCliFoundAcpMissing"), true);
   assert.equal(settingsSource.includes("settings.cli.dshAcpPluginTreeMissing"), true);
   assert.equal(settingsSource.includes("settings.cli.codexAcpUpgradeRequired"), true);
   assert.equal(settingsSource.includes("settings.cli.checkProbeFailed"), true);
   assert.equal(zhLocale.settings.cli.commandNotFound, "未找到命令");
+  assert.match(zhLocale.settings.cli.codexCliFoundAcpMissing, /已找到 Codex CLI/);
+  assert.match(zhLocale.settings.cli.claudeCliFoundAcpMissing, /已找到 Claude Code CLI/);
   assert.equal(
     zhLocale.settings.cli.dshAcpPluginTreeMissing,
     "已找到 dsh-acp-demo，但 ACP 插件包未安装。请再点一次安装。"
@@ -247,6 +251,8 @@ test("coding agent settings explain binary lookup failures separately", () => {
   assert.equal(zhLocale.settings.cli.codexAcpUpgradeRequired, "需要新版 Codex ACP — 请安装");
   assert.equal(zhLocale.settings.cli.checkProbeFailed, "检测失败 — 请重试");
   assert.equal(enLocale.settings.cli.commandNotFound, "command not found");
+  assert.match(enLocale.settings.cli.codexCliFoundAcpMissing, /Codex CLI was found/);
+  assert.match(enLocale.settings.cli.claudeCliFoundAcpMissing, /Claude Code CLI was found/);
   assert.equal(
     enLocale.settings.cli.dshAcpPluginTreeMissing,
     "dsh-acp-demo is on PATH, but its ACP plugin packages are missing. Click Install again."

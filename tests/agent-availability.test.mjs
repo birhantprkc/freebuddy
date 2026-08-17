@@ -98,3 +98,29 @@ test("refreshes unknown and stale agents without hiding stale installed agents",
     ["ClaudeCode", "Codex"]
   );
 });
+
+test("initial and manual detection retries fresh cached misses", async () => {
+  const {
+    agentEntriesNeedingDetection,
+    agentEntriesNeedingRefresh,
+    buildAgentAvailabilityGroups
+  } = await loadModule();
+  const now = Date.parse("2026-07-17T02:00:00.000Z");
+  const groups = buildAgentAvailabilityGroups(
+    [member("codex-acp", "Codex"), member("agy-acp", "Antigravity")],
+    {
+      "codex-acp": runtime("codex-acp", false),
+      "agy-acp": runtime("agy-acp", true)
+    },
+    now
+  );
+
+  assert.deepEqual(
+    agentEntriesNeedingRefresh(groups).map((entry) => entry.member.name),
+    []
+  );
+  assert.deepEqual(
+    agentEntriesNeedingDetection(groups).map((entry) => entry.member.name),
+    ["Codex"]
+  );
+});

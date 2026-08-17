@@ -101,3 +101,20 @@ export function agentEntriesNeedingRefresh(
     ...groups.unavailable.filter((entry) => entry.stale)
   ];
 }
+
+/**
+ * A user-visible detection pass must retry every cached negative result. CLI
+ * tools are commonly installed while FreeBuddy is already running, so a
+ * recent "not installed" row is not reliable enough for an initial or manual
+ * refresh. Keep the regular background refresh above bounded by staleness to
+ * avoid a retry loop after a failed check.
+ */
+export function agentEntriesNeedingDetection(
+  groups: AgentAvailabilityGroups
+): AgentAvailabilityEntry[] {
+  return [
+    ...groups.available.filter((entry) => entry.stale),
+    ...groups.checking,
+    ...groups.unavailable
+  ];
+}

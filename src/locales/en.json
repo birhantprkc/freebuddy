@@ -977,7 +977,7 @@
     },
     "cli": {
       "title": "Cli Agents",
-      "description": "Configure the local cli agents available in FreeBuddy.",
+      "description": "Configure the local CLI agents available in FreeBuddy. FreeBuddy connects to tools such as Codex and Claude Code through ACP adapters; installing only the native CLI does not install the adapter.",
       "name": "Name",
       "commandOverride": "Command override",
       "model": "Model",
@@ -1068,6 +1068,8 @@
       "checkTimedOut": "The version check timed out. Retry or check whether security software blocked the executable.",
       "installBroken": "install broken — retry",
       "commandNotFound": "command not found",
+      "codexCliFoundAcpMissing": "Codex CLI was found, but FreeBuddy's Codex ACP adapter is not installed. Click Install.",
+      "claudeCliFoundAcpMissing": "Claude Code CLI was found, but FreeBuddy's Claude ACP adapter is not installed. Click Install.",
       "dshAcpPluginTreeMissing": "dsh-acp-demo is on PATH, but its ACP plugin packages are missing. Click Install again.",
       "codexAcpUpgradeRequired": "new Codex ACP required — install",
       "checkProbeFailed": "check failed — retry",

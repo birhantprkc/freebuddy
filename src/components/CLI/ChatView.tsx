@@ -101,6 +101,7 @@ import {
   projectLabelFromCwd
 } from "./conversationProjectGrouping";
 import {
+  agentEntriesNeedingDetection,
   agentEntriesNeedingRefresh,
   agentRuntimeKey,
   buildAgentAvailabilityGroups,
@@ -590,6 +591,7 @@ export function ChatView({
     () => new Set()
   );
   const checkingAgentIdsRef = useRef<Set<string>>(new Set());
+  const initialAgentDetectionStartedRef = useRef(false);
   const memberSelectionTouchedRef = useRef(false);
   const [newTaskSkillIds, setNewTaskSkillIds] = useState<string[]>([]);
   const [newTaskCwd, setNewTaskCwd] = useState("");
@@ -1057,7 +1059,11 @@ export function ChatView({
 
   useEffect(() => {
     if (activeId || taskMode !== "normal" || !executorsLoaded) return;
-    void checkAgentEntries(agentEntriesNeedingRefresh(agentAvailability));
+    const entries = initialAgentDetectionStartedRef.current
+      ? agentEntriesNeedingRefresh(agentAvailability)
+      : agentEntriesNeedingDetection(agentAvailability);
+    initialAgentDetectionStartedRef.current = true;
+    void checkAgentEntries(entries);
   }, [
     activeId,
     agentAvailability,
@@ -2023,7 +2029,7 @@ export function ChatView({
           }
         }}
         onRefreshAgents={() =>
-          void checkAgentEntries(agentEntriesNeedingRefresh(agentAvailability))
+          void checkAgentEntries(agentEntriesNeedingDetection(agentAvailability))
         }
         onManageAgents={() => onOpenAgentSettings?.()}
         onConfigOptionOverrides={(next) => {
