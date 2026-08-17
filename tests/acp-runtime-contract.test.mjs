@@ -14,6 +14,14 @@ const runtimeSource = fs.readFileSync(
   new URL("../electron/cli/runtime.ts", import.meta.url),
   "utf8"
 );
+const delegationToolServiceSource = fs.readFileSync(
+  new URL("../electron/delegationToolService.ts", import.meta.url),
+  "utf8"
+);
+const delegationRuntimeSource = fs.readFileSync(
+  new URL("../electron/cli/delegationRuntime.ts", import.meta.url),
+  "utf8"
+);
 
 test("ACP runtime finalizes successful prompt turns without waiting for process exit", () => {
   const promptIndex = acpRuntimeSource.indexOf("await runPromptOnSession();");
@@ -37,6 +45,22 @@ test("ACP runtime still treats process close as a fallback finish signal", () =>
   assert.match(acpRuntimeSource, /child\.on\("close"/);
   assert.match(acpRuntimeSource, /exitCode === 0 \? "done" : "failed"/);
   assert.match(acpRuntimeSource, /finish\(status, exitCode, crashMessage\)/);
+});
+
+test("validated delegation yield parks the ACP turn after sending its receipt", () => {
+  const responseIndex = delegationToolServiceSource.indexOf("sendJson(res, 200, result)");
+  const scheduleIndex = delegationToolServiceSource.indexOf(
+    "setImmediate(() => notifyDelegateYieldRequested(binding))"
+  );
+  assert.ok(responseIndex >= 0 && scheduleIndex > responseIndex);
+  assert.match(runtimeSource, /export function cliYield/);
+  assert.match(delegationRuntimeSource, /onYieldRequested:[\s\S]*?cliYield\(binding\.taskSessionId\)/);
+  assert.match(acpRuntimeSource, /yieldRequested = true;[\s\S]*?cancelRun\(\)/);
+  assert.match(
+    acpRuntimeSource,
+    /if \(yieldRequested\) \{\s*finish\("done", 0\)/,
+    "a parked turn must finish successfully instead of looking killed or failed"
+  );
 });
 
 test("ACP auto approval never leaves an unsupported permission request pending", () => {

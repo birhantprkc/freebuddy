@@ -106,7 +106,7 @@ test("ChatView plays back at block granularity with typing text and locks the co
   assert.match(src, /const storeFrames = useReplayStore\(\(s\) => s\.frames\)/);
   assert.match(src, /const displayMessages = useMemo<ConversationMessage\[\]>/);
   assert.match(src, /messages\.slice\(0, replayFrame\.messageIndex \+ 1\)/);
-  assert.match(src, /displayMessages\.map\(\(m\) =>/);
+  assert.match(src, /displayMessages\.map\(/);
   assert.match(src, /replayPartial && replayPartial\.messageId === m\.id/);
   assert.match(src, /blockLimit=\{partial\?\.blockLimit\}/);
   assert.match(src, /typingChars=\{partial\?\.typingChars\}/);

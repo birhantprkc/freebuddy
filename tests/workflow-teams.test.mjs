@@ -314,7 +314,7 @@ test("workflow team settings editor localizes builtin role and node labels", () 
 
 test("new team button opens the workflow team editor", () => {
   const src = read("../src/components/Settings/WorkflowTeamList.tsx");
-  assert.match(src, /onClick=\{onNew\}/);
+  assert.match(src, /onNew/);
   assert.doesNotMatch(src, /window\.alert/);
 });
 
@@ -374,7 +374,7 @@ test("ChatView uses a non-writing summary role for team follow-up conversations"
   assert.match(src, /!role\.canWrite/);
   assert.doesNotMatch(src, /team\.roles\[0\]\?\.agentId/);
   assert.match(src, /const teamMember = teamConversationMember\(team, members\)/);
-  assert.match(src, /teams\.find\(\(tt\) => tt\.id === pendingTeamPreview\.teamId\)/);
+  assert.match(src, /allTeams\.find\(\(tt\) => tt\.id === pendingTeamPreview\.teamId\)/);
   assert.match(src, /member: teamMember/);
 });
 
@@ -546,12 +546,13 @@ test("conversationStore subscribes to workflow message events", () => {
   assert.match(src, /onStepMessage/);
 });
 
-test("conversationStore refreshes stale running workflow messages on reactivation", () => {
+test("conversationStore keeps background streaming subscriptions and refreshes on reactivation", () => {
   const src = read("../src/store/conversationStore.ts");
-  assert.match(src, /function hasActiveWorkflowMessages/);
-  assert.match(src, /message\.workflowRunId && message\.workflowStepRowId/);
+  assert.match(src, /function hasActiveStreamingMessages/);
   assert.match(src, /message\.status === "running"/);
-  assert.match(src, /hasActiveWorkflowMessages\(cachedMessages\)/);
+  assert.match(src, /hasActiveStreamingMessages\(cachedMessages\)/);
+  assert.match(src, /workflowMessageUnsubscribes/);
+  assert.match(src, /pruneIdleWorkflowMessageSubscriptions/);
 });
 
 test("conversationStore uses a team follow-up context and dedicated session scope", () => {

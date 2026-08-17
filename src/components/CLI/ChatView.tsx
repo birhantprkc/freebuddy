@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -16,6 +17,8 @@ import { useConversationStore } from "@/store/conversationStore";
 import { useCliExecutorStore } from "@/store/cliExecutorStore";
 import { useWorkflowStore } from "@/store/workflowStore";
 import { useWorkflowTeamStore } from "@/store/workflowTeamStore";
+import { useDelegationTeamStore } from "@/store/delegationStore";
+import { delegationClient } from "@/services/delegation/client";
 import { useNewTaskUiStore } from "@/store/newTaskUiStore";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
 import { useProjectStore } from "@/store/projectStore";
@@ -35,6 +38,7 @@ import type {
   SessionConfigOption
 } from "@/services/cli/types";
 import type {
+  AnyTeam,
   WorkflowTeam,
   WorkflowTeamPreview
 } from "@/services/workflowTeams/types";
@@ -42,7 +46,7 @@ import type {
   NativePluginAgent,
   NativePluginRecord
 } from "@/services/plugins/types";
-import { workflowTeamName } from "@/services/workflowTeams/types";
+import { isDelegationTeam, workflowTeamName } from "@/services/workflowTeams/types";
 import {
   workflowFollowupAgentId,
   type WorkflowPlan
@@ -64,6 +68,8 @@ import {
 import { MessageBubble } from "./MessageBubble";
 import { AgentAvatar } from "./AgentAvatar";
 import { CodeWhipOverlay } from "./CodeWhipOverlay";
+import { DelegationTeamPreviewCard } from "../Workflows/DelegationTeamPreviewCard";
+import { DelegationApprovalCard } from "../Workflows/DelegationApprovalCard";
 import { useReplayStore } from "@/store/replayStore";
 import { parseSlashDraft, SlashCommandMenu } from "./SlashCommandMenu";
 import {
@@ -556,6 +562,13 @@ export function ChatView({
   const pendingTeamErrors = useWorkflowTeamStore((s) => s.pendingErrors);
   const previewTeam = useWorkflowTeamStore((s) => s.previewTeam);
   const clearTeamPreview = useWorkflowTeamStore((s) => s.clearPreview);
+  const delegationTeams = useDelegationTeamStore((s) => s.teams);
+  const delegationTeamsLoaded = useDelegationTeamStore((s) => s.loaded);
+  const loadDelegationTeams = useDelegationTeamStore((s) => s.load);
+  const allTeams = useMemo<AnyTeam[]>(
+    () => [...teams, ...delegationTeams],
+    [teams, delegationTeams]
+  );
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
 
   const refreshRuntimes = useCliExecutorStore((s) => s.refreshRuntimes);
@@ -1232,21 +1245,25 @@ export function ChatView({
   }, [teamsLoaded, loadTeams]);
 
   useEffect(() => {
-    if (!selectedTeamId && teams.length > 0) {
-      const firstEnabled = teams.find((t) => t.enabled);
+    if (!delegationTeamsLoaded) void loadDelegationTeams();
+  }, [delegationTeamsLoaded, loadDelegationTeams]);
+
+  useEffect(() => {
+    if (!selectedTeamId && allTeams.length > 0) {
+      const firstEnabled = allTeams.find((t) => t.enabled);
       if (firstEnabled) setSelectedTeamId(firstEnabled.id);
     }
-  }, [teams, selectedTeamId]);
+  }, [allTeams, selectedTeamId]);
 
   useEffect(() => {
     if (
       requestedTeamId &&
       requestedTeamId !== selectedTeamId &&
-      teams.some((team) => team.id === requestedTeamId && team.enabled)
+      allTeams.some((team) => team.id === requestedTeamId && team.enabled)
     ) {
       setSelectedTeamId(requestedTeamId);
     }
-  }, [requestedTeamId, selectedTeamId, teams]);
+  }, [requestedTeamId, selectedTeamId, allTeams]);
 
   useEffect(() => {
     if (activeId) return;
@@ -1567,8 +1584,9 @@ export function ChatView({
 
     if (teamMode) {
       if ((!prompt && attachmentsToSend.length === 0) || !selectedTeamId) return;
-      const team = teams.find((tt) => tt.id === selectedTeamId);
-      if (!team || !teamConversationMember(team, members)) return;
+      const team = allTeams.find((tt) => tt.id === selectedTeamId);
+      if (!team) return;
+      if (!isDelegationTeam(team) && !teamConversationMember(team, members)) return;
     } else {
       const selectedMember = members.find((m) => m.id === selectedMemberId);
       if (
@@ -1588,7 +1606,26 @@ export function ChatView({
 
     try {
       if (teamMode) {
-        const team = teams.find((tt) => tt.id === selectedTeamId)!;
+        const team = allTeams.find((tt) => tt.id === selectedTeamId)!;
+        if (isDelegationTeam(team)) {
+          const cwd = newTaskCwd.trim() || undefined;
+          const goal = composeMessageWithAttachments(prompt, attachmentsToSend);
+          const res = await delegationClient.createRun({
+            teamId: team.id,
+            goal,
+            cwd
+          });
+          if (!res.ok) {
+            throw new Error(res.error);
+          }
+          setNewTaskDraft("");
+          setNewTaskPendingAttachments((prev) =>
+            detachAttachmentsForSend(attachmentsToSend, prev)
+          );
+          await useConversationStore.getState().refreshList();
+          await useConversationStore.getState().setActive(res.conversationId);
+          return;
+        }
         const teamMember = teamConversationMember(team, members)!;
         if (!(await preflightMember(teamMember))) return;
         const cwd = newTaskCwd.trim() || undefined;
@@ -1835,6 +1872,24 @@ export function ChatView({
         notify(t("contextShare.linkAttached"));
       }
 
+      // Delegation conversations: follow-ups go through the async bus (park/wake),
+      // not bare cli:run (which has no wake loop).
+      if (
+        delegationClient.isAvailable() &&
+        (await delegationClient.hasRunForConversation(conv.id))
+      ) {
+        const res = await delegationClient.followUp({
+          conversationId: conv.id,
+          prompt: composeMessageWithAttachments(prompt, attachmentsToSend)
+        });
+        if (!res.ok) {
+          throw new Error(res.error);
+        }
+        await useConversationStore.getState().loadMessages(conv.id);
+        setSubmitPreview(null);
+        return;
+      }
+
       await sendMessage({
         conversationId: conv.id,
         prompt,
@@ -1877,11 +1932,32 @@ export function ChatView({
   const onCreateTeamConversation = async () => {
     if (!teamMode) return;
     if (!pendingTeamPreview) return;
-    const team = teams.find((tt) => tt.id === pendingTeamPreview.teamId);
+    const team = allTeams.find((tt) => tt.id === pendingTeamPreview.teamId);
     if (!team) return;
+    const cwd = newTaskCwd.trim() || pendingTeamPreview?.cwd;
+    if (isDelegationTeam(team)) {
+      setPreflightMsg(null);
+      try {
+        const res = await delegationClient.createRun({
+          teamId: team.id,
+          goal: pendingTeamPreview.goal,
+          cwd: pendingTeamPreview.cwd ?? cwd
+        });
+        if (!res.ok) {
+          throw new Error(res.error);
+        }
+        setNewTaskDraft("");
+        setNewTaskPendingAttachments([]);
+        clearTeamPreview();
+        await useConversationStore.getState().refreshList();
+        await useConversationStore.getState().setActive(res.conversationId);
+      } catch (e) {
+        setPreflightMsg(t("errors.taskFailed", { err: e instanceof Error ? e.message : String(e) }));
+      }
+      return;
+    }
     const teamMember = teamConversationMember(team, members);
     if (!teamMember) return;
-    const cwd = newTaskCwd.trim() || pendingTeamPreview?.cwd;
     setPreflightMsg(null);
     try {
       if (!(await preflightMember(teamMember))) return;
@@ -1926,7 +2002,7 @@ export function ChatView({
         permissionMode={permissionMode}
         pendingAttachments={newTaskPendingAttachments}
         taskMode={taskMode}
-        teams={teams}
+        teams={allTeams}
         selectedTeamId={selectedTeamId}
         configOptions={newTaskConfigOptions}
         configOptionOverrides={newTaskConfigOptionOverrides}
@@ -2068,7 +2144,7 @@ export function ChatView({
             }}
           />
         )}
-        {displayMessages.map((m) => {
+        {displayMessages.map((m, idx) => {
           const partial =
             replayPartial && replayPartial.messageId === m.id
               ? replayPartial
@@ -2077,24 +2153,42 @@ export function ChatView({
             (m.agentId ? membersById.get(m.agentId) : undefined) ??
             (m.agentName ? membersByName.get(m.agentName) : undefined);
           const shareReferences = shareReferencesByMessageId.get(m.id);
+          const prevMessage = idx > 0 ? displayMessages[idx - 1] : undefined;
+          const showHandoff =
+            !!prevMessage &&
+            prevMessage.role === "assistant" &&
+            m.role === "assistant" &&
+            !!prevMessage.roleLabel &&
+            !!m.roleLabel &&
+            prevMessage.roleLabel !== m.roleLabel;
           return (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              adapter={m.adapter ?? messageMember?.cli.adapter ?? conv?.adapter}
-              agentName={m.agentName ?? messageMember?.name ?? conv?.agentName}
-              agentIconKey={messageMember?.avatar}
-              blockLimit={partial?.blockLimit}
-              typingChars={partial?.typingChars}
-              afterContent={
-                shareReferences && shareReferences.length > 0 ? (
-                  <SharedConversationReferences
-                    references={shareReferences}
-                    conversations={conversations}
-                  />
-                ) : undefined
-              }
-            />
+            <Fragment key={m.id}>
+              {showHandoff && (
+                <div className="delegation-handoff">
+                  <span className="delegation-handoff-rule" />
+                  <span className="delegation-handoff-text">
+                    {t("workflow.delegation.handoffTo", { defaultValue: "handoff to" })} {m.roleLabel}
+                  </span>
+                  <span className="delegation-handoff-rule" />
+                </div>
+              )}
+              <MessageBubble
+                message={m}
+                adapter={m.adapter ?? messageMember?.cli.adapter ?? conv?.adapter}
+                agentName={m.agentName ?? messageMember?.name ?? conv?.agentName}
+                agentIconKey={messageMember?.avatar}
+                blockLimit={partial?.blockLimit}
+                typingChars={partial?.typingChars}
+                afterContent={
+                  shareReferences && shareReferences.length > 0 ? (
+                    <SharedConversationReferences
+                      references={shareReferences}
+                      conversations={conversations}
+                    />
+                  ) : undefined
+                }
+              />
+            </Fragment>
           );
         })}
         {activeRun?.conversationId === conv.id &&
@@ -2128,6 +2222,8 @@ export function ChatView({
       </div>
 
       {preflightMsg && <div className="preflight-warn">{preflightMsg}</div>}
+
+      {conv && <DelegationApprovalCard conversationId={conv.id} />}
 
       <div
         className={`chat-composer${replaying ? " replay-disabled" : ""}${chatAttachmentImport.dragActive ? " attachment-drop-active" : ""}`}
@@ -2431,7 +2527,7 @@ function NewTaskHome({
   permissionMode: "auto" | "ask";
   pendingAttachments: ChatAttachment[];
   taskMode: "normal" | "team";
-  teams: WorkflowTeam[];
+  teams: AnyTeam[];
   selectedTeamId: string;
   configOptions: SessionConfigOption[];
   configOptionOverrides: Record<string, string>;
@@ -2465,6 +2561,14 @@ function NewTaskHome({
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const teamMode = taskMode === "team";
+  const selectedTeam = teams.find((tt) => tt.id === selectedTeamId);
+  const delegationPreviewTeam =
+    teamMode &&
+    selectedTeam &&
+    isDelegationTeam(selectedTeam) &&
+    draft.trim()
+      ? selectedTeam
+      : undefined;
   const fileMentions = useWorkspaceFileMentions({
     value: draft,
     cwd,
@@ -2602,7 +2706,9 @@ function NewTaskHome({
                     .filter((tt) => tt.enabled)
                     .map((tt) => (
                       <option key={tt.id} value={tt.id}>
-                        {workflowTeamName(tt, t)}
+                        {isDelegationTeam(tt)
+                          ? `${tt.name}（${t("workflow.delegation.kindBadge")}）`
+                          : workflowTeamName(tt, t)}
                       </option>
                     ))}
                 </select>
@@ -2710,6 +2816,7 @@ function NewTaskHome({
 
         {preflightMsg && <div className="preflight-warn new-task-warn">{preflightMsg}</div>}
       </section>
+
       <NewTaskUnreadConversations />
       </div>
       {workspacePickerOpen && (

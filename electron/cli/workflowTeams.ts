@@ -22,7 +22,7 @@ function notifyWorkflowTeamsChanged(): void {
  * key signal for the multi-process clobber scenario; skillCounts reveals whether
  * the write cleared or preserved per-role skills.
  */
-function auditTeamWrite(
+export function auditTeamWrite(
   action: string,
   teamId: string,
   roles: WorkflowTeamRole[] | undefined,
@@ -61,14 +61,14 @@ function rowToTeam(r: any): WorkflowTeam {
 
 export function listWorkflowTeams(): WorkflowTeam[] {
   const rows = getDb()
-    .prepare("SELECT * FROM workflow_teams ORDER BY source DESC, created_at ASC")
+    .prepare("SELECT * FROM workflow_teams WHERE kind = 'workflow' OR kind IS NULL ORDER BY source DESC, created_at ASC")
     .all() as any[];
   return rows.map(rowToTeam);
 }
 
 export function getWorkflowTeam(id: string): WorkflowTeam | undefined {
   const row = getDb()
-    .prepare("SELECT * FROM workflow_teams WHERE id = ?")
+    .prepare("SELECT * FROM workflow_teams WHERE id = ? AND (kind = 'workflow' OR kind IS NULL)")
     .get(id) as any;
   return row ? rowToTeam(row) : undefined;
 }

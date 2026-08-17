@@ -567,6 +567,10 @@ const workflow = {
     ipcRenderer.invoke("workflow:previewTeamRun", input),
   createTeamRun: (input: unknown) =>
     ipcRenderer.invoke("workflow:createTeamRun", input),
+  createDelegationRun: (input: unknown) =>
+    ipcRenderer.invoke("workflow:createDelegationRun", input),
+  approveDelegateWrite: (input: unknown) =>
+    ipcRenderer.invoke("workflow:approveDelegateWrite", input),
   onStepMessage(
     conversationId: string,
     cb: (event: { type: "appended" | "updated"; messageId: string }) => void
@@ -617,6 +621,50 @@ const workflowTeams = {
     return () => {
       ipcRenderer.off(channel, listener);
     };
+  }
+};
+
+const delegation = {
+  listTeams: () => ipcRenderer.invoke("delegation:listTeams"),
+  getTeam: (id: string) => ipcRenderer.invoke("delegation:getTeam", id),
+  createTeam: (input: unknown) => ipcRenderer.invoke("delegation:createTeam", input),
+  updateTeam: (id: string, patch: unknown) =>
+    ipcRenderer.invoke("delegation:updateTeam", { id, patch }),
+  deleteTeam: (id: string) => ipcRenderer.invoke("delegation:deleteTeam", id),
+  getRun: (id: string) => ipcRenderer.invoke("delegation:getRun", id),
+  getRunByConversation: (conversationId: string) =>
+    ipcRenderer.invoke("delegation:getRunByConversation", conversationId),
+  listEvents: (runId: string) => ipcRenderer.invoke("delegation:listEvents", runId),
+  listPendingApprovals: (runId: string) =>
+    ipcRenderer.invoke("delegation:listPendingApprovals", runId),
+  stopRun: (runId: string) => ipcRenderer.invoke("delegation:stopRun", runId),
+  pauseRun: (runId: string) => ipcRenderer.invoke("delegation:pauseRun", runId),
+  resumeRun: (runId: string) => ipcRenderer.invoke("delegation:resumeRun", runId),
+  hasRunForConversation: (conversationId: string) =>
+    ipcRenderer.invoke("delegation:hasRunForConversation", conversationId),
+  followUp: (input: { conversationId: string; prompt: string }) =>
+    ipcRenderer.invoke("delegation:followUp", input),
+  onChanged: (cb: () => void): (() => void) => {
+    const channel = "delegationTeams://changed";
+    const listener = () => cb();
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.off(channel, listener);
+    };
+  },
+  onRunFinished(
+    cb: (event: {
+      runId: string;
+      conversationId?: string;
+      status: string;
+      name: string;
+    }) => void
+  ): () => void {
+    const channel = "delegation://finished";
+    const handler = (_e: IpcRendererEvent, payload: unknown) =>
+      cb(payload as any);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
   }
 };
 
@@ -768,6 +816,7 @@ contextBridge.exposeInMainWorld("freebuddy", {
   workflowTeams,
   skills,
   settings,
+  delegation,
   plugins,
   scheduledTasks,
   feed,

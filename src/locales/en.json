@@ -17,7 +17,8 @@
     "saved": "Saved",
     "copy": "Copy",
     "copied": "Copied",
-    "copyFailed": "Failed to copy"
+    "copyFailed": "Failed to copy",
+    "remove": "Remove"
   },
   "status": {
     "running": "Running",
@@ -1360,6 +1361,7 @@
     "allowed": "Allowed",
     "denied": "Denied",
     "newTeam": "New team",
+    "teamKindWorkflow": "Workflow team",
     "newTeamComingSoon": "Custom teams are coming soon.",
     "teamName": "Team name",
     "teamDescription": "Description",
@@ -1489,6 +1491,62 @@
           "analysis": "Analyze",
           "report": "Report"
         }
+      }
+    },
+    "delegation": {
+      "handoffTo": "handoff to",
+      "teamTitle": "Team",
+      "entry": "entry",
+      "readonly": "read-only",
+      "editorTitle": "Self-organizing delegation team",
+      "overview": "Overview",
+      "namePlaceholder": "Team name",
+      "descriptionPlaceholder": "Description (optional)",
+      "roster": "Roster",
+      "labelPlaceholder": "Role name",
+      "agentPlaceholder": "Select agent",
+      "capabilityPlaceholder": "Capability: what subtasks should be delegated to it",
+      "canWrite": "Can write",
+      "addRosterEntry": "Add roster entry",
+      "entryAgent": "Entry agent",
+      "policy": "Policy",
+      "maxDepth": "Max depth",
+      "timeoutMin": "Timeout (min)",
+      "allowWrites": "Allow writes",
+      "requireApprovalBeforeDelegateWrite": "Approve before write",
+      "stopOnDelegateFailure": "Stop on failure",
+      "kindBadge": "Self-organizing",
+      "newTeam": "New delegation team",
+      "teamKindDelegation": "Self-organizing team",
+      "writeApproval": "Write approval",
+      "runTitle": "Delegation run",
+      "approve": "Approve",
+      "reject": "Reject",
+      "approvePrompt": "A teammate is requesting write access.",
+      "loading": "Loading…",
+      "noActivity": "No delegation activity yet.",
+      "timeline": "Delegation timeline",
+      "membersActivity": "Members and activity",
+      "taskCount": "{{count}} tasks",
+      "noMemberTasks": "No delegated tasks yet",
+      "showHistory": "View all {{count}} tasks",
+      "collapseHistory": "Collapse task history",
+      "acceptedAt": "Accepted",
+      "startedAt": "Started",
+      "endedAt": "Ended",
+      "result": "Result",
+      "status": {
+        "pending": "queued",
+        "running": "running",
+        "done": "done",
+        "failed": "failed",
+        "timeout": "timeout",
+        "cancelled": "cancelled"
+      },
+      "details": "Details",
+      "hide": "Hide",
+      "errors": {
+        "invalidRoster": "Roster needs at least one entry, each with a label and an agent"
       }
     }
   },

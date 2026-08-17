@@ -72,7 +72,6 @@ export function notifyTaskFinished(
       ...(conversationId ? { conversationId } : {})
     });
   }
-  window.freebuddy?.butlerBuddy?.reportTaskResult?.(kind);
   const documentHidden = typeof document !== "undefined" ? document.hidden : false;
   const background = isAppInBackground();
   debugLogClient.info("notification", "notifyTaskFinished evaluated", {
@@ -83,7 +82,10 @@ export function notifyTaskFinished(
     willNotify: background,
     conversationId
   });
+  // While FreeBuddy is focused, the user already sees the chat — skip pet
+  // celebrate/comfort broadcasts and OS notifications.
   if (!background) return;
+  window.freebuddy?.butlerBuddy?.reportTaskResult?.(kind);
   window.freebuddy?.window?.notifyTask
     ?.({ kind, title, body, conversationId })
     ?.catch(() => {});

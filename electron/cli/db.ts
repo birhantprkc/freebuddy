@@ -834,12 +834,73 @@ export function migrate(db: DB) {
       "ALTER TABLE workflow_runs ADD COLUMN plan_version INTEGER NOT NULL DEFAULT 1"
     );
   }
+  if (!workflowRunCols.some((c) => c.name === "kind")) {
+    db.exec(
+      "ALTER TABLE workflow_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'workflow'"
+    );
+  }
 
   const workflowStepCols = db
     .prepare("PRAGMA table_info(workflow_steps)")
     .all() as Array<{ name: string }>;
   if (!workflowStepCols.some((c) => c.name === "tool_session_id")) {
     db.exec("ALTER TABLE workflow_steps ADD COLUMN tool_session_id TEXT");
+  }
+
+  const workflowTeamCols = db
+    .prepare("PRAGMA table_info(workflow_teams)")
+    .all() as Array<{ name: string }>;
+  if (!workflowTeamCols.some((c) => c.name === "kind")) {
+    db.exec(
+      "ALTER TABLE workflow_teams ADD COLUMN kind TEXT NOT NULL DEFAULT 'workflow'"
+    );
+  }
+  if (!workflowTeamCols.some((c) => c.name === "delegation_meta_json")) {
+    db.exec(
+      "ALTER TABLE workflow_teams ADD COLUMN delegation_meta_json TEXT"
+    );
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS delegation_events (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      parent_event_id TEXT,
+      agent_id TEXT,
+      agent_name TEXT,
+      role_label TEXT,
+      task_text TEXT,
+      depth INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      result_summary TEXT,
+      result_json TEXT,
+      can_write INTEGER NOT NULL DEFAULT 0,
+      accepted_at TEXT,
+      started_at TEXT,
+      ended_at TEXT,
+      verdict TEXT,
+      verdict_summary TEXT,
+      FOREIGN KEY(run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_delegation_events_run
+      ON delegation_events(run_id);
+  `);
+
+  const delegationEventCols = db
+    .prepare("PRAGMA table_info(delegation_events)")
+    .all() as Array<{ name: string }>;
+  if (!delegationEventCols.some((c) => c.name === "verdict")) {
+    db.exec("ALTER TABLE delegation_events ADD COLUMN verdict TEXT");
+  }
+  if (!delegationEventCols.some((c) => c.name === "verdict_summary")) {
+    db.exec("ALTER TABLE delegation_events ADD COLUMN verdict_summary TEXT");
+  }
+  if (!delegationEventCols.some((c) => c.name === "result_json")) {
+    db.exec("ALTER TABLE delegation_events ADD COLUMN result_json TEXT");
+  }
+  if (!delegationEventCols.some((c) => c.name === "accepted_at")) {
+    db.exec("ALTER TABLE delegation_events ADD COLUMN accepted_at TEXT");
+    db.exec("UPDATE delegation_events SET accepted_at = started_at WHERE accepted_at IS NULL");
   }
 
   const scheduledTaskCols = db

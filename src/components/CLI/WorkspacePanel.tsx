@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { delegationClient } from "@/services/delegation/client";
 
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -27,6 +28,7 @@ import {
 import { AgentAvatar } from "./AgentAvatar";
 import { InfoCardHost } from "../InfoCards/InfoCardHost";
 import { WorkflowRunPanel } from "../Workflows/WorkflowRunPanel";
+import { DelegationTeamCard } from "../Workflows/DelegationTeamCard";
 import { mergeSessionMetaItems } from "@/store/sessionMetaUtils";
 import { conversationDisplayCwd } from "./conversationProjectGrouping";
 
@@ -111,13 +113,22 @@ export function WorkspacePanel({
   const status = displayLive?.status ?? "ready";
   const isLive = status === "running" || status === "starting";
 
-  const isTeamRun = !!displayRun && displayRun.conversationId === activeId;
+  const [isDelegationConv, setIsDelegationConv] = useState(false);
+  useEffect(() => {
+    if (!activeId) { setIsDelegationConv(false); return; }
+    delegationClient.getRunByConversation(activeId)
+      .then((r) => setIsDelegationConv(!!r))
+      .catch(() => setIsDelegationConv(false));
+  }, [activeId]);
+
+  const isTeamRun = (!!displayRun && displayRun.conversationId === activeId) || isDelegationConv;
   const isTeamLive =
     !replayFrame &&
+    !!displayRun &&
     isTeamRun &&
-    (displayRun!.status === "running" ||
-      displayRun!.status === "paused" ||
-      displayRun!.status === "blocked");
+    (displayRun.status === "running" ||
+      displayRun.status === "paused" ||
+      displayRun.status === "blocked");
 
   useEffect(() => {
     if (!isLive && !isTeamLive) return;
@@ -331,6 +342,9 @@ export function WorkspacePanel({
   return (
     <div className="workspace-cards" aria-label={t("workspace.panelAria")}>
       <WorkflowRunPanel />
+      {activeId && isDelegationConv ? (
+        <DelegationTeamCard conversationId={activeId} />
+      ) : null}
 
       {isTeamRun ? null : (
         <section className="side-card active-agent-card">

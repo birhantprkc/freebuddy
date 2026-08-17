@@ -46,6 +46,8 @@ export interface CliRunArgs {
   toolSessionId?: string;
   env?: Record<string, string>;
   approvalMode?: "auto" | "ask";
+  /** Enforced by the process sandbox for delegation roles that may not mutate the workspace. */
+  workspaceAccess?: "read-only" | "read-write";
   configOptionOverrides?: Record<string, string>;
   showStderr?: boolean;
   resumeToolSession?: boolean;
@@ -65,6 +67,18 @@ export interface CliRunArgs {
   skills?: SkillSnapshot[];
   announceSkills?: boolean;
   contextReferences?: ConversationContextPayload[];
+  /** When set, attach the freebuddy-delegate MCP so this agent can delegate in a delegation run. */
+  delegation?: DelegationCliContext;
+  /** Capsule label for the in-chat assistant bubble (e.g. step/title). */
+  roleLabel?: string;
+}
+
+export interface DelegationCliContext {
+  runId: string;
+  parentEventId: string;
+  depth: number;
+  selfAgentId: string;
+  selfLabel: string;
 }
 
 export type CliPermissionOptionKind =
@@ -152,6 +166,8 @@ export interface Running {
   child: ChildProcessByStdio<Writable, Readable, Readable>;
   pid: number;
   cancel?: () => void;
+  /** End the current turn successfully without marking the task as killed. */
+  yield?: () => void;
 }
 
 export function channelName(sessionId: string) {

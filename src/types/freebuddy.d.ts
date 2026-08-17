@@ -59,8 +59,12 @@ import type {
   WorkflowTeamPreview,
   WorkflowTeamRole,
   WorkflowTeamPolicy,
-  WorkflowTemplate2
+  WorkflowTemplate2,
+  DelegationTeam,
+  DelegationRosterEntry,
+  DelegationPolicy
 } from "@/services/workflowTeams/types";
+import type { DelegationEventRow, DelegationRunRow } from "@/services/delegation/client";
 import type {
   AddFeedSourceInput,
   FeedItem,
@@ -555,6 +559,20 @@ declare global {
       | { ok: true; run: WorkflowRunRow }
       | { ok: false; errors: string[] }
     >;
+    createDelegationRun(input: {
+      teamId: string;
+      goal: string;
+      cwd?: string;
+      conversationId?: string;
+    }): Promise<
+      | { ok: true; runId: string; conversationId: string }
+      | { ok: false; error: string }
+    >;
+    approveDelegateWrite(input: {
+      runId: string;
+      approvalId: string;
+      approved: boolean;
+    }): Promise<boolean>;
     onStepMessage(
       conversationId: string,
       cb: (event: {
@@ -611,6 +629,60 @@ declare global {
     delete(id: string): Promise<boolean>;
     seedBuiltins(): Promise<WorkflowTeam[]>;
     onChanged(cb: () => void): () => void;
+  }
+
+  interface FreebuddyDelegation {
+    listTeams(): Promise<DelegationTeam[]>;
+    getTeam(id: string): Promise<DelegationTeam | undefined>;
+    createTeam(input: {
+      id: string;
+      name: string;
+      description?: string;
+      icon?: string;
+      enabled: boolean;
+      source: "builtin" | "user";
+      entryRoleId: string;
+      roster: DelegationRosterEntry[];
+      policy: DelegationPolicy;
+    }): Promise<DelegationTeam>;
+    updateTeam(
+      id: string,
+      patch: {
+        name?: string;
+        description?: string | null;
+        icon?: string | null;
+        enabled?: boolean;
+        entryRoleId?: string;
+        roster?: DelegationRosterEntry[];
+        policy?: DelegationPolicy;
+      }
+    ): Promise<DelegationTeam | undefined>;
+    deleteTeam(id: string): Promise<boolean>;
+    getRun(id: string): Promise<unknown>;
+    getRunByConversation(
+      conversationId: string
+    ): Promise<DelegationRunRow | undefined>;
+    listEvents(runId: string): Promise<DelegationEventRow[]>;
+    listPendingApprovals(
+      runId: string
+    ): Promise<Array<{ approvalId: string; runId: string }>>;
+    stopRun(runId: string): Promise<boolean>;
+    pauseRun(runId: string): Promise<boolean>;
+    resumeRun(runId: string): Promise<boolean>;
+    hasRunForConversation(conversationId: string): Promise<boolean>;
+    followUp(input: {
+      conversationId: string;
+      prompt: string;
+    }): Promise<{ ok: true; runId: string } | { ok: false; error: string; code?: string }>;
+    onChanged(cb: () => void): () => void;
+    onRunFinished(
+      cb: (event: {
+        runId: string;
+        conversationId?: string;
+        status: string;
+        name: string;
+      }) => void
+    ): () => void;
   }
 
   interface FreebuddyScheduledTasks {
@@ -801,6 +873,7 @@ declare global {
     cli: FreebuddyCli;
     workflow: FreebuddyWorkflow;
     workflowTeams: FreebuddyWorkflowTeams;
+    delegation: FreebuddyDelegation;
     skills: FreebuddySkills;
     plugins: FreebuddyPlugins;
     scheduledTasks: FreebuddyScheduledTasks;

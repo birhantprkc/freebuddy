@@ -57,6 +57,7 @@ import {
   type CliRunArgs,
   type Running
 } from "./runtimeShared.js";
+import { isInactivitySuppressed, removeInactivitySuppression } from "./inactivitySuppression.js";
 import { killProcessTree } from "./process-kill.js";
 import {
   registerDraftToolSession,
@@ -74,6 +75,10 @@ import {
   registerButlerToolSession,
   unregisterButlerToolSession
 } from "../butlerToolService.js";
+import {
+  registerDelegateToolSession,
+  unregisterDelegateToolSession
+} from "../delegationToolService.js";
 import { BUTLERBUDDY_AGENT_ID } from "./agentProfiles.js";
 import {
   registerContextToolSession,
@@ -196,6 +201,7 @@ export async function runAcpAgent({
   let requestId = 0;
   let activeAcpSessionId: string | undefined;
   let finished = false;
+  let yieldRequested = false;
   let promptStarted = false;
   let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
   let inactivityFired = false;
@@ -210,7 +216,8 @@ export async function runAcpAgent({
     ? { claudeCode: { options: claudeAcpSessionOptions } }
     : undefined;
   const remoteIsolated = isRemoteIsolatedCaller();
-  const processSandboxed = shouldSandboxCurrentCaller();
+  const readOnlyWorkspace = args.workspaceAccess === "read-only";
+  const processSandboxed = shouldSandboxCurrentCaller() || readOnlyWorkspace;
   const replayMessageIds = new Set(args.knownStreamMessageIds ?? []);
   const replayContentSignatures = new Set(
     args.knownStreamContentSignatures ?? []
@@ -239,7 +246,8 @@ export async function runAcpAgent({
             args: input.args,
             cwd: input.cwd,
             workspaceRoot,
-            env: input.env
+            env: input.env,
+            readOnlyWorkspace
           });
           return {
             command: prepared.bin,
@@ -314,6 +322,10 @@ export async function runAcpAgent({
     });
 
   const onInactivityExpired = async () => {
+    if (args.sessionId && isInactivitySuppressed(args.sessionId)) {
+      inactivityFired = false;
+      return;
+    }
     if (finished) return;
     const alive = await probeAgentLiveness();
     if (finished) return;
@@ -346,6 +358,10 @@ export async function runAcpAgent({
   };
 
   const armInactivityTimer = () => {
+    if (args.sessionId && isInactivitySuppressed(args.sessionId)) {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      return;
+    }
     if (INACTIVITY_TIMEOUT_MS <= 0) return;
     if (inactivityTimer) clearTimeout(inactivityTimer);
     if (finished || inactivityFired) return;
@@ -369,12 +385,14 @@ export async function runAcpAgent({
     if (finished) return;
     finished = true;
     disarmInactivityTimer();
+    removeInactivitySuppression(args.sessionId);
     terminalManager.dispose();
     running.delete(args.sessionId);
     unregisterDraftToolSession(args.sessionId);
     unregisterBrowserToolSession(args.sessionId);
     unregisterSkillToolSession(args.sessionId);
     unregisterButlerToolSession(args.sessionId);
+    unregisterDelegateToolSession(args.sessionId);
     unregisterContextToolSession(args.sessionId);
     unregisterWorkspaceFsToolSession(args.sessionId);
     clearAuthenticationTerminalsForSession(args.sessionId);
@@ -405,23 +423,29 @@ export async function runAcpAgent({
   };
 
   const cancelRun = () => {
-      clearAuthenticationTerminalsForSession(args.sessionId);
-      if (activeAcpSessionId) {
-        notify(buildSessionCancelNotification(activeAcpSessionId));
-      }
-      setTimeout(() => {
-        const still = running.get(args.sessionId);
-        if (still) {
-          try {
-            killProcessTree(still.child, "term");
-          } catch {
-            /* noop */
-          }
+    clearAuthenticationTerminalsForSession(args.sessionId);
+    if (activeAcpSessionId) {
+      notify(buildSessionCancelNotification(activeAcpSessionId));
+    }
+    setTimeout(() => {
+      const still = running.get(args.sessionId);
+      if (still) {
+        try {
+          killProcessTree(still.child, "term");
+        } catch {
+          /* noop */
         }
-      }, 500);
+      }
+    }, 500);
+  };
+  const yieldRun = () => {
+    if (finished || yieldRequested) return;
+    yieldRequested = true;
+    appendLog(logStream, "system", "delegate yield accepted; parking current ACP turn");
+    cancelRun();
   };
   const updateRunningProcess = () => {
-    running.set(args.sessionId, { child, pid, cancel: cancelRun });
+    running.set(args.sessionId, { child, pid, cancel: cancelRun, yield: yieldRun });
   };
   updateRunningProcess();
 
@@ -869,6 +893,10 @@ export async function runAcpAgent({
       pending.clear();
       if (finished) return;
       appendLog(logStream, "system", `exit code=${exitCode}`);
+      if (yieldRequested) {
+        finish("done", 0);
+        return;
+      }
       const status = exitCode === 0 ? "done" : "failed";
       const stderrTail = recentStderr.slice(-40).join("\n").trim();
       const commandTail = lastToolCommand.slice(-500).trim();
@@ -1246,6 +1274,20 @@ export async function runAcpAgent({
           })
         );
       }
+      if (args.delegation) {
+        mcpServers.push(
+          await registerDelegateToolSession({
+            taskSessionId: args.sessionId,
+            runId: args.delegation.runId,
+            parentEventId: args.delegation.parentEventId,
+            depth: args.delegation.depth,
+            selfAgentId: args.delegation.selfAgentId,
+            selfLabel: args.delegation.selfLabel,
+            ownerId: getCallerUserId(),
+            webContents
+          })
+        );
+      }
       if (args.contextReferences?.length) {
         mcpServers.push(
           registerContextToolSession(args.sessionId, args.contextReferences)
@@ -1357,7 +1399,10 @@ export async function runAcpAgent({
     try {
       await runPromptOnSession();
     } catch (promptErr) {
-      if (!finished && !contextResetAttempted && isContextWindowError(promptErr)) {
+      if (yieldRequested) {
+        // session/cancel rejects the outstanding prompt request. This is an
+        // intentional park, not an agent failure or a context/auth retry.
+      } else if (!finished && !contextResetAttempted && isContextWindowError(promptErr)) {
         contextResetAttempted = true;
         const exhaustedSessionId = activeAcpSessionId;
         appendLog(
@@ -1446,6 +1491,10 @@ export async function runAcpAgent({
       }
     }, 250);
   } catch (e) {
+    if (yieldRequested) {
+      finish("done", 0);
+      return;
+    }
     const msg = (e as Error)?.message || String(e);
     appendLog(logStream, "system", msg);
     try {

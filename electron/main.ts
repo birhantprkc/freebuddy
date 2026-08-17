@@ -16,6 +16,7 @@ import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
 import { setButlerAppWindowGetter } from "./butlerToolService.js";
 import { ensureOwnerUser, getOwnerUser } from "./cli/users.js";
 import { bindConversationNotifier } from "./cli/conversations.js";
+import { bindDelegationRunFinishedNotifier } from "./cli/delegationRuns.js";
 import { applyOwnerBackfill } from "./cli/ownerBackfill.js";
 import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
@@ -27,6 +28,7 @@ import {
 } from "./cli/remoteControl.js";
 import { cleanupOrphanManagedAttachments } from "./cli/attachments.js";
 import { seedBuiltinWorkflowTeams } from "./cli/workflowTeams.js";
+import { seedBuiltinDelegationTeams } from "./cli/delegationTeams.js";
 import { seedBuiltinSkills } from "./cli/skills.js";
 import { initApplicationMenu, setupContextMenu } from "./menu.js";
 import { APP_NAME, APP_VERSION } from "./app-meta.js";
@@ -1567,12 +1569,18 @@ app.whenReady().then(async () => {
   cleanupOrphanManagedAttachments();
   seedBuiltinSkills();
   seedBuiltinWorkflowTeams();
+  seedBuiltinDelegationTeams();
   registerCliIpc();
   registerTaskNotificationIpc();
   registerButlerBuddyWindowIpc();
   bindConversationNotifier((conversationId) => {
     for (const win of BrowserWindow.getAllWindows()) {
       safeSendToWebContents(win.webContents, "messages://changed", { conversationId });
+    }
+  });
+  bindDelegationRunFinishedNotifier((event) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      safeSendToWebContents(win.webContents, "delegation://finished", event);
     }
   });
   registerUpdaterIpc({

@@ -6,6 +6,10 @@ const source = fs.readFileSync(
   new URL("../src/components/CLI/WorkspacePanel.tsx", import.meta.url),
   "utf8"
 );
+const detailColumnSource = fs.readFileSync(
+  new URL("../src/components/CLI/DetailColumn.tsx", import.meta.url),
+  "utf8"
+);
 const styles = fs.readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
 test("workspace panel owns the ACP plan card in the third column", () => {
@@ -38,6 +42,15 @@ test("third column card stack scrolls within the visible overview space", () => 
   assert.match(styles, /\.workspace-cards\s*\{[^}]*scrollbar-gutter:\s*stable/s);
   assert.match(styles, /\.workspace-cards > \.side-card:not\(\.plan-card\)\s*\{[^}]*flex-shrink:\s*0/s);
   assert.equal(/\.workspace-cards\s*\{[^}]*height:\s*100%/s.test(styles), false);
+});
+
+test("delegation timeline participates in the third column scroll container", () => {
+  assert.match(source, /<DelegationTeamCard conversationId=\{activeId\} \/>/);
+  assert.doesNotMatch(detailColumnSource, /<DelegationTeamCard/);
+  assert.match(
+    styles,
+    /\.workspace-cards > \.delegation-roster-stack\s*\{[^}]*flex:\s*0 0 auto/s
+  );
 });
 
 test("active agent subtitle truncates merged session config values", () => {

@@ -17,7 +17,8 @@
     "saved": "已保存",
     "copy": "复制",
     "copied": "已复制",
-    "copyFailed": "复制失败"
+    "copyFailed": "复制失败",
+    "remove": "移除"
   },
   "remote": {
     "title": "共享访问",
@@ -1345,6 +1346,7 @@
     "allowed": "允许",
     "denied": "禁止",
     "newTeam": "新建团队",
+    "teamKindWorkflow": "工作流团队",
     "newTeamComingSoon": "自定义团队即将推出。",
     "teamName": "团队名称",
     "teamDescription": "描述",
@@ -1474,6 +1476,62 @@
           "analysis": "分析",
           "report": "报告"
         }
+      }
+    },
+    "delegation": {
+      "handoffTo": "交接给",
+      "teamTitle": "团队",
+      "entry": "入口",
+      "readonly": "只读",
+      "editorTitle": "自组织委派团队",
+      "overview": "概览",
+      "namePlaceholder": "团队名称",
+      "descriptionPlaceholder": "描述（可选）",
+      "roster": "花名册",
+      "labelPlaceholder": "角色名",
+      "agentPlaceholder": "选择 agent",
+      "capabilityPlaceholder": "能力描述：什么子任务该委派给它",
+      "canWrite": "可写",
+      "addRosterEntry": "添加花名册",
+      "entryAgent": "入口 agent",
+      "policy": "策略",
+      "maxDepth": "最大深度",
+      "timeoutMin": "超时(分)",
+      "allowWrites": "允许写",
+      "requireApprovalBeforeDelegateWrite": "写前审批",
+      "stopOnDelegateFailure": "失败即停",
+      "kindBadge": "自组织",
+      "newTeam": "新建自组织团队",
+      "teamKindDelegation": "自组织团队",
+      "writeApproval": "写权限",
+      "runTitle": "委派运行",
+      "approve": "批准",
+      "reject": "拒绝",
+      "approvePrompt": "一个队友请求写权限。",
+      "loading": "加载中…",
+      "noActivity": "暂无委派活动。",
+      "timeline": "委派时间线",
+      "membersActivity": "成员动态",
+      "taskCount": "{{count}} 个任务",
+      "noMemberTasks": "暂无委派任务",
+      "showHistory": "查看全部 {{count}} 个任务",
+      "collapseHistory": "收起历史任务",
+      "acceptedAt": "受理",
+      "startedAt": "开始",
+      "endedAt": "结束",
+      "result": "结果",
+      "status": {
+        "pending": "排队中",
+        "running": "执行中",
+        "done": "已完成",
+        "failed": "失败",
+        "timeout": "超时",
+        "cancelled": "已取消"
+      },
+      "details": "详情",
+      "hide": "收起",
+      "errors": {
+        "invalidRoster": "花名册需至少一项，且每项需填写角色名与 agent"
       }
     }
   },

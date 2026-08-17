@@ -127,6 +127,7 @@ export function workflowFollowupAgentId(run: Pick<WorkflowRunRow, "planJson">): 
     return undefined;
   }
 
+  if (!plan || !Array.isArray(plan.phases)) return undefined;
   for (let i = plan.phases.length - 1; i >= 0; i -= 1) {
     const phase = plan.phases[i];
     for (let j = phase.steps.length - 1; j >= 0; j -= 1) {
