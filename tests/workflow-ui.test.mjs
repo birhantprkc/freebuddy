@@ -29,8 +29,12 @@ test("WorkflowRunPanel uses replay workflow snapshots as read-only state", () =>
   const src = read("../src/components/Workflows/WorkflowRunPanel.tsx");
   assert.match(src, /useReplayStore/);
   assert.match(src, /replayFrames\[replayIndex\]\?\.workflow/);
-  assert.match(src, /const activeRun = replaySnapshot\?\.run \?\? storeActiveRun/);
-  assert.match(src, /const steps = replaySnapshot\?\.steps \?\? storeSteps/);
+  assert.match(src, /storeActiveRun\?\.conversationId === activeId/);
+  assert.match(src, /const activeRun = replaySnapshot\?\.run \?\? currentStoreRun/);
+  assert.match(
+    src,
+    /const steps = replaySnapshot\?\.steps \?\? \(currentStoreRun \? storeSteps : \[\]\)/
+  );
   assert.match(src, /!replayingWorkflow && \(isLive \|\| gatingPhaseId \|\| canContinueImplementReview\)/);
   assert.match(src, /replayingWorkflow[\s\S]*\? undefined[\s\S]*: \(step\) => void retryStep/);
 });
@@ -100,7 +104,8 @@ test("WorkspacePanel syncs the run-state card with replay frames", () => {
   assert.match(src, /const replayFrame =[\s\S]*?replayFrames\[replayIndex\]/);
   assert.match(src, /const displayMessages = replayFrame[\s\S]*?messages\.slice\(0, replayFrame\.messageIndex \+ 1\)[\s\S]*?: messages/);
   assert.match(src, /const displayLive = replayFrame \? undefined : live/);
-  assert.match(src, /const displayRun = replayWorkflow\?\.run \?\? activeRun/);
+  assert.match(src, /activeRun\?\.conversationId === activeId/);
+  assert.match(src, /const displayRun = replayWorkflow\?\.run \?\? currentWorkflowRun/);
   assert.match(src, /!replayFrame &&[\s\S]*?isTeamRun/);
   assert.match(src, /const end = replayWorkflow\?\.at[\s\S]*?Date\.parse\(replayWorkflow\.at\)/);
 });
