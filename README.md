@@ -26,7 +26,7 @@ Use Codex, ClaudeCode, OpenCode, Cursor, Kimi, Qoder, CodeBuddy, and DeepSeek Ha
 | Feature | Description | Demo |
 |---------|-------------|------|
 | **Multi-Agent Support** | Automatically detects locally installed agents | ![Multi-Agent](assets/FreeBuddy-multi-agents.gif) |
-| **BYOK Support** | Codex and ClaudeCode support BYOK — use third-party or proxy APIs | ![BYOK](assets/FreeBuddy-BYOK.gif) |
+| **BYOK Support** | Codex, ClaudeCode, and DeepSeek Harness support BYOK — use third-party or proxy APIs | ![BYOK](assets/FreeBuddy-BYOK.gif) |
 | **Codex Usage Card** | Real-time view of Codex usage and rate limit reset times. Hot-switch accounts without re-login. | ![Usage Card](assets/FreeBuddy-limit-card.gif) |
 
 ### 🎬 Workflow Teams

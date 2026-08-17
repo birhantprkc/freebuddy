@@ -15,6 +15,7 @@ export interface CLIExecutorOverride {
   enabled?: boolean;
   codexByok?: CLICodexByokConfig;
   claudeByok?: CLIClaudeByokConfig;
+  deepseekByok?: CLIDeepSeekByokConfig;
   skillIds?: string[];
 }
 
@@ -42,6 +43,18 @@ export interface CLIClaudeByokConfig {
   /** Provider model context window used as Claude's auto-compact window. */
   contextWindow?: number;
   compaction?: CLIClaudeCompactionConfig;
+}
+
+export interface CLIDeepSeekByokConfig {
+  enabled?: boolean;
+  baseUrl?: string;
+  envKey?: string;
+  wireApi?: "chat" | "responses";
+  apiKey?: string;
+  apiKeyPreview?: string;
+  models?: CLIByokModel[];
+  /** Provider model context window in tokens. */
+  contextWindow?: number;
 }
 
 export interface CLIClaudeCompactionConfig {

@@ -37,6 +37,18 @@ export interface CLIClaudeByokConfig {
   compaction?: CLIClaudeCompactionConfig;
 }
 
+export interface CLIDeepSeekByokConfig {
+  enabled?: boolean;
+  baseUrl?: string;
+  envKey?: string;
+  wireApi?: "chat" | "responses";
+  apiKey?: string;
+  apiKeyPreview?: string;
+  apiKeyEncrypted?: string;
+  models?: CLIByokModel[];
+  contextWindow?: number;
+}
+
 export interface CLIClaudeCompactionConfig {
   enabled?: boolean;
   window?: number;
@@ -61,6 +73,7 @@ export interface CLIExecutorOverride {
   enabled?: boolean;
   codexByok?: CLICodexByokConfig;
   claudeByok?: CLIClaudeByokConfig;
+  deepseekByok?: CLIDeepSeekByokConfig;
   skillIds?: string[];
 }
 
@@ -333,7 +346,10 @@ function readByokPublic<T extends { apiKey?: string; apiKeyEncrypted?: string }>
   }
 }
 
-function readPrivateByok<T>(id: string, column: "codex_byok" | "claude_byok") {
+function readPrivateByok<T>(
+  id: string,
+  column: "codex_byok" | "claude_byok" | "deepseek_byok"
+) {
   const row = getDb()
     .prepare(`SELECT ${column} FROM cli_executor_overrides WHERE id = ?`)
     .get(id) as Record<typeof column, string | null> | undefined;
@@ -352,6 +368,10 @@ function readCodexByokPrivate(id: string): CLICodexByokConfig | undefined {
 
 function readClaudeByokPrivate(id: string): CLIClaudeByokConfig | undefined {
   return readPrivateByok<CLIClaudeByokConfig>(id, "claude_byok");
+}
+
+function readDeepSeekByokPrivate(id: string): CLIDeepSeekByokConfig | undefined {
+  return readPrivateByok<CLIDeepSeekByokConfig>(id, "deepseek_byok");
 }
 
 // codex >= 0.146 removed `wire_api = "chat"` support, so "responses" is the only
@@ -434,6 +454,38 @@ function normalizeClaudeByokForStorage(
   };
 }
 
+function normalizeDeepSeekByokForStorage(
+  id: string,
+  input: CLIDeepSeekByokConfig | undefined
+): CLIDeepSeekByokConfig | undefined {
+  if (!input?.enabled) return undefined;
+  const previous = readDeepSeekByokPrivate(id);
+  const apiKey = input.apiKey?.trim();
+  const apiKeyEncrypted = apiKey
+    ? encryptSecret(apiKey)
+    : previous?.apiKeyEncrypted;
+  const apiKeyPreview = apiKey
+    ? redactApiKey(apiKey)
+    : input.apiKeyPreview ?? previous?.apiKeyPreview;
+  const hasContextWindowInput = Object.prototype.hasOwnProperty.call(
+    input,
+    "contextWindow"
+  );
+  const contextWindow = hasContextWindowInput
+    ? normalizeByokContextWindow(input.contextWindow)
+    : normalizeByokContextWindow(previous?.contextWindow);
+  return {
+    enabled: true,
+    baseUrl: input.baseUrl?.trim(),
+    envKey: input.envKey?.trim() || "DEEPSEEK_API_KEY",
+    wireApi: input.wireApi === "responses" ? "responses" : "chat",
+    models: normalizeByokModels(input.models),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    apiKeyPreview,
+    apiKeyEncrypted
+  };
+}
+
 function normalizeClaudeCompaction(
   input: CLIClaudeCompactionConfig | undefined,
   contextWindow?: number
@@ -455,7 +507,7 @@ export function listOverrides(): CLIExecutorOverride[] {
   const rows = db
     .prepare(
       `SELECT id, base_adapter, label, binary, extra_args, env, install_hint, docs_url, icon, enabled, codex_byok
-              , claude_byok, skill_ids
+              , claude_byok, deepseek_byok, skill_ids
        FROM cli_executor_overrides ORDER BY id`
     )
     .all() as Array<{
@@ -471,6 +523,7 @@ export function listOverrides(): CLIExecutorOverride[] {
     enabled: number;
     codex_byok: string | null;
     claude_byok: string | null;
+    deepseek_byok: string | null;
     skill_ids: string | null;
   }>;
   return rows.map((r) => ({
@@ -486,6 +539,7 @@ export function listOverrides(): CLIExecutorOverride[] {
     enabled: r.enabled !== 0,
     codexByok: readByokPublic<CLICodexByokConfig>(r.codex_byok),
     claudeByok: readByokPublic<CLIClaudeByokConfig>(r.claude_byok),
+    deepseekByok: readByokPublic<CLIDeepSeekByokConfig>(r.deepseek_byok),
     skillIds: r.skill_ids ? (JSON.parse(r.skill_ids) as string[]) : []
   }));
 }
@@ -495,8 +549,8 @@ export function upsertOverride(o: CLIExecutorOverride): void {
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO cli_executor_overrides
-       (id, base_adapter, label, binary, extra_args, env, install_hint, docs_url, icon, enabled, codex_byok, claude_byok, skill_ids, updated_at)
-     VALUES (@id, @base_adapter, @label, @binary, @extra_args, @env, @install_hint, @docs_url, @icon, @enabled, @codex_byok, @claude_byok, @skill_ids, @updated_at)
+       (id, base_adapter, label, binary, extra_args, env, install_hint, docs_url, icon, enabled, codex_byok, claude_byok, deepseek_byok, skill_ids, updated_at)
+     VALUES (@id, @base_adapter, @label, @binary, @extra_args, @env, @install_hint, @docs_url, @icon, @enabled, @codex_byok, @claude_byok, @deepseek_byok, @skill_ids, @updated_at)
      ON CONFLICT(id) DO UPDATE SET
        base_adapter=excluded.base_adapter,
        label=excluded.label,
@@ -509,6 +563,7 @@ export function upsertOverride(o: CLIExecutorOverride): void {
        enabled=excluded.enabled,
        codex_byok=excluded.codex_byok,
        claude_byok=excluded.claude_byok,
+       deepseek_byok=excluded.deepseek_byok,
        skill_ids=excluded.skill_ids,
        updated_at=excluded.updated_at`
   ).run({
@@ -528,6 +583,10 @@ export function upsertOverride(o: CLIExecutorOverride): void {
     })(),
     claude_byok: (() => {
       const byok = normalizeClaudeByokForStorage(String(o.id), o.claudeByok);
+      return byok ? JSON.stringify(byok) : null;
+    })(),
+    deepseek_byok: (() => {
+      const byok = normalizeDeepSeekByokForStorage(String(o.id), o.deepseekByok);
       return byok ? JSON.stringify(byok) : null;
     })(),
     skill_ids: JSON.stringify(o.skillIds ?? []),
@@ -660,6 +719,48 @@ export function resolveClaudeByokSessionOptions(
   };
 }
 
+export function resolveDeepSeekByokEnv(
+  agentId: string,
+  adapter: string,
+  selectedModel?: string
+): Record<string, string> | undefined {
+  if (adapter !== "dsh-acp") return undefined;
+  const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
+  const byok = readDeepSeekByokPrivate(overrideId);
+  if (!byok?.enabled) return undefined;
+  const apiKey = decryptSecret(byok.apiKeyEncrypted);
+  const envKey = byok.envKey?.trim() || "DEEPSEEK_API_KEY";
+  const env: Record<string, string> = {};
+  const baseUrl = byok.baseUrl?.trim();
+  if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
+  if (apiKey) {
+    env[envKey] = apiKey;
+    if (envKey !== "DEEPSEEK_API_KEY") {
+      env.DEEPSEEK_API_KEY = apiKey;
+    }
+  }
+  if (byok.envKey?.trim()) {
+    env.DEEPSEEK_API_KEY_ENV = byok.envKey.trim();
+  }
+  if (byok.wireApi) {
+    env.DEEPSEEK_WIRE_API = byok.wireApi;
+  }
+  const contextWindow = normalizeByokContextWindow(byok.contextWindow);
+  if (contextWindow) {
+    env.DEEPSEEK_MAX_CONTEXT_TOKENS = String(contextWindow);
+  }
+  const models = normalizeByokModels(byok.models);
+  if (models.length) {
+    const requestedModel = selectedModel?.trim();
+    const activeModel =
+      models.find((model) => model.id === requestedModel)?.id ?? models[0].id;
+    env.DEEPSEEK_MODEL = activeModel;
+    env.DSH_MODEL = activeModel;
+    env.MODEL = activeModel;
+  }
+  return Object.keys(env).length ? env : undefined;
+}
+
 export function resolveCliByokEnv(
   agentId: string,
   adapter: string,
@@ -667,7 +768,8 @@ export function resolveCliByokEnv(
 ): Record<string, string> | undefined {
   return (
     resolveCodexByokEnv(agentId, adapter) ??
-    resolveClaudeByokEnv(agentId, adapter, selectedModel)
+    resolveClaudeByokEnv(agentId, adapter, selectedModel) ??
+    resolveDeepSeekByokEnv(agentId, adapter, selectedModel)
   );
 }
 
@@ -676,21 +778,27 @@ export function cliByokModelSignature(
   adapter: string
 ): string {
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok = adapter === "codex-acp"
-    ? readCodexByokPrivate(overrideId)
-    : adapter === "claude-agent-acp" || adapter === "claude"
-      ? readClaudeByokPrivate(overrideId)
-      : undefined;
+  const byok =
+    adapter === "codex-acp"
+      ? readCodexByokPrivate(overrideId)
+      : adapter === "claude-agent-acp" || adapter === "claude"
+        ? readClaudeByokPrivate(overrideId)
+        : adapter === "dsh-acp"
+          ? readDeepSeekByokPrivate(overrideId)
+          : undefined;
   return JSON.stringify(normalizeByokModels(byok?.models));
 }
 
 export function hasCliByokModels(agentId: string, adapter: string): boolean {
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok = adapter === "codex-acp"
-    ? readCodexByokPrivate(overrideId)
-    : adapter === "claude-agent-acp" || adapter === "claude"
-      ? readClaudeByokPrivate(overrideId)
-      : undefined;
+  const byok =
+    adapter === "codex-acp"
+      ? readCodexByokPrivate(overrideId)
+      : adapter === "claude-agent-acp" || adapter === "claude"
+        ? readClaudeByokPrivate(overrideId)
+        : adapter === "dsh-acp"
+          ? readDeepSeekByokPrivate(overrideId)
+          : undefined;
   return byok?.enabled === true && normalizeByokModels(byok.models).length > 0;
 }
 
@@ -708,11 +816,14 @@ export function mergeCliByokModelOption<T extends {
   selectedModel?: string
 ): T[] {
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok = adapter === "codex-acp"
-    ? readCodexByokPrivate(overrideId)
-    : adapter === "claude-agent-acp" || adapter === "claude"
-      ? readClaudeByokPrivate(overrideId)
-      : undefined;
+  const byok =
+    adapter === "codex-acp"
+      ? readCodexByokPrivate(overrideId)
+      : adapter === "claude-agent-acp" || adapter === "claude"
+        ? readClaudeByokPrivate(overrideId)
+        : adapter === "dsh-acp"
+          ? readDeepSeekByokPrivate(overrideId)
+          : undefined;
   if (!byok?.enabled) return options;
   const models = normalizeByokModels(byok.models);
   if (!models.length) return options;

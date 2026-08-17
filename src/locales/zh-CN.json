@@ -988,6 +988,7 @@
         "baseUrl": "Base URL",
         "baseUrlHintCodex": "例如 https://api.openai.com/v1，或兼容 OpenAI 的代理地址。",
         "baseUrlHintClaude": "例如 https://api.anthropic.com，或兼容 Anthropic 的代理地址。",
+        "baseUrlHintDeepSeek": "例如 https://api.deepseek.com，或兼容 DeepSeek 的代理地址。",
         "envKey": "密钥环境变量名",
         "contextHandling": "上下文处理",
         "contextHandlingHintCodex": "告诉 Codex 适配器该模型可使用的上下文大小。",

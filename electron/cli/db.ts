@@ -69,6 +69,7 @@ export function migrate(db: DB) {
       enabled INTEGER DEFAULT 1,
       codex_byok TEXT,
       claude_byok TEXT,
+      deepseek_byok TEXT,
       skill_ids TEXT,
       updated_at TEXT NOT NULL
     );
@@ -709,6 +710,9 @@ export function migrate(db: DB) {
   }
   if (!overrideCols.some((c) => c.name === "claude_byok")) {
     db.exec("ALTER TABLE cli_executor_overrides ADD COLUMN claude_byok TEXT");
+  }
+  if (!overrideCols.some((c) => c.name === "deepseek_byok")) {
+    db.exec("ALTER TABLE cli_executor_overrides ADD COLUMN deepseek_byok TEXT");
   }
   if (!overrideCols.some((c) => c.name === "skill_ids")) {
     db.exec("ALTER TABLE cli_executor_overrides ADD COLUMN skill_ids TEXT");

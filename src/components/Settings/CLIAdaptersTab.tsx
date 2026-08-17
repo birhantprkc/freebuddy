@@ -931,13 +931,17 @@ function EditOverridePanel({
   const isCodex = adapterForConfig === "codex-acp";
   const isClaude =
     adapterForConfig === "claude-agent-acp" || adapterForConfig === "claude";
+  const isDeepSeek = adapterForConfig === "dsh-acp";
   const savedCodexByok = ex?.override?.codexByok;
   const savedClaudeByok = ex?.override?.claudeByok;
+  const savedDeepSeekByok = ex?.override?.deepseekByok;
   const savedByok = isCodex
     ? savedCodexByok
     : isClaude
       ? savedClaudeByok
-      : undefined;
+      : isDeepSeek
+        ? savedDeepSeekByok
+        : undefined;
   const [codexByokEnabled, setCodexByokEnabled] = useState(
     savedByok?.enabled === true
   );
@@ -949,7 +953,12 @@ function EditOverridePanel({
   );
   const [codexBaseUrl, setCodexBaseUrl] = useState(savedByok?.baseUrl ?? "");
   const [codexEnvKey, setCodexEnvKey] = useState(
-    savedByok?.envKey ?? (isClaude ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY")
+    savedByok?.envKey ??
+      (isClaude
+        ? "ANTHROPIC_API_KEY"
+        : isDeepSeek
+          ? "DEEPSEEK_API_KEY"
+          : "OPENAI_API_KEY")
   );
   const [codexWireApi, setCodexWireApi] = useState<
     NonNullable<NonNullable<CLIExecutorOverride["codexByok"]>["wireApi"]>
@@ -959,6 +968,9 @@ function EditOverridePanel({
     savedCodexByok?.wireApi === "chat"
       ? "responses"
       : savedCodexByok?.wireApi ?? "responses"
+  );
+  const [deepseekWireApi, setDeepseekWireApi] = useState<"chat" | "responses">(
+    savedDeepSeekByok?.wireApi ?? "chat"
   );
   const [codexApiKey, setCodexApiKey] = useState("");
   const [byokModels, setByokModels] = useState(
@@ -1000,10 +1012,12 @@ function EditOverridePanel({
   if (!ex) return null;
 
   const isClone = Boolean(ex.isClone);
-  const supportsByok = isCodex || isClaude;
+  const supportsByok = isCodex || isClaude || isDeepSeek;
   const byokBaseUrlPlaceholder = isClaude
     ? "https://api.anthropic.com"
-    : "https://api.openai.com/v1";
+    : isDeepSeek
+      ? "https://api.deepseek.com"
+      : "https://api.openai.com/v1";
 
   const onSave = async () => {
     if (saveStatus === "saving") return;
@@ -1052,6 +1066,19 @@ function EditOverridePanel({
             apiKeyPreview: savedClaudeByok?.apiKeyPreview
           }
         : undefined;
+    const deepseekByokConfig =
+      isDeepSeek && codexByokEnabled
+        ? {
+            enabled: true,
+            baseUrl: codexBaseUrl.trim(),
+            envKey: codexEnvKey.trim() || "DEEPSEEK_API_KEY",
+            wireApi: deepseekWireApi,
+            apiKey: codexApiKey.trim() || undefined,
+            models: byokModels,
+            contextWindow: parseByokContextWindow(byokContextWindow),
+            apiKeyPreview: savedDeepSeekByok?.apiKeyPreview
+          }
+        : undefined;
 
     const override: CLIExecutorOverride = {
       id: ex.id,
@@ -1066,6 +1093,7 @@ function EditOverridePanel({
       icon: icon || undefined,
       codexByok: codexByokConfig,
       claudeByok: claudeByokConfig,
+      deepseekByok: deepseekByokConfig,
       skillIds,
       enabled: true
     };
@@ -1256,7 +1284,9 @@ function EditOverridePanel({
                     {t(
                       isClaude
                         ? "settings.cli.byok.baseUrlHintClaude"
-                        : "settings.cli.byok.baseUrlHintCodex"
+                        : isDeepSeek
+                          ? "settings.cli.byok.baseUrlHintDeepSeek"
+                          : "settings.cli.byok.baseUrlHintCodex"
                     )}
                   </span>
                 </label>
@@ -1524,7 +1554,11 @@ function EditOverridePanel({
                     <input
                       value={codexEnvKey}
                       placeholder={
-                        isClaude ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"
+                        isClaude
+                          ? "ANTHROPIC_API_KEY"
+                          : isDeepSeek
+                            ? "DEEPSEEK_API_KEY"
+                            : "OPENAI_API_KEY"
                       }
                       onChange={(e) => setCodexEnvKey(e.target.value)}
                     />
@@ -1539,6 +1573,14 @@ function EditOverridePanel({
                         }
                       >
                         <option value="responses">responses</option>
+                      </select>
+                    </label>
+                  )}
+                  {isDeepSeek && (
+                    <label className="adapter-editor-field">
+                      <span className="adapter-editor-field-label">{t("settings.cli.byok.wireApi")}</span>
+                      <select value="chat" disabled>
+                        <option value="chat">chat (/v1/chat/completions)</option>
                       </select>
                     </label>
                   )}

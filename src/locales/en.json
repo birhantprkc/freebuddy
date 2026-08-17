@@ -1003,6 +1003,7 @@
         "baseUrl": "Base URL",
         "baseUrlHintCodex": "For example, https://api.openai.com/v1 or an OpenAI-compatible proxy.",
         "baseUrlHintClaude": "For example, https://api.anthropic.com or an Anthropic-compatible proxy.",
+        "baseUrlHintDeepSeek": "For example, https://api.deepseek.com or a DeepSeek-compatible proxy.",
         "envKey": "Key environment variable",
         "contextHandling": "Context handling",
         "contextHandlingHintCodex": "Tell the Codex adapter how much context this model can use.",

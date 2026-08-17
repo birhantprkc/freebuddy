@@ -52,8 +52,11 @@ test("coding agent settings expose Codex BYOK without echoing saved keys", () =>
   assert.equal(settingsSource.includes("settings.cli.byok.advanced"), true);
   assert.equal(settingsSource.includes("codexByok"), true);
   assert.equal(settingsSource.includes("claudeByok"), true);
+  assert.equal(settingsSource.includes("deepseekByok"), true);
   assert.equal(settingsSource.includes("ANTHROPIC_API_KEY"), true);
+  assert.equal(settingsSource.includes("DEEPSEEK_API_KEY"), true);
   assert.equal(settingsSource.includes("settings.cli.byok.baseUrlHintClaude"), true);
+  assert.equal(settingsSource.includes("settings.cli.byok.baseUrlHintDeepSeek"), true);
   assert.equal(settingsSource.includes("type=\"password\""), true);
   assert.equal(settingsSource.includes("apiKeyPreview"), true);
   assert.equal(settingsSource.includes("value={codexApiKey}"), true);
@@ -176,6 +179,22 @@ test("coding agent runtime stores Claude BYOK separately from Codex BYOK", () =>
     electronRuntimeSource.includes("resolveClaudeByokSessionOptions"),
     true
   );
+});
+
+test("coding agent runtime stores DeepSeek BYOK separately and resolves env vars", () => {
+  const electronStoreSource = fs.readFileSync(
+    new URL("../electron/cli/store.ts", import.meta.url),
+    "utf8"
+  );
+  assert.equal(electronStoreSource.includes("deepseek_byok"), true);
+  assert.equal(electronStoreSource.includes("resolveDeepSeekByokEnv"), true);
+  assert.equal(electronStoreSource.includes("readDeepSeekByokPrivate"), true);
+  assert.equal(electronStoreSource.includes("normalizeDeepSeekByokForStorage"), true);
+  assert.equal(electronStoreSource.includes("DEEPSEEK_BASE_URL"), true);
+  assert.equal(electronStoreSource.includes("DEEPSEEK_API_KEY_ENV"), true);
+  assert.equal(electronStoreSource.includes("DEEPSEEK_WIRE_API"), true);
+  assert.equal(electronStoreSource.includes("DEEPSEEK_MODEL"), true);
+  assert.equal(electronStoreSource.includes("DSH_MODEL"), true);
 });
 
 test("coding agent settings let only cloned agents rename their display label", () => {
