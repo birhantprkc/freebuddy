@@ -930,7 +930,8 @@ export function cliInstall(command: string, adapter = "custom"): Promise<CliInst
       const isPowerShellCommand =
         /^irm\s/i.test(trimmed) ||
         /\|\s*iex\b/i.test(trimmed) ||
-        /Invoke-(WebRequest|Expression)/i.test(trimmed);
+        /Invoke-(WebRequest|Expression)/i.test(trimmed) ||
+        (isWindows && /"/.test(trimmed));
 
       let shell: string;
       let args: string[];
@@ -1031,7 +1032,8 @@ export function cliInstallStream(
         preflight.requiresPowerShell ||
         /^irm\s/i.test(installCommand) ||
         /\|\s*iex\b/i.test(installCommand) ||
-        /Invoke-(WebRequest|Expression)/i.test(installCommand);
+        /Invoke-(WebRequest|Expression)/i.test(installCommand) ||
+        (isWindows && /"/.test(installCommand));
 
       let shell: string;
       let args: string[];

@@ -407,47 +407,6 @@ function wellKnownGlobalDshAcpDemoBinJs(
   return undefined;
 }
 
-/** Resolve the `dsh-acp-demo` entry we should spawn with `node`, if any. */
-export function resolveDshAcpDemoBinJs(input: {
-  binary?: string;
-  dshAcpRuntimeRoot?: string;
-}): string | undefined {
-  const standaloneManagedBin = input.dshAcpRuntimeRoot
-    ? path.join(
-        input.dshAcpRuntimeRoot,
-        "node_modules",
-        "deepseek-harness-acp",
-        "lib",
-        "bin.js"
-      )
-    : "";
-  if (isDefaultDshAcpBinary(input.binary) && standaloneManagedBin && existsSync(standaloneManagedBin)) {
-    return standaloneManagedBin;
-  }
-  const managedBin = input.dshAcpRuntimeRoot
-    ? path.join(
-        input.dshAcpRuntimeRoot,
-        "node_modules",
-        "@deepseek-ai",
-        "dsh-acp-demo",
-        "lib",
-        "bin.js"
-      )
-    : "";
-  const managedReady =
-    Boolean(managedBin) &&
-    existsSync(managedBin) &&
-    dshAcpCompositionReady(managedBin);
-  if (isDefaultDshAcpBinary(input.binary) && managedReady) return managedBin;
-  const fromHint = dshAcpDemoBinJsFromBinaryHint(input.binary);
-  if (fromHint) return fromHint;
-  if (isDefaultDshAcpBinary(input.binary)) {
-    const globalBin = wellKnownGlobalDshAcpDemoBinJs();
-    if (globalBin) return globalBin;
-  }
-  return undefined;
-}
-
 const ELECTRON_CHILD_ENV_BLOCKLIST = [
   "ELECTRON_RUN_AS_NODE",
   "ELECTRON_NO_ASAR",
@@ -617,8 +576,7 @@ export function applyDshAcpNpmInstallEnv(
   return {
     ...env,
     npm_config_ignore_scripts: "true",
-    npm_config_include: "optional",
-    npm_config_optional: "true"
+    npm_config_include: "optional"
   };
 }
 
@@ -639,6 +597,48 @@ export function extraArgsHaveDshConfig(args: string[]): boolean {
       arg.startsWith("-c=") ||
       arg.startsWith("--config=")
   );
+}
+
+/** Resolve the `dsh-acp-demo` entry we should spawn with `node`, if any. */
+export function resolveDshAcpDemoBinJs(input: {
+  binary?: string;
+  dshAcpRuntimeRoot?: string;
+}): string | undefined {
+  const standaloneManagedBin = input.dshAcpRuntimeRoot
+    ? path.join(
+        input.dshAcpRuntimeRoot,
+        "node_modules",
+        "deepseek-harness-acp",
+        "lib",
+        "bin.js"
+      )
+    : "";
+  if (isDefaultDshAcpBinary(input.binary) && standaloneManagedBin && existsSync(standaloneManagedBin)) {
+    return standaloneManagedBin;
+  }
+  const managedBin = input.dshAcpRuntimeRoot
+    ? path.join(
+        input.dshAcpRuntimeRoot,
+        "node_modules",
+        "@deepseek-ai",
+        "dsh-acp-demo",
+        "lib",
+        "bin.js"
+      )
+    : "";
+  const managedReady =
+    Boolean(managedBin) &&
+    existsSync(managedBin) &&
+    dshAcpCompositionReady(managedBin);
+  if (isDefaultDshAcpBinary(input.binary) && managedReady) return managedBin;
+  const fromHint = dshAcpDemoBinJsFromBinaryHint(input.binary);
+  if (fromHint) return fromHint;
+  const base = dshAcpBinaryBaseName(input.binary?.trim() ?? "");
+  if (isDefaultDshAcpBinary(input.binary) && base.startsWith("dsh-acp-demo")) {
+    const globalBin = wellKnownGlobalDshAcpDemoBinJs();
+    if (globalBin) return globalBin;
+  }
+  return undefined;
 }
 
 /**
@@ -1020,7 +1020,13 @@ export function dshAcpManagedDemoBin(dataDir: string): string {
 
 export function quoteForShell(value: string): string {
   if (process.platform === "win32") {
+    if (!/[\s^&|<>]/.test(value)) {
+      return value;
+    }
     return `"${value.replace(/"/g, '""')}"`;
+  }
+  if (!/[\s'"\\$`*?#~&|;<>()\[\]{}]/.test(value)) {
+    return value;
   }
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }

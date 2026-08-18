@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath, dshAcpInstallCommand, parseDshAcpCompositionPackages, bundledDshAcpConfigPath, dshAcpCompositionReady, dshAcpManagedDemoBin, resolveDshAcpDemoDirFromBinary } from "../dist-electron/cli/adapters.js";
+import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath, dshAcpInstallCommand, parseDshAcpCompositionPackages, bundledDshAcpConfigPath, dshAcpCompositionReady, dshAcpManagedDemoBin, resolveDshAcpDemoDirFromBinary, quoteForShell, resolveDshAcpDemoBinJs } from "../dist-electron/cli/adapters.js";
 
 test("Codex ACP checks the new Agent Client Protocol package version", () => {
   assert.deepEqual(getCliCheckProbe("codex-acp"), {
@@ -107,7 +107,7 @@ test("dsh-acp npm installs skip koffi rebuild scripts", () => {
   const env = applyDshAcpNpmInstallEnv("dsh-acp", { PATH: "/usr/bin" });
   assert.equal(env.npm_config_ignore_scripts, "true");
   assert.equal(env.npm_config_include, "optional");
-  assert.equal(env.npm_config_optional, "true");
+  assert.equal(env.npm_config_optional, undefined);
   assert.equal(
     applyDshAcpNpmInstallEnv("codex-acp", { PATH: "/usr/bin" }).npm_config_ignore_scripts,
     undefined
@@ -153,3 +153,27 @@ test("dsh-acp composition ready requires llm-deepseek beside the demo", () => {
     )
   );
 });
+
+test("quoteForShell leaves clean paths unquoted and quotes paths with spaces", () => {
+  if (process.platform === "win32") {
+    assert.equal(
+      quoteForShell("C:\\Users\\Morefine\\AppData\\Roaming\\FreeBuddy\\runtimes\\dsh-acp"),
+      "C:\\Users\\Morefine\\AppData\\Roaming\\FreeBuddy\\runtimes\\dsh-acp"
+    );
+    assert.equal(
+      quoteForShell("C:\\Users\\John Doe\\AppData\\Roaming"),
+      '"C:\\Users\\John Doe\\AppData\\Roaming"'
+    );
+  } else {
+    assert.equal(quoteForShell("/tmp/freebuddy"), "/tmp/freebuddy");
+    assert.equal(quoteForShell("/tmp/free buddy"), "'/tmp/free buddy'");
+  }
+});
+
+test("resolveDshAcpDemoBinJs defaults to standalone binary instead of picking up residue demo unless requested", () => {
+  const standalone = resolveDshAcpDemoBinJs({
+    binary: "deepseek-harness-acp"
+  });
+  assert.equal(standalone, undefined);
+});
+
