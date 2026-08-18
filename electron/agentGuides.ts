@@ -24,13 +24,13 @@ as a coding agent and streams your work to the user in real time.
 
 ## Producing previewable output
 When the task involves building or changing anything visual or document-like:
-- After creating or updating previewable output, proactively call the FreeBuddy bridge to open Draft. Do not ask the user to open files manually.
-- If the project has a dev script (Vite/Next/React/Vue/etc.), start it with a localhost host, e.g. \`npm run dev -- --host 127.0.0.1\`, then point Draft at the dev-server URL with the FreeBuddy bridge.
-- Do not point Draft at \`index.html\` for bundled apps that require \`npm run dev\`; that often misses CSS/assets/routes.
+- After creating or updating previewable output, proactively call the FreeBuddy browser tool (\`browser_navigate\`) or bridge to open the built-in browser. Do not ask the user to open files manually.
+- If the project has a dev script (Vite/Next/React/Vue/etc.), start it with a localhost host, e.g. \`npm run dev -- --host 127.0.0.1\`, then point the browser at the dev-server URL with \`browser_navigate\` or the FreeBuddy bridge.
+- Do not point the browser at \`index.html\` for bundled apps that require \`npm run dev\`; that often misses CSS/assets/routes.
 - For plain static pages, write a self-contained \`index.html\` at the project root (or under \`dist/\`) and use relative paths for CSS/JS/assets.
-- For documentation output, write or update a Markdown file such as \`README.md\`, then immediately call \`/freebuddy/navigate?to=README.md\`.
+- For documentation output, write or update a Markdown file such as \`README.md\`, then immediately navigate to it via \`browser_navigate\` or \`/freebuddy/navigate?to=README.md\`.
 - For generated visual assets, navigate to the workspace-relative image path such as \`assets%2Fmockup.png\`; if the image is outside the workspace, pass its absolute path directly or use \`freebuddy-file://open?path=<absolute path>\`.
-- Report build/dev-server/status or errors through the bridge so the user can see what happened.
+- Report build/dev-server/status or errors through \`browser_report\` or the bridge so the user can see what happened.
 
 ## Communication Channels (Zero-Network File Bridge & Local HTTP Bridge)
 
@@ -72,8 +72,8 @@ export interface AgentGuideStatus {
 }
 
 export interface AgentGuideOptions {
-  /** ACP sessions receive Draft as a native MCP tool and do not need repo files. */
-  nativeDraftTools?: boolean;
+  /** ACP sessions receive Browser as a native MCP tool and do not need repo files. */
+  nativeBrowserTools?: boolean;
 }
 
 async function ensureGitignore(cwd: string): Promise<void> {
@@ -121,7 +121,7 @@ export async function ensureAgentGuides(
   const written: AgentGuideStatus[] = [];
   if (!cwd || !path.isAbsolute(cwd)) return written;
 
-  if (options.nativeDraftTools) {
+  if (options.nativeBrowserTools) {
     stopWatchingFileBridge();
     return written;
   }

@@ -60,10 +60,6 @@ import {
 import { isInactivitySuppressed, removeInactivitySuppression } from "./inactivitySuppression.js";
 import { killProcessTree } from "./process-kill.js";
 import {
-  registerDraftToolSession,
-  unregisterDraftToolSession
-} from "../draftToolService.js";
-import {
   registerBrowserToolSession,
   unregisterBrowserToolSession
 } from "../browserToolService.js";
@@ -88,7 +84,7 @@ import {
   registerWorkspaceFsToolSession,
   unregisterWorkspaceFsToolSession
 } from "../workspaceFsToolService.js";
-import type { AcpStdioMcpServer } from "../shared/draftToolProtocol.js";
+import type { AcpStdioMcpServer } from "../shared/browserToolProtocol.js";
 import {
   clearAuthenticationTerminalsForSession,
   runAuthenticationTerminal
@@ -388,7 +384,6 @@ export async function runAcpAgent({
     removeInactivitySuppression(args.sessionId);
     terminalManager.dispose();
     running.delete(args.sessionId);
-    unregisterDraftToolSession(args.sessionId);
     unregisterBrowserToolSession(args.sessionId);
     unregisterSkillToolSession(args.sessionId);
     unregisterButlerToolSession(args.sessionId);
@@ -1241,24 +1236,23 @@ export async function runAcpAgent({
     }
     applyInitialize(init);
 
-    // Draft and Browser bridge back into the desktop renderer over localhost
-    // and launch an Electron child process. Remote WebUI callers use the
-    // authenticated HTTP Draft endpoints instead, so do not expose either
+    // Browser bridges back into the desktop renderer over localhost
+    // and launches an Electron child process. Remote WebUI callers use the
+    // authenticated HTTP Browser endpoints instead, so do not expose this
     // desktop-only capability to isolated remote users.
     // DeepSeek Harness ACP rejects non-empty mcpServers on session/new.
     if (adapterAcceptsClientMcpServers(args.adapter)) {
       if (args.conversationId && !remoteIsolated) {
         mcpServers.push(
-          await registerDraftToolSession({
+          await registerBrowserToolSession({
             taskSessionId: args.sessionId,
             conversationId: args.conversationId,
             // Keep an unscoped conversation unscoped. ACP itself requires a cwd
-            // and falls back to process.cwd(), but Draft must not treat the app's
+            // and falls back to process.cwd(), but Browser must not treat the app's
             // launch directory as a user-selected workspace.
             cwd: args.cwd ?? "",
             webContents
-          }),
-          await registerBrowserToolSession(args.sessionId)
+          })
         );
       }
       if (args.skills?.length) {

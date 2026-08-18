@@ -53,7 +53,7 @@ import {
   prepareAttachmentFiles,
   type PrepareAttachmentPayload
 } from "./cli/attachments.js";
-import { handleDraftRequest, parseDraftUrl } from "./draftProtocol.js";
+import { handleBrowserRequest, parseBrowserUrl } from "./browserProtocol.js";
 import {
   WEBUI_DEFAULT_PORT,
   normalizeWebUIPort
@@ -427,12 +427,14 @@ function handleAttachment(req: IncomingMessage, res: ServerResponse): boolean {
   return true;
 }
 
-async function handleDraftRender(
+async function handleBrowserRender(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<boolean> {
   const url = new URL(req.url || "/", "http://127.0.0.1");
-  if (!url.pathname.startsWith("/api/draft-render") || req.method !== "GET") {
+  const isBrowserRender = url.pathname.startsWith("/api/browser-render");
+  const isDraftRender = url.pathname.startsWith("/api/draft-render");
+  if ((!isBrowserRender && !isDraftRender) || req.method !== "GET") {
     return false;
   }
   if (!isMediaAuthed(req)) {
@@ -440,18 +442,19 @@ async function handleDraftRender(
     return true;
   }
 
-  const suffix = url.pathname.slice("/api/draft-render".length) || "/";
-  // Strip the media auth token before handing the URL to the draft renderer.
-  const draftUrl = new URL(suffix + url.search, "http://127.0.0.1/");
-  draftUrl.searchParams.delete("token");
+  const prefix = isBrowserRender ? "/api/browser-render" : "/api/draft-render";
+  const suffix = url.pathname.slice(prefix.length) || "/";
+  // Strip the media auth token before handing the URL to the browser renderer.
+  const browserUrl = new URL(suffix + url.search, "http://127.0.0.1/");
+  browserUrl.searchParams.delete("token");
   let root: string;
   let rel: string;
   try {
-    const parsed = parseDraftUrl(draftUrl.toString());
+    const parsed = parseBrowserUrl(browserUrl.toString());
     root = parsed.root;
     rel = parsed.rel;
   } catch {
-    sendJson(res, 400, { ok: false, error: "invalid_draft_path" });
+    sendJson(res, 400, { ok: false, error: "invalid_browser_path" });
     return true;
   }
 
@@ -462,8 +465,8 @@ async function handleDraftRender(
     return true;
   }
 
-  const response = await handleDraftRequest(
-    new Request(draftUrl.toString(), { method: "GET" })
+  const response = await handleBrowserRequest(
+    new Request(browserUrl.toString(), { method: "GET" })
   );
   const body = Buffer.from(await response.arrayBuffer());
   res.writeHead(response.status, {
@@ -900,7 +903,7 @@ export function startWebUIServer(options: WebUIServerOptions = {}): Promise<void
 
           if (await handleInvoke(req, res)) return;
           if (handleAttachment(req, res)) return;
-          if (await handleDraftRender(req, res)) return;
+          if (await handleBrowserRender(req, res)) return;
           if (await handleUpload(req, res)) return;
           if (handleListDirs(req, res)) return;
 

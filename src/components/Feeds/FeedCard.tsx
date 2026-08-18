@@ -5,7 +5,7 @@ import { ExternalLink, RefreshCw, Shuffle } from "lucide-react";
 import type { FeedItem } from "@/services/feed/types";
 import { useConversationStore } from "@/store/conversationStore";
 import { useDetailLayoutStore } from "@/store/detailLayoutStore";
-import { useDraftPreviewStore } from "@/store/draftPreviewStore";
+import { useBrowserStore } from "@/store/browserStore";
 import { useFeedStore } from "@/store/feedStore";
 import {
   FEED_CARD_PAGE_SIZE,
@@ -110,11 +110,11 @@ export function FeedCard({ title }: { title?: string } = {}) {
 
   function handlePreview(item: FeedItem) {
     if (!activeId) return;
-    void useDraftPreviewStore
+    void useBrowserStore
       .getState()
       .ensureFor(activeId, active?.cwd)
       .then(() => {
-        useDraftPreviewStore.getState().setPreviewTarget(activeId, item.link);
+        useBrowserStore.getState().navigate(activeId, item.link);
         useDetailLayoutStore.getState().setActiveTab("preview");
       });
   }

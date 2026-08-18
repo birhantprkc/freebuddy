@@ -266,9 +266,13 @@
       discardManagedAttachmentIfUnreferenced: function (filePath) { return invoke("cli:discardManagedAttachmentIfUnreferenced", filePath); },
       discardManagedAttachments: function () {},
 
-      resolveDraftEntry: function (cwd) { return invoke("cli:resolveDraftEntry", cwd); },
-      readDraftMarkdown: function (cwd, rel) { return invoke("cli:readDraftMarkdown", { cwd: cwd, rel: rel }); },
-      openDraftExternal: function () { return Promise.resolve(true); },
+      resolveBrowserEntry: function (cwd) { return invoke("cli:resolveBrowserEntry", cwd); },
+      readBrowserMarkdown: function (cwd, rel) { return invoke("cli:readBrowserMarkdown", { cwd: cwd, rel: rel }); },
+      openBrowserExternal: function () { return Promise.resolve(true); },
+      checkCdpStatus: function (port) { return invoke("cli:checkCdpStatus", port); },
+      launchDebugChrome: function (args) { return invoke("cli:launchDebugChrome", args); },
+      syncCookiesFromCdp: function (port) { return invoke("cli:syncCookiesFromCdp", port); },
+      importCookiesFromJson: function (jsonString) { return invoke("cli:importCookiesFromJson", jsonString); },
 
       ensureAgentGuides: function (cwd, options) { return invoke("cli:ensureAgentGuides", { cwd: cwd, options: options }); },
 
@@ -278,8 +282,8 @@
     window: {
       onChromeVisible: function (cb) { return subscribe("window:chrome", cb); },
       onBridge: function (cb) { return subscribe("freebuddy://bridge", cb); },
-      onDraftTool: function (cb) { return subscribe("freebuddy://draft-tool", cb); },
-      resolveDraftTool: function (resolution) { return invoke("draft-tool:resolve", resolution); }
+      onBrowserTool: function (cb) { return subscribe("freebuddy://browser-tool", cb); },
+      resolveBrowserTool: function (resolution) { return invoke("browser-tool:resolve", resolution); }
     },
 
     session: {

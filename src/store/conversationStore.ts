@@ -708,7 +708,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const conv = get().conversations.find((c) => c.id === id);
       if (conv?.cwd) {
         void cliClient.ensureAgentGuides(conv.cwd, {
-          nativeDraftTools:
+          nativeBrowserTools:
             useCliExecutorStore.getState().resolve(conv.adapter)?.protocol === "acp"
         }).catch((err) => {
           // best-effort: guide files are optional
@@ -851,7 +851,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
     if (conv.cwd) {
       void cliClient.ensureAgentGuides(conv.cwd, {
-        nativeDraftTools:
+        nativeBrowserTools:
           useCliExecutorStore.getState().resolve(conv.adapter)?.protocol === "acp"
       }).catch((err) => {
         // best-effort: guide files are optional

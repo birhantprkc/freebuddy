@@ -1,18 +1,18 @@
 import { useEffect, type MouseEvent } from "react";
 
 import { useTranslation } from "react-i18next";
-import { PanelRight } from "lucide-react";
+import { Globe, PanelRight } from "lucide-react";
 
 import { useConversationStore } from "@/store/conversationStore";
 import { useDetailLayoutStore, selectDetailWidth } from "@/store/detailLayoutStore";
-import { useDraftPreviewStore } from "@/store/draftPreviewStore";
-import { DraftCanvas } from "../Draft/DraftCanvas";
+import { useBrowserStore } from "@/store/browserStore";
+import { BrowserCanvas } from "../Browser/BrowserCanvas";
 import { WorkspacePanel } from "./WorkspacePanel";
 
 export function DetailColumn({ runningCount }: { runningCount: number }) {
   const { t } = useTranslation();
   const activeId = useConversationStore((s) => s.activeId);
-  const entry = useDraftPreviewStore((s) =>
+  const entry = useBrowserStore((s) =>
     activeId ? s.byConv[activeId] : undefined
   );
   const activeTab = useDetailLayoutStore((s) => s.activeTab);
@@ -25,7 +25,7 @@ export function DetailColumn({ runningCount }: { runningCount: number }) {
     const conv = useConversationStore
       .getState()
       .conversations.find((c) => c.id === activeId);
-    void useDraftPreviewStore.getState().ensureFor(activeId, conv?.cwd);
+    void useBrowserStore.getState().ensureFor(activeId, conv?.cwd);
   }, [activeId]);
 
   const previewAvailable = Boolean(entry?.url);
@@ -68,26 +68,14 @@ export function DetailColumn({ runningCount }: { runningCount: number }) {
                 type="button"
                 className={`detail-entry${previewAvailable ? " available" : ""}`}
                 onClick={() => setActiveTab("preview")}
-                title={t("draft.tabPreview")}
+                title={t("browser.tabBrowser")}
               >
-                <svg
-                  className="detail-entry-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <rect x="3" y="4" width="18" height="13" rx="2" />
-                  <path d="M9 21h6M12 17v4" />
-                </svg>
-                <span>{t("draft.tabPreview")}</span>
+                <Globe size={15} className="detail-entry-icon" />
+                <span>{t("browser.tabBrowser")}</span>
                 {previewAvailable && (
                   <span
                     className="detail-entry-badge"
-                    aria-label={t("draft.previewBadge")}
+                    aria-label={t("browser.previewBadge")}
                   />
                 )}
               </button>
@@ -104,7 +92,7 @@ export function DetailColumn({ runningCount }: { runningCount: number }) {
             <WorkspacePanel runningCount={runningCount} />
           </>
         ) : (
-          <DraftCanvas onClose={() => setActiveTab("overview")} />
+          <BrowserCanvas onClose={() => setActiveTab("overview")} />
         )}
       </div>
     </aside>

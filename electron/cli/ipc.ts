@@ -114,7 +114,17 @@ import type {
   CreateInfoCardInput,
   UpdateInfoCardInput
 } from "../shared/infoCardProtocol.js";
-import { parseDraftUrl, readDraftMarkdown, resolveDraftEntry } from "../draftProtocol.js";
+import {
+  parseBrowserUrl,
+  readBrowserMarkdown,
+  resolveBrowserEntry
+} from "../browserProtocol.js";
+import {
+  checkCdpStatus,
+  importCookiesFromJson,
+  launchDebugChrome,
+  syncCookiesFromCdp
+} from "../cdpCookieSyncService.js";
 import { resolveAttachmentFilePath } from "../freebuddyFileProtocol.js";
 import { ensureAgentGuides } from "../agentGuides.js";
 import {
@@ -149,8 +159,8 @@ import {
   setSkillMarketProvider
 } from "./skillMarket.js";
 import type { SkillMarketProviderId } from "./skillTypes.js";
-import { resolveDraftToolRequest } from "../draftToolService.js";
-import type { DraftToolResolution } from "../shared/draftToolProtocol.js";
+import { resolveBrowserToolRequest } from "../browserToolService.js";
+import type { BrowserToolResolution } from "../shared/browserToolProtocol.js";
 import {
   logoutAcpAgent,
   probeAcpAuthentication,
@@ -774,9 +784,9 @@ export function registerCliIpc() {
     return killed;
   });
   registerHandler(
-    "draft-tool:resolve",
-    (event, resolution: DraftToolResolution) =>
-      resolveDraftToolRequest(event.sender, resolution)
+    "browser-tool:resolve",
+    (event, resolution: BrowserToolResolution) =>
+      resolveBrowserToolRequest(event.sender, resolution)
   );
 
   registerHandler(
@@ -876,17 +886,17 @@ export function registerCliIpc() {
       )
   );
 
-  registerHandler("cli:resolveDraftEntry", (_e, cwd: string) =>
-    resolveDraftEntry(cwd ?? "")
+  registerHandler("cli:resolveBrowserEntry", (_e, cwd: string) =>
+    resolveBrowserEntry(cwd ?? "")
   );
 
   registerHandler(
-    "cli:readDraftMarkdown",
+    "cli:readBrowserMarkdown",
     (_e, args: { cwd?: string; rel?: string }) =>
-      readDraftMarkdown(args?.cwd ?? "", args?.rel ?? "")
+      readBrowserMarkdown(args?.cwd ?? "", args?.rel ?? "")
   );
 
-  registerHandler("cli:openDraftExternal", async (_e, url: string) => {
+  registerHandler("cli:openBrowserExternal", async (_e, url: string) => {
     if (!url) return false;
     if (/^https?:\/\//i.test(url)) {
       await shell.openExternal(url);
@@ -897,23 +907,34 @@ export function registerCliIpc() {
       await shell.openExternal(pathToFileURL(filePath).toString());
       return true;
     }
-    if (!url.startsWith("freebuddy-draft://")) return false;
-    const { root, rel } = parseDraftUrl(url);
-    const filePath = path.resolve(root, rel);
-    if (!filePath.startsWith(root + path.sep) && filePath !== root) return false;
-    await shell.openExternal(pathToFileURL(filePath).toString());
-    return true;
+    if (url.startsWith("freebuddy-browser://")) {
+      const { root, rel } = parseBrowserUrl(url);
+      const filePath = path.resolve(root, rel);
+      if (!filePath.startsWith(root + path.sep) && filePath !== root) return false;
+      await shell.openExternal(pathToFileURL(filePath).toString());
+      return true;
+    }
+    return false;
   });
 
   registerHandler(
     "cli:ensureAgentGuides",
     (
       _e,
-      input: { cwd?: string; options?: { nativeDraftTools?: boolean } } | string
+      input: { cwd?: string; options?: { nativeBrowserTools?: boolean } } | string
     ) =>
       typeof input === "string"
         ? ensureAgentGuides(input)
         : ensureAgentGuides(input?.cwd ?? "", input?.options)
+  );
+
+  registerHandler("cli:checkCdpStatus", (_e, port?: number) => checkCdpStatus(port));
+  registerHandler("cli:launchDebugChrome", (_e, args?: { port?: number; url?: string }) =>
+    launchDebugChrome(args?.port, args?.url)
+  );
+  registerHandler("cli:syncCookiesFromCdp", (_e, port?: number) => syncCookiesFromCdp(port));
+  registerHandler("cli:importCookiesFromJson", (_e, jsonString: string) =>
+    importCookiesFromJson(jsonString)
   );
 
   // ---- Projects ----------------------------------------------------------

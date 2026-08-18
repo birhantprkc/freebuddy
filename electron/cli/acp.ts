@@ -8,7 +8,7 @@ import type {
   TerminalOutputResponse
 } from "@agentclientprotocol/sdk";
 
-import type { AcpStdioMcpServer } from "../shared/draftToolProtocol.js";
+import type { AcpStdioMcpServer } from "../shared/browserToolProtocol.js";
 
 export type AcpRequestId = number | string | null;
 

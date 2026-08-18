@@ -35,8 +35,8 @@ import type {
   UpdateMessageInput,
   Project,
   ProjectInput,
-  DraftToolEvent,
-  DraftToolResolution,
+  BrowserToolEvent,
+  BrowserToolResolution,
   PreviewHandoffBriefInput,
   PreviewHandoffBriefResult,
   TransferConversationInput,
@@ -269,12 +269,16 @@ declare global {
     discardManagedAttachment(filePath: string): Promise<boolean>;
     discardManagedAttachmentIfUnreferenced(filePath: string): Promise<boolean>;
     discardManagedAttachments(paths: string[]): void;
-    resolveDraftEntry(cwd: string): Promise<string | null>;
-    readDraftMarkdown(cwd: string, rel: string): Promise<string | null>;
-    openDraftExternal(url: string): Promise<boolean>;
+    resolveBrowserEntry(cwd: string): Promise<string | null>;
+    readBrowserMarkdown(cwd: string, rel: string): Promise<string | null>;
+    openBrowserExternal(url: string): Promise<boolean>;
+    checkCdpStatus(port?: number): Promise<{ connected: boolean; browser?: string; webSocketDebuggerUrl?: string }>;
+    launchDebugChrome(args?: { port?: number; url?: string }): Promise<{ success: boolean; launched: boolean; browserPath?: string; error?: string }>;
+    syncCookiesFromCdp(port?: number): Promise<{ success: boolean; count: number; domains: string[]; error?: string }>;
+    importCookiesFromJson(jsonString: string): Promise<{ success: boolean; count: number; domains: string[]; error?: string }>;
     ensureAgentGuides(
       cwd: string,
-      options?: { nativeDraftTools?: boolean }
+      options?: { nativeBrowserTools?: boolean }
     ): Promise<{ path: string; action: "created" | "updated" }[]>;
 
     onEvent(sessionId: string, cb: (event: CliEvent) => void): () => void;
@@ -285,8 +289,8 @@ declare global {
     onBridge(
       cb: (event: { action: string; params: Record<string, string> }) => void
     ): () => void;
-    onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
-    resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
+    onBrowserTool(cb: (event: BrowserToolEvent) => void): () => void;
+    resolveBrowserTool(resolution: BrowserToolResolution): Promise<boolean>;
     onOpenConversation(cb: (conversationId: string) => void): () => void;
     onNewConversation(cb: () => void): () => void;
     onOpenTaskReceipt(cb: () => void): () => void;

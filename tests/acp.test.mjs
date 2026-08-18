@@ -1065,12 +1065,12 @@ test("isMissingSavedSessionError recognizes Cursor Invalid params Session not fo
 test("ACP session lifecycle injects FreeBuddy stdio MCP servers", () => {
   const mcpServers = [
     {
-      name: "freebuddy-draft",
+      name: "freebuddy-browser",
       command: "/Applications/FreeBuddy",
-      args: ["/app/dist-electron/mcp/draftMcpServer.js"],
+      args: ["/app/dist-electron/mcp/browserMcpServer.js"],
       env: [
         { name: "ELECTRON_RUN_AS_NODE", value: "1" },
-        { name: "FREEBUDDY_DRAFT_TOKEN", value: "token" }
+        { name: "FREEBUDDY_BROWSER_TOKEN", value: "token" }
       ]
     }
   ];

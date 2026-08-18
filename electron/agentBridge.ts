@@ -46,7 +46,7 @@ export async function waitForActiveBridgePort(timeoutMs = 10_000): Promise<numbe
       activeBridgePortReady,
       new Promise<number>((_resolve, reject) => {
         timeout = setTimeout(
-          () => reject(new Error("FreeBuddy Draft bridge did not start in time.")),
+          () => reject(new Error("FreeBuddy Browser bridge did not start in time.")),
           timeoutMs
         );
       })
@@ -59,15 +59,15 @@ export async function waitForActiveBridgePort(timeoutMs = 10_000): Promise<numbe
 export const BRIDGE_ACTIONS: BridgeAction[] = [
   {
     name: "preview",
-    summary: "Open the web preview panel.",
+    summary: "Open the built-in browser panel.",
     description:
-      "Switch the side panel to the Draft web preview for this workspace."
+      "Switch the side panel to the built-in browser for this workspace."
   },
   {
     name: "navigate",
-    summary: "Point the preview at a workspace-relative path, local file image, or local dev-server URL.",
+    summary: "Point the browser at a workspace-relative path, local file image, or local dev-server URL.",
     description:
-      "Re-target the preview iframe to another entry file, route, localhost URL, or local image file. Use this after starting npm run dev.",
+      "Re-target the browser to another entry file, route, localhost URL, or local image file. Use this after starting npm run dev.",
     params: [
       {
         name: "to",
@@ -78,9 +78,9 @@ export const BRIDGE_ACTIONS: BridgeAction[] = [
   },
   {
     name: "entry",
-    summary: "Select the preview entry without changing tabs.",
+    summary: "Select the browser entry without changing tabs.",
     description:
-      "Set the Draft preview target to a workspace-relative file, local image file, or localhost dev-server URL.",
+      "Set the built-in browser target to a workspace-relative file, local image file, or localhost dev-server URL.",
     params: [
       {
         name: "to",
@@ -91,28 +91,38 @@ export const BRIDGE_ACTIONS: BridgeAction[] = [
   },
   {
     name: "status",
-    summary: "Report preview/build status to FreeBuddy.",
-    description:
-      "Show the user what is happening with a build, dev server, or preview setup.",
+    summary: "Post a status message toast.",
+    description: "Show a transient status notification in FreeBuddy.",
     params: [
-      { name: "text", description: "Status message", required: true }
+      {
+        name: "text",
+        description: "Status message",
+        required: true
+      }
     ]
   },
   {
     name: "error",
-    summary: "Report a preview/build error to FreeBuddy.",
-    description:
-      "Tell the user why the preview cannot currently render and keep the details in the chat.",
+    summary: "Post an error message toast.",
+    description: "Show a transient error notification in FreeBuddy.",
     params: [
-      { name: "text", description: "Error message", required: true }
+      {
+        name: "text",
+        description: "Error message",
+        required: true
+      }
     ]
   },
   {
     name: "notify",
-    summary: "Show a short toast message to the user.",
-    description: "Surface a brief, non-blocking message in the FreeBuddy UI.",
+    summary: "Post a generic notification toast.",
+    description: "Show a transient notification in FreeBuddy.",
     params: [
-      { name: "text", description: "The message to display", required: true }
+      {
+        name: "text",
+        description: "Notification message",
+        required: true
+      }
     ]
   }
 ];
@@ -123,29 +133,25 @@ export interface ParsedBridgeRequest {
 }
 
 export function parseBridgeRequest(
-  requestUrl: string
-): ParsedBridgeRequest | null {
-  let url: URL;
-  try {
-    url = new URL(requestUrl, "http://localhost");
-  } catch {
-    return null;
+  urlPath: string
+): { action: string; params: Record<string, string> } | null {
+  const [pathname, queryString] = urlPath.split("?");
+  const params: Record<string, string> = {};
+  if (queryString) {
+    for (const [k, v] of new URLSearchParams(queryString)) {
+      params[k] = v;
+    }
   }
-  const parts = url.pathname.split("/").filter(Boolean);
 
-  // Canonical: /freebuddy/<action>?<params>
-  if (parts.length >= 2 && parts[0] === "freebuddy") {
-    const action = parts[1];
-    const params: Record<string, string> = {};
-    url.searchParams.forEach((value, key) => {
-      params[key] = value;
-    });
+  // Modern /freebuddy/<action> paths
+  if (pathname.startsWith("/freebuddy/")) {
+    const action = pathname.slice("/freebuddy/".length);
     return { action, params };
   }
 
-  // Legacy: /preview
-  if (parts.length === 1 && parts[0] === "preview") {
-    return { action: "preview", params: {} };
+  // Legacy /preview path
+  if (pathname === "/preview") {
+    return { action: "preview", params };
   }
 
   return null;
@@ -160,9 +166,9 @@ export function buildBridgeSection(port: number): string {
     "## FreeBuddy bridge",
     "",
     "You can talk back to FreeBuddy over a local HTTP bridge while it is running.",
-    "Always use the bridge to open Draft after you create or update something previewable; do not wait for the user to open it manually.",
-    "Draft supports localhost web apps, static HTML, Markdown files, and image files.",
-    "When previewing npm/Vite/Next/React/Vue apps, prefer starting the dev server and navigating Draft to its localhost URL instead of opening index.html directly.",
+    "Always use the browser tool or bridge to open the Built-in Browser after you create or update something previewable; do not wait for the user to open it manually.",
+    "The Built-in Browser supports localhost web apps, static HTML, Markdown files, documents, and image files.",
+    "When previewing npm/Vite/Next/React/Vue apps, prefer starting the dev server and navigating the browser to its localhost URL instead of opening index.html directly.",
     "",
     "Dev-server preview flow:",
     "```sh",

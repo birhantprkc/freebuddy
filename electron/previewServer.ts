@@ -8,7 +8,6 @@ import {
   isKnownBridgeAction,
   parseBridgeRequest
 } from "./agentBridge.js";
-import { handleDraftToolHttpRequest } from "./draftToolService.js";
 import { handleBrowserToolHttpRequest } from "./browserToolService.js";
 import { handleWorkspaceFsToolHttpRequest } from "./workspaceFsToolService.js";
 import { handleButlerToolHttpRequest } from "./butlerToolService.js";
@@ -32,7 +31,6 @@ export function startPreviewServer(
 
     const server = http.createServer((req, res) => {
       void (async () => {
-        if (await handleDraftToolHttpRequest(req, res)) return;
         if (await handleBrowserToolHttpRequest(req, res)) return;
         if (await handleWorkspaceFsToolHttpRequest(req, res)) return;
         if (await handleButlerToolHttpRequest(req, res)) return;

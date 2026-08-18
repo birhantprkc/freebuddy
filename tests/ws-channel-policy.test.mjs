@@ -37,9 +37,9 @@ test("classifyWsChannel routes global, session-scoped, and desktop-only channels
   assert.deepEqual(classifyWsChannel("updater://event"), { kind: "drop" });
   assert.deepEqual(classifyWsChannel("unknown://whatever"), { kind: "drop" });
 
-  // Draft MCP events carry conversationId in the payload so WebUI can open
-  // the Draft panel for the owning conversation.
-  assert.deepEqual(classifyWsChannel("freebuddy://draft-tool"), {
+  // Browser MCP events carry conversationId in the payload so WebUI can open
+  // the Browser panel for the owning conversation.
+  assert.deepEqual(classifyWsChannel("freebuddy://browser-tool"), {
     kind: "conversationPayload"
   });
 });

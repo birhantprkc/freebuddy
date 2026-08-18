@@ -89,7 +89,7 @@ test("sidebar collapse toggle hides the sidebar column", () => {
   );
 });
 
-test("opening the draft preview collapses the conversation sidebar", () => {
+test("opening the browser preview collapses the conversation sidebar", () => {
   assert.match(appSource, /const activeDetailTab = useDetailLayoutStore\(\(s\) => s\.activeTab\)/);
   assert.match(
     appSource,

@@ -62,14 +62,14 @@ const ALLOW = [
   "cli:getProject",
   "cli:listRuntimes",
 
-  // Attachments and drafts.
+  // Attachments and browser.
+  "browser-tool:resolve",
   "cli:discardManagedAttachment",
   "cli:discardManagedAttachmentIfUnreferenced",
   "cli:ensureAgentGuides",
-  "cli:readDraftMarkdown",
-  "cli:resolveDraftEntry",
+  "cli:readBrowserMarkdown",
+  "cli:resolveBrowserEntry",
   "cli:searchWorkspaceFiles",
-  "draft-tool:resolve",
 
   // Usage reporting.
   "cli:codexUsage",
@@ -215,7 +215,11 @@ const DENY = [
   // Native dialogs and shell integration have no meaning off-device.
   "cli:selectAttachments",
   "cli:selectDirectory",
-  "cli:openDraftExternal",
+  "cli:openBrowserExternal",
+  "cli:checkCdpStatus",
+  "cli:launchDebugChrome",
+  "cli:syncCookiesFromCdp",
+  "cli:importCookiesFromJson",
   "cli:openCursorUsageSettings",
   "cli:prepareAttachmentFiles",
   // Importing a Codex rollout reads the host's ~/.codex filesystem.

@@ -337,18 +337,30 @@ export const cliClient = {
   discardManagedAttachments(paths: string[]): void {
     api().discardManagedAttachments(paths);
   },
-  resolveDraftEntry(cwd: string): Promise<string | null> {
-    return api().resolveDraftEntry(cwd);
+  resolveBrowserEntry(cwd: string): Promise<string | null> {
+    return api().resolveBrowserEntry(cwd);
   },
-  readDraftMarkdown(cwd: string, rel: string): Promise<string | null> {
-    return api().readDraftMarkdown(cwd, rel);
+  readBrowserMarkdown(cwd: string, rel: string): Promise<string | null> {
+    return api().readBrowserMarkdown(cwd, rel);
   },
-  openDraftExternal(url: string): Promise<boolean> {
-    return api().openDraftExternal(url);
+  openBrowserExternal(url: string): Promise<boolean> {
+    return api().openBrowserExternal(url);
+  },
+  checkCdpStatus(port?: number): Promise<{ connected: boolean; browser?: string; webSocketDebuggerUrl?: string }> {
+    return api().checkCdpStatus ? api().checkCdpStatus(port) : Promise.resolve({ connected: false });
+  },
+  launchDebugChrome(args?: { port?: number; url?: string }): Promise<{ success: boolean; launched: boolean; browserPath?: string; error?: string }> {
+    return api().launchDebugChrome ? api().launchDebugChrome(args) : Promise.resolve({ success: false, launched: false, error: "NOT_SUPPORTED" });
+  },
+  syncCookiesFromCdp(port?: number): Promise<{ success: boolean; count: number; domains: string[]; error?: string }> {
+    return api().syncCookiesFromCdp ? api().syncCookiesFromCdp(port) : Promise.resolve({ success: false, count: 0, domains: [], error: "NOT_SUPPORTED" });
+  },
+  importCookiesFromJson(jsonString: string): Promise<{ success: boolean; count: number; domains: string[]; error?: string }> {
+    return api().importCookiesFromJson ? api().importCookiesFromJson(jsonString) : Promise.resolve({ success: false, count: 0, domains: [], error: "NOT_SUPPORTED" });
   },
   ensureAgentGuides(
     cwd: string,
-    options?: { nativeDraftTools?: boolean }
+    options?: { nativeBrowserTools?: boolean }
   ): Promise<{ path: string; action: "created" | "updated" }[]> {
     return api().ensureAgentGuides(cwd, options);
   },

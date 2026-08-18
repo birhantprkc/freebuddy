@@ -156,12 +156,12 @@ export function guardRemoteInvokeArgs(
     return args;
   }
 
-  if (channel === "cli:resolveDraftEntry") {
+  if (channel === "cli:resolveBrowserEntry") {
     assertPathAllowed(first, roots, "cwd");
     return args;
   }
 
-  if (channel === "cli:readDraftMarkdown" && payload) {
+  if (channel === "cli:readBrowserMarkdown" && payload) {
     const cwd = typeof payload.cwd === "string" ? payload.cwd : "";
     const rel = typeof payload.rel === "string" ? payload.rel : "";
     assertPathAllowed(cwd, roots, "cwd");
