@@ -286,6 +286,8 @@ const cli = {
     ipcRenderer.invoke("cli:syncCookiesFromCdp", port),
   importCookiesFromJson: (jsonString: string) =>
     ipcRenderer.invoke("cli:importCookiesFromJson", jsonString),
+  importCookiesFromLocalBrowser: (targetBrowser?: string) =>
+    ipcRenderer.invoke("cli:importCookiesFromLocalBrowser", targetBrowser),
 
   ensureAgentGuides: (cwd: string, options?: { nativeBrowserTools?: boolean }) =>
     ipcRenderer.invoke("cli:ensureAgentGuides", { cwd, options }),

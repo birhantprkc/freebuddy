@@ -273,6 +273,7 @@
       launchDebugChrome: function (args) { return invoke("cli:launchDebugChrome", args); },
       syncCookiesFromCdp: function (port) { return invoke("cli:syncCookiesFromCdp", port); },
       importCookiesFromJson: function (jsonString) { return invoke("cli:importCookiesFromJson", jsonString); },
+      importCookiesFromLocalBrowser: function (targetBrowser) { return invoke("cli:importCookiesFromLocalBrowser", targetBrowser); },
 
       ensureAgentGuides: function (cwd, options) { return invoke("cli:ensureAgentGuides", { cwd: cwd, options: options }); },
 

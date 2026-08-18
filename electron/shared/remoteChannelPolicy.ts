@@ -220,6 +220,7 @@ const DENY = [
   "cli:launchDebugChrome",
   "cli:syncCookiesFromCdp",
   "cli:importCookiesFromJson",
+  "cli:importCookiesFromLocalBrowser",
   "cli:openCursorUsageSettings",
   "cli:prepareAttachmentFiles",
   // Importing a Codex rollout reads the host's ~/.codex filesystem.

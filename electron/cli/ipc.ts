@@ -125,6 +125,7 @@ import {
   launchDebugChrome,
   syncCookiesFromCdp
 } from "../cdpCookieSyncService.js";
+import { importCookiesFromLocalBrowser } from "../browserCookieImporter.js";
 import { resolveAttachmentFilePath } from "../freebuddyFileProtocol.js";
 import { ensureAgentGuides } from "../agentGuides.js";
 import {
@@ -935,6 +936,9 @@ export function registerCliIpc() {
   registerHandler("cli:syncCookiesFromCdp", (_e, port?: number) => syncCookiesFromCdp(port));
   registerHandler("cli:importCookiesFromJson", (_e, jsonString: string) =>
     importCookiesFromJson(jsonString)
+  );
+  registerHandler("cli:importCookiesFromLocalBrowser", (_e, targetBrowser?: string) =>
+    importCookiesFromLocalBrowser(targetBrowser)
   );
 
   // ---- Projects ----------------------------------------------------------

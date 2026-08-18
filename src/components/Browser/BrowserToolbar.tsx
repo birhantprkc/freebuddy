@@ -83,66 +83,35 @@ export function BrowserToolbar({
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [showLaunchModal, setShowLaunchModal] = useState(false);
-  const [syncModalTab, setSyncModalTab] = useState<"cdp" | "json">("cdp");
+  const [syncModalTab, setSyncModalTab] = useState<"local" | "json">("local");
   const [cookieJsonInput, setCookieJsonInput] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
 
-  const handleSyncChrome = async () => {
+  const handleSyncFromLocalBrowser = async (targetBrowser?: string) => {
     if (isSyncing) return;
     setIsSyncing(true);
     setSyncNotice(null);
     try {
-      const status = await cliClient.checkCdpStatus(9222);
-      if (!status.connected) {
-        setShowLaunchModal(true);
-        setIsSyncing(false);
-        return;
-      }
-      const res = await cliClient.syncCookiesFromCdp(9222);
-      if (res.success) {
-        setSyncNotice(t("browser.syncSuccess", { count: res.count }));
+      const res = await cliClient.importCookiesFromLocalBrowser(targetBrowser);
+      if (res.success && res.count > 0) {
+        setShowLaunchModal(false);
+        setSyncNotice(
+          t("browser.syncSuccess", {
+            count: res.count,
+            browser: res.browserName || "Chrome / Edge"
+          })
+        );
         if (onReload) onReload();
       } else {
+        // If 0 cookies or error, open modal with options
+        setShowLaunchModal(true);
         setSyncNotice(t("browser.syncFailed"));
       }
     } catch {
+      setShowLaunchModal(true);
       setSyncNotice(t("browser.syncFailed"));
     } finally {
       setIsSyncing(false);
-      setTimeout(() => setSyncNotice(null), 4000);
-    }
-  };
-
-  const handleLaunchAndSyncChrome = async () => {
-    setIsSyncing(true);
-    try {
-      const launchRes = await cliClient.launchDebugChrome({ port: 9222, url: url || "https://www.baidu.com" });
-      if (!launchRes.success) {
-        setIsSyncing(false);
-        setSyncNotice(t("browser.syncFailed"));
-        setTimeout(() => setSyncNotice(null), 4000);
-        return;
-      }
-      setTimeout(async () => {
-        try {
-          const res = await cliClient.syncCookiesFromCdp(9222);
-          if (res.success) {
-            setShowLaunchModal(false);
-            setSyncNotice(t("browser.syncSuccess", { count: res.count }));
-            if (onReload) onReload();
-          } else {
-            setSyncNotice(t("browser.syncFailed"));
-          }
-        } catch {
-          setSyncNotice(t("browser.syncFailed"));
-        } finally {
-          setIsSyncing(false);
-          setTimeout(() => setSyncNotice(null), 4000);
-        }
-      }, 1800);
-    } catch {
-      setIsSyncing(false);
-      setSyncNotice(t("browser.syncFailed"));
       setTimeout(() => setSyncNotice(null), 4000);
     }
   };
@@ -157,7 +126,7 @@ export function BrowserToolbar({
       if (res.success && res.count > 0) {
         setShowLaunchModal(false);
         setCookieJsonInput("");
-        setSyncNotice(t("browser.syncSuccess", { count: res.count }));
+        setSyncNotice(t("browser.syncSuccessGeneric", { count: res.count }));
         if (onReload) onReload();
       } else if (res.error === "INVALID_JSON") {
         setJsonError(t("browser.invalidJson"));
@@ -345,12 +314,12 @@ export function BrowserToolbar({
         </div>
       )}
 
-      {/* Chrome Session Sync Button */}
+      {/* Local Browser Cookie Sync Button */}
       {cliClient.isAvailable() && (
         <button
           type="button"
           className={`browser-action-btn draft-action${isSyncing ? " is-loading" : ""}`}
-          onClick={handleSyncChrome}
+          onClick={() => handleSyncFromLocalBrowser()}
           disabled={isSyncing}
           title={t("browser.syncChrome")}
           aria-label={t("browser.syncChrome")}
@@ -392,7 +361,7 @@ export function BrowserToolbar({
         </div>
       )}
 
-      {/* Chrome Session Sync / Cookie Import Modal */}
+      {/* Browser Cookie Import Modal */}
       {showLaunchModal && (
         <div className="modal-backdrop" onClick={() => setShowLaunchModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
@@ -404,11 +373,11 @@ export function BrowserToolbar({
             <div style={{ display: "flex", gap: 8, marginBottom: 14, borderBottom: "1px solid var(--fb-border-strong)", paddingBottom: 6 }}>
               <button
                 type="button"
-                className={`btn ${syncModalTab === "cdp" ? "btn-primary" : "btn-secondary"}`}
+                className={`btn ${syncModalTab === "local" ? "btn-primary" : "btn-secondary"}`}
                 style={{ fontSize: 12, padding: "4px 12px" }}
-                onClick={() => setSyncModalTab("cdp")}
+                onClick={() => setSyncModalTab("local")}
               >
-                {t("browser.tabCdp")}
+                {t("browser.tabLocal")}
               </button>
               <button
                 type="button"
@@ -420,14 +389,11 @@ export function BrowserToolbar({
               </button>
             </div>
 
-            {syncModalTab === "cdp" ? (
+            {syncModalTab === "local" ? (
               <>
-                <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--fb-text-secondary)", lineHeight: 1.4 }}>
-                  {t("browser.syncModalHint")}
+                <p style={{ margin: "0 0 16px", fontSize: 12, color: "var(--fb-text-secondary)", lineHeight: 1.4 }}>
+                  {t("browser.syncModalDesc")}
                 </p>
-                <div style={{ margin: "0 0 18px", padding: "8px 10px", background: "var(--fb-panel-soft)", borderRadius: 6, fontSize: 11, color: "var(--fb-text-tertiary)", lineHeight: 1.4 }}>
-                  {t("browser.chromeRunningNotice")}
-                </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
                   <button
                     type="button"
@@ -439,10 +405,10 @@ export function BrowserToolbar({
                   <button
                     type="button"
                     className="btn btn-primary"
-                    onClick={handleLaunchAndSyncChrome}
+                    onClick={() => handleSyncFromLocalBrowser()}
                     disabled={isSyncing}
                   >
-                    {isSyncing ? t("browser.syncingChrome") : t("browser.launchChromeBtn")}
+                    {isSyncing ? t("browser.syncingChrome") : t("browser.importLocalChromeBtn")}
                   </button>
                 </div>
               </>

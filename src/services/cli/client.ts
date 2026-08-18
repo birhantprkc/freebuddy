@@ -358,6 +358,9 @@ export const cliClient = {
   importCookiesFromJson(jsonString: string): Promise<{ success: boolean; count: number; domains: string[]; error?: string }> {
     return api().importCookiesFromJson ? api().importCookiesFromJson(jsonString) : Promise.resolve({ success: false, count: 0, domains: [], error: "NOT_SUPPORTED" });
   },
+  importCookiesFromLocalBrowser(targetBrowser?: string): Promise<{ success: boolean; count: number; domains: string[]; browserName?: string; error?: string }> {
+    return api().importCookiesFromLocalBrowser ? api().importCookiesFromLocalBrowser(targetBrowser) : Promise.resolve({ success: false, count: 0, domains: [], error: "NOT_SUPPORTED" });
+  },
   ensureAgentGuides(
     cwd: string,
     options?: { nativeBrowserTools?: boolean }

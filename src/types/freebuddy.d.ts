@@ -276,6 +276,7 @@ declare global {
     launchDebugChrome(args?: { port?: number; url?: string }): Promise<{ success: boolean; launched: boolean; browserPath?: string; error?: string }>;
     syncCookiesFromCdp(port?: number): Promise<{ success: boolean; count: number; domains: string[]; error?: string }>;
     importCookiesFromJson(jsonString: string): Promise<{ success: boolean; count: number; domains: string[]; error?: string }>;
+    importCookiesFromLocalBrowser(targetBrowser?: string): Promise<{ success: boolean; count: number; domains: string[]; browserName?: string; error?: string }>;
     ensureAgentGuides(
       cwd: string,
       options?: { nativeBrowserTools?: boolean }
