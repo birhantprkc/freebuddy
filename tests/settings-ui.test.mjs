@@ -365,3 +365,20 @@ test("coding agent settings can clone agents from a base adapter", () => {
   assert.equal(zhLocale.common.clone, "克隆");
   assert.equal(enLocale.common.clone, "Clone");
 });
+
+test("coding agent settings allow manual typing of model context window without immediate reset", () => {
+  assert.equal(settingsSource.includes("ByokModelDraft"), true);
+  assert.match(
+    settingsSource,
+    /contextWindow:\s*event\.target\.value/
+  );
+  assert.match(
+    settingsSource,
+    /normalizedByokModels/
+  );
+  assert.match(
+    settingsSource,
+    /parseByokContextWindow\(entry\.contextWindow\)/
+  );
+});
+

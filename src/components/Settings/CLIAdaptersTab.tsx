@@ -26,8 +26,26 @@ const CODEX_ACP_UPGRADE_REQUIRED = "codex-acp requires @agentclientprotocol/code
 const BYOK_CONTEXT_WINDOW_MIN = 100000;
 const BYOK_CONTEXT_WINDOW_MAX = 1000000;
 
-function parseByokContextWindow(value: string): number | undefined {
-  const parsed = Number(value);
+interface ByokModelDraft {
+  id: string;
+  name?: string;
+  contextWindow?: number | string;
+}
+
+function parseByokContextWindow(
+  value: string | number | undefined
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "number") {
+    return Number.isInteger(value) &&
+      value >= BYOK_CONTEXT_WINDOW_MIN &&
+      value <= BYOK_CONTEXT_WINDOW_MAX
+      ? value
+      : undefined;
+  }
+  const clean = value.replace(/[,_\s]/g, "").trim();
+  if (!clean) return undefined;
+  const parsed = Number(clean);
   return Number.isInteger(parsed) &&
     parsed >= BYOK_CONTEXT_WINDOW_MIN &&
     parsed <= BYOK_CONTEXT_WINDOW_MAX
@@ -974,7 +992,7 @@ function EditOverridePanel({
   );
   const [deepseekOfficialApiKey, setDeepseekOfficialApiKey] = useState("");
   const [codexApiKey, setCodexApiKey] = useState("");
-  const [byokModels, setByokModels] = useState(
+  const [byokModels, setByokModels] = useState<ByokModelDraft[]>(
     savedByok?.models?.length
       ? savedByok.models
       : parsedExtraArgs.model
@@ -1038,6 +1056,24 @@ function EditOverridePanel({
         if (eq > 0) env[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
       });
 
+    const normalizedByokModels: CLIByokModel[] = byokModels
+      .map((entry) => {
+        const id = entry.id.trim();
+        const name = entry.name?.trim();
+        const contextWindow =
+          entry.contextWindow !== undefined &&
+          String(entry.contextWindow).trim() !== ""
+            ? parseByokContextWindow(entry.contextWindow)
+            : undefined;
+        const model: CLIByokModel = {
+          id,
+          ...(name ? { name } : {}),
+          ...(contextWindow !== undefined ? { contextWindow } : {})
+        };
+        return model;
+      })
+      .filter((entry) => entry.id.length > 0);
+
     const codexByokConfig =
       isCodex && codexByokEnabled
         ? {
@@ -1048,7 +1084,7 @@ function EditOverridePanel({
             envKey: codexEnvKey.trim() || "OPENAI_API_KEY",
             wireApi: codexWireApi,
             apiKey: codexApiKey.trim() || undefined,
-            models: byokModels,
+            models: normalizedByokModels,
             apiKeyPreview: savedByok?.apiKeyPreview
           }
         : undefined;
@@ -1059,7 +1095,7 @@ function EditOverridePanel({
             baseUrl: codexBaseUrl.trim(),
             envKey: codexEnvKey.trim() || "ANTHROPIC_API_KEY",
             apiKey: codexApiKey.trim() || undefined,
-            models: byokModels,
+            models: normalizedByokModels,
             contextWindow: parseByokContextWindow(byokContextWindow),
             compaction: {
               enabled: claudeCompactionEnabled
@@ -1077,7 +1113,7 @@ function EditOverridePanel({
           officialApiKeyPreview: savedDeepSeekByok?.officialApiKeyPreview,
           apiKey: codexApiKey.trim() || undefined,
           apiKeyPreview: savedDeepSeekByok?.apiKeyPreview,
-          models: codexByokEnabled ? byokModels : [],
+          models: codexByokEnabled ? normalizedByokModels : [],
           contextWindow: codexByokEnabled
             ? parseByokContextWindow(byokContextWindow)
             : undefined
@@ -1431,16 +1467,14 @@ function EditOverridePanel({
                             )}
                             onChange={(event) =>
                               setByokModels((models) =>
-                                models.map((entry, entryIndex) => {
-                                  if (entryIndex !== index) return entry;
-                                  const parsed = parseByokContextWindow(
-                                    event.target.value
-                                  );
-                                  const next: CLIByokModel = { ...entry };
-                                  if (parsed) next.contextWindow = parsed;
-                                  else delete next.contextWindow;
-                                  return next;
-                                })
+                                models.map((entry, entryIndex) =>
+                                  entryIndex === index
+                                    ? {
+                                        ...entry,
+                                        contextWindow: event.target.value
+                                      }
+                                    : entry
+                                )
                               )
                             }
                           />
