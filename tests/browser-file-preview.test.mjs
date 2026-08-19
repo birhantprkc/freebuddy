@@ -330,3 +330,31 @@ test("Feed interpretation logic is shared by card and browser actions", () => {
   assert.doesNotMatch(feedCardSource, /function buildInterpretPrompt/);
   assert.doesNotMatch(feedCardSource, /function isFeedInterpretConversation/);
 });
+
+test("Browser store normalizes cwd across slashes, dots, and case", async () => {
+  const { normalizeBrowserCwd, isSameBrowserCwd } = await loadBrowserStoreModule();
+
+  assert.equal(normalizeBrowserCwd("."), "");
+  assert.equal(normalizeBrowserCwd(""), "");
+  assert.equal(normalizeBrowserCwd(undefined), "");
+  assert.equal(
+    normalizeBrowserCwd("C:\\Users\\me\\workspace\\"),
+    "C:/Users/me/workspace"
+  );
+  assert.equal(
+    normalizeBrowserCwd("/Users/me/workspace/"),
+    "/Users/me/workspace"
+  );
+
+  assert.equal(
+    isSameBrowserCwd("C:\\Users\\me\\workspace", "C:/Users/me/workspace/"),
+    true
+  );
+  assert.equal(
+    isSameBrowserCwd("c:\\users\\me\\workspace", "C:\\Users\\me\\workspace"),
+    true
+  );
+  assert.equal(isSameBrowserCwd(".", ""), true);
+  assert.equal(isSameBrowserCwd("/a", "/b"), false);
+});
+

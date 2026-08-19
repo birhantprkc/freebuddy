@@ -115,8 +115,44 @@ export function remoteBrowserOrigin(value: string | undefined): string | null {
   }
 }
 
+export function normalizeBrowserCwd(raw?: string | null): string {
+  const trimmed = raw?.trim() ?? "";
+  if (!trimmed || trimmed === ".") return "";
+  return trimmed.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+export function isSameBrowserCwd(cwdA?: string | null, cwdB?: string | null): boolean {
+  const a = normalizeBrowserCwd(cwdA);
+  const b = normalizeBrowserCwd(cwdB);
+  if (a === b) return true;
+  if (isAbsoluteLocalPath(a) && isAbsoluteLocalPath(b)) {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+  return false;
+}
+
+function shouldPreserveManualEntry(
+  existingCwd: string | undefined,
+  newCwd: string | undefined,
+  manualEntry: string | undefined
+): boolean {
+  if (!manualEntry) return false;
+  if (
+    isAbsoluteLocalPath(manualEntry) ||
+    /^https?:\/\//i.test(manualEntry) ||
+    /^freebuddy-[a-z0-9-]+:\/\//i.test(manualEntry) ||
+    /^file:\/\//i.test(manualEntry)
+  ) {
+    return true;
+  }
+  const prev = normalizeBrowserCwd(existingCwd);
+  const next = normalizeBrowserCwd(newCwd);
+  if (!prev || !next) return true;
+  return isSameBrowserCwd(prev, next);
+}
+
 function joinWorkspacePath(cwd: string, rel: string): string {
-  const root = cwd.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  const root = normalizeBrowserCwd(cwd);
   const cleaned = rel.trim().replace(/\\/g, "/").replace(/^\.\//, "");
   if (!root || !cleaned) return "";
   if (isAbsoluteLocalPath(cleaned)) return cleaned;
@@ -271,14 +307,26 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   nativeUrls: {},
 
   async ensureFor(convId, cwd) {
+    const normalizedCwd = normalizeBrowserCwd(cwd);
     const prev = get().byConv[convId];
-    if (prev && prev.cwd === (cwd ?? "") && prev.ready) return;
+    if (prev && isSameBrowserCwd(prev.cwd, normalizedCwd) && prev.ready) return;
     set((s) => {
       const existing = s.byConv[convId];
-      const manualEntry = existing?.cwd === (cwd ?? "") ? existing?.manualEntry : undefined;
-      const nonce = existing?.cwd === (cwd ?? "") ? existing?.reloadNonce ?? 0 : 0;
-      const history = existing?.history?.length ? existing.history : (manualEntry ? [manualEntry] : []);
-      const historyIndex = existing?.historyIndex ?? (history.length ? history.length - 1 : -1);
+      const effectiveCwd = normalizedCwd || normalizeBrowserCwd(existing?.cwd);
+      const preserve = shouldPreserveManualEntry(
+        existing?.cwd,
+        normalizedCwd,
+        existing?.manualEntry
+      );
+      const manualEntry = preserve ? existing?.manualEntry : undefined;
+      const nonce = preserve ? existing?.reloadNonce ?? 0 : 0;
+      const history = existing?.history?.length
+        ? existing.history
+        : manualEntry
+          ? [manualEntry]
+          : [];
+      const historyIndex =
+        existing?.historyIndex ?? (history.length ? history.length - 1 : -1);
       return {
         nativeUrls: {
           ...s.nativeUrls,
@@ -287,13 +335,13 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
         byConv: {
           ...s.byConv,
           [convId]: {
-            cwd: cwd ?? "",
+            cwd: effectiveCwd,
             manualEntry,
             history,
             historyIndex,
             ready: true,
             reloadNonce: nonce,
-            url: composeBrowserUrl(cwd ?? "", manualEntry, nonce),
+            url: composeBrowserUrl(effectiveCwd, manualEntry, nonce),
             loadState: manualEntry ? existing?.loadState ?? "loading" : "idle",
             error: existing?.error,
             updatedAt: existing?.updatedAt ?? new Date().toISOString()
@@ -308,7 +356,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
     if (!normalized) return;
     set((s) => {
       const entry = s.byConv[convId];
-      const cwd = entry?.cwd ?? "";
+      const cwd = normalizeBrowserCwd(entry?.cwd);
       const nonce = (entry?.reloadNonce ?? 0) + 1;
       const prevHistory = entry?.history ?? [];
       const prevIndex = entry?.historyIndex ?? -1;
