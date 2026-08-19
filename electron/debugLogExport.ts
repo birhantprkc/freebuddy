@@ -25,6 +25,11 @@ import {
   type ExportMode,
   type PathMask
 } from "./shared/logSanitize.js";
+import {
+  filterJsonlLinesByTimestamp,
+  localDayRange,
+  type TimestampRange
+} from "./shared/debugLogExportCore.js";
 
 const SESSION_TAIL_BYTES = 2 * 1024 * 1024;
 const MAX_SESSION_FILES = 20;
@@ -139,7 +144,11 @@ function filterLines(lines: string[], kind: "own" | "session", mode: ExportMode,
   return lines.filter((l) => l.trim().length > 0).map((l) => filter(l, mode, masks));
 }
 
-function readAppLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name: string; lines: string[] }> {
+function readAppLogFiles(
+  mode: ExportMode,
+  masks: PathMask[],
+  dayRange: TimestampRange
+): Array<{ name: string; lines: string[] }> {
   const out: Array<{ name: string; lines: string[] }> = [];
   let entries: string[] = [];
   try {
@@ -150,7 +159,9 @@ function readAppLogFiles(mode: ExportMode, masks: PathMask[]): Array<{ name: str
   for (const name of entries.filter((n) => /\.(log)(\.\d+)?$/.test(n)).sort()) {
     try {
       const text = fs.readFileSync(path.join(debugLogDir(), name), "utf8");
-      out.push({ name, lines: filterLines(text.split("\n"), "own", mode, masks) });
+      const todayLines = filterJsonlLinesByTimestamp(text.split("\n"), dayRange);
+      const lines = filterLines(todayLines, "own", mode, masks);
+      if (lines.length > 0) out.push({ name, lines });
     } catch {
       /* skip unreadable file */
     }
@@ -255,10 +266,11 @@ function gatherDshAcpRuntime(): Record<string, unknown> {
 
 function collectBundle(mode: ExportMode, exportedAt: string, conversationId?: string) {
   const masks = gatherPathMasks();
+  const dayRange = localDayRange(new Date(exportedAt));
   return {
     environment: gatherEnvironment(mode, exportedAt, conversationId ? "conversation" : "all"),
     dshAcpRuntime: gatherDshAcpRuntime(),
-    appLogs: readAppLogFiles(mode, masks),
+    appLogs: readAppLogFiles(mode, masks, dayRange),
     sessionLogs: readSessionLogFiles(mode, masks, conversationId)
   };
 }
@@ -376,7 +388,7 @@ function readmeText(mode: ExportMode, exportedAt: string, scope: "conversation" 
     `Mode: ${mode}${mode === "standard" ? " (message content and paths redacted)" : " (FULL — contains conversation content)"}`,
     `Scope: ${scope === "conversation" ? "current conversation only (sessions/)" : "all recent sessions"}`,
     "",
-    "logs/       app logs (JSONL: {ts, level, scope, msg, data?})",
+    "logs/       app logs from the export day (JSONL: {ts, level, scope, msg, data?})",
     "sessions/   agent session transcripts (JSONL: {ts, type, content})",
     "environment.json  environment snapshot",
     "dsh-acp-runtime.json  DeepSeek ACP overlay / koffi / cordis snapshot",
