@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createDraftMcpServer } from "../dist-electron/mcp/draftMcpServer.js";
+import { createBrowserMcpServer } from "../dist-electron/mcp/browserMcpServer.js";
 
-test("Draft MCP exposes structured tools and forwards calls to FreeBuddy", async (t) => {
+test("Browser MCP exposes structured tools and forwards calls to FreeBuddy", async (t) => {
   const calls = [];
   const originalFetch = globalThis.fetch;
-  process.env.FREEBUDDY_DRAFT_ENDPOINT =
-    "http://127.0.0.1:17878/freebuddy/draft-tool";
-  process.env.FREEBUDDY_DRAFT_TOKEN = "test-token";
+  process.env.FREEBUDDY_BROWSER_ENDPOINT =
+    "http://127.0.0.1:17878/freebuddy/browser-tool";
+  process.env.FREEBUDDY_BROWSER_TOKEN = "test-token";
   globalThis.fetch = async (input, init) => {
     const parsed = JSON.parse(String(init?.body));
     calls.push({
@@ -24,7 +24,7 @@ test("Draft MCP exposes structured tools and forwards calls to FreeBuddy", async
         ok: true,
         conversationId: "conv-1",
         cwd: "/tmp/project",
-        target: parsed.params?.target,
+        target: parsed.params?.target || parsed.params?.url,
         resolvedUrl: "http://127.0.0.1:5173/",
         loadState: "ready",
         visible: true,
@@ -44,12 +44,12 @@ test("Draft MCP exposes structured tools and forwards calls to FreeBuddy", async
   };
   t.after(() => {
     globalThis.fetch = originalFetch;
-    delete process.env.FREEBUDDY_DRAFT_ENDPOINT;
-    delete process.env.FREEBUDDY_DRAFT_TOKEN;
+    delete process.env.FREEBUDDY_BROWSER_ENDPOINT;
+    delete process.env.FREEBUDDY_BROWSER_TOKEN;
   });
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  const server = createDraftMcpServer();
+  const server = createBrowserMcpServer();
   await server.connect(serverTransport);
   const client = new Client({ name: "freebuddy-test", version: "1.0.0" });
   await client.connect(clientTransport);
@@ -57,15 +57,18 @@ test("Draft MCP exposes structured tools and forwards calls to FreeBuddy", async
   t.after(() => server.close());
 
   const listed = await client.listTools();
-  assert.deepEqual(
-    listed.tools.map((tool) => tool.name).sort(),
-    ["draft_inspect", "draft_report", "draft_show"]
-  );
+  const toolNames = listed.tools.map((tool) => tool.name).sort();
+  assert.ok(toolNames.includes("browser_navigate"));
+  assert.ok(toolNames.includes("browser_inspect"));
+  assert.ok(toolNames.includes("browser_screenshot"));
+  assert.ok(toolNames.includes("browser_click"));
+  assert.ok(toolNames.includes("browser_fill"));
+  assert.ok(toolNames.includes("browser_report"));
 
   const result = await client.callTool({
-    name: "draft_show",
+    name: "browser_navigate",
     arguments: {
-      target: "http://127.0.0.1:5173/",
+      url: "http://127.0.0.1:5173/",
       open: true,
       waitForReady: true
     }
@@ -73,7 +76,7 @@ test("Draft MCP exposes structured tools and forwards calls to FreeBuddy", async
   assert.equal(result.isError, undefined);
   assert.equal(result.structuredContent?.loadState, "ready");
   const inspected = await client.callTool({
-    name: "draft_inspect",
+    name: "browser_inspect",
     arguments: { screenshot: true, console: true }
   });
   assert.equal(inspected.structuredContent?.screenshot?.data, undefined);
@@ -90,20 +93,21 @@ test("Draft MCP exposes structured tools and forwards calls to FreeBuddy", async
   );
   assert.deepEqual(calls, [
     {
-      endpoint: "http://127.0.0.1:17878/freebuddy/draft-tool",
+      endpoint: "http://127.0.0.1:17878/freebuddy/browser-tool",
       authorization: "Bearer test-token",
-      action: "show",
+      action: "navigate",
       params: {
+        url: "http://127.0.0.1:5173/",
         target: "http://127.0.0.1:5173/",
         open: true,
         waitForReady: true
       }
     },
     {
-      endpoint: "http://127.0.0.1:17878/freebuddy/draft-tool",
+      endpoint: "http://127.0.0.1:17878/freebuddy/browser-tool",
       authorization: "Bearer test-token",
       action: "inspect",
-      params: { screenshot: true, console: true }
+      params: { screenshot: true, console: true, includeHtml: false }
     }
   ]);
 });

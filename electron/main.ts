@@ -9,7 +9,7 @@ import { registerCliIpc } from "./cli/ipc.js";
 import { logAllCliRuntimes, startCodexToolchainAutoUpdate } from "./cli/check.js";
 import { safeSendToWebContents } from "./cli/ipcSend.js";
 import { handleFreebuddyFileRequest } from "./freebuddyFileProtocol.js";
-import { handleDraftRequest } from "./draftProtocol.js";
+import { handleBrowserRequest } from "./browserProtocol.js";
 import { startPreviewServer } from "./previewServer.js";
 import { startWebUIServer } from "./webUIServer.js";
 import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
@@ -155,7 +155,7 @@ protocol.registerSchemesAsPrivileged([
     }
   },
   {
-    scheme: "freebuddy-draft",
+    scheme: "freebuddy-browser",
     privileges: {
       standard: true,
       secure: true,
@@ -170,8 +170,8 @@ function registerLocalFileProtocol() {
   protocol.handle("freebuddy-file", handleFreebuddyFileRequest);
 }
 
-function registerDraftProtocol() {
-  protocol.handle("freebuddy-draft", handleDraftRequest);
+function registerBrowserProtocol() {
+  protocol.handle("freebuddy-browser", handleBrowserRequest);
 }
 
 async function injectShellPath() {
@@ -1519,7 +1519,7 @@ app.whenReady().then(async () => {
   });
   await injectShellPath();
   registerLocalFileProtocol();
-  registerDraftProtocol();
+  registerBrowserProtocol();
   startPreviewServer(() =>
     mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null
   );

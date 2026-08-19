@@ -215,7 +215,7 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   assert.match(
     acpRuntime,
     /if \(args\.conversationId && !remoteIsolated\)/,
-    "remote WebUI sessions must not receive desktop-only Draft/Browser MCP servers"
+    "remote WebUI sessions must not receive desktop-only Browser MCP servers"
   );
 
   const acpBranch = runtime.slice(

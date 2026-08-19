@@ -210,11 +210,11 @@ test("workspace feed card header filters unread items by feed source", async () 
   assert.match(styles, /\.feed-source-select/);
 });
 
-test("workspace feed card opens article titles in the draft preview", () => {
-  assert.match(feedCard, /useDraftPreviewStore/);
+test("workspace feed card opens article titles in the browser preview", () => {
+  assert.match(feedCard, /useBrowserStore/);
   assert.match(feedCard, /useDetailLayoutStore/);
   assert.match(feedCard, /function handlePreview/);
-  assert.match(feedCard, /setPreviewTarget\(activeId, item\.link\)/);
+  assert.match(feedCard, /navigate\(activeId, item\.link\)/);
   assert.match(feedCard, /setActiveTab\("preview"\)/);
   assert.match(feedCard, /type="button"[\s\S]*className="feed-item-title"/);
   assert.doesNotMatch(feedCard, /target="_blank"/);

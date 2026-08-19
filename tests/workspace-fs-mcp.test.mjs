@@ -143,12 +143,11 @@ test("workspaceFs dispatch read/write within secondary root", async () => {
   assert.match(String(outside.error || ""), /outside project workspace roots/i);
 });
 
-test("previewServer mounts workspace-fs-tool beside draft and browser", async () => {
+test("previewServer mounts workspace-fs-tool beside browser", async () => {
   const src = await fs.readFile(
     new URL("../electron/previewServer.ts", import.meta.url),
     "utf8"
   );
   assert.match(src, /handleWorkspaceFsToolHttpRequest/);
-  assert.match(src, /handleDraftToolHttpRequest/);
   assert.match(src, /handleBrowserToolHttpRequest/);
 });

@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { waitForActiveBridgePort } from "./agentBridge.js";
-import type { AcpStdioMcpServer } from "./shared/draftToolProtocol.js";
+import type { AcpStdioMcpServer } from "./shared/browserToolProtocol.js";
 import { resolveWithinRoots } from "./shared/workspacePathGuard.js";
 
 const WORKSPACE_FS_TOOL_PATH = "/freebuddy/workspace-fs-tool";

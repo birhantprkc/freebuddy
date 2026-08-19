@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { getDataDir } from "./cli/db.js";
 import type { ConversationContextPayload } from "./shared/handoffTypes.js";
-import type { AcpStdioMcpServer } from "./shared/draftToolProtocol.js";
+import type { AcpStdioMcpServer } from "./shared/browserToolProtocol.js";
 
 const manifests = new Map<string, string>();
 let staleManifestCleanupComplete = false;

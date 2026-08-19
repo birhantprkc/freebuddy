@@ -354,22 +354,21 @@ test("AgentBridgeListener keeps status/error events out of chat history", () => 
   assert.doesNotMatch(src, /appendMessage/);
 });
 
-test("DraftCanvas renders markdown, document, pdf, and image targets without iframe", () => {
-  const src = read("../src/components/Draft/DraftCanvas.tsx");
-  const toolbarSrc = read("../src/components/Draft/DraftToolbar.tsx");
+test("BrowserCanvas renders markdown, document, pdf, and image targets without iframe", () => {
+  const src = read("../src/components/Browser/BrowserCanvas.tsx");
+  const toolbarSrc = read("../src/components/Browser/BrowserToolbar.tsx");
   const css = read("../styles.css");
   assert.match(src, /isMarkdownTarget/);
   assert.match(src, /MarkdownText/);
-  assert.match(src, /readDraftMarkdown/);
+  assert.match(src, /readBrowserMarkdown/);
   assert.match(src, /isDocumentTarget/);
   assert.match(src, /DocumentText/);
-  assert.match(src, /draft-document-wrap/);
+  assert.match(src, /browser-document-wrap/);
   assert.match(src, /isPdfTarget/);
   assert.match(src, /#view=FitH&navpanes=0/);
-  assert.match(src, /draft-pdf/);
-  assert.match(src, /type="application\/pdf"/);
-  assert.match(src, /isImageDraftTarget/);
-  assert.match(src, /draft-image-wrap/);
+  assert.match(src, /browser-frame/);
+  assert.match(src, /isImageBrowserTarget/);
+  assert.match(src, /browser-image-wrap/);
   assert.match(src, /onImageWheel/);
   assert.match(src, /onWheel=\{onImageWheel\}/);
   assert.match(src, /event\.preventDefault\(\)/);
@@ -381,11 +380,10 @@ test("DraftCanvas renders markdown, document, pdf, and image targets without ifr
   assert.match(toolbarSrc, /window\.open\(url, "_blank", "noopener,noreferrer"\)/);
   assert.match(src, /translate\(\$\{pan\.x\}px, \$\{pan\.y\}px\) scale\(\$\{zoom\}\)/);
   assert.doesNotMatch(src, /\bzoom,\n\s*transform: `translate/);
-  assert.match(src, /draft-markdown-wrap/);
-  assert.match(css, /\.draft-image-wrap/);
-  assert.match(css, /\.draft-markdown-wrap/);
-  assert.match(css, /\.draft-document-text/);
-  assert.match(css, /\.draft-pdf/);
+  assert.match(src, /browser-markdown-wrap/);
+  assert.match(css, /\.browser-image-wrap/);
+  assert.match(css, /\.browser-markdown-wrap/);
+  assert.match(css, /\.browser-document-text/);
 });
 
 test("conversationStore routes workflow follow-ups to the workflow summary agent", () => {

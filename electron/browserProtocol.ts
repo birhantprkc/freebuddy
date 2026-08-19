@@ -72,12 +72,12 @@ export function isWithinRoot(target: string, root: string): boolean {
   return target.startsWith(root + path.sep);
 }
 
-export interface DraftRequestParams {
+export interface BrowserRequestParams {
   root: string;
   rel: string;
 }
 
-function parsePathRootUrl(url: URL): DraftRequestParams | null {
+function parsePathRootUrl(url: URL): BrowserRequestParams | null {
   const raw = url.pathname.replace(/^\//, "");
   const parts = raw.split("/");
   if (parts.length < 2 || !parts[0]) return null;
@@ -87,7 +87,7 @@ function parsePathRootUrl(url: URL): DraftRequestParams | null {
   return { root, rel };
 }
 
-export function parseDraftUrl(requestUrl: string): DraftRequestParams {
+export function parseBrowserUrl(requestUrl: string): BrowserRequestParams {
   const url = new URL(requestUrl);
   const rootRaw = url.searchParams.get("root");
   if (rootRaw) {
@@ -103,11 +103,11 @@ export function parseDraftUrl(requestUrl: string): DraftRequestParams {
   throw new Error("Missing root");
 }
 
-export async function handleDraftRequest(
+export async function handleBrowserRequest(
   request: Request
 ): Promise<Response> {
   try {
-    const { root, rel } = parseDraftUrl(request.url);
+    const { root, rel } = parseBrowserUrl(request.url);
     const abs = path.resolve(root, rel);
     if (!isWithinRoot(abs, root)) {
       return new Response("Forbidden", { status: 403 });
@@ -196,7 +196,7 @@ async function discoverHtmlCandidates(cwd: string): Promise<string[]> {
 
 const DOCUMENT_EXTENSIONS = new Set(["md", "txt", "log", "json", "yaml", "yml", "csv"]);
 
-export async function readDraftMarkdown(
+export async function readBrowserMarkdown(
   cwd: string,
   rel: string
 ): Promise<string | null> {
@@ -215,7 +215,7 @@ export async function readDraftMarkdown(
   }
 }
 
-export async function resolveDraftEntry(
+export async function resolveBrowserEntry(
   cwd: string
 ): Promise<string | null> {
   if (!cwd || !path.isAbsolute(cwd)) return null;

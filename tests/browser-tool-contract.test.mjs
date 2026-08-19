@@ -8,21 +8,21 @@ import { Readable } from "node:stream";
 import { ensureAgentGuides } from "../dist-electron/agentGuides.js";
 import { setActiveBridgePort } from "../dist-electron/agentBridge.js";
 import {
-  handleDraftToolHttpRequest,
-  registerDraftToolSession,
-  resolveDraftToolRequest,
-  unregisterDraftToolSession
-} from "../dist-electron/draftToolService.js";
+  handleBrowserToolHttpRequest,
+  registerBrowserToolSession,
+  resolveBrowserToolRequest,
+  unregisterBrowserToolSession
+} from "../dist-electron/browserToolService.js";
 
 function read(relativePath) {
   return fs.readFileSync(new URL(relativePath, import.meta.url), "utf8");
 }
 
-test("native Draft tools do not write agent guide files into the workspace", async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-draft-native-"));
+test("native Browser tools do not write agent guide files into the workspace", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-browser-native-"));
   try {
     assert.deepEqual(
-      await ensureAgentGuides(cwd, { nativeDraftTools: true }),
+      await ensureAgentGuides(cwd, { nativeBrowserTools: true }),
       []
     );
     assert.deepEqual(fs.readdirSync(cwd), []);
@@ -31,29 +31,28 @@ test("native Draft tools do not write agent guide files into the workspace", asy
   }
 });
 
-test("Draft tool contract stays bound across ACP, preload, and renderer", () => {
+test("Browser tool contract stays bound across ACP, preload, and renderer", () => {
   const runtime = read("../electron/cli/acpRuntime.ts");
   const preload = read("../electron/preload.ts");
   const listener = read(
     "../src/components/AgentBridge/AgentBridgeListener.tsx"
   );
-  const store = read("../src/store/draftPreviewStore.ts");
+  const store = read("../src/store/browserStore.ts");
 
-  assert.match(runtime, /registerDraftToolSession/);
+  assert.match(runtime, /registerBrowserToolSession/);
   assert.match(runtime, /conversationId: args\.conversationId/);
   assert.match(runtime, /if \(args\.conversationId && !remoteIsolated\) \{/);
   assert.doesNotMatch(runtime, /args\.conversationId && args\.cwd/);
   assert.match(runtime, /cwd: args\.cwd \?\? ""/);
   assert.match(runtime, /mcp servers=/);
-  assert.match(preload, /freebuddy:\/\/draft-tool/);
-  assert.match(preload, /draft-tool:resolve/);
+  assert.match(preload, /freebuddy:\/\/browser-tool/);
+  assert.match(preload, /browser-tool:resolve/);
   assert.match(listener, /event\.conversationId|conversationId/);
-  assert.match(listener, /waitForDraft/);
-  assert.match(store, /loadState: DraftLoadState/);
+  assert.match(store, /loadState: BrowserLoadState/);
   assert.match(store, /setLoadState/);
 });
 
-test("Draft MCP remains available without a selected workspace", async () => {
+test("Browser MCP remains available without a selected workspace", async () => {
   setActiveBridgePort(17880);
   const sent = [];
   let webContents;
@@ -67,14 +66,14 @@ test("Draft MCP remains available without a selected workspace", async () => {
       send(channel, payload) {
         sent.push({ channel, payload });
         setImmediate(() => {
-          resolveDraftToolRequest(webContents, {
+          resolveBrowserToolRequest(webContents, {
             requestId: payload.requestId,
             result: {
               ok: true,
               conversationId: payload.conversationId,
               cwd: payload.cwd,
-              target: payload.params.target,
-              resolvedUrl: payload.params.target,
+              target: payload.params.target || payload.params.url,
+              resolvedUrl: payload.params.target || payload.params.url,
               loadState: "ready",
               visible: true
             }
@@ -84,14 +83,14 @@ test("Draft MCP remains available without a selected workspace", async () => {
     }
   };
 
-  const config = await registerDraftToolSession({
+  const config = await registerBrowserToolSession({
     taskSessionId: "task-no-workspace",
     conversationId: "conv-no-workspace",
     cwd: "",
     webContents
   });
   const token = config.env.find(
-    (entry) => entry.name === "FREEBUDDY_DRAFT_TOKEN"
+    (entry) => entry.name === "FREEBUDDY_BROWSER_TOKEN"
   )?.value;
   assert.ok(token);
 
@@ -99,12 +98,12 @@ test("Draft MCP remains available without a selected workspace", async () => {
   let responseBody = "";
   const request = Readable.from([
     JSON.stringify({
-      action: "show",
-      params: { target: "https://example.com/preview" }
+      action: "navigate",
+      params: { url: "https://example.com/preview" }
     })
   ]);
   Object.assign(request, {
-    url: "/freebuddy/draft-tool",
+    url: "/freebuddy/browser-tool",
     method: "POST",
     headers: { authorization: `Bearer ${token}` }
   });
@@ -118,20 +117,20 @@ test("Draft MCP remains available without a selected workspace", async () => {
   };
 
   try {
-    assert.equal(await handleDraftToolHttpRequest(request, response), true);
+    assert.equal(await handleBrowserToolHttpRequest(request, response), true);
     assert.equal(statusCode, 200);
     assert.equal(
       JSON.parse(responseBody).resolvedUrl,
       "https://example.com/preview"
     );
     assert.equal(sent[0].payload.cwd, "");
-    assert.equal(sent[0].payload.action, "show");
+    assert.equal(sent[0].payload.action, "navigate");
   } finally {
-    unregisterDraftToolSession("task-no-workspace");
+    unregisterBrowserToolSession("task-no-workspace");
   }
 });
 
-test("Draft tool resolve accepts remote callers without a matching WebContents sender", async () => {
+test("Browser tool resolve accepts remote callers without a matching WebContents sender", async () => {
   setActiveBridgePort(17878);
   let webContents;
   webContents = {
@@ -143,9 +142,8 @@ test("Draft tool resolve accepts remote callers without a matching WebContents s
       isDestroyed: () => false,
       send(channel, payload) {
         setImmediate(() => {
-          // WebUI localInvoke may pass an undefined sender when no desktop window exists.
           assert.equal(
-            resolveDraftToolRequest(undefined, {
+            resolveBrowserToolRequest(undefined, {
               requestId: payload.requestId,
               result: {
                 ok: true,
@@ -162,22 +160,22 @@ test("Draft tool resolve accepts remote callers without a matching WebContents s
     }
   };
 
-  const config = await registerDraftToolSession({
+  const config = await registerBrowserToolSession({
     taskSessionId: "task-remote-resolve",
     conversationId: "conv-remote-resolve",
     cwd: "/tmp/project",
     webContents
   });
   const token = config.env.find(
-    (entry) => entry.name === "FREEBUDDY_DRAFT_TOKEN"
+    (entry) => entry.name === "FREEBUDDY_BROWSER_TOKEN"
   )?.value;
 
   let statusCode = 0;
   const request = Readable.from([
-    JSON.stringify({ action: "show", params: { target: "/tmp/photo.png" } })
+    JSON.stringify({ action: "navigate", params: { url: "/tmp/photo.png" } })
   ]);
   Object.assign(request, {
-    url: "/freebuddy/draft-tool",
+    url: "/freebuddy/browser-tool",
     method: "POST",
     headers: { authorization: `Bearer ${token}` }
   });
@@ -189,14 +187,14 @@ test("Draft tool resolve accepts remote callers without a matching WebContents s
   };
 
   try {
-    assert.equal(await handleDraftToolHttpRequest(request, response), true);
+    assert.equal(await handleBrowserToolHttpRequest(request, response), true);
     assert.equal(statusCode, 200);
   } finally {
-    unregisterDraftToolSession("task-remote-resolve");
+    unregisterBrowserToolSession("task-remote-resolve");
   }
 });
 
-test("Draft tool capability token routes a request to its bound conversation", async () => {
+test("Browser tool capability token routes a request to its bound conversation", async () => {
   setActiveBridgePort(17879);
   const sent = [];
   let consoleListener;
@@ -211,14 +209,14 @@ test("Draft tool capability token routes a request to its bound conversation", a
     once: () => webContents,
     capturePage: async () => ({
       getSize: () => ({ width: 120, height: 90 }),
-      toPNG: () => Buffer.from("draft-png")
+      toPNG: () => Buffer.from("browser-png")
     }),
     mainFrame: {
       isDestroyed: () => false,
       send(channel, payload) {
         sent.push({ channel, payload });
         setImmediate(() => {
-          resolveDraftToolRequest(webContents, {
+          resolveBrowserToolRequest(webContents, {
             requestId: payload.requestId,
             result: {
               ok: true,
@@ -234,17 +232,17 @@ test("Draft tool capability token routes a request to its bound conversation", a
     }
   };
 
-  const config = await registerDraftToolSession({
+  const config = await registerBrowserToolSession({
     taskSessionId: "task-1",
     conversationId: "conv-1",
     cwd: "/tmp/project",
     webContents
   });
   const token = config.env.find(
-    (entry) => entry.name === "FREEBUDDY_DRAFT_TOKEN"
+    (entry) => entry.name === "FREEBUDDY_BROWSER_TOKEN"
   )?.value;
   assert.ok(token);
-  assert.equal(config.name, "freebuddy-draft");
+  assert.equal(config.name, "freebuddy-browser");
   assert.equal(path.isAbsolute(config.command), true);
   assert.equal(path.isAbsolute(config.args[0]), true);
   consoleListener?.({
@@ -264,7 +262,7 @@ test("Draft tool capability token routes a request to its bound conversation", a
     })
   ]);
   Object.assign(request, {
-    url: "/freebuddy/draft-tool",
+    url: "/freebuddy/browser-tool",
     method: "POST",
     headers: { authorization: `Bearer ${token}` }
   });
@@ -279,21 +277,21 @@ test("Draft tool capability token routes a request to its bound conversation", a
 
   try {
     assert.equal(
-      await handleDraftToolHttpRequest(request, response),
+      await handleBrowserToolHttpRequest(request, response),
       true
     );
     assert.equal(statusCode, 200);
     const parsedResponse = JSON.parse(responseBody);
     assert.equal(parsedResponse.conversationId, "conv-1");
     assert.equal(parsedResponse.screenshot.mimeType, "image/png");
-    assert.equal(parsedResponse.screenshot.data, Buffer.from("draft-png").toString("base64"));
+    assert.equal(parsedResponse.screenshot.data, Buffer.from("browser-png").toString("base64"));
     assert.equal(parsedResponse.diagnostics.console.length, 1);
     assert.equal(parsedResponse.diagnostics.console[0].level, "error");
     assert.match(parsedResponse.diagnostics.console[0].message, /demo is not defined/);
     assert.equal(parsedResponse.captureRect, undefined);
-    assert.equal(sent[0].channel, "freebuddy://draft-tool");
+    assert.equal(sent[0].channel, "freebuddy://browser-tool");
     assert.equal(sent[0].payload.conversationId, "conv-1");
   } finally {
-    unregisterDraftToolSession("task-1");
+    unregisterBrowserToolSession("task-1");
   }
 });

@@ -45,7 +45,7 @@ test("transfer seed and context prefix localize with language preference", async
       title: "Draft",
       messageCount: 2
     },
-    originalGoal: "Fix draft preview",
+    originalGoal: "Fix browser preview",
     recentUserMessages: [],
     lastAssistantSummary: "Done some work",
     fileChanges: [],

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { WebContents } from "electron";
 
 import { waitForActiveBridgePort } from "./agentBridge.js";
-import type { AcpStdioMcpServer } from "./shared/draftToolProtocol.js";
+import type { AcpStdioMcpServer } from "./shared/browserToolProtocol.js";
 import { sendJson, readJsonBody } from "./httpUtils.js";
 import {
   dispatchDelegateAction,

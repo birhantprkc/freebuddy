@@ -2,9 +2,12 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "ele
 
 import { collectPreparedAttachmentsUntilLimit, managedPathsToDiscardAfterPrepare } from "./shared/collectPreparedAttachmentsUntilLimit.js";
 import type {
+  BrowserToolAction,
+  BrowserToolEvent,
+  BrowserToolResolution,
   DraftToolEvent,
   DraftToolResolution
-} from "./shared/draftToolProtocol.js";
+} from "./shared/browserToolProtocol.js";
 
 type CliInstallEvent =
   | { type: "stdout" | "stderr"; content: string }
@@ -270,14 +273,40 @@ const cli = {
   discardManagedAttachments: (paths: string[]) =>
     ipcRenderer.send("cli:discardManagedAttachments", paths),
 
-  resolveDraftEntry: (cwd: string) =>
-    ipcRenderer.invoke("cli:resolveDraftEntry", cwd),
-  readDraftMarkdown: (cwd: string, rel: string) =>
-    ipcRenderer.invoke("cli:readDraftMarkdown", { cwd, rel }),
-  openDraftExternal: (url: string) =>
-    ipcRenderer.invoke("cli:openDraftExternal", url),
+  resolveBrowserEntry: (cwd: string) =>
+    ipcRenderer.invoke("cli:resolveBrowserEntry", cwd),
+  readBrowserMarkdown: (cwd: string, rel: string) =>
+    ipcRenderer.invoke("cli:readBrowserMarkdown", { cwd, rel }),
+  openBrowserExternal: (url: string) =>
+    ipcRenderer.invoke("cli:openBrowserExternal", url),
+  showNativeBrowser: (args: {
+    url: string;
+    bounds: { x: number; y: number; width: number; height: number };
+  }) => ipcRenderer.invoke("cli:showNativeBrowser", args),
+  setNativeBrowserBounds: (bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => ipcRenderer.invoke("cli:setNativeBrowserBounds", bounds),
+  hideNativeBrowser: () => ipcRenderer.invoke("cli:hideNativeBrowser"),
+  navigateNativeBrowser: (url: string) =>
+    ipcRenderer.invoke("cli:navigateNativeBrowser", url),
+  goBackNativeBrowser: () => ipcRenderer.invoke("cli:goBackNativeBrowser"),
+  goForwardNativeBrowser: () => ipcRenderer.invoke("cli:goForwardNativeBrowser"),
+  reloadNativeBrowser: () => ipcRenderer.invoke("cli:reloadNativeBrowser"),
+  runNativeBrowserTool: (args: {
+    action: BrowserToolAction;
+    params: Record<string, unknown>;
+  }) => ipcRenderer.invoke("cli:runNativeBrowserTool", args),
+  getNativeBrowserState: () => ipcRenderer.invoke("cli:getNativeBrowserState"),
+  onNativeBrowserState(cb: (state: unknown) => void): () => void {
+    const handler = (_e: IpcRendererEvent, state: unknown) => cb(state);
+    ipcRenderer.on("freebuddy://native-browser-state", handler);
+    return () => ipcRenderer.off("freebuddy://native-browser-state", handler);
+  },
 
-  ensureAgentGuides: (cwd: string, options?: { nativeDraftTools?: boolean }) =>
+  ensureAgentGuides: (cwd: string, options?: { nativeBrowserTools?: boolean }) =>
     ipcRenderer.invoke("cli:ensureAgentGuides", { cwd, options }),
 
   onEvent(sessionId: string, cb: (event: unknown) => void): () => void {
@@ -301,16 +330,18 @@ const window = {
       _e: IpcRendererEvent,
       payload: { action: string; params: Record<string, string> }
     ) => cb(payload);
-    ipcRenderer.on("freebuddy://bridge", handler);
-    return () => ipcRenderer.off("freebuddy://bridge", handler);
+    ipcRenderer.on("window:bridge", handler);
+    return () => ipcRenderer.off("window:bridge", handler);
   },
-  onDraftTool(cb: (event: DraftToolEvent) => void): () => void {
-    const handler = (_e: IpcRendererEvent, payload: DraftToolEvent) => cb(payload);
-    ipcRenderer.on("freebuddy://draft-tool", handler);
-    return () => ipcRenderer.off("freebuddy://draft-tool", handler);
+  onBrowserTool(cb: (event: BrowserToolEvent) => void): () => void {
+    const handler = (_e: IpcRendererEvent, payload: BrowserToolEvent) => cb(payload);
+    ipcRenderer.on("freebuddy://browser-tool", handler);
+    return () => {
+      ipcRenderer.off("freebuddy://browser-tool", handler);
+    };
   },
-  resolveDraftTool(resolution: DraftToolResolution): Promise<boolean> {
-    return ipcRenderer.invoke("draft-tool:resolve", resolution);
+  resolveBrowserTool(resolution: BrowserToolResolution): Promise<boolean> {
+    return ipcRenderer.invoke("browser-tool:resolve", resolution);
   },
   onOpenConversation(cb: (conversationId: string) => void): () => void {
     const handler = (_e: IpcRendererEvent, conversationId: string) => cb(conversationId);

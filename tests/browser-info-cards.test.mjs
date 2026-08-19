@@ -122,11 +122,16 @@ test("Browser MCP exposes bounded general collection tools", async (t) => {
     [
       "browser_click",
       "browser_close",
+      "browser_eval",
       "browser_extract",
+      "browser_fill",
+      "browser_get_dom",
       "browser_inspect",
+      "browser_navigate",
       "browser_open",
-      "browser_scroll",
-      "browser_type"
+      "browser_report",
+      "browser_screenshot",
+      "browser_scroll"
     ]
   );
 
@@ -153,7 +158,7 @@ test("Browser MCP exposes bounded general collection tools", async (t) => {
       maxItems: 6
     }
   });
-  assert.deepEqual(calls.map((call) => call.action), ["open", "inspect", "extract"]);
+  assert.deepEqual(calls.map((call) => call.action), ["navigate", "inspect", "extract"]);
   assert.equal(calls[0].params.visible, true);
   assert.equal(calls.every((call) => call.authorization === "Bearer browser-test-token"), true);
 });

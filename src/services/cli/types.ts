@@ -203,25 +203,55 @@ export interface SessionConfigProbeInput {
   cwd?: string;
 }
 
-export type DraftToolAction = "show" | "inspect" | "report";
+export type BrowserToolAction =
+  | "navigate"
+  | "inspect"
+  | "screenshot"
+  | "click"
+  | "fill"
+  | "type"
+  | "scroll"
+  | "eval"
+  | "get_dom"
+  | "extract"
+  | "report"
+  | "open"
+  | "close"
+  | "show";
 
-export type DraftLoadState = "idle" | "loading" | "ready" | "error";
+export type BrowserLoadState = "idle" | "loading" | "ready" | "error";
 
-export interface DraftCaptureRect {
+export interface NativeBrowserBounds {
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-export interface DraftScreenshot {
+export interface NativeBrowserState {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isLoading: boolean;
+  visible: boolean;
+}
+
+export interface BrowserCaptureRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BrowserScreenshot {
   mimeType: "image/png";
   data: string;
   width: number;
   height: number;
 }
 
-export interface DraftConsoleEntry {
+export interface BrowserConsoleEntry {
   level: "debug" | "info" | "warning" | "error";
   message: string;
   source?: string;
@@ -229,35 +259,38 @@ export interface DraftConsoleEntry {
   timestamp: string;
 }
 
-export interface DraftToolEvent {
+export interface BrowserToolEvent {
   requestId: string;
   conversationId: string;
   cwd: string;
-  action: DraftToolAction;
+  action: BrowserToolAction;
   params: Record<string, unknown>;
 }
 
-export interface DraftToolResult {
+export interface BrowserToolResult {
   ok: boolean;
   conversationId: string;
   cwd: string;
   target?: string;
   resolvedUrl?: string;
-  loadState?: DraftLoadState;
+  loadState?: BrowserLoadState;
   visible?: boolean;
   message?: string;
   error?: string;
   updatedAt?: string;
-  diagnostics?: { console: DraftConsoleEntry[] };
-  screenshot?: DraftScreenshot;
+  diagnostics?: { console: BrowserConsoleEntry[] };
+  screenshot?: BrowserScreenshot;
   screenshotError?: string;
   /** Renderer-only capture hint, stripped before the result reaches the agent. */
-  captureRect?: DraftCaptureRect;
+  captureRect?: BrowserCaptureRect;
+  dom?: string;
+  result?: unknown;
+  rows?: unknown[];
 }
 
-export interface DraftToolResolution {
+export interface BrowserToolResolution {
   requestId: string;
-  result: DraftToolResult;
+  result: BrowserToolResult;
 }
 
 export interface CliPermissionOption {

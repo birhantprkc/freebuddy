@@ -131,7 +131,7 @@ test("webUIServer exposes an authed, sandboxed /api/listDirs endpoint", () => {
   );
 });
 
-test("webUIServer serves workspace files via /api/attachment and /api/draft-render", () => {
+test("webUIServer serves workspace files via /api/attachment and /api/browser-render", () => {
   const server = fs.readFileSync(
     new URL("../electron/webUIServer.ts", import.meta.url),
     "utf8"
@@ -141,7 +141,7 @@ test("webUIServer serves workspace files via /api/attachment and /api/draft-rend
 
   assert.match(attachmentBlock, /canServeAttachmentPath/);
   assert.match(attachmentBlock, /remoteRootsForUser/);
-  assert.match(server, /\/api\/draft-render/);
-  assert.match(server, /handleDraftRender/);
-  assert.match(server, /handleDraftRequest/);
+  assert.match(server, /\/api\/browser-render/);
+  assert.match(server, /handleBrowserRender/);
+  assert.match(server, /handleBrowserRequest/);
 });

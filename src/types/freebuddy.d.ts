@@ -35,8 +35,12 @@ import type {
   UpdateMessageInput,
   Project,
   ProjectInput,
-  DraftToolEvent,
-  DraftToolResolution,
+  BrowserToolEvent,
+  BrowserToolAction,
+  BrowserToolResult,
+  BrowserToolResolution,
+  NativeBrowserBounds,
+  NativeBrowserState,
   PreviewHandoffBriefInput,
   PreviewHandoffBriefResult,
   TransferConversationInput,
@@ -269,12 +273,25 @@ declare global {
     discardManagedAttachment(filePath: string): Promise<boolean>;
     discardManagedAttachmentIfUnreferenced(filePath: string): Promise<boolean>;
     discardManagedAttachments(paths: string[]): void;
-    resolveDraftEntry(cwd: string): Promise<string | null>;
-    readDraftMarkdown(cwd: string, rel: string): Promise<string | null>;
-    openDraftExternal(url: string): Promise<boolean>;
+    resolveBrowserEntry(cwd: string): Promise<string | null>;
+    readBrowserMarkdown(cwd: string, rel: string): Promise<string | null>;
+    openBrowserExternal(url: string): Promise<boolean>;
+    showNativeBrowser(args: { url: string; bounds: NativeBrowserBounds }): Promise<NativeBrowserState>;
+    setNativeBrowserBounds(bounds: NativeBrowserBounds): Promise<NativeBrowserState>;
+    hideNativeBrowser(): Promise<NativeBrowserState>;
+    navigateNativeBrowser(url: string): Promise<NativeBrowserState>;
+    goBackNativeBrowser(): Promise<NativeBrowserState>;
+    goForwardNativeBrowser(): Promise<NativeBrowserState>;
+    reloadNativeBrowser(): Promise<NativeBrowserState>;
+    runNativeBrowserTool(args: {
+      action: BrowserToolAction;
+      params: Record<string, unknown>;
+    }): Promise<Partial<BrowserToolResult>>;
+    getNativeBrowserState(): Promise<NativeBrowserState>;
+    onNativeBrowserState(cb: (state: NativeBrowserState) => void): () => void;
     ensureAgentGuides(
       cwd: string,
-      options?: { nativeDraftTools?: boolean }
+      options?: { nativeBrowserTools?: boolean }
     ): Promise<{ path: string; action: "created" | "updated" }[]>;
 
     onEvent(sessionId: string, cb: (event: CliEvent) => void): () => void;
@@ -285,8 +302,8 @@ declare global {
     onBridge(
       cb: (event: { action: string; params: Record<string, string> }) => void
     ): () => void;
-    onDraftTool(cb: (event: DraftToolEvent) => void): () => void;
-    resolveDraftTool(resolution: DraftToolResolution): Promise<boolean>;
+    onBrowserTool(cb: (event: BrowserToolEvent) => void): () => void;
+    resolveBrowserTool(resolution: BrowserToolResolution): Promise<boolean>;
     onOpenConversation(cb: (conversationId: string) => void): () => void;
     onNewConversation(cb: () => void): () => void;
     onOpenTaskReceipt(cb: () => void): () => void;

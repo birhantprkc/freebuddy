@@ -1,13 +1,26 @@
 import { useEffect } from "react";
 
 import type {
-  DraftToolEvent,
-  DraftToolResult
+  BrowserToolEvent,
+  BrowserToolResult
 } from "@/services/cli/types";
+import { cliClient } from "@/services/cli/client";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
 import { useConversationStore } from "@/store/conversationStore";
 import { useDetailLayoutStore } from "@/store/detailLayoutStore";
-import { useDraftPreviewStore } from "@/store/draftPreviewStore";
+import { remoteBrowserOrigin, useBrowserStore } from "@/store/browserStore";
+
+const NATIVE_BROWSER_TOOL_ACTIONS = new Set<BrowserToolEvent["action"]>([
+  "inspect",
+  "screenshot",
+  "click",
+  "fill",
+  "type",
+  "scroll",
+  "eval",
+  "get_dom",
+  "extract"
+]);
 
 /**
  * Listens for agent -> FreeBuddy bridge events (local HTTP / OS scheme) and
@@ -18,7 +31,7 @@ export function AgentBridgeListener() {
 
   useEffect(() => {
     const captureRect = () => {
-      const element = document.querySelector<HTMLElement>(".draft-frame-wrap");
+      const element = document.querySelector<HTMLElement>(".browser-frame-wrap, .draft-frame-wrap");
       if (!element) return undefined;
       const rect = element.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) return undefined;
@@ -30,12 +43,13 @@ export function AgentBridgeListener() {
       };
     };
 
-    const draftResult = (
+    const browserResult = (
       conversationId: string,
       cwd: string,
-      overrides: Partial<DraftToolResult> = {}
-    ): DraftToolResult => {
-      const entry = useDraftPreviewStore.getState().byConv[conversationId];
+      overrides: Partial<BrowserToolResult> = {}
+    ): BrowserToolResult => {
+      const browserState = useBrowserStore.getState();
+      const entry = browserState.byConv[conversationId];
       const activeId = useConversationStore.getState().activeId;
       const visible =
         activeId === conversationId &&
@@ -45,7 +59,7 @@ export function AgentBridgeListener() {
         conversationId,
         cwd,
         target: entry?.manualEntry,
-        resolvedUrl: entry?.url,
+        resolvedUrl: browserState.nativeUrls[conversationId] || entry?.url,
         loadState: entry?.loadState ?? "idle",
         visible,
         error: entry?.error,
@@ -54,11 +68,11 @@ export function AgentBridgeListener() {
       };
     };
 
-    const waitForDraft = async (
+    const waitForBrowser = async (
       conversationId: string,
       timeoutMs = 8_000
     ): Promise<void> => {
-      const current = useDraftPreviewStore.getState().byConv[conversationId];
+      const current = useBrowserStore.getState().byConv[conversationId];
       if (current?.loadState === "ready" || current?.loadState === "error") return;
       await new Promise<void>((resolve) => {
         let settled = false;
@@ -69,7 +83,7 @@ export function AgentBridgeListener() {
           unsubscribe();
           resolve();
         };
-        const unsubscribe = useDraftPreviewStore.subscribe((state) => {
+        const unsubscribe = useBrowserStore.subscribe((state) => {
           const entry = state.byConv[conversationId];
           if (entry?.loadState === "ready" || entry?.loadState === "error") {
             finish();
@@ -79,73 +93,99 @@ export function AgentBridgeListener() {
       });
     };
 
-    const handleDraftTool = async (event: DraftToolEvent) => {
+    const handleBrowserTool = async (event: BrowserToolEvent) => {
       const { requestId, conversationId, cwd, action, params } = event;
-      let result: DraftToolResult;
+      let result: BrowserToolResult;
       try {
-        await useDraftPreviewStore.getState().ensureFor(conversationId, cwd);
-        if (action === "show") {
-          const target = typeof params.target === "string" ? params.target.trim() : "";
+        await useBrowserStore.getState().ensureFor(conversationId, cwd);
+        const requestedTarget =
+          typeof params.url === "string"
+            ? params.url.trim()
+            : typeof params.target === "string"
+              ? params.target.trim()
+              : "";
+        const browserState = useBrowserStore.getState();
+        const currentTarget =
+          browserState.nativeUrls[conversationId] ||
+          browserState.byConv[conversationId]?.manualEntry;
+        const usesNativeBrowser = Boolean(
+          cliClient.supportsNativeBrowser() && remoteBrowserOrigin(currentTarget)
+        );
+
+        if (action === "navigate" || action === "show" || action === "open") {
+          const target = requestedTarget;
           if (target) {
-            useDraftPreviewStore.getState().setPreviewTarget(conversationId, target);
+            useBrowserStore.getState().navigate(conversationId, target);
           }
           const isActive = useConversationStore.getState().activeId === conversationId;
           const shouldOpen = params.open !== false;
           if (isActive && shouldOpen) {
             useDetailLayoutStore.getState().setActiveTab("preview");
           }
-          const entry = useDraftPreviewStore.getState().byConv[conversationId];
+          const entry = useBrowserStore.getState().byConv[conversationId];
           if (!entry?.url) {
-            result = draftResult(conversationId, cwd, {
+            result = browserResult(conversationId, cwd, {
               ok: false,
               error:
-                "Draft has no resolvable preview target. Select a working directory for workspace-relative files, or pass an absolute local path or URL to draft_show."
+                "Browser has no resolvable target. Provide a valid URL, localhost dev server, or workspace file path."
             });
           } else if (params.waitForReady !== false && isActive) {
-            await waitForDraft(conversationId);
-            result = draftResult(conversationId, cwd, {
-              message: "Draft preview updated."
+            await waitForBrowser(conversationId);
+            result = browserResult(conversationId, cwd, {
+              message: "Browser navigated successfully."
             });
           } else {
-            result = draftResult(conversationId, cwd, {
+            result = browserResult(conversationId, cwd, {
               message:
                 isActive || !shouldOpen
-                  ? "Draft preview updated."
-                  : "Draft target updated for a background conversation; it will be visible when that conversation is opened."
+                  ? "Browser navigated successfully."
+                  : "Browser target updated for a background conversation; it will be visible when that conversation is opened."
             });
           }
-        } else if (action === "inspect") {
-          result = draftResult(conversationId, cwd, {
-            captureRect: params.screenshot === true ? captureRect() : undefined
+        } else if (usesNativeBrowser && NATIVE_BROWSER_TOOL_ACTIONS.has(action)) {
+          const nativeResult = await cliClient.runNativeBrowserTool(action, params);
+          result = browserResult(conversationId, cwd, {
+            ...nativeResult,
+            ok: true
           });
-        } else {
+        } else if (action === "inspect" || action === "screenshot") {
+          result = browserResult(conversationId, cwd, {
+            captureRect: params.screenshot === true || action === "screenshot" ? captureRect() : undefined
+          });
+        } else if (action === "report") {
           const message =
             typeof params.message === "string" ? params.message.trim() : "";
           if (message) notify(message);
-          result = draftResult(conversationId, cwd, {
+          result = browserResult(conversationId, cwd, {
             ok: Boolean(message),
             message: message || undefined,
-            error: message ? undefined : "Draft report requires a message."
+            error: message ? undefined : "Browser report requires a message."
+          });
+        } else {
+          result = browserResult(conversationId, cwd, {
+            ok: true
           });
         }
       } catch (error) {
-        result = draftResult(conversationId, cwd, {
+        result = browserResult(conversationId, cwd, {
           ok: false,
           error: (error as Error)?.message || String(error)
         });
       }
-      await window.freebuddy?.window?.resolveDraftTool?.({ requestId, result });
+      if (window.freebuddy?.window?.resolveBrowserTool) {
+        await window.freebuddy.window.resolveBrowserTool({ requestId, result });
+      }
     };
 
     const setTarget = (to: string | undefined, openPreview: boolean) => {
       const convId = useConversationStore.getState().activeId;
       if (to && convId) {
-        useDraftPreviewStore.getState().setPreviewTarget(convId, to);
+        useBrowserStore.getState().navigate(convId, to);
         if (openPreview) useDetailLayoutStore.getState().setActiveTab("preview");
       }
     };
 
-    const off = window.freebuddy?.window?.onBridge?.((event) => {
+    const offBridge = window.freebuddy?.window?.onBridge?.((event) => {
       const { action, params } = event;
       if (action === "preview") {
         useDetailLayoutStore.getState().setActiveTab("preview");
@@ -175,12 +215,14 @@ export function AgentBridgeListener() {
         return;
       }
     });
-    const offDraftTool = window.freebuddy?.window?.onDraftTool?.((event) => {
-      void handleDraftTool(event);
+
+    const offBrowserTool = window.freebuddy?.window?.onBrowserTool?.((event) => {
+      void handleBrowserTool(event);
     });
+
     return () => {
-      off?.();
-      offDraftTool?.();
+      offBridge?.();
+      offBrowserTool?.();
     };
   }, [notify]);
 

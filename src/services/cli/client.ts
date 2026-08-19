@@ -41,7 +41,11 @@ import type {
   CreateConversationShareResult,
   AttachConversationSharesInput,
   AttachConversationSharesResult,
-  ConversationContextReference
+  ConversationContextReference,
+  BrowserToolAction,
+  BrowserToolResult,
+  NativeBrowserBounds,
+  NativeBrowserState
 } from "./types";
 import type { CLIAdapterDefinition, CLIAdapterId } from "@/config/cliAdapters";
 import { addPluginHostCompatibility } from "@/utils/pluginMentions";
@@ -57,6 +61,12 @@ function api() {
 export const cliClient = {
   isAvailable(): boolean {
     return Boolean(window.freebuddy?.cli);
+  },
+  supportsNativeBrowser(): boolean {
+    return (
+      window.freebuddy?.platform !== "web" &&
+      typeof window.freebuddy?.cli?.showNativeBrowser === "function"
+    );
   },
 
   listAdapters(): Promise<CLIAdapterDefinition[]> {
@@ -337,18 +347,51 @@ export const cliClient = {
   discardManagedAttachments(paths: string[]): void {
     api().discardManagedAttachments(paths);
   },
-  resolveDraftEntry(cwd: string): Promise<string | null> {
-    return api().resolveDraftEntry(cwd);
+  resolveBrowserEntry(cwd: string): Promise<string | null> {
+    return api().resolveBrowserEntry(cwd);
   },
-  readDraftMarkdown(cwd: string, rel: string): Promise<string | null> {
-    return api().readDraftMarkdown(cwd, rel);
+  readBrowserMarkdown(cwd: string, rel: string): Promise<string | null> {
+    return api().readBrowserMarkdown(cwd, rel);
   },
-  openDraftExternal(url: string): Promise<boolean> {
-    return api().openDraftExternal(url);
+  openBrowserExternal(url: string): Promise<boolean> {
+    return api().openBrowserExternal(url);
+  },
+  showNativeBrowser(url: string, bounds: NativeBrowserBounds): Promise<NativeBrowserState> {
+    return api().showNativeBrowser({ url, bounds });
+  },
+  setNativeBrowserBounds(bounds: NativeBrowserBounds): Promise<NativeBrowserState> {
+    return api().setNativeBrowserBounds(bounds);
+  },
+  hideNativeBrowser(): Promise<NativeBrowserState> {
+    return api().hideNativeBrowser();
+  },
+  navigateNativeBrowser(url: string): Promise<NativeBrowserState> {
+    return api().navigateNativeBrowser(url);
+  },
+  goBackNativeBrowser(): Promise<NativeBrowserState> {
+    return api().goBackNativeBrowser();
+  },
+  goForwardNativeBrowser(): Promise<NativeBrowserState> {
+    return api().goForwardNativeBrowser();
+  },
+  reloadNativeBrowser(): Promise<NativeBrowserState> {
+    return api().reloadNativeBrowser();
+  },
+  runNativeBrowserTool(
+    action: BrowserToolAction,
+    params: Record<string, unknown>
+  ): Promise<Partial<BrowserToolResult>> {
+    return api().runNativeBrowserTool({ action, params });
+  },
+  getNativeBrowserState(): Promise<NativeBrowserState> {
+    return api().getNativeBrowserState();
+  },
+  onNativeBrowserState(cb: (state: NativeBrowserState) => void): () => void {
+    return api().onNativeBrowserState(cb);
   },
   ensureAgentGuides(
     cwd: string,
-    options?: { nativeDraftTools?: boolean }
+    options?: { nativeBrowserTools?: boolean }
   ): Promise<{ path: string; action: "created" | "updated" }[]> {
     return api().ensureAgentGuides(cwd, options);
   },
