@@ -58,6 +58,13 @@ test("export bundle filters by mode and includes sessions", () => {
   assert.match(exporter, /dialog\.showSaveDialog/);
 });
 
+test("app logs are limited to the local export day without changing session scope", () => {
+  assert.match(exporter, /localDayRange\(new Date\(exportedAt\)\)/);
+  assert.match(exporter, /filterJsonlLinesByTimestamp\(text\.split\("\\n"\), dayRange\)/);
+  assert.match(exporter, /if \(lines\.length > 0\) out\.push/);
+  assert.match(exporter, /readSessionLogFiles\(mode, masks, conversationId\)/);
+});
+
 test("conversation-scoped export filters sessions by conversation_messages.task_id", () => {
   assert.match(exporter, /function sessionIdsForConversation/);
   assert.match(

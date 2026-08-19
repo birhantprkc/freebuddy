@@ -1,4 +1,5 @@
 import {
+  app,
   BrowserWindow,
   WebContentsView,
   session,
@@ -7,6 +8,10 @@ import {
 } from "electron";
 
 import { safeSendToWebContents } from "./cli/ipcSend.js";
+import {
+  buildBrowserAcceptLanguages,
+  buildBrowserCompatibleUserAgent
+} from "./shared/browserUserAgent.js";
 import type {
   BrowserConsoleEntry,
   BrowserToolAction,
@@ -123,7 +128,15 @@ async function waitForSelector(selector: string, timeoutMs = 12_000): Promise<vo
 function configureSession(ses: Session): void {
   if (sessionConfigured) return;
   sessionConfigured = true;
-  ses.setUserAgent(ses.getUserAgent().replace(/Electron\/\S+\s*/g, "").trim());
+  const userAgent = buildBrowserCompatibleUserAgent(
+    ses.getUserAgent(),
+    app.getName()
+  );
+  const acceptLanguages = buildBrowserAcceptLanguages(
+    app.getLocale(),
+    app.getPreferredSystemLanguages()
+  );
+  ses.setUserAgent(userAgent, acceptLanguages);
   ses.setPermissionCheckHandler(() => false);
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.on("will-download", (event) => event.preventDefault());

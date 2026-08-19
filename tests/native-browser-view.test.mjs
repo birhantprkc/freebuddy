@@ -18,6 +18,17 @@ test("native browser uses an isolated persistent session with hardened web prefe
   assert.match(source, /will-download[\s\S]*preventDefault/);
 });
 
+test("native browser configures a browser-compatible UA before creating web contents", () => {
+  const source = read("electron/nativeBrowserViewService.ts");
+  const configureIndex = source.indexOf("configureSession(browserSession)");
+  const createIndex = source.indexOf("new WebContentsView");
+
+  assert.match(source, /buildBrowserCompatibleUserAgent/);
+  assert.match(source, /buildBrowserAcceptLanguages/);
+  assert.match(source, /ses\.setUserAgent\(userAgent, acceptLanguages\)/);
+  assert.ok(configureIndex >= 0 && configureIndex < createIndex);
+});
+
 test("native browser accepts HTTPS only", () => {
   const source = read("electron/nativeBrowserViewService.ts");
   assert.match(source, /url\.protocol !== "https:"/);
@@ -83,4 +94,3 @@ test("native browser tool calls return resolvedUrl and update store", () => {
   assert.match(nativeService, /effectiveUrl/);
   assert.match(listener, /useBrowserStore\.getState\(\)\.setNativeBrowserUrl\(conversationId, nativeResult\.resolvedUrl\)/);
 });
-
