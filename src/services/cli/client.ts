@@ -41,7 +41,11 @@ import type {
   CreateConversationShareResult,
   AttachConversationSharesInput,
   AttachConversationSharesResult,
-  ConversationContextReference
+  ConversationContextReference,
+  BrowserToolAction,
+  BrowserToolResult,
+  NativeBrowserBounds,
+  NativeBrowserState
 } from "./types";
 import type { CLIAdapterDefinition, CLIAdapterId } from "@/config/cliAdapters";
 import { addPluginHostCompatibility } from "@/utils/pluginMentions";
@@ -57,6 +61,12 @@ function api() {
 export const cliClient = {
   isAvailable(): boolean {
     return Boolean(window.freebuddy?.cli);
+  },
+  supportsNativeBrowser(): boolean {
+    return (
+      window.freebuddy?.platform !== "web" &&
+      typeof window.freebuddy?.cli?.showNativeBrowser === "function"
+    );
   },
 
   listAdapters(): Promise<CLIAdapterDefinition[]> {
@@ -346,20 +356,38 @@ export const cliClient = {
   openBrowserExternal(url: string): Promise<boolean> {
     return api().openBrowserExternal(url);
   },
-  checkCdpStatus(port?: number): Promise<{ connected: boolean; browser?: string; webSocketDebuggerUrl?: string }> {
-    return api().checkCdpStatus ? api().checkCdpStatus(port) : Promise.resolve({ connected: false });
+  showNativeBrowser(url: string, bounds: NativeBrowserBounds): Promise<NativeBrowserState> {
+    return api().showNativeBrowser({ url, bounds });
   },
-  launchDebugChrome(args?: { port?: number; url?: string }): Promise<{ success: boolean; launched: boolean; browserPath?: string; error?: string }> {
-    return api().launchDebugChrome ? api().launchDebugChrome(args) : Promise.resolve({ success: false, launched: false, error: "NOT_SUPPORTED" });
+  setNativeBrowserBounds(bounds: NativeBrowserBounds): Promise<NativeBrowserState> {
+    return api().setNativeBrowserBounds(bounds);
   },
-  syncCookiesFromCdp(port?: number): Promise<{ success: boolean; count: number; domains: string[]; error?: string }> {
-    return api().syncCookiesFromCdp ? api().syncCookiesFromCdp(port) : Promise.resolve({ success: false, count: 0, domains: [], error: "NOT_SUPPORTED" });
+  hideNativeBrowser(): Promise<NativeBrowserState> {
+    return api().hideNativeBrowser();
   },
-  importCookiesFromJson(jsonString: string): Promise<{ success: boolean; count: number; domains: string[]; error?: string }> {
-    return api().importCookiesFromJson ? api().importCookiesFromJson(jsonString) : Promise.resolve({ success: false, count: 0, domains: [], error: "NOT_SUPPORTED" });
+  navigateNativeBrowser(url: string): Promise<NativeBrowserState> {
+    return api().navigateNativeBrowser(url);
   },
-  importCookiesFromLocalBrowser(targetBrowser?: string): Promise<{ success: boolean; count: number; domains: string[]; browserName?: string; error?: string }> {
-    return api().importCookiesFromLocalBrowser ? api().importCookiesFromLocalBrowser(targetBrowser) : Promise.resolve({ success: false, count: 0, domains: [], error: "NOT_SUPPORTED" });
+  goBackNativeBrowser(): Promise<NativeBrowserState> {
+    return api().goBackNativeBrowser();
+  },
+  goForwardNativeBrowser(): Promise<NativeBrowserState> {
+    return api().goForwardNativeBrowser();
+  },
+  reloadNativeBrowser(): Promise<NativeBrowserState> {
+    return api().reloadNativeBrowser();
+  },
+  runNativeBrowserTool(
+    action: BrowserToolAction,
+    params: Record<string, unknown>
+  ): Promise<Partial<BrowserToolResult>> {
+    return api().runNativeBrowserTool({ action, params });
+  },
+  getNativeBrowserState(): Promise<NativeBrowserState> {
+    return api().getNativeBrowserState();
+  },
+  onNativeBrowserState(cb: (state: NativeBrowserState) => void): () => void {
+    return api().onNativeBrowserState(cb);
   },
   ensureAgentGuides(
     cwd: string,

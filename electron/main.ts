@@ -1,4 +1,4 @@
-import { app, BrowserWindow, crashReporter, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, session, shell } from "electron";
+import { app, BrowserWindow, crashReporter, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, protocol, screen, shell } from "electron";
 import type { WebContents } from "electron";
 import fs from "node:fs";
 import path from "node:path";
@@ -172,45 +172,6 @@ function registerLocalFileProtocol() {
 
 function registerBrowserProtocol() {
   protocol.handle("freebuddy-browser", handleBrowserRequest);
-}
-
-function setupFrameHeaderInterceptors(): void {
-  const ses = session.defaultSession;
-  ses.webRequest.onHeadersReceived((details, callback) => {
-    if (details.resourceType === "subFrame") {
-      const responseHeaders = { ...details.responseHeaders };
-      for (const key of Object.keys(responseHeaders)) {
-        const lower = key.toLowerCase();
-        if (lower === "x-frame-options") {
-          delete responseHeaders[key];
-        }
-        if (lower === "content-security-policy") {
-          const list = responseHeaders[key];
-          if (Array.isArray(list)) {
-            responseHeaders[key] = list.map((policy) =>
-              policy.replace(/frame-ancestors\s+[^;]+(;|$)/gi, "")
-            );
-          }
-        }
-      }
-      callback({ responseHeaders });
-      return;
-    }
-    callback({ responseHeaders: details.responseHeaders });
-  });
-
-  ses.webRequest.onBeforeSendHeaders((details, callback) => {
-    if (details.resourceType === "subFrame") {
-      const requestHeaders = { ...details.requestHeaders };
-      const ua = requestHeaders["User-Agent"] || requestHeaders["user-agent"];
-      if (typeof ua === "string") {
-        requestHeaders["User-Agent"] = ua.replace(/Electron\/\S+\s*/g, "");
-      }
-      callback({ requestHeaders });
-      return;
-    }
-    callback({ requestHeaders: details.requestHeaders });
-  });
 }
 
 async function injectShellPath() {
@@ -1559,7 +1520,6 @@ app.whenReady().then(async () => {
   await injectShellPath();
   registerLocalFileProtocol();
   registerBrowserProtocol();
-  setupFrameHeaderInterceptors();
   startPreviewServer(() =>
     mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null
   );

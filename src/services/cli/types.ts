@@ -221,6 +221,22 @@ export type BrowserToolAction =
 
 export type BrowserLoadState = "idle" | "loading" | "ready" | "error";
 
+export interface NativeBrowserBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface NativeBrowserState {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isLoading: boolean;
+  visible: boolean;
+}
+
 export interface BrowserCaptureRect {
   x: number;
   y: number;

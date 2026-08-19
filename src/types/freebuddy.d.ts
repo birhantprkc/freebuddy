@@ -36,7 +36,11 @@ import type {
   Project,
   ProjectInput,
   BrowserToolEvent,
+  BrowserToolAction,
+  BrowserToolResult,
   BrowserToolResolution,
+  NativeBrowserBounds,
+  NativeBrowserState,
   PreviewHandoffBriefInput,
   PreviewHandoffBriefResult,
   TransferConversationInput,
@@ -272,11 +276,19 @@ declare global {
     resolveBrowserEntry(cwd: string): Promise<string | null>;
     readBrowserMarkdown(cwd: string, rel: string): Promise<string | null>;
     openBrowserExternal(url: string): Promise<boolean>;
-    checkCdpStatus(port?: number): Promise<{ connected: boolean; browser?: string; webSocketDebuggerUrl?: string }>;
-    launchDebugChrome(args?: { port?: number; url?: string }): Promise<{ success: boolean; launched: boolean; browserPath?: string; error?: string }>;
-    syncCookiesFromCdp(port?: number): Promise<{ success: boolean; count: number; domains: string[]; error?: string }>;
-    importCookiesFromJson(jsonString: string): Promise<{ success: boolean; count: number; domains: string[]; error?: string }>;
-    importCookiesFromLocalBrowser(targetBrowser?: string): Promise<{ success: boolean; count: number; domains: string[]; browserName?: string; error?: string }>;
+    showNativeBrowser(args: { url: string; bounds: NativeBrowserBounds }): Promise<NativeBrowserState>;
+    setNativeBrowserBounds(bounds: NativeBrowserBounds): Promise<NativeBrowserState>;
+    hideNativeBrowser(): Promise<NativeBrowserState>;
+    navigateNativeBrowser(url: string): Promise<NativeBrowserState>;
+    goBackNativeBrowser(): Promise<NativeBrowserState>;
+    goForwardNativeBrowser(): Promise<NativeBrowserState>;
+    reloadNativeBrowser(): Promise<NativeBrowserState>;
+    runNativeBrowserTool(args: {
+      action: BrowserToolAction;
+      params: Record<string, unknown>;
+    }): Promise<Partial<BrowserToolResult>>;
+    getNativeBrowserState(): Promise<NativeBrowserState>;
+    onNativeBrowserState(cb: (state: NativeBrowserState) => void): () => void;
     ensureAgentGuides(
       cwd: string,
       options?: { nativeBrowserTools?: boolean }

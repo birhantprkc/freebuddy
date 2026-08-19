@@ -9,7 +9,6 @@ import {
   Maximize2,
   Minimize2,
   RotateCw,
-  Sparkles,
   X
 } from "lucide-react";
 
@@ -38,6 +37,7 @@ export function BrowserToolbar({
   target,
   viewport,
   zoom,
+  showViewport = true,
   showZoom,
   canGoBack,
   canGoForward,
@@ -58,6 +58,7 @@ export function BrowserToolbar({
   target?: string;
   viewport: BrowserViewport;
   zoom: number;
+  showViewport?: boolean;
   showZoom?: boolean;
   canGoBack?: boolean;
   canGoForward?: boolean;
@@ -80,66 +81,6 @@ export function BrowserToolbar({
   const [isEditingAddress, setIsEditingAddress] = useState(false);
 
   const displayAddress = isEditingAddress ? addressInput : (target || url || "");
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncNotice, setSyncNotice] = useState<string | null>(null);
-  const [showLaunchModal, setShowLaunchModal] = useState(false);
-  const [syncModalTab, setSyncModalTab] = useState<"local" | "json">("local");
-  const [cookieJsonInput, setCookieJsonInput] = useState("");
-  const [jsonError, setJsonError] = useState<string | null>(null);
-
-  const handleSyncFromLocalBrowser = async (targetBrowser?: string) => {
-    if (isSyncing) return;
-    setIsSyncing(true);
-    setSyncNotice(null);
-    try {
-      const res = await cliClient.importCookiesFromLocalBrowser(targetBrowser);
-      if (res.success && res.count > 0) {
-        setShowLaunchModal(false);
-        setSyncNotice(
-          t("browser.syncSuccess", {
-            count: res.count,
-            browser: res.browserName || "Chrome / Edge"
-          })
-        );
-        if (onReload) onReload();
-      } else {
-        // If 0 cookies or error, open modal with options
-        setShowLaunchModal(true);
-        setSyncNotice(t("browser.syncFailed"));
-      }
-    } catch {
-      setShowLaunchModal(true);
-      setSyncNotice(t("browser.syncFailed"));
-    } finally {
-      setIsSyncing(false);
-      setTimeout(() => setSyncNotice(null), 4000);
-    }
-  };
-
-  const handleImportCookieJson = async () => {
-    const trimmed = cookieJsonInput.trim();
-    if (!trimmed) return;
-    setJsonError(null);
-    setIsSyncing(true);
-    try {
-      const res = await cliClient.importCookiesFromJson(trimmed);
-      if (res.success && res.count > 0) {
-        setShowLaunchModal(false);
-        setCookieJsonInput("");
-        setSyncNotice(t("browser.syncSuccessGeneric", { count: res.count }));
-        if (onReload) onReload();
-      } else if (res.error === "INVALID_JSON") {
-        setJsonError(t("browser.invalidJson"));
-      } else {
-        setJsonError(t("browser.noCookiesFound"));
-      }
-    } catch {
-      setJsonError(t("browser.invalidJson"));
-    } finally {
-      setIsSyncing(false);
-      setTimeout(() => setSyncNotice(null), 4000);
-    }
-  };
 
   const canOpenExternal = Boolean(
     url && (cliClient.isAvailable() || isRemoteHttpUrl(url))
@@ -241,18 +182,20 @@ export function BrowserToolbar({
       </form>
 
       {/* Viewport Select */}
-      <select
-        className="browser-viewport-select draft-viewport-select"
-        value={viewport}
-        aria-label={t("browser.viewport")}
-        onChange={(e) => onViewportChange(e.target.value as BrowserViewport)}
-      >
-        {viewportOptions.map((option) => (
-          <option key={option.key} value={option.key}>
-            {option.labelKey ? t(option.labelKey) : option.label}
-          </option>
-        ))}
-      </select>
+      {showViewport && (
+        <select
+          className="browser-viewport-select draft-viewport-select"
+          value={viewport}
+          aria-label={t("browser.viewport")}
+          onChange={(e) => onViewportChange(e.target.value as BrowserViewport)}
+        >
+          {viewportOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.labelKey ? t(option.labelKey) : option.label}
+            </option>
+          ))}
+        </select>
+      )}
 
       {/* Zoom Controls for Images/Docs */}
       {showZoom && (
@@ -314,20 +257,6 @@ export function BrowserToolbar({
         </div>
       )}
 
-      {/* Local Browser Cookie Sync Button */}
-      {cliClient.isAvailable() && (
-        <button
-          type="button"
-          className={`browser-action-btn draft-action${isSyncing ? " is-loading" : ""}`}
-          onClick={() => handleSyncFromLocalBrowser()}
-          disabled={isSyncing}
-          title={t("browser.syncChrome")}
-          aria-label={t("browser.syncChrome")}
-        >
-          <Sparkles size={14} className={isSyncing ? "spin text-brand" : "text-brand"} />
-        </button>
-      )}
-
       {/* External Browser Button */}
       {canOpenExternal && (
         <button
@@ -354,113 +283,6 @@ export function BrowserToolbar({
         </button>
       )}
 
-      {/* Sync Status Toast */}
-      {syncNotice && (
-        <div className="browser-sync-toast">
-          {syncNotice}
-        </div>
-      )}
-
-      {/* Browser Cookie Import Modal */}
-      {showLaunchModal && (
-        <div className="modal-backdrop" onClick={() => setShowLaunchModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
-            <h3 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 600 }}>{t("browser.syncModalTitle")}</h3>
-            <p style={{ margin: "0 0 14px", fontSize: 13, color: "var(--fb-text-secondary)", lineHeight: 1.5 }}>
-              {t("browser.syncModalDesc")}
-            </p>
-
-            <div style={{ display: "flex", gap: 8, marginBottom: 14, borderBottom: "1px solid var(--fb-border-strong)", paddingBottom: 6 }}>
-              <button
-                type="button"
-                className={`btn ${syncModalTab === "local" ? "btn-primary" : "btn-secondary"}`}
-                style={{ fontSize: 12, padding: "4px 12px" }}
-                onClick={() => setSyncModalTab("local")}
-              >
-                {t("browser.tabLocal")}
-              </button>
-              <button
-                type="button"
-                className={`btn ${syncModalTab === "json" ? "btn-primary" : "btn-secondary"}`}
-                style={{ fontSize: 12, padding: "4px 12px" }}
-                onClick={() => setSyncModalTab("json")}
-              >
-                {t("browser.tabJson")}
-              </button>
-            </div>
-
-            {syncModalTab === "local" ? (
-              <>
-                <p style={{ margin: "0 0 16px", fontSize: 12, color: "var(--fb-text-secondary)", lineHeight: 1.4 }}>
-                  {t("browser.syncModalDesc")}
-                </p>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowLaunchModal(false)}
-                  >
-                    {t("browser.cancelBtn")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => handleSyncFromLocalBrowser()}
-                    disabled={isSyncing}
-                  >
-                    {isSyncing ? t("browser.syncingChrome") : t("browser.importLocalChromeBtn")}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <textarea
-                  value={cookieJsonInput}
-                  onChange={(e) => setCookieJsonInput(e.target.value)}
-                  placeholder={t("browser.jsonPlaceholder")}
-                  rows={5}
-                  style={{
-                    width: "100%",
-                    fontSize: 11,
-                    fontFamily: "var(--fb-mono, monospace)",
-                    padding: 8,
-                    borderRadius: 6,
-                    border: "1px solid var(--fb-border-strong)",
-                    background: "var(--fb-panel-bg)",
-                    color: "var(--fb-text-primary)",
-                    outline: "none",
-                    boxSizing: "border-box",
-                    resize: "vertical",
-                    marginBottom: 8
-                  }}
-                />
-                {jsonError && (
-                  <p style={{ margin: "0 0 10px", fontSize: 12, color: "var(--fb-danger)" }}>
-                    {jsonError}
-                  </p>
-                )}
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setShowLaunchModal(false)}
-                  >
-                    {t("browser.cancelBtn")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handleImportCookieJson}
-                    disabled={isSyncing || !cookieJsonInput.trim()}
-                  >
-                    {t("browser.importJsonBtn")}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

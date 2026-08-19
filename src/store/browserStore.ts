@@ -30,6 +30,7 @@ export type DraftPreviewEntry = BrowserEntry;
 interface BrowserState {
   byConv: Record<string, BrowserEntry>;
   timers: Record<string, ReturnType<typeof setTimeout>>;
+  nativeUrls: Record<string, string>;
   ensureFor(convId: string, cwd: string | undefined): Promise<void>;
   navigate(convId: string, target: string): void;
   goBack(convId: string): void;
@@ -40,6 +41,7 @@ interface BrowserState {
   reload(convId: string): void;
   scheduleReload(convId: string, delay?: number): void;
   setLoadState(convId: string, state: BrowserLoadState, error?: string): void;
+  setNativeBrowserUrl(convId: string, url: string): void;
 }
 
 /** Absolute local files previewed via freebuddy-file (images, PDF). */
@@ -92,6 +94,25 @@ function localFileExtension(target: string): string {
 
 export function isAbsoluteLocalPath(target: string): boolean {
   return /^([A-Za-z]:[\\/]|\/)/.test(target);
+}
+
+export function remoteBrowserOrigin(value: string | undefined): string | null {
+  if (!value || !/^https:\/\//i.test(value)) return null;
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1"
+    ) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
 }
 
 function joinWorkspacePath(cwd: string, rel: string): string {
@@ -247,6 +268,7 @@ function entryOf(entry: BrowserEntry | undefined): string | null | undefined {
 export const useBrowserStore = create<BrowserState>((set, get) => ({
   byConv: {},
   timers: {},
+  nativeUrls: {},
 
   async ensureFor(convId, cwd) {
     const prev = get().byConv[convId];
@@ -258,6 +280,10 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
       const history = existing?.history?.length ? existing.history : (manualEntry ? [manualEntry] : []);
       const historyIndex = existing?.historyIndex ?? (history.length ? history.length - 1 : -1);
       return {
+        nativeUrls: {
+          ...s.nativeUrls,
+          [convId]: ""
+        },
         byConv: {
           ...s.byConv,
           [convId]: {
@@ -290,6 +316,10 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
       const newHistory = [...prevHistory.slice(0, prevIndex + 1), normalized];
       const newIndex = newHistory.length - 1;
       return {
+        nativeUrls: {
+          ...s.nativeUrls,
+          [convId]: ""
+        },
         byConv: {
           ...s.byConv,
           [convId]: {
@@ -446,5 +476,14 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
         }
       };
     });
+  },
+
+  setNativeBrowserUrl(convId, url) {
+    set((state) => ({
+      nativeUrls: {
+        ...state.nativeUrls,
+        [convId]: url
+      }
+    }));
   }
 }));

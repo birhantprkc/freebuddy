@@ -120,12 +120,17 @@ import {
   resolveBrowserEntry
 } from "../browserProtocol.js";
 import {
-  checkCdpStatus,
-  importCookiesFromJson,
-  launchDebugChrome,
-  syncCookiesFromCdp
-} from "../cdpCookieSyncService.js";
-import { importCookiesFromLocalBrowser } from "../browserCookieImporter.js";
+  getNativeBrowserViewState,
+  goBackNativeBrowserView,
+  goForwardNativeBrowserView,
+  hideNativeBrowserView,
+  navigateNativeBrowserView,
+  reloadNativeBrowserView,
+  runNativeBrowserTool,
+  setNativeBrowserViewBounds,
+  showNativeBrowserView,
+  type NativeBrowserViewBounds
+} from "../nativeBrowserViewService.js";
 import { resolveAttachmentFilePath } from "../freebuddyFileProtocol.js";
 import { ensureAgentGuides } from "../agentGuides.js";
 import {
@@ -929,17 +934,48 @@ export function registerCliIpc() {
         : ensureAgentGuides(input?.cwd ?? "", input?.options)
   );
 
-  registerHandler("cli:checkCdpStatus", (_e, port?: number) => checkCdpStatus(port));
-  registerHandler("cli:launchDebugChrome", (_e, args?: { port?: number; url?: string }) =>
-    launchDebugChrome(args?.port, args?.url)
+  registerHandler(
+    "cli:showNativeBrowser",
+    (event, args: { url?: unknown; bounds?: NativeBrowserViewBounds } | undefined) => {
+      const win = senderWindow(event);
+      if (!win) throw new Error("no sender window");
+      if (typeof args?.url !== "string" || !args.bounds) {
+        throw new Error("url and bounds are required");
+      }
+      return showNativeBrowserView(win, { url: args.url, bounds: args.bounds });
+    }
   );
-  registerHandler("cli:syncCookiesFromCdp", (_e, port?: number) => syncCookiesFromCdp(port));
-  registerHandler("cli:importCookiesFromJson", (_e, jsonString: string) =>
-    importCookiesFromJson(jsonString)
+  registerHandler("cli:setNativeBrowserBounds", (event, bounds: NativeBrowserViewBounds) => {
+    const win = senderWindow(event);
+    if (!win) throw new Error("no sender window");
+    return setNativeBrowserViewBounds(win, bounds);
+  });
+  registerHandler("cli:hideNativeBrowser", () => hideNativeBrowserView());
+  registerHandler("cli:navigateNativeBrowser", (_event, url: string) =>
+    navigateNativeBrowserView(url)
   );
-  registerHandler("cli:importCookiesFromLocalBrowser", (_e, targetBrowser?: string) =>
-    importCookiesFromLocalBrowser(targetBrowser)
+  registerHandler("cli:goBackNativeBrowser", () => goBackNativeBrowserView());
+  registerHandler("cli:goForwardNativeBrowser", () => goForwardNativeBrowserView());
+  registerHandler("cli:reloadNativeBrowser", () => reloadNativeBrowserView());
+  registerHandler(
+    "cli:runNativeBrowserTool",
+    (
+      _event,
+      input: { action?: unknown; params?: Record<string, unknown> } | undefined
+    ) => {
+      if (typeof input?.action !== "string") {
+        throw new Error("native browser action is required");
+      }
+      return runNativeBrowserTool({
+        action: input.action as Parameters<typeof runNativeBrowserTool>[0]["action"],
+        params:
+          input.params && typeof input.params === "object" && !Array.isArray(input.params)
+            ? input.params
+            : {}
+      });
+    }
   );
+  registerHandler("cli:getNativeBrowserState", () => getNativeBrowserViewState());
 
   // ---- Projects ----------------------------------------------------------
 

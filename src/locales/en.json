@@ -1771,21 +1771,8 @@
     "manualFallbackPlaceholder": "enter a URL / README.md / data.json / image.png / file.pdf…",
     "emptyNoWorkspace": "No workspace selected. Enter a URL or ask the agent to start a dev server to start browsing.",
     "emptyNoEntry": "No active page. Enter a URL, start a dev server, create a page, or write a Markdown doc to view it here.",
-    "syncChrome": "Import login session from system browser",
-    "syncingChrome": "Decrypting and importing session…",
-    "syncSuccess": "Imported {{count}} cookies from {{browser}}",
-    "syncSuccessGeneric": "Imported {{count}} cookies",
-    "syncFailed": "Failed to read or decrypt local browser data",
-    "syncModalTitle": "Import External Browser Login Session",
-    "syncModalDesc": "Automatically read and decrypt cookies from local Chrome / Edge without re-logging in.",
-    "importLocalChromeBtn": "Import from local Chrome / Edge",
-    "tabLocal": "Local Browser Import",
-    "tabJson": "Paste Cookie JSON",
-    "jsonPlaceholder": "Paste Cookie-Editor exported JSON data, e.g. [{\"name\": \"SUB\", \"value\": \"...\", \"domain\": \".weibo.com\"}]",
-    "importJsonBtn": "Import & Apply Cookies",
-    "invalidJson": "Invalid Cookie JSON format",
-    "noCookiesFound": "No valid cookies found in JSON",
-    "cancelBtn": "Cancel"
+    "isolatedSession": "Isolated browser session",
+    "isolatedSessionLoading": "Opening isolated browser…"
   },
   "taskReceipt": {
     "cardTitle": "Today's Task Receipt",

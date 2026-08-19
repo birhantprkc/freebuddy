@@ -1756,21 +1756,8 @@
     "manualFallbackPlaceholder": "输入网址、README.md、data.json、image.png、file.pdf…",
     "emptyNoWorkspace": "未选择工作区目录。输入网址或让 Agent 启动开发服务即可开始浏览。",
     "emptyNoEntry": "尚未指向页面或文件。输入网址、启动 dev server 或创建页面即可在此浏览。",
-    "syncChrome": "从系统浏览器导入登录态",
-    "syncingChrome": "正在解密并导入会话…",
-    "syncSuccess": "已从 {{browser}} 导入 {{count}} 个 Cookie",
-    "syncSuccessGeneric": "已导入 {{count}} 个 Cookie",
-    "syncFailed": "未找到本地浏览器数据或解密失败",
-    "syncModalTitle": "导入外部浏览器登录状态",
-    "syncModalDesc": "自动读取并解密本地 Chrome / Edge 浏览器的 Cookie，免除扫码和重复登录。",
-    "importLocalChromeBtn": "从本地 Chrome / Edge 一键导入",
-    "tabLocal": "本机浏览器一键导入",
-    "tabJson": "粘贴 Cookie JSON",
-    "jsonPlaceholder": "粘贴 Cookie-Editor 导出的 JSON 数据，如：[{\"name\": \"SUB\", \"value\": \"...\", \"domain\": \".weibo.com\"}]",
-    "importJsonBtn": "导入并应用 Cookie",
-    "invalidJson": "无效的 Cookie JSON 格式",
-    "noCookiesFound": "JSON 中未找到有效 Cookie",
-    "cancelBtn": "取消"
+    "isolatedSession": "隔离浏览器会话",
+    "isolatedSessionLoading": "正在打开隔离浏览器…"
   },
   "taskReceipt": {
     "cardTitle": "今日任务收据",

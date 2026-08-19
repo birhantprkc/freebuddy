@@ -4,10 +4,23 @@ import type {
   BrowserToolEvent,
   BrowserToolResult
 } from "@/services/cli/types";
+import { cliClient } from "@/services/cli/client";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
 import { useConversationStore } from "@/store/conversationStore";
 import { useDetailLayoutStore } from "@/store/detailLayoutStore";
-import { useBrowserStore } from "@/store/browserStore";
+import { remoteBrowserOrigin, useBrowserStore } from "@/store/browserStore";
+
+const NATIVE_BROWSER_TOOL_ACTIONS = new Set<BrowserToolEvent["action"]>([
+  "inspect",
+  "screenshot",
+  "click",
+  "fill",
+  "type",
+  "scroll",
+  "eval",
+  "get_dom",
+  "extract"
+]);
 
 /**
  * Listens for agent -> FreeBuddy bridge events (local HTTP / OS scheme) and
@@ -35,7 +48,8 @@ export function AgentBridgeListener() {
       cwd: string,
       overrides: Partial<BrowserToolResult> = {}
     ): BrowserToolResult => {
-      const entry = useBrowserStore.getState().byConv[conversationId];
+      const browserState = useBrowserStore.getState();
+      const entry = browserState.byConv[conversationId];
       const activeId = useConversationStore.getState().activeId;
       const visible =
         activeId === conversationId &&
@@ -45,7 +59,7 @@ export function AgentBridgeListener() {
         conversationId,
         cwd,
         target: entry?.manualEntry,
-        resolvedUrl: entry?.url,
+        resolvedUrl: browserState.nativeUrls[conversationId] || entry?.url,
         loadState: entry?.loadState ?? "idle",
         visible,
         error: entry?.error,
@@ -84,8 +98,22 @@ export function AgentBridgeListener() {
       let result: BrowserToolResult;
       try {
         await useBrowserStore.getState().ensureFor(conversationId, cwd);
+        const requestedTarget =
+          typeof params.url === "string"
+            ? params.url.trim()
+            : typeof params.target === "string"
+              ? params.target.trim()
+              : "";
+        const browserState = useBrowserStore.getState();
+        const currentTarget =
+          browserState.nativeUrls[conversationId] ||
+          browserState.byConv[conversationId]?.manualEntry;
+        const usesNativeBrowser = Boolean(
+          cliClient.supportsNativeBrowser() && remoteBrowserOrigin(currentTarget)
+        );
+
         if (action === "navigate" || action === "show" || action === "open") {
-          const target = typeof params.url === "string" ? params.url.trim() : typeof params.target === "string" ? params.target.trim() : "";
+          const target = requestedTarget;
           if (target) {
             useBrowserStore.getState().navigate(conversationId, target);
           }
@@ -114,6 +142,12 @@ export function AgentBridgeListener() {
                   : "Browser target updated for a background conversation; it will be visible when that conversation is opened."
             });
           }
+        } else if (usesNativeBrowser && NATIVE_BROWSER_TOOL_ACTIONS.has(action)) {
+          const nativeResult = await cliClient.runNativeBrowserTool(action, params);
+          result = browserResult(conversationId, cwd, {
+            ...nativeResult,
+            ok: true
+          });
         } else if (action === "inspect" || action === "screenshot") {
           result = browserResult(conversationId, cwd, {
             captureRect: params.screenshot === true || action === "screenshot" ? captureRect() : undefined

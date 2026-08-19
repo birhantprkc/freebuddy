@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from "ele
 
 import { collectPreparedAttachmentsUntilLimit, managedPathsToDiscardAfterPrepare } from "./shared/collectPreparedAttachmentsUntilLimit.js";
 import type {
+  BrowserToolAction,
   BrowserToolEvent,
   BrowserToolResolution,
   DraftToolEvent,
@@ -278,16 +279,32 @@ const cli = {
     ipcRenderer.invoke("cli:readBrowserMarkdown", { cwd, rel }),
   openBrowserExternal: (url: string) =>
     ipcRenderer.invoke("cli:openBrowserExternal", url),
-  checkCdpStatus: (port?: number) =>
-    ipcRenderer.invoke("cli:checkCdpStatus", port),
-  launchDebugChrome: (args?: { port?: number; url?: string }) =>
-    ipcRenderer.invoke("cli:launchDebugChrome", args),
-  syncCookiesFromCdp: (port?: number) =>
-    ipcRenderer.invoke("cli:syncCookiesFromCdp", port),
-  importCookiesFromJson: (jsonString: string) =>
-    ipcRenderer.invoke("cli:importCookiesFromJson", jsonString),
-  importCookiesFromLocalBrowser: (targetBrowser?: string) =>
-    ipcRenderer.invoke("cli:importCookiesFromLocalBrowser", targetBrowser),
+  showNativeBrowser: (args: {
+    url: string;
+    bounds: { x: number; y: number; width: number; height: number };
+  }) => ipcRenderer.invoke("cli:showNativeBrowser", args),
+  setNativeBrowserBounds: (bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => ipcRenderer.invoke("cli:setNativeBrowserBounds", bounds),
+  hideNativeBrowser: () => ipcRenderer.invoke("cli:hideNativeBrowser"),
+  navigateNativeBrowser: (url: string) =>
+    ipcRenderer.invoke("cli:navigateNativeBrowser", url),
+  goBackNativeBrowser: () => ipcRenderer.invoke("cli:goBackNativeBrowser"),
+  goForwardNativeBrowser: () => ipcRenderer.invoke("cli:goForwardNativeBrowser"),
+  reloadNativeBrowser: () => ipcRenderer.invoke("cli:reloadNativeBrowser"),
+  runNativeBrowserTool: (args: {
+    action: BrowserToolAction;
+    params: Record<string, unknown>;
+  }) => ipcRenderer.invoke("cli:runNativeBrowserTool", args),
+  getNativeBrowserState: () => ipcRenderer.invoke("cli:getNativeBrowserState"),
+  onNativeBrowserState(cb: (state: unknown) => void): () => void {
+    const handler = (_e: IpcRendererEvent, state: unknown) => cb(state);
+    ipcRenderer.on("freebuddy://native-browser-state", handler);
+    return () => ipcRenderer.off("freebuddy://native-browser-state", handler);
+  },
 
   ensureAgentGuides: (cwd: string, options?: { nativeBrowserTools?: boolean }) =>
     ipcRenderer.invoke("cli:ensureAgentGuides", { cwd, options }),

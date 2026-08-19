@@ -119,13 +119,18 @@ async function enrichBrowserToolResult(
   if (pending.action !== "inspect" && pending.action !== "screenshot") return publicResult;
 
   const enriched: BrowserToolResult = { ...publicResult };
-  if (pending.binding.webContents && pending.params.console !== false) {
+  if (
+    pending.binding.webContents &&
+    pending.params.console !== false &&
+    !enriched.diagnostics
+  ) {
     enriched.diagnostics = {
       console: (consoleEntriesByWebContents.get(pending.binding.webContents.id) ?? []).slice(-20)
     };
   }
 
   if (pending.params.screenshot === true || pending.action === "screenshot") {
+    if (enriched.screenshot) return enriched;
     if (!pending.binding.webContents) {
       enriched.screenshotError = "No active browser renderer available to capture screenshot.";
     } else {

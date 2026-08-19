@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { CliStreamItem } from "@/services/cli/parsers";
-import type { ConversationMessage } from "@/services/cli/types";
+import type { ConversationMessage, NativeBrowserState } from "@/services/cli/types";
 import type { FeedItem } from "@/services/feed/types";
 import { cliClient } from "@/services/cli/client";
 import { useConversationStore } from "@/store/conversationStore";
 import {
+  remoteBrowserOrigin,
   splitAbsoluteLocalFile,
   useBrowserStore
 } from "@/store/browserStore";
@@ -41,6 +42,14 @@ const IMAGE_TARGET_EXTENSIONS = new Set([
 const DOCUMENT_TARGET_EXTENSIONS = new Set(["txt", "log", "json", "yaml", "yml", "csv"]);
 const MIN_IMAGE_ZOOM = 0.5;
 const MAX_IMAGE_ZOOM = 8;
+const EMPTY_NATIVE_BROWSER_STATE: NativeBrowserState = {
+  url: "",
+  title: "",
+  canGoBack: false,
+  canGoForward: false,
+  isLoading: false,
+  visible: false
+};
 
 function clampImageZoom(value: number): number {
   return Math.min(MAX_IMAGE_ZOOM, Math.max(MIN_IMAGE_ZOOM, value));
@@ -94,6 +103,29 @@ export function isExternalOnlyBrowserTarget(value: string | undefined): boolean 
   try {
     const { hostname } = new URL(value);
     return hostname === "mp.weixin.qq.com";
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return (
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1"
+  );
+}
+
+export function isNativeRemoteBrowserTarget(value: string | undefined): boolean {
+  return remoteBrowserOrigin(value) !== null;
+}
+
+function isInsecureRemoteBrowserTarget(value: string | undefined): boolean {
+  if (!value || !/^http:\/\//i.test(value)) return false;
+  try {
+    return !isLoopbackHostname(new URL(value).hostname);
   } catch {
     return false;
   }
@@ -164,6 +196,10 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   const [feedActionId, setFeedActionId] = useState<string | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const nativeHostRef = useRef<HTMLDivElement | null>(null);
+  const [nativeBrowserState, setNativeBrowserState] = useState<NativeBrowserState>(
+    EMPTY_NATIVE_BROWSER_STATE
+  );
   const [containerWidth, setContainerWidth] = useState(440);
 
   useEffect(() => {
@@ -205,7 +241,12 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   const isImage = isImageBrowserTarget(entry?.manualEntry, entry?.url);
   const isDocument = isDocumentTarget(entry?.manualEntry, entry?.url);
   const isPdf = isPdfTarget(entry?.manualEntry, entry?.url);
-  const isExternalOnly = isExternalOnlyBrowserTarget(entry?.manualEntry);
+  const nativeBrowserAvailable = cliClient.supportsNativeBrowser();
+  const isNativeRemote =
+    nativeBrowserAvailable && isNativeRemoteBrowserTarget(entry?.manualEntry);
+  const isExternalOnly =
+    (!isNativeRemote && isExternalOnlyBrowserTarget(entry?.manualEntry)) ||
+    isInsecureRemoteBrowserTarget(entry?.manualEntry);
   const pdfUrl = isPdf && entry?.url ? `${entry.url}#view=FitH&navpanes=0` : "";
   const documentExtension = browserTargetExtension(entry?.manualEntry, entry?.url);
   const frameWidth = FRAME_WIDTH[viewport];
@@ -217,8 +258,12 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   );
   const isActiveFeedConversation = isFeedInterpretConversation(messages);
 
-  const canGoBack = Boolean(entry && entry.historyIndex > 0);
-  const canGoForward = Boolean(entry && entry.history && entry.historyIndex < entry.history.length - 1);
+  const canGoBack = isNativeRemote
+    ? nativeBrowserState.canGoBack
+    : Boolean(entry && entry.historyIndex > 0);
+  const canGoForward = isNativeRemote
+    ? nativeBrowserState.canGoForward
+    : Boolean(entry && entry.history && entry.historyIndex < entry.history.length - 1);
 
   useEffect(() => {
     if (!activeId) return;
@@ -253,6 +298,79 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     setIsLoading(false);
     useBrowserStore.getState().setLoadState(activeId, "ready");
   }, [activeId, entry?.url, isExternalOnly]);
+
+  useEffect(() => {
+    if (!nativeBrowserAvailable) return;
+    return cliClient.onNativeBrowserState((state) => {
+      setNativeBrowserState(state);
+      if (!activeId || !isNativeRemote) return;
+      if (state.url) {
+        useBrowserStore.getState().setNativeBrowserUrl(activeId, state.url);
+      }
+      setIsLoading(state.isLoading);
+      useBrowserStore
+        .getState()
+        .setLoadState(activeId, state.isLoading ? "loading" : "ready");
+    });
+  }, [activeId, isNativeRemote, nativeBrowserAvailable]);
+
+  useEffect(() => {
+    if (!nativeBrowserAvailable || !isNativeRemote || !entry?.manualEntry) {
+      if (nativeBrowserAvailable) void cliClient.hideNativeBrowser();
+      setNativeBrowserState(EMPTY_NATIVE_BROWSER_STATE);
+      return;
+    }
+
+    let cancelled = false;
+    const syncNativeBrowser = async (navigate: boolean) => {
+      const host = nativeHostRef.current;
+      if (!host || cancelled) return;
+      const rect = host.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      const bounds = {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height
+      };
+      try {
+        const state = navigate
+          ? await cliClient.showNativeBrowser(entry.manualEntry!, bounds)
+          : await cliClient.setNativeBrowserBounds(bounds);
+        if (!cancelled) {
+          setNativeBrowserState(state);
+          if (activeId && state.url) {
+            useBrowserStore.getState().setNativeBrowserUrl(activeId, state.url);
+          }
+          setIsLoading(state.isLoading);
+        }
+      } catch (nativeError) {
+        if (cancelled) return;
+        void cliClient.hideNativeBrowser();
+        setError((nativeError as Error)?.message || t("browser.loadError"));
+        setIsLoading(false);
+        if (activeId) {
+          useBrowserStore
+            .getState()
+            .setLoadState(activeId, "error", t("browser.loadError"));
+        }
+      }
+    };
+
+    const frame = window.requestAnimationFrame(() => void syncNativeBrowser(true));
+    const observer = new ResizeObserver(() => void syncNativeBrowser(false));
+    if (nativeHostRef.current) observer.observe(nativeHostRef.current);
+    const onWindowResize = () => void syncNativeBrowser(false);
+    window.addEventListener("resize", onWindowResize);
+
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", onWindowResize);
+      void cliClient.hideNativeBrowser();
+    };
+  }, [activeId, entry?.manualEntry, isNativeRemote, nativeBrowserAvailable, t]);
 
   useEffect(() => {
     if (!activeId || !entry?.url || (!isMarkdown && !isDocument)) return;
@@ -372,20 +490,30 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   return (
     <div className="browser-canvas draft-canvas">
       <BrowserToolbar
-        url={entry?.url}
-        target={entry?.manualEntry}
+        url={isNativeRemote ? nativeBrowserState.url || entry?.manualEntry : entry?.url}
+        target={isNativeRemote ? nativeBrowserState.url || entry?.manualEntry : entry?.manualEntry}
         viewport={viewport}
         zoom={zoom}
-        showZoom={true}
+        showViewport={!isNativeRemote && !isImage && !isDocument && !isMarkdown && !isPdf}
+        showZoom={isImage || isPdf}
         canGoBack={canGoBack}
         canGoForward={canGoForward}
-        isLoading={isLoading}
+        isLoading={isNativeRemote ? nativeBrowserState.isLoading : isLoading}
         feedItem={currentFeedItem}
         feedActionBusy={feedActionId === currentFeedItem?.id}
         onNavigate={(target) => activeId && useBrowserStore.getState().navigate(activeId, target)}
-        onGoBack={() => activeId && useBrowserStore.getState().goBack(activeId)}
-        onGoForward={() => activeId && useBrowserStore.getState().goForward(activeId)}
-        onReload={() => activeId && useBrowserStore.getState().reload(activeId)}
+        onGoBack={() => {
+          if (isNativeRemote) void cliClient.goBackNativeBrowser();
+          else if (activeId) useBrowserStore.getState().goBack(activeId);
+        }}
+        onGoForward={() => {
+          if (isNativeRemote) void cliClient.goForwardNativeBrowser();
+          else if (activeId) useBrowserStore.getState().goForward(activeId);
+        }}
+        onReload={() => {
+          if (isNativeRemote) void cliClient.reloadNativeBrowser();
+          else if (activeId) useBrowserStore.getState().reload(activeId);
+        }}
         onViewportChange={setViewport}
         onZoomChange={setZoom}
         onInterpretFeedItem={handleInterpretFeedItem}
@@ -401,6 +529,16 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
                 ? t("browser.emptyNoWorkspace")
                 : t("browser.emptyNoEntry")}
             </p>
+          </div>
+        ) : isNativeRemote ? (
+          <div
+            ref={nativeHostRef}
+            className="browser-frame-wrap native-browser-host"
+            aria-label={t("browser.isolatedSession")}
+          >
+            <div className="browser-status draft-status">
+              {t("browser.isolatedSessionLoading")}
+            </div>
           </div>
         ) : isExternalOnly ? (
           <div className="browser-frame-wrap draft-frame-wrap external-only">
@@ -514,6 +652,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
                 src={entry.url}
                 className="browser-frame draft-frame"
                 title={entry.manualEntry || "Browser frame"}
+                sandbox="allow-scripts allow-forms allow-modals allow-pointer-lock allow-same-origin"
                 style={{ width: "100%", height: "100%", border: 0 }}
                 onLoad={() => {
                   setIsLoading(false);

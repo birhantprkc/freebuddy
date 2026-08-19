@@ -283,13 +283,13 @@ test("Browser preview keeps WeChat article URLs exact because they are signed", 
   assert.equal(parsed.hash, "#rd");
 });
 
-test("Browser preview treats WeChat articles as external-only targets", async () => {
+test("Browser preview keeps WeChat external-only as a non-native fallback", async () => {
   const { isExternalOnlyBrowserTarget } = await loadBrowserCanvasModule();
   const source = "https://mp.weixin.qq.com/s?__biz=test&mid=1&idx=1&sn=abc#rd";
 
   assert.equal(isExternalOnlyBrowserTarget(source), true);
   assert.equal(isExternalOnlyBrowserTarget("https://example.com/article"), false);
-  assert.match(browserCanvasSource, /const isExternalOnly = isExternalOnlyBrowserTarget/);
+  assert.match(browserCanvasSource, /!isNativeRemote && isExternalOnlyBrowserTarget/);
   assert.match(browserCanvasSource, /browser\.externalOnlyTitle/);
   assert.match(browserCanvasSource, /browser-external-only/);
 });
