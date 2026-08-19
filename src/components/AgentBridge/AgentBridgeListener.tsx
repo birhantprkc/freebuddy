@@ -144,6 +144,9 @@ export function AgentBridgeListener() {
           }
         } else if (usesNativeBrowser && NATIVE_BROWSER_TOOL_ACTIONS.has(action)) {
           const nativeResult = await cliClient.runNativeBrowserTool(action, params);
+          if (nativeResult.resolvedUrl) {
+            useBrowserStore.getState().setNativeBrowserUrl(conversationId, nativeResult.resolvedUrl);
+          }
           result = browserResult(conversationId, cwd, {
             ...nativeResult,
             ok: true
