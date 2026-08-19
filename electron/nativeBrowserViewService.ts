@@ -35,6 +35,7 @@ let ownerWindow: BrowserWindow | null = null;
 let isVisible = false;
 let sessionConfigured = false;
 let consoleEntries: BrowserConsoleEntry[] = [];
+let pendingNavigationUrl: string | null = null;
 
 function parseAllowedUrl(rawUrl: string): URL {
   const url = new URL(rawUrl.trim());
@@ -57,8 +58,11 @@ function normalizeBounds(bounds: NativeBrowserViewBounds): Rectangle {
 
 function currentState(): NativeBrowserViewState {
   const contents = browserView?.webContents;
+  const currentUrl = contents && !contents.isDestroyed() ? contents.getURL() : "";
+  const isLoading = Boolean(contents && !contents.isDestroyed() && contents.isLoading());
+  const effectiveUrl = isLoading && pendingNavigationUrl ? pendingNavigationUrl : currentUrl;
   return {
-    url: contents && !contents.isDestroyed() ? contents.getURL() : "",
+    url: effectiveUrl,
     title: contents && !contents.isDestroyed() ? contents.getTitle() : "",
     canGoBack:
       Boolean(contents && !contents.isDestroyed()) &&
@@ -66,7 +70,7 @@ function currentState(): NativeBrowserViewState {
     canGoForward:
       Boolean(contents && !contents.isDestroyed()) &&
       Boolean(contents?.navigationHistory.canGoForward()),
-    isLoading: Boolean(contents && !contents.isDestroyed() && contents.isLoading()),
+    isLoading,
     visible: isVisible
   };
 }
@@ -130,6 +134,7 @@ function destroyBrowserView(): void {
   const owner = ownerWindow;
   browserView = null;
   isVisible = false;
+  pendingNavigationUrl = null;
   if (view && owner && !owner.isDestroyed()) {
     owner.contentView.removeChildView(view);
   }
@@ -180,11 +185,23 @@ function ensureBrowserView(win: BrowserWindow): WebContentsView {
     }
   });
   contents.on("did-start-loading", updateState);
-  contents.on("did-stop-loading", updateState);
-  contents.on("did-navigate", updateState);
-  contents.on("did-navigate-in-page", updateState);
+  contents.on("did-stop-loading", () => {
+    pendingNavigationUrl = null;
+    updateState();
+  });
+  contents.on("did-navigate", () => {
+    pendingNavigationUrl = null;
+    updateState();
+  });
+  contents.on("did-navigate-in-page", () => {
+    pendingNavigationUrl = null;
+    updateState();
+  });
   contents.on("page-title-updated", updateState);
-  contents.on("render-process-gone", updateState);
+  contents.on("render-process-gone", () => {
+    pendingNavigationUrl = null;
+    updateState();
+  });
   contents.setWindowOpenHandler(({ url }) => {
     try {
       const target = parseAllowedUrl(url);
@@ -225,7 +242,13 @@ export async function showNativeBrowserView(
 
   if (view.webContents.getURL() !== url.toString()) {
     consoleEntries = [];
-    await view.webContents.loadURL(url.toString());
+    pendingNavigationUrl = url.toString();
+    emitState();
+    try {
+      await view.webContents.loadURL(url.toString());
+    } finally {
+      pendingNavigationUrl = null;
+    }
   }
   return emitState();
 }
@@ -253,7 +276,13 @@ export async function navigateNativeBrowserView(url: string): Promise<NativeBrow
     throw new Error("The isolated browser view is not open.");
   }
   consoleEntries = [];
-  await browserView.webContents.loadURL(target.toString());
+  pendingNavigationUrl = target.toString();
+  emitState();
+  try {
+    await browserView.webContents.loadURL(target.toString());
+  } finally {
+    pendingNavigationUrl = null;
+  }
   return emitState();
 }
 
@@ -285,11 +314,13 @@ export async function runNativeBrowserTool(input: {
 }): Promise<Partial<BrowserToolResult>> {
   const contents = activeBrowserContents();
   const params = input.params ?? {};
+  const currentUrl = contents.getURL();
+  let toolResult: Partial<BrowserToolResult>;
 
   if (input.action === "screenshot") {
     const image = await contents.capturePage();
     const size = image.getSize();
-    return {
+    toolResult = {
       screenshot: {
         mimeType: "image/png",
         data: image.toPNG().toString("base64"),
@@ -298,9 +329,7 @@ export async function runNativeBrowserTool(input: {
       },
       diagnostics: { console: consoleEntries.slice(-20) }
     };
-  }
-
-  if (input.action === "inspect") {
+  } else if (input.action === "inspect") {
     const inspected = (await contents.executeJavaScript(
       `(() => {
         const compact = (value) => String(value || "").replace(/\\s+/g, " ").trim();
@@ -348,10 +377,8 @@ export async function runNativeBrowserTool(input: {
         height: size.height
       };
     }
-    return result;
-  }
-
-  if (input.action === "get_dom") {
+    toolResult = result;
+  } else if (input.action === "get_dom") {
     const mode = typeof params.mode === "string" ? params.mode : "markdown";
     const dom = (await contents.executeJavaScript(
       `(() => {
@@ -372,10 +399,8 @@ export async function runNativeBrowserTool(input: {
       })()`,
       true
     )) as string;
-    return { dom, result: dom };
-  }
-
-  if (input.action === "click") {
+    toolResult = { dom, result: dom };
+  } else if (input.action === "click") {
     const selector = requiredStringParam(params, "selector", 500);
     const clicked = await contents.executeJavaScript(
       `(() => {
@@ -389,10 +414,8 @@ export async function runNativeBrowserTool(input: {
       true
     );
     if (!clicked) throw new Error(`Element not found: ${selector}`);
-    return { result: { clicked: true, selector } };
-  }
-
-  if (input.action === "fill" || input.action === "type") {
+    toolResult = { result: { clicked: true, selector } };
+  } else if (input.action === "fill" || input.action === "type") {
     const selector = requiredStringParam(params, "selector", 500);
     const rawValue = typeof params.value === "string" ? params.value : params.text;
     if (typeof rawValue !== "string" || rawValue.length > 4000) {
@@ -421,10 +444,8 @@ export async function runNativeBrowserTool(input: {
       true
     );
     if (!filled) throw new Error(`Input not found: ${selector}`);
-    return { result: { filled: true, selector } };
-  }
-
-  if (input.action === "scroll") {
+    toolResult = { result: { filled: true, selector } };
+  } else if (input.action === "scroll") {
     const y = Math.max(-5000, Math.min(5000, Math.round(Number(params.y) || 700)));
     const result = await contents.executeJavaScript(
       `(() => {
@@ -433,15 +454,11 @@ export async function runNativeBrowserTool(input: {
       })()`,
       true
     );
-    return { result };
-  }
-
-  if (input.action === "eval") {
+    toolResult = { result };
+  } else if (input.action === "eval") {
     const script = requiredStringParam(params, "script", MAX_EVAL_CHARS);
-    return { result: await contents.executeJavaScript(script, true) };
-  }
-
-  if (input.action === "extract") {
+    toolResult = { result: await contents.executeJavaScript(script, true) };
+  } else if (input.action === "extract") {
     const waitSelector = typeof params.waitForSelector === "string"
       ? params.waitForSelector.trim()
       : "";
@@ -474,10 +491,25 @@ export async function runNativeBrowserTool(input: {
       })()`,
       true
     )) as unknown[];
-    return { rows, result: rows };
+    toolResult = { rows, result: rows };
+  } else {
+    throw new Error(`Unsupported native browser action: ${input.action}`);
   }
 
-  throw new Error(`Unsupported native browser action: ${input.action}`);
+  const inspectedUrl =
+    toolResult?.result &&
+    typeof toolResult.result === "object" &&
+    "url" in toolResult.result &&
+    typeof (toolResult.result as { url?: unknown }).url === "string"
+      ? ((toolResult.result as { url: string }).url.trim() || undefined)
+      : undefined;
+  const resolvedUrl = inspectedUrl || currentUrl;
+
+  return {
+    resolvedUrl,
+    target: resolvedUrl,
+    ...toolResult
+  };
 }
 
 export function getNativeBrowserViewState(): NativeBrowserViewState {

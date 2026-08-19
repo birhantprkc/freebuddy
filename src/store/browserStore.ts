@@ -224,7 +224,7 @@ export function composeBrowserUrl(
   if (!target) return "";
   const normalized = normalizeBrowserTarget(target);
   if (/^https?:\/\//i.test(normalized)) {
-    if (shouldKeepRemoteUrlExact(normalized)) return normalized;
+    if (remoteBrowserOrigin(normalized) || shouldKeepRemoteUrlExact(normalized)) return normalized;
     return withBrowserNonce(normalized, nonce);
   }
   if (/^freebuddy-file:\/\//i.test(normalized)) {

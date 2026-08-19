@@ -74,3 +74,13 @@ test("agent browser tools do not require a second page-level grant", () => {
   assert.doesNotMatch(listener, /Agent access to this remote site is locked/);
   assert.doesNotMatch(toolbar, /ShieldCheck|ShieldOff|onAgentAccessChange/);
 });
+
+test("native browser tool calls return resolvedUrl and update store", () => {
+  const nativeService = read("electron/nativeBrowserViewService.ts");
+  const listener = read("src/components/AgentBridge/AgentBridgeListener.tsx");
+  assert.match(nativeService, /pendingNavigationUrl/);
+  assert.match(nativeService, /resolvedUrl,/);
+  assert.match(nativeService, /effectiveUrl/);
+  assert.match(listener, /useBrowserStore\.getState\(\)\.setNativeBrowserUrl\(conversationId, nativeResult\.resolvedUrl\)/);
+});
+
