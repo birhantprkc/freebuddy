@@ -71,26 +71,41 @@
     });
   }
 
-  function getAudioContext() {
-    if (isMuted) return null;
+  function withAudio(callback) {
+    if (isMuted) return;
     try {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
       if (audioCtx.state === "suspended") {
+        audioCtx.resume().then(() => {
+          if (audioCtx && audioCtx.state === "running") {
+            callback(audioCtx);
+          }
+        }).catch(() => {});
+      } else if (audioCtx.state === "running") {
+        callback(audioCtx);
+      }
+    } catch {}
+  }
+
+  // Global user interaction unlock
+  const unlockAudio = () => {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx && audioCtx.state === "suspended") {
         audioCtx.resume();
       }
-      return audioCtx;
-    } catch {
-      return null;
-    }
-  }
+    } catch {}
+  };
+  window.addEventListener("pointerdown", unlockAudio, { passive: true });
+  window.addEventListener("keydown", unlockAudio, { passive: true });
 
   // 1. Move Sound: Solid Wood Strike (实木落子)
   function playPieceSound(isCapture = false) {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
+    withAudio((ctx) => {
       const now = ctx.currentTime;
       if (isCapture) {
         // Heavy impact capture
@@ -98,79 +113,75 @@
         const gain1 = ctx.createGain();
         osc1.type = "sawtooth";
         osc1.frequency.setValueAtTime(260, now);
-        osc1.frequency.exponentialRampToValueAtTime(45, now + 0.14);
-        gain1.gain.setValueAtTime(0.48, now);
-        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        osc1.frequency.exponentialRampToValueAtTime(45, now + 0.15);
+        gain1.gain.setValueAtTime(0.5, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
         osc1.connect(gain1);
         gain1.connect(ctx.destination);
         osc1.start(now);
-        osc1.stop(now + 0.14);
+        osc1.stop(now + 0.15);
 
         const osc2 = ctx.createOscillator();
         const gain2 = ctx.createGain();
         osc2.type = "triangle";
         osc2.frequency.setValueAtTime(140, now);
-        osc2.frequency.exponentialRampToValueAtTime(30, now + 0.12);
-        gain2.gain.setValueAtTime(0.35, now);
-        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        osc2.frequency.exponentialRampToValueAtTime(30, now + 0.13);
+        gain2.gain.setValueAtTime(0.38, now);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
         osc2.connect(gain2);
         gain2.connect(ctx.destination);
         osc2.start(now);
-        osc2.stop(now + 0.12);
+        osc2.stop(now + 0.13);
       } else {
         // Solid wood placement
         const osc1 = ctx.createOscillator();
         const gain1 = ctx.createGain();
         osc1.type = "triangle";
         osc1.frequency.setValueAtTime(340, now);
-        osc1.frequency.exponentialRampToValueAtTime(80, now + 0.08);
-        gain1.gain.setValueAtTime(0.38, now);
-        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        osc1.frequency.exponentialRampToValueAtTime(80, now + 0.09);
+        gain1.gain.setValueAtTime(0.42, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
         osc1.connect(gain1);
         gain1.connect(ctx.destination);
         osc1.start(now);
-        osc1.stop(now + 0.08);
+        osc1.stop(now + 0.09);
 
         const osc2 = ctx.createOscillator();
         const gain2 = ctx.createGain();
         osc2.type = "sine";
         osc2.frequency.setValueAtTime(120, now);
-        osc2.frequency.exponentialRampToValueAtTime(45, now + 0.09);
-        gain2.gain.setValueAtTime(0.25, now);
-        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+        osc2.frequency.exponentialRampToValueAtTime(45, now + 0.1);
+        gain2.gain.setValueAtTime(0.28, now);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
         osc2.connect(gain2);
         gain2.connect(ctx.destination);
         osc2.start(now);
-        osc2.stop(now + 0.09);
+        osc2.stop(now + 0.1);
       }
-    } catch {}
+    });
   }
 
   // 2. Select Piece Sound: Soft wood tap (选子轻触)
   function playSelectSound() {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
+    withAudio((ctx) => {
       const now = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = "sine";
       osc.frequency.setValueAtTime(560, now);
-      osc.frequency.exponentialRampToValueAtTime(320, now + 0.035);
-      gain.gain.setValueAtTime(0.18, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+      osc.frequency.exponentialRampToValueAtTime(320, now + 0.04);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(now);
-      osc.stop(now + 0.035);
-    } catch {}
+      osc.stop(now + 0.04);
+    });
   }
 
   // 3. Check Sound: Ancient East Asian Zither / Chime Strike (将军！金石之声)
   function playCheckSound() {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
+    withAudio((ctx) => {
       const freqs = [440.0, 554.37, 659.25, 880.0]; // A4, C#5, E5, A5
       const now = ctx.currentTime;
       freqs.forEach((freq, i) => {
@@ -179,21 +190,19 @@
         const gain = ctx.createGain();
         osc.type = "triangle";
         osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.26, start);
+        gain.gain.setValueAtTime(0.28, start);
         gain.gain.exponentialRampToValueAtTime(0.001, start + 0.45);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(start);
         osc.stop(start + 0.45);
       });
-    } catch {}
+    });
   }
 
   // 4. Victory Sound (旗开得胜)
   function playVictorySound() {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
+    withAudio((ctx) => {
       const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
       const now = ctx.currentTime;
       notes.forEach((freq, idx) => {
@@ -202,21 +211,19 @@
         const gain = ctx.createGain();
         osc.type = "triangle";
         osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.28, start);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+        gain.gain.setValueAtTime(0.3, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.38);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(start);
-        osc.stop(start + 0.35);
+        osc.stop(start + 0.38);
       });
-    } catch {}
+    });
   }
 
   // 5. Defeat Sound (惜败)
   function playDefeatSound() {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
+    withAudio((ctx) => {
       const notes = [392.0, 349.23, 311.13, 261.63]; // G4, F4, Eb4, C4
       const now = ctx.currentTime;
       notes.forEach((freq, idx) => {
@@ -225,14 +232,14 @@
         const gain = ctx.createGain();
         osc.type = "sine";
         osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.22, start);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
+        gain.gain.setValueAtTime(0.24, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(start);
-        osc.stop(start + 0.28);
+        osc.stop(start + 0.3);
       });
-    } catch {}
+    });
   }
 
   function coordToString(x, y) {

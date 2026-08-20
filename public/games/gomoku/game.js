@@ -48,26 +48,41 @@
     });
   }
 
-  function getAudioContext() {
-    if (isMuted) return null;
+  function withAudio(callback) {
+    if (isMuted) return;
     try {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
       if (audioCtx.state === "suspended") {
+        audioCtx.resume().then(() => {
+          if (audioCtx && audioCtx.state === "running") {
+            callback(audioCtx);
+          }
+        }).catch(() => {});
+      } else if (audioCtx.state === "running") {
+        callback(audioCtx);
+      }
+    } catch {}
+  }
+
+  // Global user interaction unlock
+  const unlockAudio = () => {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx && audioCtx.state === "suspended") {
         audioCtx.resume();
       }
-      return audioCtx;
-    } catch {
-      return null;
-    }
-  }
+    } catch {}
+  };
+  window.addEventListener("pointerdown", unlockAudio, { passive: true });
+  window.addEventListener("keydown", unlockAudio, { passive: true });
 
   // 1. Crisp Stone Placement Click (云子落盘)
   function playStoneSound() {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
+    withAudio((ctx) => {
       const now = ctx.currentTime;
       // High-pitch stone snap
       const osc1 = ctx.createOscillator();
@@ -75,7 +90,7 @@
       osc1.type = "sine";
       osc1.frequency.setValueAtTime(620, now);
       osc1.frequency.exponentialRampToValueAtTime(220, now + 0.05);
-      gain1.gain.setValueAtTime(0.35, now);
+      gain1.gain.setValueAtTime(0.4, now);
       gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
       osc1.connect(gain1);
       gain1.connect(ctx.destination);
@@ -88,20 +103,18 @@
       osc2.type = "triangle";
       osc2.frequency.setValueAtTime(240, now);
       osc2.frequency.exponentialRampToValueAtTime(90, now + 0.08);
-      gain2.gain.setValueAtTime(0.25, now);
+      gain2.gain.setValueAtTime(0.28, now);
       gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
       osc2.connect(gain2);
       gain2.connect(ctx.destination);
       osc2.start(now);
       osc2.stop(now + 0.08);
-    } catch {}
+    });
   }
 
   // 2. Victory Arpeggio (旗开得胜和弦)
   function playVictorySound() {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
+    withAudio((ctx) => {
       const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
       const now = ctx.currentTime;
       notes.forEach((freq, idx) => {
@@ -110,21 +123,19 @@
         const gain = ctx.createGain();
         osc.type = "triangle";
         osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.28, start);
+        gain.gain.setValueAtTime(0.3, start);
         gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(start);
         osc.stop(start + 0.35);
       });
-    } catch {}
+    });
   }
 
   // 3. Defeat Tone (惜败音效)
   function playDefeatSound() {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    try {
+    withAudio((ctx) => {
       const notes = [392.0, 349.23, 311.13, 261.63]; // G4, F4, Eb4, C4
       const now = ctx.currentTime;
       notes.forEach((freq, idx) => {
@@ -133,14 +144,14 @@
         const gain = ctx.createGain();
         osc.type = "sine";
         osc.frequency.setValueAtTime(freq, start);
-        gain.gain.setValueAtTime(0.22, start);
+        gain.gain.setValueAtTime(0.24, start);
         gain.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(start);
         osc.stop(start + 0.28);
       });
-    } catch {}
+    });
   }
 
   function coordToString(x, y) {
