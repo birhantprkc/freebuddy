@@ -17,7 +17,6 @@
   let selectedCoord = null;
   let legalTargets = [];
   let hoverCoord = null;
-  let audioCtx = null;
   let initialized = false;
 
   // DOM Elements

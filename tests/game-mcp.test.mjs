@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import vm from "node:vm";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -84,4 +87,18 @@ test("Game tool service dispatches actions correctly", async () => {
   assert.equal(resignRes.ok, true);
   assert.equal(resignRes.gameState.status, "player_won");
   assert.equal(resignRes.gameState.winner, PLAYER_BLACK);
+});
+
+test("Frontend game scripts (Gomoku & Xiangqi) have valid JS syntax", () => {
+  const gameFiles = [
+    path.resolve(process.cwd(), "public/games/gomoku/game.js"),
+    path.resolve(process.cwd(), "public/games/xiangqi/game.js")
+  ];
+
+  for (const filePath of gameFiles) {
+    const code = fs.readFileSync(filePath, "utf-8");
+    assert.doesNotThrow(() => {
+      new vm.Script(code, { filename: path.basename(filePath) });
+    }, `Syntax error in ${filePath}`);
+  }
 });

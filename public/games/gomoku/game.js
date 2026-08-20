@@ -11,7 +11,6 @@
   let status = "playing";
   let lastMove = null;
   let hoverCoord = null;
-  let audioCtx = null;
 
   // DOM Elements
   const canvas = document.getElementById("gomoku-canvas");
