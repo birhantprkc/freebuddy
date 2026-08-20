@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import {
@@ -240,12 +241,44 @@ export function isManagedAttachmentPath(filePath: string): boolean {
   return resolved === managedDir || resolved.startsWith(`${managedDir}${path.sep}`);
 }
 
-/** Managed uploads plus paths inside the caller's remote workspace roots. */
+const SERVEABLE_MEDIA_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "gif",
+  "svg",
+  "bmp",
+  "avif",
+  "heic",
+  "heif",
+  "ico",
+  "mp3",
+  "wav",
+  "m4a",
+  "ogg",
+  "mp4",
+  "webm"
+]);
+
+/** Managed uploads plus paths inside the caller's remote workspace roots and temp-generated media. */
 export function canServeAttachmentPath(
   filePath: string,
   roots: string[]
 ): boolean {
   if (isManagedAttachmentPath(filePath)) return true;
+  const ext = path.extname(filePath).slice(1).toLowerCase();
+  if (SERVEABLE_MEDIA_EXTENSIONS.has(ext)) {
+    const allowedMediaDirs = [
+      os.homedir(),
+      os.tmpdir(),
+      "/tmp",
+      "/private/tmp",
+      "/var/folders",
+      "/private/var/folders"
+    ];
+    if (isPathWithinRoots(filePath, allowedMediaDirs)) return true;
+  }
   return isPathWithinRoots(filePath, roots);
 }
 

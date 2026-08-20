@@ -29,21 +29,43 @@ import { prepareToolResultText } from "@/utils/streamMedia";
 import {
   attachmentPreviewUrl,
   formatBytes,
-  resolveLocalFilePath
+  resolveLocalFilePath,
+  withWebMediaAuth
 } from "@/utils/chatAttachments";
 import { useImageLightbox } from "./ImageLightbox";
 
 const IMAGE_PATH_EXTENSIONS = "png|jpe?g|webp|gif|bmp|svg|avif|heic|heif";
+const IMAGE_EXTENSIONS_SET = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "gif",
+  "bmp",
+  "svg",
+  "avif",
+  "heic",
+  "heif"
+]);
 const IMAGE_PATH_REGEX = new RegExp(
-  // Absolute POSIX path or Windows drive path ending in a known image extension.
-  `(?:/[^\\s)\\]\`'"<>]+|[A-Za-z]:[\\\\/][^\\s)\\]\`'"<>]+)\\.(?:${IMAGE_PATH_EXTENSIONS})`,
+  // Absolute POSIX path, file:/// URI, or Windows drive path ending in a known image extension.
+  `(?:file:\\/\\/\\/[^\\s)\\]\`'"<>]+|\\/[^\\s)\\]\`'"<>]+|[A-Za-z]:[\\\\/][^\\s)\\]\`'"<>]+)\\.(?:${IMAGE_PATH_EXTENSIONS})`,
   "gi"
 );
-const IMAGE_PATH_FULL_REGEX = new RegExp(`^${IMAGE_PATH_REGEX.source}$`, "i");
-const MARKDOWN_IMAGE_REGEX = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+const MARKDOWN_IMAGE_REGEX = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
 function isImagePath(value: string): boolean {
-  return IMAGE_PATH_FULL_REGEX.test(value.trim());
+  const trimmed = value.trim().replace(/^`+|`+$/g, "");
+  if (!trimmed) return false;
+  if (/^data:image\//i.test(trimmed) || /^\/api\/attachment\?path=/i.test(trimmed)) {
+    return true;
+  }
+  const cleanUrl = trimmed.replace(/^file:\/\//i, "");
+  const match = cleanUrl.match(/\.([a-z0-9]+)(?:[?#].*)?$/i);
+  if (match && IMAGE_EXTENSIONS_SET.has(match[1].toLowerCase())) {
+    return true;
+  }
+  return false;
 }
 
 function isHttpUrl(value: string): boolean {
@@ -54,6 +76,27 @@ function resolveImageSrc(raw: string, cwd = ""): string {
   const value = raw.trim();
   if (!value) return "";
   if (isHttpUrl(value)) return value;
+  if (value.startsWith("/api/")) {
+    return withWebMediaAuth(value);
+  }
+  if (value.startsWith("freebuddy-file://open?path=")) {
+    try {
+      const url = new URL(value);
+      const filePath = url.searchParams.get("path");
+      if (filePath) return attachmentPreviewUrl(filePath);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (value.startsWith("file://")) {
+    try {
+      const url = new URL(value);
+      const filePath = decodeURIComponent(url.pathname);
+      if (filePath) return attachmentPreviewUrl(filePath);
+    } catch {
+      /* ignore */
+    }
+  }
   const abs = resolveLocalFilePath(value, cwd);
   return abs ? attachmentPreviewUrl(abs) : "";
 }
@@ -151,11 +194,17 @@ function resolveLinkHref(raw: string, cwd = ""): string {
   const value = raw.trim();
   if (!value) return "";
   if (isHttpUrl(value)) return value;
+  if (value.startsWith("file://")) {
+    try {
+      const url = new URL(value);
+      const filePath = decodeURIComponent(url.pathname);
+      if (filePath) return attachmentPreviewUrl(filePath);
+    } catch {
+      /* ignore */
+    }
+  }
   const abs = resolveLocalFilePath(value, cwd);
   if (abs) return attachmentPreviewUrl(abs);
-  if (/^file:\/\//i.test(value)) {
-    return value;
-  }
   return value;
 }
 
@@ -179,30 +228,67 @@ interface InlineImageRef {
   src: string;
 }
 
-/** Collect image references from a chunk of text: markdown ![alt](src) and bare absolute paths. */
+/** Collect image references from a chunk of text: markdown images/links and bare absolute/file paths. */
 function collectInlineImages(text: string, cwd = ""): InlineImageRef[] {
   const seen = new Set<string>();
   const refs: InlineImageRef[] = [];
-  let stripped = text;
 
-  stripped = stripped.replace(MARKDOWN_IMAGE_REGEX, (_match, alt: string, src: string) => {
-    const resolved = resolveImageSrc(src, cwd) || (isHttpUrl(src) ? src : "");
+  const addImage = (srcRaw: string, alt = "") => {
+    const trimmed = srcRaw.trim().replace(/^`+|`+$/g, "");
+    if (!trimmed) return;
+    const resolved = resolveImageSrc(trimmed, cwd) || (isHttpUrl(trimmed) ? trimmed : "");
     if (resolved && !seen.has(resolved)) {
       seen.add(resolved);
-      refs.push({ alt: (alt || "").trim(), src: resolved });
+      refs.push({ alt: alt.trim(), src: resolved });
     }
-    return " ";
-  });
+  };
 
-  const matches = stripped.match(IMAGE_PATH_REGEX);
-  if (matches) {
-    for (const raw of matches) {
-      const resolved = resolveImageSrc(raw, cwd);
-      if (!resolved || seen.has(resolved)) continue;
-      seen.add(resolved);
-      refs.push({ alt: "", src: resolved });
+  // 1. Markdown image syntax: ![alt](src)
+  let stripped = text.replace(
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    (_match, alt: string, src: string) => {
+      addImage(src, alt);
+      return " ";
+    }
+  );
+
+  // 2. Markdown link syntax pointing to an image: [alt](src.png) or [alt](file:///...png)
+  stripped = stripped.replace(
+    /\[([^\]]*)\]\(([^)]+)\)/g,
+    (_match, alt: string, src: string) => {
+      if (isImagePath(src)) {
+        addImage(src, alt);
+      }
+      return " ";
+    }
+  );
+
+  // 3. Backtick-enclosed paths ending in image extensions
+  stripped = stripped.replace(
+    /`([^`]+?\.(?:png|jpe?g|webp|gif|bmp|svg|avif|heic|heif)(?:[?#][^`]*)?)`/gi,
+    (_match, src: string) => {
+      addImage(src);
+      return " ";
+    }
+  );
+
+  // 4. File URI paths: file:///path/to/image.png
+  stripped = stripped.replace(
+    /file:\/\/\/[^\s\`'"<>]+?\.(?:png|jpe?g|webp|gif|bmp|svg|avif|heic|heif)/gi,
+    (src: string) => {
+      addImage(src);
+      return " ";
+    }
+  );
+
+  // 5. Bare absolute POSIX or Windows paths ending in image extension
+  const pathMatches = stripped.match(IMAGE_PATH_REGEX);
+  if (pathMatches) {
+    for (const raw of pathMatches) {
+      addImage(raw);
     }
   }
+
   return refs;
 }
 
@@ -722,16 +808,21 @@ export function StreamToolInvocation({
   const input = formatValue(call.input);
   const { t } = useTranslation();
   const statusMeta = toolStatusMeta(call, t);
+  const toolImages = collectInlineImages(
+    [input, ...visibleResults.map((r) => r.content)].join("\n")
+  );
   const hasBody =
     Boolean(input) ||
     visibleCommands.length > 0 ||
     visibleResults.length > 0 ||
-    visibleExtras.length > 0;
+    visibleExtras.length > 0 ||
+    toolImages.length > 0;
   const showDoneMeta =
     call.status === "completed" &&
     !visibleResults.some((result) => hasVisibleContent(result.content)) &&
     visibleCommands.length === 0 &&
-    visibleExtras.length === 0;
+    visibleExtras.length === 0 &&
+    toolImages.length === 0;
 
   return (
     <details
@@ -778,7 +869,8 @@ export function StreamToolInvocation({
           <span className="stream-tool-summary-meta">
             {visibleResults.some((result) => hasVisibleContent(result.content)) ||
             visibleCommands.length > 0 ||
-            visibleExtras.length > 0
+            visibleExtras.length > 0 ||
+            toolImages.length > 0
               ? t("stream.summaryResult")
               : showDoneMeta
                 ? t("stream.summaryDone")
@@ -805,6 +897,17 @@ export function StreamToolInvocation({
             <StreamItem item={extra} />
           </div>
         ))}
+        {toolImages.length > 0 && (
+          <div className="stream-tool-section stream-tool-images">
+            {toolImages.map((image, imageIndex) => (
+              <MessageImage
+                key={`tool-img-${imageIndex}`}
+                src={image.src}
+                alt={image.alt}
+              />
+            ))}
+          </div>
+        )}
         {visibleResults.map((result, index) => (
           <div className="stream-tool-section" key={`${result.id ?? "result"}-${index}`}>
             <span className="stream-label">
@@ -859,13 +962,13 @@ function TerminalEmbed({
   );
 }
 
-export function StreamItem({ item }: { item: CliStreamItem }) {
+export function StreamItem({ item, cwd }: { item: CliStreamItem; cwd?: string }) {
   const { t } = useTranslation();
   switch (item.kind) {
     case "text":
       return (
         <div className={`stream-text role-${item.role}`}>
-          <MarkdownText content={item.content} />
+          <MarkdownText content={item.content} cwd={cwd} />
         </div>
       );
     case "thinking":
@@ -875,7 +978,7 @@ export function StreamItem({ item }: { item: CliStreamItem }) {
             <ToolKindIcon toolKind="think" />
             <span>{t("stream.thinking")}</span>
           </summary>
-          <MarkdownText content={item.content} />
+          <MarkdownText content={item.content} cwd={cwd} />
         </details>
       );
     case "content-block":

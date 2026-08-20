@@ -47,7 +47,7 @@ export const skillsClient = {
     version?: string;
     downloadsHint?: number;
   }): Promise<string | null> => api().resolveMarketHomepage(args),
-  onChanged(cb: () => void): () => void {
-    return api().onChanged(cb);
+  onChanged(cb: () => void): (() => void) | undefined {
+    return window.freebuddy?.skills?.onChanged?.(cb);
   }
 };

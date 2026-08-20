@@ -760,7 +760,8 @@ export const MessageBubble = memo(function MessageBubble({
   agentIconKey,
   blockLimit,
   typingChars,
-  afterContent
+  afterContent,
+  cwd
 }: {
   message: ConversationMessage;
   adapter?: string;
@@ -769,6 +770,7 @@ export const MessageBubble = memo(function MessageBubble({
   blockLimit?: number;
   typingChars?: number;
   afterContent?: ReactNode;
+  cwd?: string;
 }) {
   const { t } = useTranslation();
   const currentUser = useConversationStore((s) => s.currentUser);

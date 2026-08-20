@@ -86,8 +86,22 @@ export function groupConversationsByProjects(
   projects: Project[]
 ): ConversationProjectGroup[] {
   const byProjectId = new Map<string, Conversation[]>();
+
+  const folderToProjectId = new Map<string, string>();
+  for (const project of projects) {
+    for (const folder of project.folders) {
+      folderToProjectId.set(projectKeyFromCwd(folder), project.id);
+    }
+  }
+
   for (const conversation of items) {
-    const projectId = conversation.projectId?.trim();
+    let projectId = conversation.projectId?.trim();
+    if (!projectId) {
+      const cwd = conversationDisplayCwd(conversation);
+      if (cwd) {
+        projectId = folderToProjectId.get(projectKeyFromCwd(cwd));
+      }
+    }
     if (!projectId) continue;
     const bucket = byProjectId.get(projectId);
     if (bucket) bucket.push(conversation);

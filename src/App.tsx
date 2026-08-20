@@ -38,6 +38,7 @@ import { useSkillStore } from "./store/skillStore";
 import { useUpdaterStore } from "./store/updaterStore";
 import { useDetailLayoutStore, selectDetailWidth, DETAIL_MIN_WIDTH } from "./store/detailLayoutStore";
 import { useNewTaskUiStore } from "./store/newTaskUiStore";
+import { useProjectStore } from "./store/projectStore";
 import { useWorkflowStore } from "./store/workflowStore";
 import { useTaskReceiptStore } from "./store/taskReceiptStore";
 import {
@@ -90,12 +91,13 @@ function App() {
   const loadExecutors = useCliExecutorStore((s) => s.load);
   const loadConversations = useConversationStore((s) => s.load);
   const refreshConversationList = useConversationStore((s) => s.refreshList);
+  const refreshProjects = useProjectStore((s) => s.refresh);
   useEffect(() => {
     void (async () => {
       await loadExecutors();
-      await loadConversations();
+      await Promise.all([loadConversations(), refreshProjects()]);
     })();
-  }, [loadExecutors, loadConversations]);
+  }, [loadExecutors, loadConversations, refreshProjects]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;

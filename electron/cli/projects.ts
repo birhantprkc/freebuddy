@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { getDb } from "./db.js";
 import { getSetting, setSetting } from "./settings.js";
+import { sourcePathForManagedWorkspace } from "./remoteWorkspaces.js";
 
 const CWD_MIGRATION_KEY = "projects.cwdMigration.v1";
 
@@ -143,22 +144,28 @@ export function getProject(id: string): Project | null {
 export function findProjectByCwd(cwd: string): Project | null {
   const trimmed = (cwd || "").trim();
   if (!trimmed) return null;
-  let normalized: string;
-  try {
-    normalized = path.resolve(trimmed).toLowerCase();
-  } catch {
-    return null;
-  }
+  const candidates: string[] = [trimmed];
+  const source = sourcePathForManagedWorkspace(trimmed);
+  if (source && source !== trimmed) candidates.push(source);
+
   const all = listProjects();
-  for (const project of all) {
-    for (const folder of project.folders) {
-      let folderNormalized: string;
-      try {
-        folderNormalized = path.resolve(folder.trim()).toLowerCase();
-      } catch {
-        continue;
+  for (const candidate of candidates) {
+    let normalized: string;
+    try {
+      normalized = path.resolve(candidate).toLowerCase();
+    } catch {
+      continue;
+    }
+    for (const project of all) {
+      for (const folder of project.folders) {
+        let folderNormalized: string;
+        try {
+          folderNormalized = path.resolve(folder.trim()).toLowerCase();
+        } catch {
+          continue;
+        }
+        if (folderNormalized === normalized) return project;
       }
-      if (folderNormalized === normalized) return project;
     }
   }
   return null;

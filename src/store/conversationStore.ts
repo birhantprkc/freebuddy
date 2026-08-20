@@ -376,9 +376,9 @@ const MEMBER_RUNTIME_OVERRIDES_KEY = "member.runtimeOverrides";
 async function loadMemberOverrideMap(
   key: string
 ): Promise<Record<string, string>> {
-  const raw = await cliClient.getSetting(key);
-  if (!raw) return {};
   try {
+    const raw = await cliClient.getSetting(key);
+    if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === "object") {
       const result: Record<string, string> = {};
@@ -390,7 +390,7 @@ async function loadMemberOverrideMap(
       return result;
     }
   } catch {
-    // ignore malformed override payload
+    // non-fatal
   }
   return {};
 }
@@ -581,6 +581,32 @@ async function workflowFollowupContextForRun(
   return buildWorkflowFollowupContext(run, steps);
 }
 
+const ACTIVE_CONV_STORAGE_KEY = "fb_last_active_conversation";
+
+function getStoredActiveId(): string | undefined {
+  try {
+    if (typeof window === "undefined") return undefined;
+    const fromUrl = new URLSearchParams(window.location.search).get("c");
+    if (fromUrl) return fromUrl;
+    return sessionStorage.getItem(ACTIVE_CONV_STORAGE_KEY) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function setStoredActiveId(id: string | undefined): void {
+  try {
+    if (typeof window === "undefined") return;
+    if (id) {
+      sessionStorage.setItem(ACTIVE_CONV_STORAGE_KEY, id);
+    } else {
+      sessionStorage.removeItem(ACTIVE_CONV_STORAGE_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export const useConversationStore = create<ConversationState>((set, get) => ({
   members: buildConversationMembers(),
   memberRuntimeOverrides: {},
@@ -609,17 +635,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } catch {
       // current user unavailable; non-fatal
     }
+    const stored = getStoredActiveId();
+    const cur = get().activeId || stored;
+    const matchedCur =
+      cur && synced.conversations.some((c) => c.id === cur) ? cur : undefined;
     set({
       members,
       memberRuntimeOverrides,
-      conversations: synced.conversations
+      conversations: synced.conversations,
+      activeId: matchedCur
     });
-    const cur = get().activeId;
-    // Keep startup on the new-task page: do not auto-open the latest conversation.
-    // Only clear activeId when a previously selected conversation no longer exists.
-    if (cur && !list.find((c) => c.id === cur)) {
-      set({ activeId: undefined });
-    }
     const active = get().activeId;
     if (active) get().markConversationRead(active);
     if (active && !get().messages[active]) {
@@ -685,6 +710,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   async setActive(id) {
+    setStoredActiveId(id);
     if (id && get().unreadConversations[id]) {
       const unreadConversations = { ...get().unreadConversations };
       delete unreadConversations[id];
@@ -840,6 +866,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       ),
       titleSource: title ? "prompt" : "default"
     });
+    setStoredActiveId(conv.id);
     set((s) => ({
       conversations: [conv, ...s.conversations.filter((c) => c.id !== conv.id)],
       activeId: conv.id,
