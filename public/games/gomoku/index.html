@@ -39,10 +39,29 @@
       <div id="status-text" class="status-text">请在棋盘上点击落子</div>
       <div class="btn-group">
         <button id="retry-agent-btn" class="btn warning" style="display: none;">⚠️ AI 遗漏落子，点击重试</button>
+        <button id="share-btn" class="btn" title="生成并分享战报长图">📸 分享</button>
         <button id="resign-btn" class="btn danger">认输</button>
         <button id="restart-btn" class="btn">重新开局</button>
       </div>
     </footer>
+  </div>
+
+  <!-- Share Card Modal -->
+  <div id="share-modal" class="share-modal-backdrop" style="display: none;">
+    <div class="share-modal-card">
+      <div class="share-modal-header">
+        <div class="share-modal-title">📸 对弈战报分享</div>
+        <button id="close-share-btn" class="icon-close-btn" aria-label="关闭">✕</button>
+      </div>
+      <div class="share-preview-wrap">
+        <img id="share-image-preview" class="share-preview-img" alt="战报预览" />
+      </div>
+      <div class="share-modal-actions">
+        <button id="copy-share-btn" class="btn primary">📋 复制图片</button>
+        <button id="download-share-btn" class="btn">💾 保存图片</button>
+      </div>
+      <div id="share-toast" class="share-toast" style="display: none;">已复制到剪贴板！</div>
+    </div>
   </div>
 
   <script src="./game.js"></script>

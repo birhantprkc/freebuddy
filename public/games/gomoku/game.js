@@ -19,12 +19,8 @@
   const turnBadge = document.getElementById("turn-badge");
   const speechText = document.getElementById("speech-text");
   const statusText = document.getElementById("status-text");
-  const modal = document.getElementById("game-over-modal");
-  const modalTitle = document.getElementById("modal-title");
-  const modalDesc = document.getElementById("modal-desc");
   const restartBtn = document.getElementById("restart-btn");
   const resignBtn = document.getElementById("resign-btn");
-  const modalRestartBtn = document.getElementById("modal-restart-btn");
   const retryAgentBtn = document.getElementById("retry-agent-btn");
 
   // Web Audio Synth for crisp stone placement click
@@ -389,10 +385,6 @@
     window.parent.postMessage({ type: "GAME_RESET" }, "*");
   });
 
-  modalRestartBtn.addEventListener("click", () => {
-    window.parent.postMessage({ type: "GAME_RESET" }, "*");
-  });
-
   resignBtn.addEventListener("click", () => {
     if (confirm("确定要认输吗？")) {
       window.parent.postMessage({ type: "GAME_RESIGN" }, "*");
@@ -420,6 +412,192 @@
       resizeCanvas();
     });
     ro.observe(canvas);
+  }
+
+  // Share Card Generation
+  const shareBtn = document.getElementById("share-btn");
+  const shareModal = document.getElementById("share-modal");
+  const closeShareBtn = document.getElementById("close-share-btn");
+  const shareImagePreview = document.getElementById("share-image-preview");
+  const copyShareBtn = document.getElementById("copy-share-btn");
+  const downloadShareBtn = document.getElementById("download-share-btn");
+  const shareToast = document.getElementById("share-toast");
+
+  function showToast(msg) {
+    if (!shareToast) return;
+    shareToast.textContent = msg;
+    shareToast.style.display = "block";
+    setTimeout(() => {
+      shareToast.style.display = "none";
+    }, 2000);
+  }
+
+  function generateShareImageCanvas() {
+    const cardCanvas = document.createElement("canvas");
+    const cardWidth = 720;
+    const cardHeight = 880;
+    cardCanvas.width = cardWidth;
+    cardCanvas.height = cardHeight;
+    const sCtx = cardCanvas.getContext("2d");
+
+    // 1. Background Gradient
+    const bgGrad = sCtx.createLinearGradient(0, 0, 0, cardHeight);
+    bgGrad.addColorStop(0, "#0f172a");
+    bgGrad.addColorStop(0.5, "#1e293b");
+    bgGrad.addColorStop(1, "#090d16");
+    sCtx.fillStyle = bgGrad;
+    sCtx.fillRect(0, 0, cardWidth, cardHeight);
+
+    // Decorative aura
+    sCtx.save();
+    const aura = sCtx.createRadialGradient(cardWidth / 2, 220, 10, cardWidth / 2, 220, 360);
+    aura.addColorStop(0, "rgba(59, 130, 246, 0.15)");
+    aura.addColorStop(1, "rgba(0, 0, 0, 0)");
+    sCtx.fillStyle = aura;
+    sCtx.fillRect(0, 0, cardWidth, cardHeight);
+    sCtx.restore();
+
+    // 2. Card Header
+    sCtx.font = "bold 20px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif";
+    sCtx.fillStyle = "#38bdf8";
+    sCtx.fillText("FreeBuddy 对战大厅", 40, 52);
+
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    sCtx.font = "14px -apple-system, sans-serif";
+    sCtx.fillStyle = "#94a3b8";
+    sCtx.textAlign = "right";
+    sCtx.fillText(dateStr, cardWidth - 40, 52);
+    sCtx.textAlign = "left";
+
+    // 3. Match Title & Status Badge
+    sCtx.font = "bold 28px -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif";
+    sCtx.fillStyle = "#ffffff";
+    sCtx.fillText("五子棋 · 赛后复盘战报", 40, 98);
+
+    // Outcome Badge
+    let outcomeText = "对局进行中";
+    let badgeColor = "#3b82f6";
+    if (status === "player_won") {
+      outcomeText = "🏆 玩家胜出 (五连珠)";
+      badgeColor = "#10b981";
+    } else if (status === "agent_won") {
+      outcomeText = "🤖 AI Agent 获胜";
+      badgeColor = "#ef4444";
+    } else if (status === "draw") {
+      outcomeText = "🤝 双方握手言和 (平局)";
+      badgeColor = "#94a3b8";
+    }
+
+    sCtx.font = "bold 15px -apple-system, sans-serif";
+    const textWidth = sCtx.measureText(outcomeText).width;
+    const badgeX = 40;
+    const badgeY = 118;
+    sCtx.fillStyle = "rgba(255, 255, 255, 0.08)";
+    sCtx.strokeStyle = badgeColor;
+    sCtx.lineWidth = 1.5;
+    sCtx.beginPath();
+    if (typeof sCtx.roundRect === "function") {
+      sCtx.roundRect(badgeX, badgeY, textWidth + 24, 30, 15);
+    } else {
+      sCtx.rect(badgeX, badgeY, textWidth + 24, 30);
+    }
+    sCtx.fill();
+    sCtx.stroke();
+
+    sCtx.fillStyle = badgeColor;
+    sCtx.fillText(outcomeText, badgeX + 12, badgeY + 20);
+
+    // Players Info
+    sCtx.font = "15px -apple-system, sans-serif";
+    sCtx.fillStyle = "#e2e8f0";
+    sCtx.textAlign = "right";
+    sCtx.fillText("⚫ 你 (黑先)  VS  ⚪ AI Agent (白后)", cardWidth - 40, 138);
+    sCtx.textAlign = "left";
+
+    // 4. Draw Chessboard
+    const boardSize = 580;
+    const boardX = (cardWidth - boardSize) / 2;
+    const boardY = 175;
+
+    sCtx.save();
+    sCtx.shadowColor = "rgba(0, 0, 0, 0.6)";
+    sCtx.shadowBlur = 24;
+    sCtx.shadowOffsetY = 12;
+    sCtx.drawImage(canvas, boardX, boardY, boardSize, boardSize);
+    sCtx.restore();
+
+    // 5. Footer Watermark
+    sCtx.font = "13px -apple-system, sans-serif";
+    sCtx.fillStyle = "#64748b";
+    sCtx.textAlign = "center";
+    sCtx.fillText("由 FreeBuddy AI 智能体对战引擎驱动 · Powered by FreeBuddy", cardWidth / 2, cardHeight - 36);
+
+    return cardCanvas;
+  }
+
+  function openShareModal() {
+    const shareCanvas = generateShareImageCanvas();
+    const dataUrl = shareCanvas.toDataURL("image/png");
+    if (shareImagePreview) {
+      shareImagePreview.src = dataUrl;
+    }
+    if (shareModal) {
+      shareModal.style.display = "flex";
+    }
+  }
+
+  function closeShareModal() {
+    if (shareModal) {
+      shareModal.style.display = "none";
+    }
+  }
+
+  if (shareBtn) {
+    shareBtn.addEventListener("click", openShareModal);
+  }
+
+  if (closeShareBtn) {
+    closeShareBtn.addEventListener("click", closeShareModal);
+  }
+
+  if (shareModal) {
+    shareModal.addEventListener("click", (e) => {
+      if (e.target === shareModal) closeShareModal();
+    });
+  }
+
+  if (copyShareBtn) {
+    copyShareBtn.addEventListener("click", async () => {
+      try {
+        const shareCanvas = generateShareImageCanvas();
+        shareCanvas.toBlob(async (blob) => {
+          if (!blob) return;
+          try {
+            await navigator.clipboard.write([
+              new ClipboardItem({ "image/png": blob })
+            ]);
+            showToast("✓ 图片已复制到剪贴板！");
+          } catch {
+            showToast("复制失败，请使用保存图片");
+          }
+        }, "image/png");
+      } catch {
+        showToast("复制失败，请使用保存图片");
+      }
+    });
+  }
+
+  if (downloadShareBtn) {
+    downloadShareBtn.addEventListener("click", () => {
+      const shareCanvas = generateShareImageCanvas();
+      const link = document.createElement("a");
+      const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      link.download = `FreeBuddy_五子棋战报_${timestamp}.png`;
+      link.href = shareCanvas.toDataURL("image/png");
+      link.click();
+      showToast("✓ 战报图片已下载！");
+    });
   }
 
   // Initialize
