@@ -433,6 +433,7 @@ export function ConversationList({
     left: number;
   } | null>(null);
   const hoverCloseTimerRef = useRef<number | null>(null);
+  const userCollapsedProjectsRef = useRef<Set<string>>(new Set());
   const [formOpen, setFormOpen] = useState(false);
   const [formMode, setFormMode] = useState<"create" | "edit">("create");
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -515,6 +516,9 @@ export function ConversationList({
       const bPinned = bPin >= 0;
       if (aPinned !== bPinned) return aPinned ? -1 : 1;
       if (aPinned && bPinned && aPin !== bPin) return aPin - bPin;
+      const aHasItems = a.items.length > 0 ? 1 : 0;
+      const bHasItems = b.items.length > 0 ? 1 : 0;
+      if (aHasItems !== bHasItems) return bHasItems - aHasItems;
       return b.latestAt - a.latestAt || a.label.localeCompare(b.label);
     });
   }, [conversations, apiProjects, pinnedKeys, projectsLoaded]);
@@ -529,22 +533,38 @@ export function ConversationList({
 
   const activeProjectKey = useMemo(() => {
     const active = conversations.find((c) => c.id === activeId);
-    return active?.projectId?.trim() || undefined;
-  }, [activeId, conversations]);
+    if (active?.projectId?.trim()) return active.projectId.trim();
+    if (active) {
+      const matched = projects.find((p) => p.items.some((item) => item.id === active.id));
+      if (matched) return matched.key;
+    }
+    return undefined;
+  }, [activeId, conversations, projects]);
+
+  const currentUser = useConversationStore((s) => s.currentUser);
 
   const visibleProjects = useMemo(() => {
-    if (showAllProjects || projects.length <= PROJECT_LIST_LIMIT) {
-      return projects;
+    const relevantProjects =
+      currentUser && !currentUser.isOwner
+        ? projects.filter(
+            (p) =>
+              p.items.length > 0 ||
+              pinnedKeys.includes(p.key) ||
+              p.key === activeProjectKey
+          )
+        : projects;
+    if (showAllProjects || relevantProjects.length <= PROJECT_LIST_LIMIT) {
+      return relevantProjects;
     }
     const visibleKeys = new Set<string>();
     const result: ConversationProjectGroup[] = [];
     // Always keep pinned projects visible.
-    for (const project of projects) {
+    for (const project of relevantProjects) {
       if (!pinnedKeys.includes(project.key)) continue;
       result.push(project);
       visibleKeys.add(project.key);
     }
-    for (const project of projects) {
+    for (const project of relevantProjects) {
       if (result.length >= PROJECT_LIST_LIMIT) break;
       if (visibleKeys.has(project.key)) continue;
       result.push(project);
@@ -552,31 +572,48 @@ export function ConversationList({
     }
     // Keep the active project visible even if it would be truncated.
     if (activeProjectKey && !visibleKeys.has(activeProjectKey)) {
-      const active = projects.find((project) => project.key === activeProjectKey);
+      const active = relevantProjects.find((project) => project.key === activeProjectKey);
       if (active) result.push(active);
     }
     return result;
-  }, [projects, showAllProjects, pinnedKeys, activeProjectKey]);
+  }, [projects, showAllProjects, pinnedKeys, activeProjectKey, currentUser]);
 
   const hiddenProjectCount = Math.max(0, projects.length - visibleProjects.length);
 
   useEffect(() => {
-    if (!activeProjectKey) return;
-    setExpandedProjects(new Set([activeProjectKey]));
-  }, [activeProjectKey]);
-
-  useEffect(() => {
     if (projects.length === 0) return;
     setExpandedProjects((current) => {
-      if (current.size > 0) return current;
-      return new Set([projects[0].key]);
+      const next = new Set(current);
+      if (activeProjectKey) {
+        next.add(activeProjectKey);
+      }
+      for (const p of projects) {
+        if (p.items.length > 0 && !userCollapsedProjectsRef.current.has(p.key)) {
+          next.add(p.key);
+        }
+      }
+      if (
+        next.size === 0 &&
+        projects[0] &&
+        !userCollapsedProjectsRef.current.has(projects[0].key)
+      ) {
+        next.add(projects[0].key);
+      }
+      return next;
     });
-  }, [projects]);
+  }, [projects, activeProjectKey]);
 
   const toggleProject = (key: string) => {
     setExpandedProjects((current) => {
-      if (current.has(key)) return new Set();
-      return new Set([key]);
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+        userCollapsedProjectsRef.current.add(key);
+      } else {
+        next.add(key);
+        userCollapsedProjectsRef.current.delete(key);
+      }
+      return next;
     });
   };
 

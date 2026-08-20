@@ -108,30 +108,32 @@ export const delegationClient = {
     return Boolean(window.freebuddy?.delegation);
   },
 
-  list(): Promise<DelegationTeam[]> {
+  async list(): Promise<DelegationTeam[]> {
+    if (!this.isAvailable()) return [];
     return api().listTeams();
   },
 
-  get(id: string): Promise<DelegationTeam | undefined> {
+  async get(id: string): Promise<DelegationTeam | undefined> {
+    if (!this.isAvailable()) return undefined;
     return api().getTeam(id);
   },
 
-  create(input: UpsertDelegationTeamInput): Promise<DelegationTeam> {
+  async create(input: UpsertDelegationTeamInput): Promise<DelegationTeam> {
     return api().createTeam(input);
   },
 
-  update(
+  async update(
     id: string,
     patch: UpdateDelegationTeamPatch
   ): Promise<DelegationTeam | undefined> {
     return api().updateTeam(id, patch);
   },
 
-  delete(id: string): Promise<boolean> {
+  async delete(id: string): Promise<boolean> {
     return api().deleteTeam(id);
   },
 
-  createRun(input: {
+  async createRun(input: {
     teamId: string;
     goal: string;
     cwd?: string;
@@ -143,7 +145,7 @@ export const delegationClient = {
     return wfApi().createDelegationRun(input);
   },
 
-  approveWrite(input: {
+  async approveWrite(input: {
     runId: string;
     approvalId: string;
     approved: boolean;
@@ -151,43 +153,51 @@ export const delegationClient = {
     return wfApi().approveDelegateWrite(input);
   },
 
-  getRun(id: string): Promise<unknown> {
+  async getRun(id: string): Promise<unknown> {
+    if (!this.isAvailable()) return undefined;
     return api().getRun(id);
   },
 
-  getRunByConversation(
+  async getRunByConversation(
     conversationId: string
   ): Promise<DelegationRunRow | undefined> {
+    if (!this.isAvailable()) return undefined;
     return api().getRunByConversation(conversationId);
   },
 
-  listEvents(runId: string): Promise<DelegationEventRow[]> {
+  async listEvents(runId: string): Promise<DelegationEventRow[]> {
+    if (!this.isAvailable()) return [];
     return api().listEvents(runId);
   },
 
-  listPendingApprovals(
+  async listPendingApprovals(
     runId: string
   ): Promise<Array<{ approvalId: string; runId: string }>> {
+    if (!this.isAvailable()) return [];
     return api().listPendingApprovals(runId);
   },
 
-  stopRun(runId: string): Promise<boolean> {
+  async stopRun(runId: string): Promise<boolean> {
+    if (!this.isAvailable()) return false;
     return api().stopRun(runId);
   },
 
-  pauseRun(runId: string): Promise<boolean> {
+  async pauseRun(runId: string): Promise<boolean> {
+    if (!this.isAvailable()) return false;
     return api().pauseRun(runId);
   },
 
-  resumeRun(runId: string): Promise<boolean> {
+  async resumeRun(runId: string): Promise<boolean> {
+    if (!this.isAvailable()) return false;
     return api().resumeRun(runId);
   },
 
-  hasRunForConversation(conversationId: string): Promise<boolean> {
+  async hasRunForConversation(conversationId: string): Promise<boolean> {
+    if (!this.isAvailable()) return false;
     return api().hasRunForConversation(conversationId);
   },
 
-  followUp(input: {
+  async followUp(input: {
     conversationId: string;
     prompt: string;
   }): Promise<

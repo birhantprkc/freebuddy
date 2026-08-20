@@ -107,9 +107,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const resolved = resolveLanguagePreference(preference, systemLanguage);
     const storedTheme = await cliClient.getSetting("theme");
     const storedTelemetryEnabled = await cliClient.getSetting("telemetry.enabled");
-    const butlerPreferences = await window.freebuddy?.butlerBuddy
-      ?.getPreferences()
-      .catch(() => undefined);
+    const butlerPreferences =
+      typeof window.freebuddy?.butlerBuddy?.getPreferences === "function"
+        ? await window.freebuddy.butlerBuddy.getPreferences().catch(() => undefined)
+        : undefined;
     const themePreference = normalizeThemePreference(storedTheme);
     const resolvedTheme = resolveThemePreference(themePreference, systemTheme);
     await i18next.changeLanguage(resolved);

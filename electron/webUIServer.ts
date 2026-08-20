@@ -89,7 +89,17 @@ const MIME_TYPES: Record<string, string> = {
   ".gif": "image/gif",
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".avif": "image/avif",
+  ".heic": "image/heic",
+  ".heif": "image/heif",
   ".ico": "image/x-icon",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".ogg": "audio/ogg",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
   ".ttf": "font/ttf",
@@ -402,10 +412,17 @@ function handleAttachment(req: IncomingMessage, res: ServerResponse): boolean {
     sendJson(res, 401, { ok: false, error: "unauthorized" });
     return true;
   }
-  const filePath = url.searchParams.get("path");
+  let filePath = url.searchParams.get("path");
   if (!filePath) {
     sendJson(res, 400, { ok: false, error: "missing_path" });
     return true;
+  }
+  if (filePath.startsWith("file://")) {
+    try {
+      filePath = decodeURIComponent(new URL(filePath).pathname);
+    } catch {
+      filePath = filePath.replace(/^file:\/\//, "");
+    }
   }
   const roots = remoteRootsForUser(callerUserIdFromMediaRequest(req));
   if (!canServeAttachmentPath(filePath, roots)) {

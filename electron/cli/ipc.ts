@@ -69,6 +69,7 @@ import {
 import {
   createProject,
   deleteProject,
+  findProjectByCwd,
   getProject,
   listProjects,
   resolveWorkspaceRootsForConversation,
@@ -1010,8 +1011,15 @@ export function registerCliIpc() {
   registerHandler(
     "cli:createConversation",
     async (_e, input: CreateConversationInput) => {
+      const matchedProjectId =
+        input.projectId ||
+        (input.cwd ? findProjectByCwd(input.cwd)?.id : undefined);
       const isolatedCwd = await isolateRemoteCwdForCaller(input.cwd);
-      const conversation = createConversation({ ...input, cwd: isolatedCwd });
+      const conversation = createConversation({
+        ...input,
+        cwd: isolatedCwd,
+        projectId: matchedProjectId ?? input.projectId
+      });
       trackTelemetryEvent("conversation_created", {
         adapter: normalizeTelemetryAdapter(input.adapter),
         has_workspace: Boolean(isolatedCwd),

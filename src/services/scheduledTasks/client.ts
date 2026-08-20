@@ -37,7 +37,7 @@ export const scheduledTasksClient = {
   run(id: string): Promise<boolean> {
     return api().run(id);
   },
-  onChanged(cb: (task?: ScheduledTask) => void): () => void {
-    return api().onChanged(cb);
+  onChanged(cb: (task?: ScheduledTask) => void): (() => void) | undefined {
+    return window.freebuddy?.scheduledTasks?.onChanged?.(cb);
   }
 };

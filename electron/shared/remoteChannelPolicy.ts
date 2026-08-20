@@ -312,7 +312,8 @@ export function listRemoteChannels(access: RemoteChannelAccess): string[] {
 export const REMOTE_READABLE_SETTING_KEYS: readonly string[] = [
   "language",
   "theme",
-  "telemetry.enabled"
+  "telemetry.enabled",
+  "member.runtimeOverrides"
 ];
 
 /** Telemetry is a host-level privacy decision, so it is read-only remotely. */

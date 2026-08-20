@@ -212,19 +212,21 @@ export const cliClient = {
     return api().saveToolSession(args);
   },
 
-  listProjects(): Promise<Project[]> {
+  async listProjects(): Promise<Project[]> {
+    if (!this.isAvailable() || typeof api().listProjects !== "function") return [];
     return api().listProjects();
   },
-  getProject(id: string): Promise<Project | null> {
+  async getProject(id: string): Promise<Project | null> {
+    if (!this.isAvailable() || typeof api().getProject !== "function") return null;
     return api().getProject(id);
   },
-  createProject(input: ProjectInput): Promise<Project> {
+  async createProject(input: ProjectInput): Promise<Project> {
     return api().createProject(input);
   },
-  updateProject(input: ProjectInput & { id: string }): Promise<Project> {
+  async updateProject(input: ProjectInput & { id: string }): Promise<Project> {
     return api().updateProject(input);
   },
-  deleteProject(id: string): Promise<{ ok: true }> {
+  async deleteProject(id: string): Promise<{ ok: true }> {
     return api().deleteProject(id);
   },
 

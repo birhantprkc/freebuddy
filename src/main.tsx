@@ -4,6 +4,7 @@ import App from "./App";
 import { ButlerBuddyChat } from "./components/ButlerBuddy/ButlerBuddyChat";
 import { ButlerBuddyPet } from "./components/ButlerBuddy/ButlerBuddyPet";
 import { ButlerBuddyScreenBall } from "./components/ButlerBuddy/ButlerBuddyScreenBall";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./i18n";
 import "../styles.css";
 import { installDebugLogClient } from "./services/debugLog";
@@ -25,5 +26,7 @@ const content =
   );
 
 createRoot(document.getElementById("root") as HTMLElement).render(
-  <StrictMode>{content}</StrictMode>
+  <StrictMode>
+    <ErrorBoundary>{content}</ErrorBoundary>
+  </StrictMode>
 );

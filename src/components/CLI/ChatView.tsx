@@ -2185,6 +2185,7 @@ export function ChatView({
                 agentIconKey={messageMember?.avatar}
                 blockLimit={partial?.blockLimit}
                 typingChars={partial?.typingChars}
+                cwd={conv?.cwd || conv?.sourceCwd}
                 afterContent={
                   shareReferences && shareReferences.length > 0 ? (
                     <SharedConversationReferences

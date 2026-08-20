@@ -193,6 +193,13 @@
       getToolSession: function (agentId, workspacePath) { return invoke("cli:getToolSession", { agentId: agentId, workspacePath: workspacePath }); },
       saveToolSession: function (args) { return invoke("cli:saveToolSession", args); },
 
+      listProjects: function () { return invoke("cli:listProjects"); },
+      getProject: function (id) { return invoke("cli:getProject", id); },
+      createProject: function (input) { return invoke("cli:createProject", input); },
+      updateProject: function (input) { return invoke("cli:updateProject", input); },
+      deleteProject: function (id) { return invoke("cli:deleteProject", id); },
+      importCodexSession: function () { return Promise.resolve({ created: false, turns: 0, messages: 0 }); },
+
       listConversations: function (args) { return invoke("cli:listConversations", args); },
       getConversation: function (id) { return invoke("cli:getConversation", id); },
       createConversation: function (input) { return invoke("cli:createConversation", input); },
@@ -325,6 +332,25 @@
       onChanged: function (cb) { return subscribe("infoCards://changed", cb); }
     },
 
+    delegation: {
+      listTeams: function () { return invoke("delegation:listTeams"); },
+      getTeam: function (id) { return invoke("delegation:getTeam", id); },
+      createTeam: function (input) { return invoke("delegation:createTeam", input); },
+      updateTeam: function (id, patch) { return invoke("delegation:updateTeam", { id: id, patch: patch }); },
+      deleteTeam: function (id) { return invoke("delegation:deleteTeam", id); },
+      getRun: function (id) { return invoke("delegation:getRun", id); },
+      getRunByConversation: function (conversationId) { return invoke("delegation:getRunByConversation", conversationId); },
+      listEvents: function (runId) { return invoke("delegation:listEvents", runId); },
+      listPendingApprovals: function (runId) { return invoke("delegation:listPendingApprovals", runId); },
+      stopRun: function (runId) { return invoke("delegation:stopRun", runId); },
+      pauseRun: function () { return Promise.resolve(false); },
+      resumeRun: function () { return Promise.resolve(false); },
+      hasRunForConversation: function (conversationId) { return invoke("delegation:hasRunForConversation", conversationId); },
+      followUp: function (input) { return invoke("delegation:followUp", input); },
+      onChanged: function (cb) { return subscribe("delegationTeams://changed", cb); },
+      onRunFinished: function (cb) { return subscribe("delegation://finished", cb); }
+    },
+
     workflow: {
       validate: function (plan) { return invoke("workflow:validate", plan); },
       previewReviewLoop: function (input) { return invoke("workflow:previewReviewLoop", input); },
@@ -344,7 +370,9 @@
       listRuns: function (conversationId) { return invoke("workflow:listRuns", conversationId); },
       previewTeamRun: function (input) { return invoke("workflow:previewTeamRun", input); },
       createTeamRun: function (input) { return invoke("workflow:createTeamRun", input); },
-      onStepMessage: function (conversationId, cb) { return subscribe("workflow://message/" + conversationId, cb); }
+      onStepMessage: function (conversationId, cb) { return subscribe("workflow://message/" + conversationId, cb); },
+      onStepEvent: function (conversationId, cb) { return subscribe("workflow://event/" + conversationId, cb); },
+      onRunFinished: function (cb) { return subscribe("workflow://finished", cb); }
     },
 
     workflowTeams: {
@@ -353,7 +381,8 @@
       create: function (input) { return invoke("workflowTeams:create", input); },
       update: function (args) { return invoke("workflowTeams:update", args); },
       delete: function (id) { return invoke("workflowTeams:delete", id); },
-      seedBuiltins: function () { return invoke("workflowTeams:seedBuiltins"); }
+      seedBuiltins: function () { return invoke("workflowTeams:seedBuiltins"); },
+      onChanged: function (cb) { return subscribe("workflowTeams://changed", cb); }
     },
 
     skills: {
@@ -372,7 +401,8 @@
       searchMarket: function (args) { return invoke("skills:searchMarket", args); },
       installFromMarket: function () { return Promise.resolve({ ok: false, error: "not_supported_remotely" }); },
       openMarketUrl: function () { return Promise.resolve(true); },
-      resolveMarketHomepage: function (args) { return invoke("skills:resolveMarketHomepage", args); }
+      resolveMarketHomepage: function (args) { return invoke("skills:resolveMarketHomepage", args); },
+      onChanged: function (cb) { return subscribe("skills://changed", cb); }
     },
 
     plugins: {
@@ -406,6 +436,19 @@
 
     shell: {
       showItemInFolder: function () { return Promise.resolve(false); }
+    },
+
+    debugLogs: {
+      write: function () { return Promise.resolve(); },
+      preview: function () { return Promise.resolve(""); },
+      prepareSelfCheck: function () { return Promise.resolve({ path: "" }); },
+      export: function () { return Promise.resolve({ canceled: true }); }
+    },
+
+    butlerBuddy: {
+      reportTaskResult: function () {},
+      updatePreferences: function () { return Promise.resolve(); },
+      onPreferencesChanged: function () { return noopUnsub(); }
     },
 
     remote: {

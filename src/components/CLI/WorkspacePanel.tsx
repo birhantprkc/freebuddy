@@ -123,8 +123,12 @@ export function WorkspacePanel({
 
   const [isDelegationConv, setIsDelegationConv] = useState(false);
   useEffect(() => {
-    if (!activeId) { setIsDelegationConv(false); return; }
-    delegationClient.getRunByConversation(activeId)
+    if (!activeId || !delegationClient.isAvailable()) {
+      setIsDelegationConv(false);
+      return;
+    }
+    delegationClient
+      .getRunByConversation(activeId)
       .then((r) => setIsDelegationConv(!!r))
       .catch(() => setIsDelegationConv(false));
   }, [activeId]);

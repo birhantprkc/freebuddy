@@ -70,12 +70,29 @@ export function listRemoteWorkspacePaths(userId: string): string[] {
     });
 }
 
+export function listAllRemoteWorkspaces(): RemoteWorkspace[] {
+  try {
+    return (
+      getDb()
+        .prepare(
+          `SELECT id, owner_id, source_path, workspace_path, created_at, updated_at
+           FROM remote_workspaces
+           ORDER BY created_at ASC`
+        )
+        .all() as any[]
+    ).map(rowToWorkspace);
+  } catch {
+    return [];
+  }
+}
+
 export function sourcePathForManagedWorkspace(
   workspacePath: string,
-  workspaces: RemoteWorkspace[]
+  workspaces?: RemoteWorkspace[]
 ): string | undefined {
+  const wsList = workspaces ?? listAllRemoteWorkspaces();
   const requested = path.resolve(workspacePath);
-  for (const workspace of workspaces) {
+  for (const workspace of wsList) {
     const managedRoot = path.resolve(workspace.workspacePath);
     const relativePath = path.relative(managedRoot, requested);
     if (
