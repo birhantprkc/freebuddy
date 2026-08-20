@@ -46,8 +46,34 @@
     return b;
   }
 
-  // Audio Synth for crisp wooden piece placement
-  function playPieceSound(isCapture = false) {
+  let isMuted = localStorage.getItem("freebuddy_game_muted") === "true";
+  let audioCtx = null;
+  let gameOverSoundPlayed = false;
+
+  const muteBtn = document.getElementById("mute-btn");
+  function updateMuteButtonUI() {
+    if (!muteBtn) return;
+    if (isMuted) {
+      muteBtn.textContent = "🔇";
+      muteBtn.classList.add("muted");
+      muteBtn.title = "音效已静音（点击开启）";
+    } else {
+      muteBtn.textContent = "🔊";
+      muteBtn.classList.remove("muted");
+      muteBtn.title = "音效已开启（点击静音）";
+    }
+  }
+  if (muteBtn) {
+    updateMuteButtonUI();
+    muteBtn.addEventListener("click", () => {
+      isMuted = !isMuted;
+      localStorage.setItem("freebuddy_game_muted", String(isMuted));
+      updateMuteButtonUI();
+    });
+  }
+
+  function getAudioContext() {
+    if (isMuted) return null;
     try {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -55,33 +81,159 @@
       if (audioCtx.state === "suspended") {
         audioCtx.resume();
       }
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-
-      if (isCapture) {
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.12);
-        gain.gain.setValueAtTime(0.45, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.12);
-      } else {
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(360, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.09);
-        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.09);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.09);
-      }
-    } catch (e) {
-      /* Audio not supported */
+      return audioCtx;
+    } catch {
+      return null;
     }
+  }
+
+  // 1. Move Sound: Solid Wood Strike (实木落子)
+  function playPieceSound(isCapture = false) {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      if (isCapture) {
+        // Heavy impact capture
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        osc1.type = "sawtooth";
+        osc1.frequency.setValueAtTime(260, now);
+        osc1.frequency.exponentialRampToValueAtTime(45, now + 0.14);
+        gain1.gain.setValueAtTime(0.48, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.14);
+
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = "triangle";
+        osc2.frequency.setValueAtTime(140, now);
+        osc2.frequency.exponentialRampToValueAtTime(30, now + 0.12);
+        gain2.gain.setValueAtTime(0.35, now);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(now);
+        osc2.stop(now + 0.12);
+      } else {
+        // Solid wood placement
+        const osc1 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        osc1.type = "triangle";
+        osc1.frequency.setValueAtTime(340, now);
+        osc1.frequency.exponentialRampToValueAtTime(80, now + 0.08);
+        gain1.gain.setValueAtTime(0.38, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+        osc1.start(now);
+        osc1.stop(now + 0.08);
+
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = "sine";
+        osc2.frequency.setValueAtTime(120, now);
+        osc2.frequency.exponentialRampToValueAtTime(45, now + 0.09);
+        gain2.gain.setValueAtTime(0.25, now);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(now);
+        osc2.stop(now + 0.09);
+      }
+    } catch {}
+  }
+
+  // 2. Select Piece Sound: Soft wood tap (选子轻触)
+  function playSelectSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(560, now);
+      osc.frequency.exponentialRampToValueAtTime(320, now + 0.035);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.035);
+    } catch {}
+  }
+
+  // 3. Check Sound: Ancient East Asian Zither / Chime Strike (将军！金石之声)
+  function playCheckSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    try {
+      const freqs = [440.0, 554.37, 659.25, 880.0]; // A4, C#5, E5, A5
+      const now = ctx.currentTime;
+      freqs.forEach((freq, i) => {
+        const start = now + i * 0.04;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.26, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.45);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.45);
+      });
+    } catch {}
+  }
+
+  // 4. Victory Sound (旗开得胜)
+  function playVictorySound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    try {
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+      const now = ctx.currentTime;
+      notes.forEach((freq, idx) => {
+        const start = now + idx * 0.1;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.28, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.35);
+      });
+    } catch {}
+  }
+
+  // 5. Defeat Sound (惜败)
+  function playDefeatSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    try {
+      const notes = [392.0, 349.23, 311.13, 261.63]; // G4, F4, Eb4, C4
+      const now = ctx.currentTime;
+      notes.forEach((freq, idx) => {
+        const start = now + idx * 0.14;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.22, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.28);
+      });
+    } catch {}
   }
 
   function coordToString(x, y) {
@@ -547,6 +699,7 @@
       selectedCoord = { x, y };
       legalTargets = getClientLegalMoves(x, y);
       statusText.textContent = `已选择【${PIECE_NAMES[clickedPiece]}】，点击绿色标记点移动。`;
+      playSelectSound();
       drawBoard();
       return;
     }
@@ -588,6 +741,10 @@
 
   function updateUI() {
     if (status === "player_won") {
+      if (!gameOverSoundPlayed) {
+        gameOverSoundPlayed = true;
+        playVictorySound();
+      }
       turnBadge.className = "turn-indicator win";
       turnBadge.textContent = "🏆 旗开得胜！你赢了";
       statusText.textContent = "🎉 恭喜你绝杀获胜！棋局已完整保留供复盘截图。";
@@ -596,6 +753,10 @@
       resignBtn.style.display = "none";
       if (retryAgentBtn) retryAgentBtn.style.display = "none";
     } else if (status === "agent_won") {
+      if (!gameOverSoundPlayed) {
+        gameOverSoundPlayed = true;
+        playDefeatSound();
+      }
       turnBadge.className = "turn-indicator lose";
       turnBadge.textContent = "🤖 Agent 绝杀获胜";
       statusText.textContent = "本局对战结束，棋局已完整保留供复盘截图。";
@@ -612,6 +773,7 @@
       resignBtn.style.display = "none";
       if (retryAgentBtn) retryAgentBtn.style.display = "none";
     } else {
+      gameOverSoundPlayed = false;
       restartBtn.className = "btn";
       restartBtn.textContent = "重新开局";
       resignBtn.style.display = "inline-block";

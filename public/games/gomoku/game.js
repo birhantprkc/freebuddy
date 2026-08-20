@@ -23,8 +23,34 @@
   const resignBtn = document.getElementById("resign-btn");
   const retryAgentBtn = document.getElementById("retry-agent-btn");
 
-  // Web Audio Synth for crisp stone placement click
-  function playStoneSound() {
+  let isMuted = localStorage.getItem("freebuddy_game_muted") === "true";
+  let audioCtx = null;
+  let gameOverSoundPlayed = false;
+
+  const muteBtn = document.getElementById("mute-btn");
+  function updateMuteButtonUI() {
+    if (!muteBtn) return;
+    if (isMuted) {
+      muteBtn.textContent = "🔇";
+      muteBtn.classList.add("muted");
+      muteBtn.title = "音效已静音（点击开启）";
+    } else {
+      muteBtn.textContent = "🔊";
+      muteBtn.classList.remove("muted");
+      muteBtn.title = "音效已开启（点击静音）";
+    }
+  }
+  if (muteBtn) {
+    updateMuteButtonUI();
+    muteBtn.addEventListener("click", () => {
+      isMuted = !isMuted;
+      localStorage.setItem("freebuddy_game_muted", String(isMuted));
+      updateMuteButtonUI();
+    });
+  }
+
+  function getAudioContext() {
+    if (isMuted) return null;
     try {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -32,22 +58,90 @@
       if (audioCtx.state === "suspended") {
         audioCtx.resume();
       }
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = "triangle";
-      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.08);
-
-      gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
-
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.08);
-    } catch (e) {
-      // Audio not permitted or supported
+      return audioCtx;
+    } catch {
+      return null;
     }
+  }
+
+  // 1. Crisp Stone Placement Click (云子落盘)
+  function playStoneSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      // High-pitch stone snap
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(620, now);
+      osc1.frequency.exponentialRampToValueAtTime(220, now + 0.05);
+      gain1.gain.setValueAtTime(0.35, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.05);
+
+      // Wood board resonance
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = "triangle";
+      osc2.frequency.setValueAtTime(240, now);
+      osc2.frequency.exponentialRampToValueAtTime(90, now + 0.08);
+      gain2.gain.setValueAtTime(0.25, now);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now);
+      osc2.stop(now + 0.08);
+    } catch {}
+  }
+
+  // 2. Victory Arpeggio (旗开得胜和弦)
+  function playVictorySound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    try {
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+      const now = ctx.currentTime;
+      notes.forEach((freq, idx) => {
+        const start = now + idx * 0.1;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.28, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.35);
+      });
+    } catch {}
+  }
+
+  // 3. Defeat Tone (惜败音效)
+  function playDefeatSound() {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    try {
+      const notes = [392.0, 349.23, 311.13, 261.63]; // G4, F4, Eb4, C4
+      const now = ctx.currentTime;
+      notes.forEach((freq, idx) => {
+        const start = now + idx * 0.14;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.22, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.28);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.28);
+      });
+    } catch {}
   }
 
   function coordToString(x, y) {
@@ -293,6 +387,10 @@
 
   function updateUI() {
     if (status === "player_won") {
+      if (!gameOverSoundPlayed) {
+        gameOverSoundPlayed = true;
+        playVictorySound();
+      }
       turnBadge.className = "turn-indicator win";
       turnBadge.textContent = "🏆 旗开得胜！你赢了";
       statusText.textContent = "🎉 恭喜你完成五连珠！棋盘已完整保留供复盘截图。";
@@ -301,6 +399,10 @@
       resignBtn.style.display = "none";
       if (retryAgentBtn) retryAgentBtn.style.display = "none";
     } else if (status === "agent_won") {
+      if (!gameOverSoundPlayed) {
+        gameOverSoundPlayed = true;
+        playDefeatSound();
+      }
       turnBadge.className = "turn-indicator lose";
       turnBadge.textContent = "🤖 Agent 抢先连珠获胜";
       statusText.textContent = "本局对战结束，棋盘已完整保留供复盘截图。";
@@ -317,6 +419,7 @@
       resignBtn.style.display = "none";
       if (retryAgentBtn) retryAgentBtn.style.display = "none";
     } else {
+      gameOverSoundPlayed = false;
       restartBtn.className = "btn";
       restartBtn.textContent = "重新开局";
       resignBtn.style.display = "inline-block";
