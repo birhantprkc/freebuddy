@@ -417,9 +417,15 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
           const suggestedCoord = legalMoves?.[0]?.coord || "H8";
 
           if (sendMessage) {
+            const isXiangqi = moveRes?.gameState?.gameType === "xiangqi";
+            const isWon = moveRes?.gameState?.status === "player_won";
+            const promptText = isWon
+              ? (isXiangqi ? `玩家走子：${actionId}，绝杀获胜！` : `玩家落子：${actionId}，五连珠获胜！`)
+              : (isXiangqi ? `玩家走子：${actionId}` : `玩家落子：${actionId}`);
+
             void sendMessage({
               conversationId: activeId,
-              prompt: `[玩家落子] 坐标：${actionId}。轮到你行动，请直接调用 MCP 工具 game_make_move(actionId, reason) 落子，并调用 game_send_chat(message, mood) 发送台词。`
+              prompt: promptText
             });
           }
         } catch (err) {
@@ -443,7 +449,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
           if (sendMessage) {
             void sendMessage({
               conversationId: activeId,
-              prompt: `【重新开局】我已重置了棋盘。我执黑先行，你执白后手。请调用 game_send_chat 工具向我打个招呼，并准备接招！`
+              prompt: `【重新开局】我已重置了棋盘，准备开始新一局！`
             });
           }
         } catch (err) {
@@ -453,7 +459,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         if (sendMessage) {
           void sendMessage({
             conversationId: activeId,
-            prompt: `【催促落子】轮到你执白行动，请直接调用 MCP 工具 game_make_move(actionId, reason) 尽快完成落子！`
+            prompt: `轮到你行动，请尽快出招。`
           });
         }
       } else if (data.type === "GAME_RESIGN") {

@@ -220,24 +220,24 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
         if (selectedHand === "player_first") {
           void convStore.sendMessage({
             conversationId: conv.id,
-            prompt: `【中国象棋对局开始】我已经进入对战棋盘。我执红先行，你执黑后手。请调用 game_send_chat 工具向我打个招呼，并准备迎战！`
+            prompt: `【中国象棋对局开始】我执红先行，你执黑后手。准备迎战！`
           });
         } else {
           void convStore.sendMessage({
             conversationId: conv.id,
-            prompt: `【中国象棋对局开始】本局你执红先行！请调用 game_make_move(actionId, reason) 走出第一步棋（如中炮 b2e2 / 炮二平五，或起马 h0g2 / 马八进七），并调用 game_send_chat(message, mood) 发送你的开局台词！`
+            prompt: `【中国象棋对局开始】本局你执红先行，请出招！`
           });
         }
       } else {
         if (selectedHand === "player_first") {
           void convStore.sendMessage({
             conversationId: conv.id,
-            prompt: `【五子棋对局开始】我已经进入对战棋盘。我执黑先行，你执白后手。请调用 game_send_chat 工具向我打个招呼，并准备接招！`
+            prompt: `【五子棋对局开始】我执黑先行，你执白后手。准备接招！`
           });
         } else {
           void convStore.sendMessage({
             conversationId: conv.id,
-            prompt: `【五子棋对局开始】本局你执黑先行！请调用 game_make_move(actionId, reason) 落出第一子（如天元 H8），并调用 game_send_chat(message, mood) 发送你的开局台词！`
+            prompt: `【五子棋对局开始】本局你执黑先行，请落子！`
           });
         }
       }
