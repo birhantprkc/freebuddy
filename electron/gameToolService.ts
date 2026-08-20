@@ -10,6 +10,7 @@ import { XiangqiGameInstance, PLAYER_RED as XIANGQI_RED, PLAYER_BLACK as XIANGQI
 import type {
   GameAction,
   GameChatMessage,
+  GameMoveRecord,
   GameStateSnapshot,
   GameStatus,
   GameToolBinding,
@@ -26,7 +27,9 @@ export interface GameInstance {
   status: GameStatus;
   turn: number;
   winner: number | null;
-  getSnapshot(): GameStateSnapshot;
+  moveHistory: GameMoveRecord[];
+  chatHistory: GameChatMessage[];
+  getSnapshot(options?: { includeHistory?: boolean }): GameStateSnapshot;
   applyMove(actionId: string, player: number, reason?: string): { ok: boolean; error?: string; winner?: number | null; chineseMove?: string };
   addChat(sender: "player" | "agent" | "system", message: string, mood?: any): GameChatMessage;
   resign(player: number, reason?: string): { ok: boolean; winner: number };
@@ -66,7 +69,7 @@ export function persistGameState(conversationId: string, game: GameInstance): vo
   if (!updateMetadataFn) return;
   try {
     updateMetadataFn(conversationId, {
-      gameState: game.getSnapshot()
+      gameState: game.getSnapshot({ includeHistory: true })
     });
   } catch (err) {
     console.warn(`[FreeBuddy] Failed to persist game state for ${conversationId}:`, err);
@@ -136,6 +139,20 @@ export async function dispatchGameAction(
       ok: true,
       gameId: game.gameId,
       gameState: game.getSnapshot()
+    };
+  }
+
+  if (action === "get_history") {
+    const limit = typeof params.limit === "number" && params.limit > 0 ? params.limit : undefined;
+    const moves = limit ? game.moveHistory.slice(-limit) : [...game.moveHistory];
+    const chats = limit ? game.chatHistory.slice(-limit) : [...game.chatHistory];
+    return {
+      ok: true,
+      gameId: game.gameId,
+      gameType: game.getSnapshot().gameType,
+      stepCount: game.moveHistory.length,
+      moveHistory: moves,
+      chatHistory: chats
     };
   }
 

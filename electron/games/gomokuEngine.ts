@@ -233,7 +233,8 @@ export class GomokuGameInstance {
     return inst;
   }
 
-  public getSnapshot(): GameStateSnapshot {
+  public getSnapshot(options?: { includeHistory?: boolean }): GameStateSnapshot {
+    const includeHistory = options?.includeHistory ?? false;
     return {
       gameType: "gomoku",
       gameId: this.gameId,
@@ -243,9 +244,10 @@ export class GomokuGameInstance {
       winner: this.winner,
       board: this.board.map((row) => [...row]),
       lastMove: this.moveHistory.length > 0 ? this.moveHistory[this.moveHistory.length - 1] : null,
-      moveHistory: [...this.moveHistory],
+      moveHistory: includeHistory ? [...this.moveHistory] : undefined,
+      recentMoves: this.moveHistory.slice(-3),
       legalMoves: this.status === "playing" ? getCandidateMoves(this.board, this.turn) : [],
-      chatHistory: [...this.chatHistory],
+      chatHistory: includeHistory ? [...this.chatHistory] : this.chatHistory.slice(-3),
       updatedAt: this.updatedAt
     };
   }

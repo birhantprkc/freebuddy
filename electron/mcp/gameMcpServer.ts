@@ -181,6 +181,37 @@ export function createGameMcpServer(): McpServer {
     }
   );
 
+  // Tool 5: Get full move and chat history
+  server.registerTool(
+    "game_get_history",
+    {
+      title: "Get Move History",
+      description:
+        "获取本局对弈的历史走法记录 (moveHistory) 与对白记录。用于复盘、分析过往招法或推演棋谱。",
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(200)
+          .optional()
+          .describe("获取最近 N 步历史，默认返回全部历史")
+      },
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true
+      }
+    },
+    async ({ limit }) => {
+      try {
+        return toolResult(await invokeGameBridge("get_history", { limit }));
+      } catch (error) {
+        return toolError(error);
+      }
+    }
+  );
+
   return server;
 }
 

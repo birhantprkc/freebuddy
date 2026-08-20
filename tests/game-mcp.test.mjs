@@ -68,7 +68,16 @@ test("Game tool service dispatches actions correctly", async () => {
   assert.equal(chatRes.chat.message, "这一步走得不错，不过我的白子已经盯紧你了！");
   assert.equal(chatRes.chat.mood, "confident");
 
-  // 6. Agent resigns
+  // 6. Test get_history action
+  const historyRes = await dispatchGameAction(binding, "get_history", {});
+  assert.equal(historyRes.ok, true);
+  assert.equal(historyRes.moveHistory.length, 2, "Should have 2 moves in history");
+  assert.equal(historyRes.chatHistory.length, 1, "Should have 1 chat in history");
+
+  // Verify lean snapshot in get_state does not contain full moveHistory
+  assert.equal(stateRes.gameState.moveHistory, undefined, "Lean snapshot should omit moveHistory");
+
+  // 7. Agent resigns
   const resignRes = await dispatchGameAction(binding, "resign", {
     reason: "局势不妙，甘拜下风"
   });

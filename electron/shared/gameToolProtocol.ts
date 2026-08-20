@@ -5,7 +5,8 @@ export type GameAction =
   | "make_move"
   | "send_chat"
   | "resign"
-  | "reset";
+  | "reset"
+  | "get_history";
 
 export type GameStatus =
   | "waiting"
@@ -58,9 +59,10 @@ export interface GameStateSnapshot {
   turn: number; // 1: Player, 2: Agent
   stepCount: number;
   winner?: number | null;
-  board: number[][]; // 15x15 for Gomoku (0: empty, 1: player, 2: agent)
+  board: number[][]; // 15x15 for Gomoku, 10x9 for Xiangqi
   lastMove?: GameMoveRecord | null;
-  moveHistory: GameMoveRecord[];
+  moveHistory?: GameMoveRecord[];
+  recentMoves?: GameMoveRecord[];
   legalMoves: LegalGameMove[];
   chatHistory: GameChatMessage[];
   updatedAt: number;
@@ -76,11 +78,15 @@ export interface GameToolEvent {
 export interface GameToolResult {
   ok: boolean;
   gameId?: string;
+  gameType?: GameType;
   gameState?: GameStateSnapshot;
   message?: string;
   error?: string;
   actionId?: string;
   chat?: GameChatMessage;
+  moveHistory?: GameMoveRecord[];
+  chatHistory?: GameChatMessage[];
+  stepCount?: number;
   [key: string]: unknown;
 }
 
