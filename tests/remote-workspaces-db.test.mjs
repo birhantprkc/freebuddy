@@ -12,7 +12,54 @@ import { spawnSync } from "node:child_process";
 const gitConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-gitcfg-"));
 process.env.GIT_CONFIG_GLOBAL = path.join(gitConfigDir, "gitconfig");
 process.env.GIT_CONFIG_NOSYSTEM = "1";
-fs.writeFileSync(process.env.GIT_CONFIG_GLOBAL, "");
+fs.writeFileSync(
+  process.env.GIT_CONFIG_GLOBAL,
+  "[gc]\n  auto = 0\n[core]\n  fsmonitor = false\n"
+);
+
+function safeRmSync(targetPath) {
+  try {
+    if (!fs.existsSync(targetPath)) return;
+  } catch {
+    return;
+  }
+  function clearReadOnly(target) {
+    try {
+      fs.chmodSync(target, 0o777);
+    } catch {}
+    try {
+      const stat = fs.lstatSync(target);
+      if (stat.isDirectory()) {
+        for (const entry of fs.readdirSync(target)) {
+          clearReadOnly(path.join(target, entry));
+        }
+      }
+    } catch {}
+  }
+  try {
+    fs.rmSync(targetPath, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100
+    });
+  } catch (error) {
+    if (process.platform === "win32") {
+      clearReadOnly(targetPath);
+      try {
+        fs.rmSync(targetPath, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 100
+        });
+        return;
+      } catch {}
+    }
+    if (!fs.existsSync(targetPath)) return;
+    throw error;
+  }
+}
 
 let Database;
 let bindingAvailable = true;
@@ -126,7 +173,7 @@ test("remote workspaces create and reuse an independent clone per user", async (
     );
   } finally {
     removeRemoteWorkspacesForUser(userId);
-    fs.rmSync(source, { recursive: true, force: true });
+    safeRmSync(source);
     setDbForTest(null);
     db.close();
   }
@@ -243,9 +290,9 @@ test("ordinary and empty directories become isolated Git-backed snapshots", asyn
     removeRemoteWorkspacesForUser(alice);
     removeRemoteWorkspacesForUser(bob);
     removeRemoteWorkspacesForUser(emptyUser);
-    fs.rmSync(source, { recursive: true, force: true });
-    fs.rmSync(emptySource, { recursive: true, force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    safeRmSync(source);
+    safeRmSync(emptySource);
+    safeRmSync(outside);
     setDbForTest(null);
     db.close();
   }

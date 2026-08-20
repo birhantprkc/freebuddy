@@ -203,12 +203,57 @@ function safeWorkspaceName(sourcePath: string): string {
   return `${base}-${digest}`;
 }
 
+function clearReadOnly(target: string): void {
+  try {
+    fs.chmodSync(target, 0o777);
+  } catch {}
+  try {
+    const stat = fs.lstatSync(target);
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(target)) {
+        clearReadOnly(path.join(target, entry));
+      }
+    }
+  } catch {}
+}
+
+export function safeRmSync(targetPath: string): void {
+  try {
+    if (!fs.existsSync(targetPath)) return;
+  } catch {
+    return;
+  }
+  try {
+    fs.rmSync(targetPath, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100
+    });
+  } catch (error) {
+    if (process.platform === "win32") {
+      clearReadOnly(targetPath);
+      try {
+        fs.rmSync(targetPath, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 100
+        });
+        return;
+      } catch {}
+    }
+    if (!fs.existsSync(targetPath)) return;
+    throw error;
+  }
+}
+
 function runGit(
   args: string[],
   errorCode = "remote_workspace_git_failed"
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn("git", args, {
+    const child = spawn("git", ["-c", "gc.auto=0", ...args], {
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true
     });
@@ -284,7 +329,7 @@ async function cloneWorkspace(
     await configureWorkspaceGitIdentity(userId, temporaryPath);
     fs.renameSync(temporaryPath, workspacePath);
   } catch (error) {
-    fs.rmSync(temporaryPath, { recursive: true, force: true });
+    safeRmSync(temporaryPath);
     throw error;
   }
 }
@@ -364,7 +409,7 @@ async function snapshotWorkspace(
     ]);
     fs.renameSync(temporaryPath, workspacePath);
   } catch (error) {
-    fs.rmSync(temporaryPath, { recursive: true, force: true });
+    safeRmSync(temporaryPath);
     throw new Error(
       `remote_workspace_snapshot_failed: ${
         (error as Error)?.message || String(error)
@@ -486,7 +531,7 @@ export function removeRemoteWorkspacesForUser(userId: string): number {
   const managedRoot = path.join(getRemoteWorkspacesRoot(), userId);
   const remoteWorkspaceRoot = getRemoteWorkspacesRoot();
   if (isPathWithinRoots(managedRoot, [remoteWorkspaceRoot])) {
-    fs.rmSync(managedRoot, { recursive: true, force: true });
+    safeRmSync(managedRoot);
   }
   getDb().prepare("DELETE FROM remote_workspaces WHERE owner_id = ?").run(userId);
   return workspaces.length;
