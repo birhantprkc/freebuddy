@@ -278,8 +278,8 @@
     height = Math.floor(height);
     if (width <= 0 || height <= 0) return;
 
-    paddingX = Math.round(width * 0.07);
-    paddingY = Math.round(height * 0.065);
+    paddingX = Math.max(22, Math.round(width * 0.08));
+    paddingY = Math.max(22, Math.round(height * 0.075));
     cellWidth = (width - paddingX * 2) / (BOARD_COLS - 1);
     cellHeight = (height - paddingY * 2) / (BOARD_ROWS - 1);
     pieceRadius = Math.min(cellWidth, cellHeight) * 0.46;
@@ -491,6 +491,32 @@
 
     ctx.fillText("楚  河", paddingX + 2 * cellWidth, riverY);
     ctx.fillText("漢  界", paddingX + 6 * cellWidth, riverY);
+
+    // 4.5 Coordinate Labels (a-i along top/bottom, 0-9 along left/right)
+    ctx.fillStyle = "rgba(120, 53, 15, 0.85)";
+    ctx.font = `600 ${Math.max(10, Math.round(cellWidth * 0.28))}px "Segoe UI", "PingFang SC", -apple-system, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // Column Letters (a - i)
+    for (let c = 0; c < BOARD_COLS; c++) {
+      const x = paddingX + c * cellWidth;
+      const colChar = COL_LETTERS[c];
+      // Bottom (below Red baseline)
+      ctx.fillText(colChar, x, height - paddingY * 0.42);
+      // Top (above Black baseline)
+      ctx.fillText(colChar, x, paddingY * 0.42);
+    }
+
+    // Row Numbers (0 - 9, UCCI algebraic notation: 0 at Red bottom, 9 at Black top)
+    for (let r = 0; r < BOARD_ROWS; r++) {
+      const y = paddingY + r * cellHeight;
+      const rowNum = `${BOARD_ROWS - 1 - r}`;
+      // Left
+      ctx.fillText(rowNum, paddingX * 0.45, y);
+      // Right
+      ctx.fillText(rowNum, width - paddingX * 0.45, y);
+    }
 
     // 5. Star / Cross Markers (兵/炮位十字花)
     const starMarkers = [
