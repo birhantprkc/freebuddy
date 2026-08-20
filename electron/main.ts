@@ -15,12 +15,19 @@ import { startWebUIServer } from "./webUIServer.js";
 import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
 import { setButlerAppWindowGetter } from "./butlerToolService.js";
 import { ensureOwnerUser, getOwnerUser } from "./cli/users.js";
-import { bindConversationNotifier } from "./cli/conversations.js";
+import { bindConversationNotifier, getConversation, updateConversationMetadata } from "./cli/conversations.js";
 import { bindDelegationRunFinishedNotifier } from "./cli/delegationRuns.js";
 import { applyOwnerBackfill } from "./cli/ownerBackfill.js";
 import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
 import { getSetting, setSetting } from "./cli/settings.js";
+import {
+  getOrCreateGame,
+  handlePlayerMove,
+  handleAgentMove,
+  handleResetGame,
+  initGamePersistence
+} from "./gameToolService.js";
 import {
   initRemoteControl,
   getConfiguredBindMode,
@@ -1227,6 +1234,40 @@ function registerButlerBuddyWindowIpc() {
     if (!isButlerBuddyTaskResultSender(event.sender)) return;
     butlerBuddyStateCoordinator.reportTaskResult(result);
   });
+  ipcMain.handle("game:getState", (_event, conversationId: string) => {
+    return getOrCreateGame(conversationId).getSnapshot();
+  });
+  ipcMain.handle(
+    "game:playerMove",
+    (event, payload: { conversationId: string; actionId: string }) => {
+      return handlePlayerMove(payload.conversationId, payload.actionId, event.sender);
+    }
+  );
+  ipcMain.handle(
+    "game:agentMove",
+    (
+      event,
+      payload: {
+        conversationId: string;
+        actionId: string;
+        reason?: string;
+        speech?: string;
+        mood?: "confident" | "mocking" | "nervous" | "calm" | "admiring";
+      }
+    ) => {
+      return handleAgentMove(
+        payload.conversationId,
+        payload.actionId,
+        payload.reason,
+        payload.speech,
+        payload.mood,
+        event.sender
+      );
+    }
+  );
+  ipcMain.handle("game:resetGame", (event, conversationId: string) => {
+    return handleResetGame(conversationId, event.sender);
+  });
   ipcMain.handle(
     "butlerBuddy:updatePreferences",
     (
@@ -1567,6 +1608,7 @@ app.whenReady().then(async () => {
   initializeAgentUsageReconciler();
   initializeTelemetry();
   cleanupOrphanManagedAttachments();
+  initGamePersistence(getConversation, updateConversationMetadata);
   seedBuiltinSkills();
   seedBuiltinWorkflowTeams();
   seedBuiltinDelegationTeams();

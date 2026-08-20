@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Dog, LogOut, Settings } from "lucide-react";
+import { Dog, Gamepad2, LogOut, Settings } from "lucide-react";
 import { useConversationStore } from "@/store/conversationStore";
 import { useSettingsStore } from "@/store/settingsStore";
+import { GameSetupModal } from "@/components/Games/GameSetupModal";
 
 export function SidebarUserMenu({
   onOpenSettings,
@@ -23,6 +24,7 @@ export function SidebarUserMenu({
     me?.username?.trim() ||
     (platform !== "web" ? t("sidebar.hostAccount") : "");
   const [open, setOpen] = useState(false);
+  const [gameModalOpen, setGameModalOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,61 +56,80 @@ export function SidebarUserMenu({
   const initial = (username.trim()[0] ?? "?").toUpperCase();
 
   return (
-    <div className="sidebar-user-menu" ref={ref}>
-      <button
-        type="button"
-        className={`footer-action sidebar-user-trigger${open ? " open" : ""}`}
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={username}
-      >
-        <span className="sidebar-user-avatar" aria-hidden="true">
-          {initial}
-        </span>
-        <span className="sidebar-user-name">{username}</span>
-      </button>
-      {open && (
-        <div className="sidebar-user-dropdown" role="menu">
-          <button
-            type="button"
-            className="sidebar-user-item"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onOpenSettings();
-            }}
-          >
-            <Settings size={15} strokeWidth={1.8} />
-            {t("common.settings")}
-          </button>
-          {canTogglePet && (
+    <>
+      <div className="sidebar-user-menu" ref={ref}>
+        <button
+          type="button"
+          className={`footer-action sidebar-user-trigger${open ? " open" : ""}`}
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          title={username}
+        >
+          <span className="sidebar-user-avatar" aria-hidden="true">
+            {initial}
+          </span>
+          <span className="sidebar-user-name">{username}</span>
+        </button>
+        {open && (
+          <div className="sidebar-user-dropdown" role="menu">
             <button
               type="button"
               className="sidebar-user-item"
               role="menuitem"
               onClick={() => {
                 setOpen(false);
-                void updateButler({ visible: !butlerVisible });
+                onOpenSettings();
               }}
             >
-              <Dog size={15} strokeWidth={1.8} />
-              {butlerVisible ? t("sidebar.hidePet") : t("sidebar.showPet")}
+              <Settings size={15} strokeWidth={1.8} />
+              {t("common.settings")}
             </button>
-          )}
-          {showLogout && (
             <button
               type="button"
-              className="sidebar-user-item danger"
+              className="sidebar-user-item"
               role="menuitem"
-              onClick={handleLogout}
+              onClick={() => {
+                setOpen(false);
+                setGameModalOpen(true);
+              }}
             >
-              <LogOut size={15} strokeWidth={1.8} />
-              {t("sidebar.logout")}
+              <Gamepad2 size={15} strokeWidth={1.8} />
+              对战大厅 (玩一把)
             </button>
-          )}
-        </div>
-      )}
-    </div>
+            {canTogglePet && (
+              <button
+                type="button"
+                className="sidebar-user-item"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  void updateButler({ visible: !butlerVisible });
+                }}
+              >
+                <Dog size={15} strokeWidth={1.8} />
+                {butlerVisible ? t("sidebar.hidePet") : t("sidebar.showPet")}
+              </button>
+            )}
+            {showLogout && (
+              <button
+                type="button"
+                className="sidebar-user-item danger"
+                role="menuitem"
+                onClick={handleLogout}
+              >
+                <LogOut size={15} strokeWidth={1.8} />
+                {t("sidebar.logout")}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <GameSetupModal
+        open={gameModalOpen}
+        onClose={() => setGameModalOpen(false)}
+      />
+    </>
   );
 }

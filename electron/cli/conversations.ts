@@ -46,6 +46,7 @@ export interface ChatAttachment {
 }
 
 export type ConversationTitleSource = "default" | "prompt" | "agent" | "user";
+export type ConversationKind = "default" | "game" | "workflow" | "scheduled" | string;
 
 export interface Conversation {
   id: string;
@@ -53,6 +54,8 @@ export interface Conversation {
   agentId: string;
   agentName: string;
   adapter: string;
+  kind?: ConversationKind;
+  metadata?: Record<string, unknown>;
   cwd?: string;
   /** Assigned source path shown to remote users; cwd remains the execution path. */
   sourceCwd?: string;
@@ -149,12 +152,22 @@ function rowToConversation(
     }
     sourceCwd = sourcePathForManagedWorkspace(cwd, workspaces);
   }
+  let metadata: Record<string, unknown> | undefined;
+  if (r.metadata) {
+    try {
+      metadata = typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata;
+    } catch {
+      /* ignore invalid json */
+    }
+  }
   return {
     id: r.id,
     title: r.title,
     agentId: r.agent_id,
     agentName: r.agent_name,
     adapter: r.adapter,
+    kind: (r.kind as ConversationKind) || "default",
+    metadata,
     cwd,
     sourceCwd,
     projectId: r.project_id ?? undefined,
@@ -237,6 +250,8 @@ export interface CreateConversationInput {
   agentId: string;
   agentName: string;
   adapter: string;
+  kind?: ConversationKind;
+  metadata?: Record<string, unknown>;
   cwd?: string;
   projectId?: string;
   approvalMode?: "auto" | "ask";
@@ -262,12 +277,12 @@ export function createConversation(input: CreateConversationInput): Conversation
   getDb()
     .prepare(
       `INSERT INTO conversations
-         (id, title, agent_id, agent_name, adapter, cwd, project_id, approval_mode,
+         (id, title, agent_id, agent_name, adapter, kind, metadata, cwd, project_id, approval_mode,
           config_option_overrides, skill_snapshot, title_source, archived,
           source_conversation_id, source_agent_id, source_agent_name,
           source_adapter, source_brief_id, owner_id,
           created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -275,6 +290,8 @@ export function createConversation(input: CreateConversationInput): Conversation
       input.agentId,
       input.agentName,
       input.adapter,
+      input.kind || "default",
+      input.metadata ? JSON.stringify(input.metadata) : null,
       input.cwd ?? null,
       projectId ?? null,
       input.approvalMode ?? null,
@@ -321,6 +338,18 @@ export function setConversationSkills(
       id
     );
   return getConversation(id);
+}
+
+export function updateConversationMetadata(
+  id: string,
+  patch: Record<string, unknown>
+): void {
+  const conv = getConversation(id);
+  if (!conv) return;
+  const merged = { ...(conv.metadata || {}), ...patch };
+  getDb()
+    .prepare("UPDATE conversations SET metadata = ?, updated_at = ? WHERE id = ?")
+    .run(JSON.stringify(merged), new Date().toISOString(), id);
 }
 
 export function setConversationApprovalMode(

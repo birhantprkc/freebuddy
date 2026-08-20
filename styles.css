@@ -4101,23 +4101,60 @@ html[data-surface="butler-screen-ball"] #root {
   to { transform: rotate(360deg); }
 }
 
+.modal-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--fb-border-strong);
+  background: var(--fb-panel-soft);
+  color: var(--fb-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modal-actions button:hover:not(:disabled) {
+  background: var(--fb-hover);
+  color: var(--fb-text-primary);
+  border-color: var(--fb-border-strong);
+}
+
+.modal-actions button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.modal-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-actions button.primary,
 .modal-actions .primary {
   background: var(--fb-brand-gradient);
   color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
+  border: 1px solid transparent;
+  padding: 7px 18px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 194, 154, 0.2);
-  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+  transition: all 0.15s ease;
 }
-.modal-actions .primary:hover {
+
+.modal-actions button.primary:hover:not(:disabled),
+.modal-actions .primary:hover:not(:disabled) {
+  opacity: 0.92;
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(0, 194, 154, 0.3);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
-.modal-actions .primary:active {
+
+.modal-actions button.primary:active:not(:disabled),
+.modal-actions .primary:active:not(:disabled) {
   transform: translateY(0);
 }
 
@@ -22130,3 +22167,117 @@ button.ghost:focus-visible,
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ==========================================================================
+   Game Setup Dialog (Consistent with Settings & Transfer Dialogs)
+   ========================================================================== */
+.modal.game-setup-dialog {
+  width: 460px;
+  max-width: 95vw;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+
+.game-setup-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.game-setup-dialog-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fb-text-primary);
+}
+
+.game-setup-dialog-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--fb-text-secondary);
+}
+
+.game-setup-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.game-setup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.game-setup-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fb-text-secondary);
+}
+
+.game-setup-choice-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--fb-border);
+  border-radius: 8px;
+  background: var(--fb-panel-soft);
+}
+
+.game-setup-choice-group.two-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.game-setup-choice-group button {
+  border: 0;
+  background: transparent;
+  color: var(--fb-text-secondary);
+  box-shadow: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.game-setup-choice-group button:hover:not(:disabled):not(.active) {
+  color: var(--fb-text-primary);
+}
+
+.game-setup-choice-group button.active {
+  background: var(--fb-panel-bg);
+  color: var(--fb-text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] .game-setup-choice-group button.active {
+  background: var(--fb-panel-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.game-setup-choice-group button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.game-setup-grid-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 460px) {
+  .game-setup-grid-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+

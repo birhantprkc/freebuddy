@@ -592,12 +592,16 @@ export interface ProjectInput {
   primaryPath: string;
 }
 
+export type ConversationKind = "default" | "game" | "workflow" | "scheduled" | string;
+
 export interface Conversation {
   id: string;
   title: string;
   agentId: string;
   agentName: string;
   adapter: string;
+  kind?: ConversationKind;
+  metadata?: Record<string, unknown>;
   cwd?: string;
   /** Assigned source path for display; cwd remains the real execution path. */
   sourceCwd?: string;
@@ -654,6 +658,8 @@ export interface CreateConversationInput {
   agentId: string;
   agentName: string;
   adapter: string;
+  kind?: ConversationKind;
+  metadata?: Record<string, unknown>;
   cwd?: string;
   projectId?: string;
   approvalMode?: "auto" | "ask";

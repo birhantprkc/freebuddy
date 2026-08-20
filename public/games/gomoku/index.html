@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>FreeBuddy Agent Gomoku</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="game-container">
+    <!-- Header -->
+    <header class="game-header">
+      <div class="player-badge">
+        <span class="stone-dot black"></span>
+        <span>你 (黑棋)</span>
+      </div>
+      <div id="turn-badge" class="turn-indicator active-player">
+        轮到你行动 (黑子)
+      </div>
+      <div class="player-badge">
+        <span>AI Agent (白棋)</span>
+        <span class="stone-dot white"></span>
+      </div>
+    </header>
+
+    <!-- Agent Dialogue Banner -->
+    <div class="agent-speech-banner">
+      <div class="avatar">🤖</div>
+      <div id="speech-text" class="content">准备好了吗？我已经接入了 Game MCP 工具，请赐教！</div>
+    </div>
+
+    <!-- Board Area (100% Unobstructed for Screenshot & Analysis) -->
+    <div class="board-wrapper">
+      <canvas id="gomoku-canvas"></canvas>
+    </div>
+
+    <!-- Footer Controls -->
+    <footer class="game-footer">
+      <div id="status-text" class="status-text">请在棋盘上点击落子</div>
+      <div class="btn-group">
+        <button id="retry-agent-btn" class="btn warning" style="display: none;">⚠️ AI 遗漏落子，点击重试</button>
+        <button id="resign-btn" class="btn danger">认输</button>
+        <button id="restart-btn" class="btn">重新开局</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="./game.js"></script>
+</body>
+</html>
