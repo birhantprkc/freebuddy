@@ -277,9 +277,9 @@
     }
     ctx.stroke();
 
-    // Coordinates labels
-    ctx.fillStyle = "#6b4423";
-    ctx.font = `600 ${Math.max(10, cellSize * 0.34)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+    // Coordinates labels (Subtle left & bottom)
+    ctx.fillStyle = "rgba(107, 68, 35, 0.45)";
+    ctx.font = `500 ${Math.max(9, cellSize * 0.28)}px -apple-system, BlinkMacSystemFont, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
