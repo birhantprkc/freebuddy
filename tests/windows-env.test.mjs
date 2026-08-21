@@ -1,12 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import {
   mergeWindowsPath,
   parseWindowsShellCommandOutput,
   parseWindowsWhereOutput,
+  resolveWindowsPowerShell,
   windowsInstallInvocation
 } from "../dist-electron/cli/windowsEnv.js";
+
+const POWERSHELL_51 =
+  "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+const PWSH7 = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+
+function filesExist(...paths) {
+  const existing = new Set(paths.map((value) => value.toLowerCase()));
+  return (candidate) => existing.has(candidate.toLowerCase());
+}
 
 test("mergeWindowsPath prefers fresh entries and removes case-insensitive duplicates", () => {
   assert.equal(
@@ -68,4 +79,96 @@ test("PowerShell command resolution ignores profile output before its marker", (
     "C:\\tools\\npm.cmd"
   );
   assert.equal(parseWindowsShellCommandOutput("profile output only"), undefined);
+});
+
+test("resolveWindowsPowerShell prefers FREEBUDDY_PWSH when that file exists", () => {
+  const override = "D:\\tools\\pwsh.exe";
+  assert.equal(
+    resolveWindowsPowerShell(
+      {
+        SystemRoot: "C:\\Windows",
+        FREEBUDDY_PWSH: override,
+        ProgramFiles: "C:\\Program Files"
+      },
+      filesExist(override, PWSH7, POWERSHELL_51)
+    ),
+    override
+  );
+});
+
+test("resolveWindowsPowerShell ignores a missing FREEBUDDY_PWSH override", () => {
+  assert.equal(
+    resolveWindowsPowerShell(
+      {
+        SystemRoot: "C:\\Windows",
+        FREEBUDDY_PWSH: "D:\\missing\\pwsh.exe",
+        ProgramFiles: "C:\\Program Files"
+      },
+      filesExist(PWSH7, POWERSHELL_51)
+    ),
+    PWSH7
+  );
+});
+
+test("resolveWindowsPowerShell prefers PowerShell 7 over Windows PowerShell 5.1", () => {
+  assert.equal(
+    resolveWindowsPowerShell(
+      {
+        SystemRoot: "C:\\Windows",
+        ProgramFiles: "C:\\Program Files"
+      },
+      filesExist(PWSH7, POWERSHELL_51)
+    ),
+    PWSH7
+  );
+});
+
+test("resolveWindowsPowerShell derives Program Files from SystemRoot when unset", () => {
+  assert.equal(
+    resolveWindowsPowerShell(
+      { SystemRoot: "C:\\Windows" },
+      filesExist(PWSH7, POWERSHELL_51)
+    ),
+    PWSH7
+  );
+});
+
+test("resolveWindowsPowerShell finds pwsh.exe on PATH before falling back to 5.1", () => {
+  const pathPwsh = "D:\\scoop\\shims\\pwsh.exe";
+  assert.equal(
+    resolveWindowsPowerShell(
+      {
+        SystemRoot: "C:\\Windows",
+        ProgramFiles: "C:\\Program Files",
+        PATH: "D:\\scoop\\shims;C:\\Windows\\System32"
+      },
+      filesExist(pathPwsh, POWERSHELL_51)
+    ),
+    pathPwsh
+  );
+});
+
+test("resolveWindowsPowerShell falls back to Windows PowerShell 5.1", () => {
+  assert.equal(
+    resolveWindowsPowerShell(
+      {
+        SystemRoot: "C:\\Windows",
+        ProgramFiles: "C:\\Program Files"
+      },
+      filesExist(POWERSHELL_51)
+    ),
+    POWERSHELL_51
+  );
+});
+
+test("sandbox runtime reuses resolveWindowsPowerShell instead of hardcoding 5.1", () => {
+  const sandboxSource = fs.readFileSync(
+    new URL("../electron/cli/sandboxRuntime.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(sandboxSource, /resolveWindowsPowerShell/);
+  assert.equal(
+    sandboxSource.includes("function windowsPowerShell("),
+    false
+  );
 });
