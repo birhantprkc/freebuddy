@@ -601,20 +601,8 @@ export function ConversationList({
     if (projects.length === 0) return;
     setExpandedProjects((current) => {
       const next = new Set(current);
-      if (activeProjectKey) {
+      if (activeProjectKey && !userCollapsedProjectsRef.current.has(activeProjectKey)) {
         next.add(activeProjectKey);
-      }
-      for (const p of projects) {
-        if (p.items.length > 0 && !userCollapsedProjectsRef.current.has(p.key)) {
-          next.add(p.key);
-        }
-      }
-      if (
-        next.size === 0 &&
-        projects[0] &&
-        !userCollapsedProjectsRef.current.has(projects[0].key)
-      ) {
-        next.add(projects[0].key);
       }
       return next;
     });

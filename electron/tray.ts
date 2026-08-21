@@ -27,7 +27,7 @@ export function createAppTray(deps: TrayDeps): TrayController {
   let trayIcon: NativeImage | undefined;
   if (source && !source.isEmpty()) {
     if (isMac) {
-      trayIcon = source.resize({ width: 22, height: 22 });
+      trayIcon = source.resize({ width: 22, height: 22, quality: "best" });
       trayIcon.setTemplateImage(true);
     } else {
       trayIcon = source;
