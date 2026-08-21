@@ -105,46 +105,26 @@ body {
   font-weight: normal;
 }
 
-.agent-model-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 5px;
-  background: rgba(99, 102, 241, 0.16);
-  color: #a5b4fc;
-  border: 1px solid rgba(99, 102, 241, 0.32);
-  border-radius: 4px;
-  font-size: 9.5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 500;
-  max-width: 110px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 16px;
-  height: 16px;
-  vertical-align: middle;
-}
-
 .agent-avatar-mini {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  max-width: 20px;
-  max-height: 20px;
+  width: 18px;
+  height: 18px;
+  max-width: 18px;
+  max-height: 18px;
   border-radius: 50%;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
-  font-size: 12px;
+  font-size: 11px;
   flex-shrink: 0;
 }
 
 .agent-avatar-img {
-  width: 20px;
-  height: 20px;
-  max-width: 20px;
-  max-height: 20px;
+  width: 18px;
+  height: 18px;
+  max-width: 18px;
+  max-height: 18px;
   object-fit: cover;
   border-radius: 50%;
   display: block;
