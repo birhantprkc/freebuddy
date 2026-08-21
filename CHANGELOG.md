@@ -2,6 +2,36 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.8.8] - 2026-08-21
+
+### 新功能
+
+- Revert "style(game): group captured pieces with inline counts and streamline turn indicator pill"
+- display agent brand avatar and running model name badge in game header and dialogue
+- add captured pieces graveyard tray to Xiangqi
+- add UCCI algebraic coordinate axes to Xiangqi board
+- add procedural Web Audio sound effects and mute toggle with local persistence
+- add match summary share card with clipboard copy and download
+- add Game Arena with Gomoku and Chinese Chess (Xiangqi)
+
+### 问题修复
+
+- auto seed missing builtin skills and refine narrow header flex layout
+- fix speech banner avatar overflowing by setting explicit dimensions
+- render captured pieces individually without blocking badge numbers
+- ensure audio context is properly resumed on async agent moves
+- remove duplicate audioCtx declaration in frontend game scripts
+
+### 体验优化
+
+- display logo and direct model name concisely in player card
+- group captured pieces with inline counts and streamline turn indicator pill
+- move mute button to footer next to share button for cleaner header layout
+- move model badge to header line to keep captured pieces tray completely clean
+- soften coordinates and keep only left and bottom axes
+- make gameState snapshot lean to save tokens and add game_get_history MCP tool
+- simplify in-game prompt texts and remove repetitive tool invocation hints
+
 ## [0.8.7] - 2026-08-20
 
 ### 问题修复
