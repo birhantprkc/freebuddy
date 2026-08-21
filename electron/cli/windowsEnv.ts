@@ -12,15 +12,58 @@ const WINDOWS_PATH_QUERY = [
 
 const COMMAND_RESULT_MARKER = "__FREEBUDDY_COMMAND__";
 
-function windowsPowerShell(env: NodeJS.ProcessEnv): string {
+function unwrapWindowsPathEntry(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1).trim()
+    : trimmed;
+}
+
+function isExistingFile(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+export function resolveWindowsPowerShell(
+  env: NodeJS.ProcessEnv,
+  isFile: (candidate: string) => boolean = isExistingFile
+): string {
   const systemRoot = env.SystemRoot || env.SYSTEMROOT || "C:\\Windows";
-  return path.win32.join(
+  const powershell51 = path.win32.join(
     systemRoot,
     "System32",
     "WindowsPowerShell",
     "v1.0",
     "powershell.exe"
   );
+
+  const override = unwrapWindowsPathEntry(env.FREEBUDDY_PWSH || "");
+  if (override && path.win32.isAbsolute(override) && isFile(override)) {
+    return override;
+  }
+
+  const driveRoot = path.win32.parse(systemRoot).root || "C:\\";
+  const programFilesRoots = [
+    env.ProgramFiles,
+    env.PROGRAMFILES,
+    env.ProgramW6432,
+    path.win32.join(driveRoot, "Program Files")
+  ];
+  const seenRoots = new Set<string>();
+  for (const root of programFilesRoots) {
+    const programFiles = (root || "").trim();
+    if (!programFiles) continue;
+    const key = programFiles.toLowerCase();
+    if (seenRoots.has(key)) continue;
+    seenRoots.add(key);
+    const pwsh7 = path.win32.join(programFiles, "PowerShell", "7", "pwsh.exe");
+    if (isFile(pwsh7)) return pwsh7;
+  }
+
+  return powershell51;
 }
 
 function runPowerShell(
@@ -38,7 +81,7 @@ function runPowerShell(
       `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;${script}`
     );
     const child = spawn(
-      windowsPowerShell(env),
+      resolveWindowsPowerShell(env),
       args,
       { env }
     );
@@ -67,11 +110,7 @@ export function mergeWindowsPath(...values: Array<string | undefined>): string {
   const seen = new Set<string>();
   for (const value of values) {
     for (const rawEntry of (value || "").split(";")) {
-      const trimmed = rawEntry.trim();
-      const entry =
-        trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')
-          ? trimmed.slice(1, -1).trim()
-          : trimmed;
+      const entry = unwrapWindowsPathEntry(rawEntry);
       if (!entry) continue;
       const key = entry.replace(/[\\/]+$/, "").toLowerCase();
       if (seen.has(key)) continue;
@@ -80,14 +119,6 @@ export function mergeWindowsPath(...values: Array<string | undefined>): string {
     }
   }
   return entries.join(";");
-}
-
-function isExistingFile(candidate: string): boolean {
-  try {
-    return fs.statSync(candidate).isFile();
-  } catch {
-    return false;
-  }
 }
 
 export function parseWindowsWhereOutput(

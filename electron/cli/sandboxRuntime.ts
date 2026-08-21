@@ -19,7 +19,10 @@ import {
 
 import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 import { getUserById, getUserRoots, listUsers } from "./users.js";
-import { resolveWindowsShellCommand } from "./windowsEnv.js";
+import {
+  resolveWindowsPowerShell,
+  resolveWindowsShellCommand
+} from "./windowsEnv.js";
 import {
   getRemoteWorkspacesRoot,
   getWindowsAgentLinksRoot,
@@ -1002,17 +1005,6 @@ const WINDOWS_NODE_RUNNER = [
 ].join(";");
 
 
-function windowsPowerShell(env: Record<string, string | undefined>): string {
-  const systemRoot = env.SystemRoot || env.SYSTEMROOT || "C:\\Windows";
-  return path.win32.join(
-    systemRoot,
-    "System32",
-    "WindowsPowerShell",
-    "v1.0",
-    "powershell.exe"
-  );
-}
-
 const WINDOWS_SANDBOX_PROXY_ENV = new Set([
   "HTTP_PROXY",
   "HTTPS_PROXY",
@@ -1363,7 +1355,7 @@ export async function prepareSandboxedSpawn(input: {
           "exit $LASTEXITCODE"
         ].join("; ");
         shell = {
-          exe: windowsPowerShell(input.env),
+          exe: resolveWindowsPowerShell(input.env),
           args: [
             "-NoLogo",
             "-NoProfile",
