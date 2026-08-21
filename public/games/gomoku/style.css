@@ -39,52 +39,23 @@ body {
   gap: 12px;
 }
 
-/* Header & Status */
 .game-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   background: var(--panel-bg);
-  padding: 10px 16px;
+  padding: 8px 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.icon-btn-sound {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  padding: 3px 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  line-height: 1;
-}
-
-.icon-btn-sound:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.icon-btn-sound.muted {
-  opacity: 0.6;
-  filter: grayscale(1);
+  gap: 8px;
 }
 
 .player-col {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .player-col.right {
