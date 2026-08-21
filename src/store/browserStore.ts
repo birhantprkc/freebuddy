@@ -211,6 +211,45 @@ const COMMON_WEB_TLDS = new Set([
   "us", "ca", "au", "in", "eu", "tech", "space", "store", "fun", "club"
 ]);
 
+/** Convert a `file://` URL to a POSIX-ish absolute path the preview stack understands. */
+export function pathFromFileUrl(target: string): string | null {
+  try {
+    const parsed = new URL(target);
+    if (parsed.protocol !== "file:") return null;
+    let pathname = decodeURIComponent(parsed.pathname);
+    // Windows: file:///C:/Users/... → /C:/Users/...
+    if (/^\/[A-Za-z]:/.test(pathname)) pathname = pathname.slice(1);
+    return pathname.replace(/\\/g, "/");
+  } catch {
+    return null;
+  }
+}
+
+export function isBundledGameType(value: unknown): value is "gomoku" | "xiangqi" {
+  return value === "gomoku" || value === "xiangqi";
+}
+
+/**
+ * Preview target for the packaged Gomoku / Xiangqi boards.
+ * Packaged Electron loads `file://.../app.asar/dist/index.html`, which the
+ * built-in browser cannot iframe; convert that to an absolute path so
+ * `composeBrowserUrl` serves it through `freebuddy-browser` without a workspace.
+ * WebUI / Vite keep a same-origin HTTP URL under `/games/`.
+ */
+export function bundledGameEntry(gamePath: string): string {
+  const rel = `games/${gamePath}/index.html`;
+  if (typeof window === "undefined") return `/${rel}`;
+  if (isWebPlatform()) {
+    return new URL(`/${rel}`, `${window.location.origin}/`).href;
+  }
+  try {
+    const href = new URL(rel, window.location.href).href;
+    return pathFromFileUrl(href) || href;
+  } catch {
+    return `/${rel}`;
+  }
+}
+
 export function normalizeBrowserTarget(input: string | null | undefined): string {
   const trimmed = input?.trim() ?? "";
   if (!trimmed) return "";
@@ -272,6 +311,10 @@ export function composeBrowserUrl(
   }
   if (/^freebuddy-(browser|draft):\/\//i.test(normalized)) {
     return normalized;
+  }
+  if (/^file:\/\//i.test(normalized)) {
+    const filePath = pathFromFileUrl(normalized);
+    return filePath ? composeBrowserUrl(cwd, filePath, nonce) : "";
   }
   if (isAbsoluteLocalPath(normalized)) {
     const ext = localFileExtension(normalized);

@@ -101,12 +101,18 @@ export function getOrCreateGame(conversationId: string, gameType: GameType = "go
   return game;
 }
 
-export function broadcastGameUpdate(webContents: WebContents | undefined, snapshot: GameStateSnapshot): void {
+export function broadcastGameUpdate(
+  webContents: WebContents | undefined,
+  snapshot: GameStateSnapshot,
+  conversationId?: string
+): void {
+  const event = {
+    type: "GAME_STATE_UPDATE",
+    conversationId: conversationId || snapshot.gameId,
+    payload: snapshot
+  };
   if (webContents && !webContents.isDestroyed()) {
-    safeSendToWebContents(webContents, "freebuddy://game-event", {
-      type: "GAME_STATE_UPDATE",
-      payload: snapshot
-    });
+    safeSendToWebContents(webContents, "freebuddy://game-event", event);
   }
   try {
     // Dynamic require so tests outside electron don't fail
@@ -115,10 +121,7 @@ export function broadcastGameUpdate(webContents: WebContents | undefined, snapsh
     if (BrowserWindow && typeof BrowserWindow.getAllWindows === "function") {
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed() && (!webContents || win.webContents !== webContents)) {
-          safeSendToWebContents(win.webContents, "freebuddy://game-event", {
-            type: "GAME_STATE_UPDATE",
-            payload: snapshot
-          });
+          safeSendToWebContents(win.webContents, "freebuddy://game-event", event);
         }
       }
     }
@@ -171,7 +174,7 @@ export async function dispatchGameAction(
 
     persistGameState(binding.conversationId, game);
     const snapshot = game.getSnapshot();
-    broadcastGameUpdate(binding.webContents, snapshot);
+    broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     const moveLabel = res.chineseMove ? `${res.chineseMove} (${actionId})` : actionId;
     return {
@@ -195,7 +198,7 @@ export async function dispatchGameAction(
     const chat = game.addChat("agent", message, mood);
     persistGameState(binding.conversationId, game);
     const snapshot = game.getSnapshot();
-    broadcastGameUpdate(binding.webContents, snapshot);
+    broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     return {
       ok: true,
@@ -209,7 +212,7 @@ export async function dispatchGameAction(
     const res = game.resign(2, reason);
     persistGameState(binding.conversationId, game);
     const snapshot = game.getSnapshot();
-    broadcastGameUpdate(binding.webContents, snapshot);
+    broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     return {
       ok: true,
@@ -226,7 +229,7 @@ export async function dispatchGameAction(
     activeGamesByConversation.set(binding.conversationId, newGame);
     persistGameState(binding.conversationId, newGame);
     const snapshot = newGame.getSnapshot();
-    broadcastGameUpdate(binding.webContents, snapshot);
+    broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     return {
       ok: true,
@@ -253,7 +256,7 @@ export function handlePlayerMove(
   }
   persistGameState(conversationId, game);
   const snapshot = game.getSnapshot();
-  broadcastGameUpdate(webContents, snapshot);
+  broadcastGameUpdate(webContents, snapshot, conversationId);
   return {
     ok: true,
     actionId,
@@ -280,7 +283,7 @@ export function handleAgentMove(
   }
   persistGameState(conversationId, game);
   const snapshot = game.getSnapshot();
-  broadcastGameUpdate(webContents, snapshot);
+  broadcastGameUpdate(webContents, snapshot, conversationId);
   return {
     ok: true,
     actionId,
@@ -301,7 +304,7 @@ export function handleResetGame(
   activeGamesByConversation.set(conversationId, newGame);
   persistGameState(conversationId, newGame);
   const snapshot = newGame.getSnapshot();
-  broadcastGameUpdate(webContents, snapshot);
+  broadcastGameUpdate(webContents, snapshot, conversationId);
   return {
     ok: true,
     gameId: newGame.gameId,

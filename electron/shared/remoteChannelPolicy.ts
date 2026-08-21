@@ -168,7 +168,14 @@ const ALLOW = [
   "delegation:listTeams",
   "delegation:stopRun",
   "delegation:hasRunForConversation",
-  "delegation:followUp"
+  "delegation:followUp",
+
+  // Bundled board games (Gomoku / Xiangqi). Ownership is enforced in the
+  // handlers through requireOwnedConversation.
+  "game:getState",
+  "game:playerMove",
+  "game:agentMove",
+  "game:resetGame"
 ] as const;
 
 const ADMIN_ONLY = [

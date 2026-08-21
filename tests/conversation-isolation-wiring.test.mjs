@@ -93,6 +93,26 @@ test("conversation mutations and handoff exports enforce ownership", () => {
   }
 });
 
+test("game IPC handlers enforce conversation ownership", () => {
+  const main = read("../electron/main.ts");
+  for (const channel of [
+    "game:getState",
+    "game:playerMove",
+    "game:agentMove",
+    "game:resetGame"
+  ]) {
+    const start = main.indexOf(`"${channel}"`);
+    assert.ok(start > 0, `${channel} is registered`);
+    const next = main.indexOf("registerHandler(", start + 1);
+    const body = next > 0 ? main.slice(start, next) : main.slice(start);
+    assert.match(
+      body,
+      /requireOwnedConversation/,
+      `${channel} checks conversation ownership`
+    );
+  }
+});
+
 test("enabling remote access backfills legacy ownership immediately", () => {
   const remoteControl = read("../electron/cli/remoteControl.ts");
   const main = read("../electron/main.ts");

@@ -102,3 +102,51 @@ test("Frontend game scripts (Gomoku & Xiangqi) have valid JS syntax", () => {
     }, `Syntax error in ${filePath}`);
   }
 });
+
+test("packaged and WebUI game wiring loads the board without a workspace", () => {
+  const gameSetup = fs.readFileSync(
+    new URL("../src/components/Games/GameSetupModal.tsx", import.meta.url),
+    "utf8"
+  );
+  const canvas = fs.readFileSync(
+    new URL("../src/components/Browser/BrowserCanvas.tsx", import.meta.url),
+    "utf8"
+  );
+  const detail = fs.readFileSync(
+    new URL("../src/components/CLI/DetailColumn.tsx", import.meta.url),
+    "utf8"
+  );
+  const preload = fs.readFileSync(
+    new URL("../public/web-preload.js", import.meta.url),
+    "utf8"
+  );
+  const acpRuntime = fs.readFileSync(
+    new URL("../electron/cli/acpRuntime.ts", import.meta.url),
+    "utf8"
+  );
+  const gameService = fs.readFileSync(
+    new URL("../electron/gameToolService.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(gameSetup, /bundledGameEntry\(gamePath\)/);
+  assert.doesNotMatch(gameSetup, /window\.location\.href\)\.href/);
+  assert.match(canvas, /bundledGameEntry\(gameType\)/);
+  assert.match(canvas, /isBundledGameType/);
+  assert.match(detail, /conv\?\.kind === "game" \? "preview" : "overview"/);
+  assert.match(preload, /invoke\("game:getState"/);
+  assert.match(preload, /invoke\("game:playerMove"/);
+  assert.match(preload, /subscribe\("freebuddy:\/\/game-event"/);
+  assert.match(acpRuntime, /registerGameToolSession/);
+  const gameBlock = acpRuntime.slice(
+    acpRuntime.indexOf("const isGameSession"),
+    acpRuntime.indexOf("if (args.skills?.length)")
+  );
+  assert.doesNotMatch(
+    gameBlock,
+    /remoteIsolated/,
+    "WebUI game sessions must still receive the game MCP server"
+  );
+  assert.match(gameService, /conversationId: conversationId \|\| snapshot\.gameId/);
+});
+

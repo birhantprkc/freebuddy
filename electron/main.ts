@@ -12,10 +12,15 @@ import { handleFreebuddyFileRequest } from "./freebuddyFileProtocol.js";
 import { handleBrowserRequest } from "./browserProtocol.js";
 import { startPreviewServer } from "./previewServer.js";
 import { startWebUIServer } from "./webUIServer.js";
-import { setLocalInvokeWindowGetter } from "./invokeRegistry.js";
+import { setLocalInvokeWindowGetter, registerHandler } from "./invokeRegistry.js";
 import { setButlerAppWindowGetter } from "./butlerToolService.js";
 import { ensureOwnerUser, getOwnerUser } from "./cli/users.js";
-import { bindConversationNotifier, getConversation, updateConversationMetadata } from "./cli/conversations.js";
+import {
+  bindConversationNotifier,
+  getConversation,
+  requireOwnedConversation,
+  updateConversationMetadata
+} from "./cli/conversations.js";
 import { bindDelegationRunFinishedNotifier } from "./cli/delegationRuns.js";
 import { applyOwnerBackfill } from "./cli/ownerBackfill.js";
 import { initFileBridge } from "./fileBridge.js";
@@ -1234,16 +1239,20 @@ function registerButlerBuddyWindowIpc() {
     if (!isButlerBuddyTaskResultSender(event.sender)) return;
     butlerBuddyStateCoordinator.reportTaskResult(result);
   });
-  ipcMain.handle("game:getState", (_event, conversationId: string) => {
+  registerHandler("game:getState", (_event, conversationId: string) => {
+    if (!requireOwnedConversation(conversationId)) return undefined;
     return getOrCreateGame(conversationId).getSnapshot();
   });
-  ipcMain.handle(
+  registerHandler(
     "game:playerMove",
     (event, payload: { conversationId: string; actionId: string }) => {
+      if (!requireOwnedConversation(payload.conversationId)) {
+        return { ok: false, error: "conversation_not_found" };
+      }
       return handlePlayerMove(payload.conversationId, payload.actionId, event.sender);
     }
   );
-  ipcMain.handle(
+  registerHandler(
     "game:agentMove",
     (
       event,
@@ -1255,6 +1264,9 @@ function registerButlerBuddyWindowIpc() {
         mood?: "confident" | "mocking" | "nervous" | "calm" | "admiring";
       }
     ) => {
+      if (!requireOwnedConversation(payload.conversationId)) {
+        return { ok: false, error: "conversation_not_found" };
+      }
       return handleAgentMove(
         payload.conversationId,
         payload.actionId,
@@ -1265,7 +1277,10 @@ function registerButlerBuddyWindowIpc() {
       );
     }
   );
-  ipcMain.handle("game:resetGame", (event, conversationId: string) => {
+  registerHandler("game:resetGame", (event, conversationId: string) => {
+    if (!requireOwnedConversation(conversationId)) {
+      return { ok: false, error: "conversation_not_found" };
+    }
     return handleResetGame(conversationId, event.sender);
   });
   ipcMain.handle(

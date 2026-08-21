@@ -16,7 +16,9 @@ const GLOBAL_CHANNELS = new Set([
 const CONVERSATION_PAYLOAD_CHANNELS = new Set([
   "messages://changed",
   // Browser MCP events include conversationId in the payload.
-  "freebuddy://browser-tool"
+  "freebuddy://browser-tool",
+  // Game board sync events include conversationId in the payload.
+  "freebuddy://game-event"
 ]);
 const OWNER_PAYLOAD_CHANNELS = new Set(["scheduledTasks://changed"]);
 const CLI_SESSION_PREFIX = "cli://";

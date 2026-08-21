@@ -9,7 +9,7 @@ import type {
   SessionConfigOption,
   SessionConfigProbeInput
 } from "@/services/cli/types";
-import { useBrowserStore } from "@/store/browserStore";
+import { bundledGameEntry, useBrowserStore } from "@/store/browserStore";
 import { useCliExecutorStore } from "@/store/cliExecutorStore";
 import { useConversationStore } from "@/store/conversationStore";
 import { useDetailLayoutStore } from "@/store/detailLayoutStore";
@@ -209,9 +209,10 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
         skillIds: ["game-arena"]
       });
 
-      // Load game URL in built-in browser
-      const gameUrl = new URL(`games/${gamePath}/index.html`, window.location.href).href;
-      useBrowserStore.getState().navigate(conv.id, gameUrl);
+      // Load game URL in built-in browser. Packaged Electron cannot iframe
+      // file:// assets from app.asar; bundledGameEntry converts them to a
+      // freebuddy-browser path. WebUI uses a same-origin /games/... URL.
+      useBrowserStore.getState().navigate(conv.id, bundledGameEntry(gamePath));
       useDetailLayoutStore.getState().setActiveTab("preview");
       useDetailLayoutStore.getState().setDetailCollapsed(false);
 

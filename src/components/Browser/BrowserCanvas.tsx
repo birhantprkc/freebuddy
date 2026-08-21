@@ -7,6 +7,8 @@ import type { FeedItem } from "@/services/feed/types";
 import { cliClient } from "@/services/cli/client";
 import { useConversationStore } from "@/store/conversationStore";
 import {
+  bundledGameEntry,
+  isBundledGameType,
   remoteBrowserOrigin,
   splitAbsoluteLocalFile,
   useBrowserStore
@@ -357,6 +359,15 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     void useBrowserStore.getState().ensureFor(activeId, cwd);
   }, [activeId, cwd]);
 
+  useEffect(() => {
+    if (!activeId || active?.kind !== "game") return;
+    const gameType = active.metadata?.gameType;
+    if (!isBundledGameType(gameType)) return;
+    const current = useBrowserStore.getState().byConv[activeId];
+    if (current?.manualEntry) return;
+    useBrowserStore.getState().navigate(activeId, bundledGameEntry(gameType));
+  }, [activeId, active?.kind, active?.metadata]);
+
   const lastEditPath = useMemo(
     () => extractLastFileEditPath(liveItems, messages),
     [liveItems, messages]
@@ -512,6 +523,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
 
     window.addEventListener("message", handleMessage);
     const unbindGameEvent = window.freebuddy?.game?.onGameEvent((event: any) => {
+      if (event?.conversationId && event.conversationId !== activeId) return;
       if (frameRef.current?.contentWindow && event?.payload) {
         frameRef.current.contentWindow.postMessage(
           { type: "FREEBUDDY_GAME_SYNC", payload: event.payload },

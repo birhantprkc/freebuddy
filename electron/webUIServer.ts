@@ -178,7 +178,9 @@ function serveStatic(
     if (stat.isDirectory()) {
       const indexPath = path.join(filePath, "index.html");
       if (fs.existsSync(indexPath) && fs.statSync(indexPath).isFile()) {
-        serveSpaIndex(res, distDir);
+        // Serve the directory's own index (e.g. /games/xiangqi/) instead of
+        // the SPA shell, which would hide the bundled board games.
+        serveFile(res, indexPath);
         return true;
       }
     }
