@@ -17,6 +17,9 @@ import {
   clipFeedTitle,
   isFeedInterpretConversation
 } from "../Feeds/feedInterpretation";
+import { builtinCliMembers } from "@/config/aiMembers";
+import { getAgentIconId } from "@/config/agentIcon";
+import { lobehubAvatarUrl } from "@/utils/lobehubAvatar";
 import { BrowserToolbar, type BrowserViewport } from "./BrowserToolbar";
 import { MarkdownText } from "../CLI/StreamItem";
 
@@ -401,6 +404,41 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   // Bridge game canvas iframe with FreeBuddy Game Service and Agent session
   const processedMessageIdsRef = useRef<Set<string>>(new Set());
 
+  const activeConversation = useConversationStore((s) =>
+    activeId ? s.conversations.find((c) => c.id === activeId) : undefined
+  );
+
+  const agentInfo = useMemo(() => {
+    if (!activeConversation) return null;
+    const member = builtinCliMembers.find((m) => m.id === activeConversation.agentId);
+    const iconId =
+      activeConversation.agentId === "cli-butlerbuddy"
+        ? "Bilibili"
+        : getAgentIconId(activeConversation.adapter, member?.avatar);
+    const avatarUrl = iconId ? lobehubAvatarUrl(iconId) : undefined;
+    const model =
+      activeConversation.configOptionOverrides?.model ||
+      activeConversation.configOptionOverrides?.model_config ||
+      (activeConversation.metadata as any)?.model ||
+      "";
+
+    return {
+      agentId: activeConversation.agentId,
+      agentName: activeConversation.agentName || member?.name || "AI Agent",
+      avatarUrl: avatarUrl || "",
+      modelName: model ? String(model) : ""
+    };
+  }, [activeConversation]);
+
+  useEffect(() => {
+    if (frameRef.current?.contentWindow && agentInfo) {
+      frameRef.current.contentWindow.postMessage(
+        { type: "AGENT_INFO_UPDATE", payload: agentInfo },
+        "*"
+      );
+    }
+  }, [agentInfo]);
+
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       const data = event.data;
@@ -436,7 +474,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
           const state = await window.freebuddy?.game?.getState(activeId);
           if (state && frameRef.current?.contentWindow) {
             frameRef.current.contentWindow.postMessage(
-              { type: "FREEBUDDY_GAME_SYNC", payload: state },
+              { type: "FREEBUDDY_GAME_SYNC", payload: { ...state, agentInfo } },
               "*"
             );
           }

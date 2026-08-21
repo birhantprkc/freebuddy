@@ -30,6 +30,37 @@
   const retryAgentBtn = document.getElementById("retry-agent-btn");
   const playerCapturedContainer = document.getElementById("player-captured");
   const agentCapturedContainer = document.getElementById("agent-captured");
+  const agentNameLabel = document.getElementById("agent-name-label");
+  const agentModelBadge = document.getElementById("agent-model-badge");
+  const agentAvatarIcon = document.getElementById("agent-avatar-icon");
+  const speechAvatar = document.getElementById("speech-avatar");
+
+  function updateAgentInfo(info) {
+    if (!info) return;
+    if (info.agentName && agentNameLabel) {
+      agentNameLabel.textContent = info.agentName;
+    }
+    if (agentModelBadge) {
+      if (info.modelName) {
+        agentModelBadge.textContent = info.modelName;
+        agentModelBadge.style.display = "inline-flex";
+        agentModelBadge.title = `运行模型: ${info.modelName}`;
+      } else {
+        agentModelBadge.style.display = "none";
+      }
+    }
+    if (info.avatarUrl) {
+      if (agentAvatarIcon) {
+        agentAvatarIcon.innerHTML = `<img src="${info.avatarUrl}" alt="agent" class="agent-avatar-img" />`;
+      }
+      if (speechAvatar) {
+        speechAvatar.innerHTML = `<img src="${info.avatarUrl}" alt="agent" class="speech-avatar-img" />`;
+      }
+    } else {
+      if (agentAvatarIcon) agentAvatarIcon.textContent = "🤖";
+      if (speechAvatar) speechAvatar.textContent = "🤖";
+    }
+  }
 
   const INITIAL_RED_COUNTS = { 5: 2, 6: 2, 4: 2, 3: 2, 2: 2, 7: 5 };
   const INITIAL_BLACK_COUNTS = { "-5": 2, "-6": 2, "-4": 2, "-3": 2, "-2": 2, "-7": 5 };
@@ -902,6 +933,11 @@
 
     if (data.type === "FREEBUDDY_GAME_SYNC" || data.type === "GAME_STATE_UPDATE") {
       syncState(data.payload);
+      if (data.payload?.agentInfo) {
+        updateAgentInfo(data.payload.agentInfo);
+      }
+    } else if (data.type === "AGENT_INFO_UPDATE") {
+      updateAgentInfo(data.payload);
     } else if (data.type === "AGENT_CHAT") {
       speechText.textContent = data.payload?.message || "";
     } else if (data.type === "AGENT_STALLED") {
@@ -1039,10 +1075,12 @@
     sCtx.fillText(outcomeText, badgeX + 12, badgeY + 20);
 
     // Players Info
-    sCtx.font = "15px -apple-system, sans-serif";
+    const agentName = agentNameLabel?.textContent || "AI Agent";
+    const modelName = agentModelBadge?.style.display !== "none" && agentModelBadge?.textContent ? ` [${agentModelBadge.textContent}]` : "";
+    sCtx.font = "14px -apple-system, sans-serif";
     sCtx.fillStyle = "#e2e8f0";
     sCtx.textAlign = "right";
-    sCtx.fillText("🔴 你 (红先)  VS  ⚫ AI Agent (黑后)", cardWidth - 40, 138);
+    sCtx.fillText(`🔴 玩家 (红)  VS  ⚫ ${agentName}${modelName} (黑)`, cardWidth - 40, 138);
     sCtx.textAlign = "left";
 
     // 4. Draw Chessboard (9:10 ratio)

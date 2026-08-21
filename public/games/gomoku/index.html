@@ -10,17 +10,26 @@
   <div class="game-container">
     <!-- Header -->
     <header class="game-header">
-      <div class="player-badge">
-        <span class="stone-dot black"></span>
-        <span>你 (黑棋)</span>
+      <div class="player-col left">
+        <div class="player-badge">
+          <span class="stone-dot black"></span>
+          <span>你 (黑棋)</span>
+        </div>
       </div>
       <div id="turn-badge" class="turn-indicator active-player">
         轮到你行动 (黑子)
       </div>
       <div class="header-right">
-        <div class="player-badge">
-          <span>AI Agent (白棋)</span>
-          <span class="stone-dot white"></span>
+        <div class="player-col right">
+          <div class="player-badge">
+            <span id="agent-avatar-icon" class="agent-avatar-mini">🤖</span>
+            <span id="agent-name-label">AI Agent</span>
+            <span class="side-tag">(白棋)</span>
+            <span class="stone-dot white"></span>
+          </div>
+          <div class="agent-meta-row">
+            <span id="agent-model-badge" class="agent-model-badge" style="display: none;"></span>
+          </div>
         </div>
         <button id="mute-btn" class="icon-btn-sound" title="开启/关闭音效" aria-label="音效开关">🔊</button>
       </div>
@@ -28,7 +37,7 @@
 
     <!-- Agent Dialogue Banner -->
     <div class="agent-speech-banner">
-      <div class="avatar">🤖</div>
+      <div id="speech-avatar" class="avatar">🤖</div>
       <div id="speech-text" class="content">准备好了吗？我已经接入了 Game MCP 工具，请赐教！</div>
     </div>
 
