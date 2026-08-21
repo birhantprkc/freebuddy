@@ -28,6 +28,68 @@
   const restartBtn = document.getElementById("restart-btn");
   const resignBtn = document.getElementById("resign-btn");
   const retryAgentBtn = document.getElementById("retry-agent-btn");
+  const playerCapturedContainer = document.getElementById("player-captured");
+  const agentCapturedContainer = document.getElementById("agent-captured");
+
+  const INITIAL_RED_COUNTS = { 5: 2, 6: 2, 4: 2, 3: 2, 2: 2, 7: 5 };
+  const INITIAL_BLACK_COUNTS = { "-5": 2, "-6": 2, "-4": 2, "-3": 2, "-2": 2, "-7": 5 };
+  const BLACK_ORDER = [-5, -6, -4, -3, -2, -7];
+  const RED_ORDER = [5, 6, 4, 3, 2, 7];
+
+  function updateCapturedTray() {
+    if (!playerCapturedContainer || !agentCapturedContainer) return;
+
+    // Count live pieces on board
+    const liveCounts = {};
+    for (let y = 0; y < BOARD_ROWS; y++) {
+      for (let x = 0; x < BOARD_COLS; x++) {
+        const p = board[y][x];
+        if (p !== 0) {
+          liveCounts[p] = (liveCounts[p] || 0) + 1;
+        }
+      }
+    }
+
+    // Player captured (Missing Black pieces)
+    playerCapturedContainer.innerHTML = "";
+    for (const p of BLACK_ORDER) {
+      const init = INITIAL_BLACK_COUNTS[p] || 0;
+      const live = liveCounts[p] || 0;
+      const capturedCount = init - live;
+      if (capturedCount > 0) {
+        const badge = document.createElement("span");
+        badge.className = "mini-piece-badge black";
+        badge.textContent = PIECE_NAMES[p] || "";
+        if (capturedCount > 1) {
+          const countSpan = document.createElement("span");
+          countSpan.className = "mini-piece-count";
+          countSpan.textContent = `×${capturedCount}`;
+          badge.appendChild(countSpan);
+        }
+        playerCapturedContainer.appendChild(badge);
+      }
+    }
+
+    // Agent captured (Missing Red pieces)
+    agentCapturedContainer.innerHTML = "";
+    for (const p of RED_ORDER) {
+      const init = INITIAL_RED_COUNTS[p] || 0;
+      const live = liveCounts[p] || 0;
+      const capturedCount = init - live;
+      if (capturedCount > 0) {
+        const badge = document.createElement("span");
+        badge.className = "mini-piece-badge red";
+        badge.textContent = PIECE_NAMES[p] || "";
+        if (capturedCount > 1) {
+          const countSpan = document.createElement("span");
+          countSpan.className = "mini-piece-count";
+          countSpan.textContent = `×${capturedCount}`;
+          badge.appendChild(countSpan);
+        }
+        agentCapturedContainer.appendChild(badge);
+      }
+    }
+  }
 
   function createInitialBoard() {
     const b = Array.from({ length: BOARD_ROWS }, () => Array(BOARD_COLS).fill(0));
@@ -813,6 +875,8 @@
         statusText.textContent = "AI Agent 正在思考走子方案...";
       }
     }
+
+    updateCapturedTray();
   }
 
   function syncState(snapshot) {

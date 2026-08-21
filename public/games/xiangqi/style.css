@@ -83,6 +83,79 @@ body {
   filter: grayscale(1);
 }
 
+.player-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-col.right {
+  align-items: flex-end;
+}
+
+.captured-tray {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 18px;
+  flex-wrap: wrap;
+}
+
+.captured-tray.right {
+  justify-content: flex-end;
+}
+
+.mini-piece-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.mini-piece-badge.red {
+  background: radial-gradient(circle at 35% 35%, #fef3c7, #fde68a 70%, #d97706);
+  color: #b91c1c;
+  border: 1px solid #b91c1c;
+}
+
+.mini-piece-badge.black {
+  background: radial-gradient(circle at 35% 35%, #fef3c7, #fde68a 70%, #d97706);
+  color: #0f172a;
+  border: 1px solid #334155;
+}
+
+.mini-piece-count {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 0 3px;
+  line-height: 11px;
+  border: 1px solid #1e293b;
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .player-badge {
   display: flex;
   align-items: center;
