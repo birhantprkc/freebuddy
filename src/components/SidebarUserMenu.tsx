@@ -95,7 +95,7 @@ export function SidebarUserMenu({
               }}
             >
               <Gamepad2 size={15} strokeWidth={1.8} />
-              对战大厅 (玩一把)
+              {t("game.gameLobbyMenu")}
             </button>
             {canTogglePet && (
               <button

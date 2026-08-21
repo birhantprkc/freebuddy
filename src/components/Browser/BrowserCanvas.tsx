@@ -182,8 +182,8 @@ function extractAgentMoveFromText(text: string): {
     /* fallback to regex */
   }
 
-  // 3. Fallback regex for "落子：H8" or "走子: b2e2"
-  const regexMatch = text.match(/(?:落子|走子|走步|action|move|coordinate|坐标|走|下在)[:：\s*#]+([A-O]\d{1,2}|[a-i]\d[a-i]\d)\b/i);
+  // 3. Fallback regex for move commands e.g. "move: H8" or "move: b2e2"
+  const regexMatch = text.match(/(?:\u843d\u5b50|\u8d70\u5b50|\u8d70\u6b65|action|move|coordinate|\u5750\u6807|\u8d70|\u4e0b\u5728)[:\uff1a\s*#]+([A-O]\d{1,2}|[a-i]\d[a-i]\d)\b/i);
   if (regexMatch) {
     return {
       action: regexMatch[1].trim(),
@@ -458,8 +458,8 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
             const isXiangqi = moveRes?.gameState?.gameType === "xiangqi";
             const isWon = moveRes?.gameState?.status === "player_won";
             const promptText = isWon
-              ? (isXiangqi ? `玩家走子：${actionId}，绝杀获胜！` : `玩家落子：${actionId}，五连珠获胜！`)
-              : (isXiangqi ? `玩家走子：${actionId}` : `玩家落子：${actionId}`);
+              ? (isXiangqi ? t("game.playerMoveWonXiangqi", { actionId }) : t("game.playerMoveWonGomoku", { actionId }))
+              : (isXiangqi ? t("game.playerMoveXiangqi", { actionId }) : t("game.playerMoveGomoku", { actionId }));
 
             void sendMessage({
               conversationId: activeId,
@@ -487,7 +487,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
           if (sendMessage) {
             void sendMessage({
               conversationId: activeId,
-              prompt: `【重新开局】我已重置了棋盘，准备开始新一局！`
+              prompt: t("game.promptGameReset")
             });
           }
         } catch (err) {
@@ -497,14 +497,14 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         if (sendMessage) {
           void sendMessage({
             conversationId: activeId,
-            prompt: `轮到你行动，请尽快出招。`
+            prompt: t("game.promptRemindAgent")
           });
         }
       } else if (data.type === "GAME_RESIGN") {
         if (sendMessage) {
           void sendMessage({
             conversationId: activeId,
-            prompt: `我认输了，这一局你下得漂亮！`
+            prompt: t("game.promptResign")
           });
         }
       }

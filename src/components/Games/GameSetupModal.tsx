@@ -23,27 +23,27 @@ export type SupportedGameType = "gomoku" | "chinese_chess" | "go";
 
 interface GameOptionDef {
   id: SupportedGameType;
-  title: string;
+  titleKey: string;
   ready: boolean;
-  tag?: string;
+  tagKey?: string;
 }
 
 const AVAILABLE_GAMES: GameOptionDef[] = [
   {
     id: "gomoku",
-    title: "五子棋",
+    titleKey: "game.gomoku",
     ready: true
   },
   {
     id: "chinese_chess",
-    title: "中国象棋",
+    titleKey: "game.xiangqi",
     ready: true
   },
   {
     id: "go",
-    title: "围棋",
+    titleKey: "game.go",
     ready: false,
-    tag: "敬请期待"
+    tagKey: "game.comingSoon"
   }
 ];
 
@@ -186,7 +186,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
     setIsLaunching(true);
     try {
       const modelName = selectedModel ? ` (${selectedModel})` : "";
-      const gameName = selectedGame === "chinese_chess" ? "中国象棋" : "五子棋";
+      const gameName = selectedGame === "chinese_chess" ? t("game.xiangqi") : t("game.gomoku");
       const gamePath = selectedGame === "chinese_chess" ? "xiangqi" : selectedGame;
       const title = `[${gameName}] vs ${selectedMember.name}${modelName}`;
 
@@ -220,24 +220,24 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
         if (selectedHand === "player_first") {
           void convStore.sendMessage({
             conversationId: conv.id,
-            prompt: `【中国象棋对局开始】我执红先行，你执黑后手。准备迎战！`
+            prompt: t("game.promptXiangqiPlayerFirst")
           });
         } else {
           void convStore.sendMessage({
             conversationId: conv.id,
-            prompt: `【中国象棋对局开始】本局你执红先行，请出招！`
+            prompt: t("game.promptXiangqiAgentFirst")
           });
         }
       } else {
         if (selectedHand === "player_first") {
           void convStore.sendMessage({
             conversationId: conv.id,
-            prompt: `【五子棋对局开始】我执黑先行，你执白后手。准备接招！`
+            prompt: t("game.promptGomokuPlayerFirst")
           });
         } else {
           void convStore.sendMessage({
             conversationId: conv.id,
-            prompt: `【五子棋对局开始】本局你执黑先行，请落子！`
+            prompt: t("game.promptGomokuAgentFirst")
           });
         }
       }
@@ -267,9 +267,9 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
       >
         <div className="game-setup-dialog-header">
           <div>
-            <h3 id={titleId}>对战大厅</h3>
+            <h3 id={titleId}>{t("game.gameLobbyTitle")}</h3>
             <p id={descriptionId} className="game-setup-dialog-desc">
-              选择对弈项目与 AI 智能体，开启棋牌对决
+              {t("game.gameLobbyDesc")}
             </p>
           </div>
           <button
@@ -285,7 +285,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
         <div className="game-setup-dialog-form">
           {/* Game Selection */}
           <div className="game-setup-field">
-            <span className="game-setup-field-label">游戏项目</span>
+            <span className="game-setup-field-label">{t("game.gameProject")}</span>
             <div className="game-setup-choice-group">
               {AVAILABLE_GAMES.map((game) => (
                 <button
@@ -295,8 +295,8 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
                   disabled={!game.ready}
                   onClick={() => game.ready && setSelectedGame(game.id)}
                 >
-                  {game.title}
-                  {game.tag ? ` (${game.tag})` : ""}
+                  {t(game.titleKey)}
+                  {game.tagKey ? ` (${t(game.tagKey)})` : ""}
                 </button>
               ))}
             </div>
@@ -304,7 +304,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
 
           {/* AI Agent Selection */}
           <div className="game-setup-field">
-            <span className="game-setup-field-label">AI 对手</span>
+            <span className="game-setup-field-label">{t("game.aiOpponent")}</span>
             <div className="custom-select-wrapper">
               <select
                 value={selectedAgentId}
@@ -315,7 +315,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
               >
                 {members.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} ({m.profile === "butler" ? "管家助手" : m.cli.adapter})
+                    {m.name} ({m.profile === "butler" ? t("game.butlerAssistant") : m.cli.adapter})
                   </option>
                 ))}
               </select>
@@ -328,16 +328,16 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
           {/* Model & Hand in 2 Columns */}
           <div className="game-setup-grid-row">
             <div className="game-setup-field">
-              <span className="game-setup-field-label">对弈模型</span>
+              <span className="game-setup-field-label">{t("game.gameModel")}</span>
               <div className="custom-select-wrapper">
                 <select
                   value={selectedModel}
                   onFocus={() => selectedAgentId && void refreshAgentModels(selectedAgentId)}
                   onChange={(e) => setSelectedModel(e.target.value)}
                 >
-                  <option value="">默认模型 (Default)</option>
+                  <option value="">{t("game.defaultModel")}</option>
                   {modelLoadingByAgent[selectedAgentId] && availableModels.length === 0 ? (
-                    <option disabled>正在读取模型...</option>
+                    <option disabled>{t("game.loadingModels")}</option>
                   ) : null}
                   {availableModels.map((val) => (
                     <option key={val.id} value={val.id}>
@@ -352,21 +352,25 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
             </div>
 
             <div className="game-setup-field">
-              <span className="game-setup-field-label">先后手</span>
+              <span className="game-setup-field-label">{t("game.turnOrder")}</span>
               <div className="game-setup-choice-group two-cols">
                 <button
                   type="button"
                   className={selectedHand === "player_first" ? "active" : ""}
                   onClick={() => setSelectedHand("player_first")}
                 >
-                  我先手 ({selectedGame === "chinese_chess" ? "红" : "黑"})
+                  {t("game.playerFirst", {
+                    piece: selectedGame === "chinese_chess" ? t("game.pieceRed") : t("game.pieceBlack")
+                  })}
                 </button>
                 <button
                   type="button"
                   className={selectedHand === "agent_first" ? "active" : ""}
                   onClick={() => setSelectedHand("agent_first")}
                 >
-                  AI 先手 ({selectedGame === "chinese_chess" ? "红" : "黑"})
+                  {t("game.agentFirst", {
+                    piece: selectedGame === "chinese_chess" ? t("game.pieceRed") : t("game.pieceBlack")
+                  })}
                 </button>
               </div>
             </div>
@@ -383,7 +387,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
             disabled={!selectedMember || isLaunching}
             onClick={() => void handleLaunchMatch()}
           >
-            {isLaunching ? "正在进入..." : "开始对战"}
+            {isLaunching ? t("game.launching") : t("game.startMatch")}
           </button>
         </div>
       </div>

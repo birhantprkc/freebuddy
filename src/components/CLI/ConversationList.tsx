@@ -87,7 +87,7 @@ const ConversationRow = memo(function ConversationRow({
       {conversation.kind === "game" ? (
         <span
           className="conv-item-avatar flex items-center justify-center text-amber-500 font-bold"
-          title="对局会话"
+          title={t("game.sessionTitle")}
           style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
         >
           <Gamepad2 size={16} />

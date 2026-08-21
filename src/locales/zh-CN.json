@@ -1845,5 +1845,40 @@
       "comforting": "安慰",
       "sleeping": "睡眠"
     }
+  },
+  "game": {
+    "sessionTitle": "对局会话",
+    "gameLobbyMenu": "对战大厅 (玩一把)",
+    "gameLobbyTitle": "对战大厅",
+    "gameLobbyDesc": "选择对弈项目与 AI 智能体，开启棋牌对决",
+    "gameProject": "游戏项目",
+    "aiOpponent": "AI 对手",
+    "gameModel": "对弈模型",
+    "turnOrder": "先后手",
+    "gomoku": "五子棋",
+    "xiangqi": "中国象棋",
+    "go": "围棋",
+    "comingSoon": "敬请期待",
+    "defaultModel": "默认模型 (Default)",
+    "loadingModels": "正在读取模型...",
+    "butlerAssistant": "管家助手",
+    "playerFirst": "我先手 ({{piece}})",
+    "agentFirst": "AI 先手 ({{piece}})",
+    "pieceRed": "红",
+    "pieceBlack": "黑",
+    "launching": "正在进入...",
+    "startMatch": "开始对战",
+    "playerMoveWonXiangqi": "玩家走子：{{actionId}}，绝杀获胜！",
+    "playerMoveWonGomoku": "玩家落子：{{actionId}}，五连珠获胜！",
+    "playerMoveXiangqi": "玩家走子：{{actionId}}",
+    "playerMoveGomoku": "玩家落子：{{actionId}}",
+    "promptGameReset": "【重新开局】我已重置了棋盘，准备开始新一局！",
+    "promptRemindAgent": "轮到你行动，请尽快出招。",
+    "promptResign": "我认输了，这一局你下得漂亮！",
+    "promptXiangqiPlayerFirst": "【中国象棋对局开始】我执红先行，你执黑后手。准备迎战！",
+    "promptXiangqiAgentFirst": "【中国象棋对局开始】本局你执红先行，请出招！",
+    "promptGomokuPlayerFirst": "【五子棋对局开始】我执黑先行，你执白后手。准备接招！",
+    "promptGomokuAgentFirst": "【五子棋对局开始】本局你执黑先行，请落子！"
   }
 }
+
