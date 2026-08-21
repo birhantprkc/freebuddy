@@ -19,6 +19,7 @@ import {
   ChevronUp,
   Folder,
   FolderOpen,
+  Gamepad2,
   LoaderCircle,
   MessageSquare,
   MoreHorizontal,
@@ -31,6 +32,7 @@ import {
 } from "lucide-react";
 import { AgentAvatar } from "./AgentAvatar";
 import { ProjectFormModal } from "./ProjectFormModal";
+import { useDetailLayoutStore } from "@/store/detailLayoutStore";
 import {
   PROJECT_LIST_LIMIT,
   PROJECT_PREVIEW_LIMIT,
@@ -82,11 +84,21 @@ const ConversationRow = memo(function ConversationRow({
         }
       }}
     >
-      <AgentAvatar
-        adapter={conversation.adapter}
-        className="conv-item-avatar"
-        fallback={<MessageSquare aria-hidden="true" />}
-      />
+      {conversation.kind === "game" ? (
+        <span
+          className="conv-item-avatar flex items-center justify-center text-amber-500 font-bold"
+          title="对局会话"
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <Gamepad2 size={16} />
+        </span>
+      ) : (
+        <AgentAvatar
+          adapter={conversation.adapter}
+          className="conv-item-avatar"
+          fallback={<MessageSquare aria-hidden="true" />}
+        />
+      )}
       <div className="conv-item-main">
         <div className="conv-item-title-row">
           <strong>{conversation.title}</strong>
@@ -483,8 +495,13 @@ export function ConversationList({
   const handleSelect = useCallback(
     (id: string) => {
       void setActive(id);
+      const conv = conversations.find((c) => c.id === id);
+      if (conv?.kind === "game") {
+        useDetailLayoutStore.getState().setActiveTab("preview");
+        useDetailLayoutStore.getState().setDetailCollapsed(false);
+      }
     },
-    [setActive]
+    [setActive, conversations]
   );
   const handleDelete = useCallback(
     (id: string, title: string) => {

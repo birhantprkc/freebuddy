@@ -444,7 +444,15 @@ export function getSkill(id: string): SkillRecord | undefined {
 export function resolveSkillSnapshots(ids: readonly string[]): SkillSnapshot[] {
   const unique = [...new Set(ids.filter(Boolean))];
   return unique.flatMap((id) => {
-    const skill = getSkill(id);
+    let skill = getSkill(id);
+    if (!skill) {
+      try {
+        seedBuiltinSkills();
+        skill = getSkill(id);
+      } catch (err) {
+        console.warn(`[skills] failed to seed builtin skills for ${id}:`, err);
+      }
+    }
     if (!skill?.enabled || !skill.trusted) return [];
     return [{
       id: skill.id,

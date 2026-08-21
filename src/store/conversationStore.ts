@@ -14,6 +14,7 @@ import type {
   CliRunArgs,
   ChatAttachment,
   Conversation,
+  ConversationKind,
   ConversationMessage
 } from "@/services/cli/types";
 import type {
@@ -117,6 +118,8 @@ export interface ConversationState {
     cwd?: string;
     projectId?: string;
     title?: string;
+    kind?: ConversationKind;
+    metadata?: Record<string, unknown>;
     approvalMode?: "auto" | "ask";
     configOptionOverrides?: Record<string, string>;
     skillIds?: string[];
@@ -843,6 +846,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     cwd,
     projectId,
     title,
+    kind,
+    metadata,
     approvalMode,
     configOptionOverrides,
     skillIds
@@ -854,6 +859,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       agentId: member.id,
       agentName: member.name,
       adapter: member.cli.adapter,
+      kind: kind ?? "default",
+      metadata,
       cwd,
       projectId,
       approvalMode: approvalMode ?? member.cli.approvalMode,

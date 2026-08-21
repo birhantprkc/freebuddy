@@ -904,6 +904,21 @@ declare global {
     shell: FreebuddyShell;
     remote: FreebuddyRemote;
     butlerBuddy: FreebuddyButlerBuddy;
+    game: FreebuddyGame;
+  }
+
+  interface FreebuddyGame {
+    getState(conversationId: string): Promise<any>;
+    playerMove(conversationId: string, actionId: string): Promise<any>;
+    agentMove(
+      conversationId: string,
+      actionId: string,
+      reason?: string,
+      speech?: string,
+      mood?: string
+    ): Promise<any>;
+    resetGame(conversationId: string): Promise<any>;
+    onGameEvent(cb: (event: any) => void): () => void;
   }
 
   interface Window {

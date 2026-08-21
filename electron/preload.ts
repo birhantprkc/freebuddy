@@ -833,6 +833,33 @@ const remote = {
   listAuditLog: (limit?: number) => ipcRenderer.invoke("remote:listAuditLog", limit)
 };
 
+const game = {
+  getState: (conversationId: string) => ipcRenderer.invoke("game:getState", conversationId),
+  playerMove: (conversationId: string, actionId: string) =>
+    ipcRenderer.invoke("game:playerMove", { conversationId, actionId }),
+  agentMove: (
+    conversationId: string,
+    actionId: string,
+    reason?: string,
+    speech?: string,
+    mood?: "confident" | "mocking" | "nervous" | "calm" | "admiring"
+  ) =>
+    ipcRenderer.invoke("game:agentMove", {
+      conversationId,
+      actionId,
+      reason,
+      speech,
+      mood
+    }),
+  resetGame: (conversationId: string) => ipcRenderer.invoke("game:resetGame", conversationId),
+  onGameEvent: (cb: (event: unknown) => void): (() => void) => {
+    const channel = "freebuddy://game-event";
+    const handler = (_e: IpcRendererEvent, payload: unknown) => cb(payload);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.off(channel, handler);
+  }
+};
+
 contextBridge.exposeInMainWorld("freebuddy", {
   platform: process.platform,
   arch: process.arch,
@@ -857,5 +884,6 @@ contextBridge.exposeInMainWorld("freebuddy", {
   debugLogs,
   shell: shellApi,
   remote,
-  butlerBuddy
+  butlerBuddy,
+  game
 });

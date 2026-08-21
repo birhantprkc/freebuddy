@@ -278,7 +278,9 @@ export function migrate(db: DB) {
       source_adapter TEXT,
       source_brief_id TEXT,
       owner_id TEXT,
-      project_id TEXT
+      project_id TEXT,
+      kind TEXT NOT NULL DEFAULT 'default',
+      metadata TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_conversations_updated
       ON conversations(archived, updated_at DESC);
@@ -815,6 +817,12 @@ export function migrate(db: DB) {
   }
   if (!conversationCols.some((c) => c.name === "project_id")) {
     db.exec("ALTER TABLE conversations ADD COLUMN project_id TEXT");
+  }
+  if (!conversationCols.some((c) => c.name === "kind")) {
+    db.exec("ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'default'");
+  }
+  if (!conversationCols.some((c) => c.name === "metadata")) {
+    db.exec("ALTER TABLE conversations ADD COLUMN metadata TEXT");
   }
 
   const scheduledTaskOwnerCols = db

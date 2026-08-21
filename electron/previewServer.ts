@@ -12,6 +12,7 @@ import { handleBrowserToolHttpRequest } from "./browserToolService.js";
 import { handleWorkspaceFsToolHttpRequest } from "./workspaceFsToolService.js";
 import { handleButlerToolHttpRequest } from "./butlerToolService.js";
 import { handleDelegateToolHttpRequest } from "./delegationToolService.js";
+import { handleGameToolHttpRequest } from "./gameToolService.js";
 
 let previewServer: http.Server | null = null;
 
@@ -35,6 +36,7 @@ export function startPreviewServer(
         if (await handleWorkspaceFsToolHttpRequest(req, res)) return;
         if (await handleButlerToolHttpRequest(req, res)) return;
         if (await handleDelegateToolHttpRequest(req, res)) return;
+        if (await handleGameToolHttpRequest(req, res)) return;
         const parsed = parseBridgeRequest(req.url || "");
         if (parsed && isKnownBridgeAction(parsed.action)) {
           safeSendToWebContents(getWebContents(), "freebuddy://bridge", parsed);

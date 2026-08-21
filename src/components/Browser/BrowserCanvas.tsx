@@ -17,6 +17,9 @@ import {
   clipFeedTitle,
   isFeedInterpretConversation
 } from "../Feeds/feedInterpretation";
+import { builtinCliMembers } from "@/config/aiMembers";
+import { getAgentIconId } from "@/config/agentIcon";
+import { lobehubAvatarUrl } from "@/utils/lobehubAvatar";
 import { BrowserToolbar, type BrowserViewport } from "./BrowserToolbar";
 import { MarkdownText } from "../CLI/StreamItem";
 
@@ -106,6 +109,89 @@ export function isExternalOnlyBrowserTarget(value: string | undefined): boolean 
   } catch {
     return false;
   }
+}
+
+function extractAssistantText(content: string): string {
+  if (!content) return "";
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((item: any) => {
+          if (typeof item === "string") return item;
+          if (item?.type === "text" || item?.kind === "text") return item.text || item.content || "";
+          if (item?.type === "message" || item?.kind === "message") return item.text || item.content || "";
+          return item?.text || item?.content || "";
+        })
+        .filter(Boolean)
+        .join("\n");
+    }
+  } catch {
+    /* plain text */
+  }
+  return content;
+}
+
+function extractAgentMoveFromText(text: string): {
+  action: string;
+  speech?: string;
+  thought?: string;
+  mood?: "confident" | "mocking" | "nervous" | "calm" | "admiring";
+} | null {
+  if (!text) return null;
+
+  // 1. Try finding json code blocks
+  const jsonBlocks = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/gi);
+  if (jsonBlocks) {
+    for (const block of jsonBlocks) {
+      const clean = block.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+      try {
+        const parsed = JSON.parse(clean);
+        if (parsed && typeof parsed === "object") {
+          const action = parsed.action || parsed.actionId || parsed.move || parsed.position || parsed.coord;
+          if (typeof action === "string" && /^(?:[A-O]\d{1,2}|[a-i]\d[a-i]\d)$/i.test(action.trim())) {
+            return {
+              action: action.trim(),
+              speech: parsed.speech || parsed.chat || parsed.message || parsed.reply,
+              thought: parsed.thought || parsed.reason,
+              mood: parsed.mood
+            };
+          }
+        }
+      } catch {
+        /* try next block */
+      }
+    }
+  }
+
+  // 2. Try parsing raw JSON
+  try {
+    const parsed = JSON.parse(text.trim());
+    if (parsed && typeof parsed === "object") {
+      const action = parsed.action || parsed.actionId || parsed.move || parsed.position || parsed.coord;
+      if (typeof action === "string" && /^(?:[A-O]\d{1,2}|[a-i]\d[a-i]\d)$/i.test(action.trim())) {
+        return {
+          action: action.trim(),
+          speech: parsed.speech || parsed.chat || parsed.message,
+          thought: parsed.thought || parsed.reason,
+          mood: parsed.mood
+        };
+      }
+    }
+  } catch {
+    /* fallback to regex */
+  }
+
+  // 3. Fallback regex for "落子：H8" or "走子: b2e2"
+  const regexMatch = text.match(/(?:落子|走子|走步|action|move|coordinate|坐标|走|下在)[:：\s*#]+([A-O]\d{1,2}|[a-i]\d[a-i]\d)\b/i);
+  if (regexMatch) {
+    return {
+      action: regexMatch[1].trim(),
+      speech: text.replace(/[#*`]/g, "").slice(0, 100).trim()
+    };
+  }
+
+  return null;
 }
 
 function isLoopbackHostname(hostname: string): boolean {
@@ -230,6 +316,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   const members = useConversationStore((s) => s.members);
   const newConversation = useConversationStore((s) => s.newConversation);
   const sendMessage = useConversationStore((s) => s.sendMessage);
+  const isRunning = useConversationStore((s) => (s.activeId ? s.isRunning(s.activeId) : false));
   const feedItems = useFeedStore((s) => s.items);
   const markInterpreted = useFeedStore((s) => s.markInterpreted);
   const entry = useBrowserStore((s) =>
@@ -313,6 +400,191 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         .setLoadState(activeId, state.isLoading ? "loading" : "ready");
     });
   }, [activeId, isNativeRemote, nativeBrowserAvailable]);
+
+  // Bridge game canvas iframe with FreeBuddy Game Service and Agent session
+  const processedMessageIdsRef = useRef<Set<string>>(new Set());
+
+  const activeConversation = useConversationStore((s) =>
+    activeId ? s.conversations.find((c) => c.id === activeId) : undefined
+  );
+
+  const agentInfo = useMemo(() => {
+    if (!activeConversation) return null;
+    const member = builtinCliMembers.find((m) => m.id === activeConversation.agentId);
+    const iconId =
+      activeConversation.agentId === "cli-butlerbuddy"
+        ? "Bilibili"
+        : getAgentIconId(activeConversation.adapter, member?.avatar);
+    const avatarUrl = iconId ? lobehubAvatarUrl(iconId) : undefined;
+    const model =
+      activeConversation.configOptionOverrides?.model ||
+      activeConversation.configOptionOverrides?.model_config ||
+      (activeConversation.metadata as any)?.model ||
+      "";
+
+    return {
+      agentId: activeConversation.agentId,
+      agentName: activeConversation.agentName || member?.name || "AI Agent",
+      avatarUrl: avatarUrl || "",
+      modelName: model ? String(model) : ""
+    };
+  }, [activeConversation]);
+
+  useEffect(() => {
+    if (frameRef.current?.contentWindow && agentInfo) {
+      frameRef.current.contentWindow.postMessage(
+        { type: "AGENT_INFO_UPDATE", payload: agentInfo },
+        "*"
+      );
+    }
+  }, [agentInfo]);
+
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== "object" || !activeId) return;
+
+      if (data.type === "PLAYER_MOVE" && data.payload?.actionId) {
+        const actionId = String(data.payload.actionId);
+        try {
+          const moveRes = await window.freebuddy?.game?.playerMove(activeId, actionId);
+          const legalMoves = moveRes?.gameState?.legalMoves;
+          const candidateList = legalMoves && legalMoves.length > 0
+            ? legalMoves.slice(0, 12).map((m: any) => `${m.coord}(${m.description || ""})`).join(", ")
+            : "H8, G7, I9, H9";
+          const suggestedCoord = legalMoves?.[0]?.coord || "H8";
+
+          if (sendMessage) {
+            const isXiangqi = moveRes?.gameState?.gameType === "xiangqi";
+            const isWon = moveRes?.gameState?.status === "player_won";
+            const promptText = isWon
+              ? (isXiangqi ? `玩家走子：${actionId}，绝杀获胜！` : `玩家落子：${actionId}，五连珠获胜！`)
+              : (isXiangqi ? `玩家走子：${actionId}` : `玩家落子：${actionId}`);
+
+            void sendMessage({
+              conversationId: activeId,
+              prompt: promptText
+            });
+          }
+        } catch (err) {
+          console.error("[FreeBuddy] Failed to process player game move:", err);
+        }
+      } else if (data.type === "GAME_CANVAS_READY" || data.type === "REQUEST_SYNC") {
+        try {
+          const state = await window.freebuddy?.game?.getState(activeId);
+          if (state && frameRef.current?.contentWindow) {
+            frameRef.current.contentWindow.postMessage(
+              { type: "FREEBUDDY_GAME_SYNC", payload: { ...state, agentInfo } },
+              "*"
+            );
+          }
+        } catch (err) {
+          console.error("[FreeBuddy] Failed to fetch game state:", err);
+        }
+      } else if (data.type === "GAME_RESET") {
+        try {
+          await window.freebuddy?.game?.resetGame(activeId);
+          if (sendMessage) {
+            void sendMessage({
+              conversationId: activeId,
+              prompt: `【重新开局】我已重置了棋盘，准备开始新一局！`
+            });
+          }
+        } catch (err) {
+          console.error("[FreeBuddy] Failed to reset game:", err);
+        }
+      } else if (data.type === "REMIND_AGENT") {
+        if (sendMessage) {
+          void sendMessage({
+            conversationId: activeId,
+            prompt: `轮到你行动，请尽快出招。`
+          });
+        }
+      } else if (data.type === "GAME_RESIGN") {
+        if (sendMessage) {
+          void sendMessage({
+            conversationId: activeId,
+            prompt: `我认输了，这一局你下得漂亮！`
+          });
+        }
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    const unbindGameEvent = window.freebuddy?.game?.onGameEvent((event: any) => {
+      if (frameRef.current?.contentWindow && event?.payload) {
+        frameRef.current.contentWindow.postMessage(
+          { type: "FREEBUDDY_GAME_SYNC", payload: event.payload },
+          "*"
+        );
+      }
+    });
+
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      unbindGameEvent?.();
+    };
+  }, [activeId, sendMessage]);
+
+  // Observe assistant messages in game conversations to extract moves even without native MCP tool calling
+  useEffect(() => {
+    if (!activeId || !messages.length) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && lastMsg.role === "assistant") {
+      const text = extractAssistantText(lastMsg.content);
+      const move = extractAgentMoveFromText(text);
+      if (move) {
+        const moveKey = `${lastMsg.id}:${move.action}`;
+        if (!processedMessageIdsRef.current.has(moveKey)) {
+          processedMessageIdsRef.current.add(moveKey);
+          void window.freebuddy?.game?.agentMove(
+            activeId,
+            move.action,
+            move.thought,
+            move.speech,
+            move.mood
+          );
+        }
+      }
+    }
+  }, [activeId, messages]);
+
+  // Monitor for abnormal stalls (Agent finished generation but turn is still White/2)
+  useEffect(() => {
+    if (!activeId) return;
+    let timer: NodeJS.Timeout | null = null;
+
+    const checkStall = async () => {
+      try {
+        const state = await window.freebuddy?.game?.getState(activeId);
+        if (state && state.status === "playing" && state.turn === 2 && !isRunning) {
+          timer = setTimeout(() => {
+            if (frameRef.current?.contentWindow) {
+              frameRef.current.contentWindow.postMessage(
+                { type: "AGENT_STALLED", payload: { stalled: true } },
+                "*"
+              );
+            }
+          }, 2500);
+        } else {
+          if (frameRef.current?.contentWindow) {
+            frameRef.current.contentWindow.postMessage(
+              { type: "AGENT_STALLED", payload: { stalled: false } },
+              "*"
+            );
+          }
+        }
+      } catch {
+        /* best effort */
+      }
+    };
+
+    void checkStall();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [activeId, isRunning, messages]);
 
   useEffect(() => {
     if (!nativeBrowserAvailable || !isNativeRemote || !entry?.manualEntry) {

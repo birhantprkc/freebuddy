@@ -64,6 +64,10 @@ import {
   unregisterBrowserToolSession
 } from "../browserToolService.js";
 import {
+  registerGameToolSession,
+  unregisterGameToolSession
+} from "../gameToolService.js";
+import {
   registerSkillToolSession,
   unregisterSkillToolSession
 } from "../skillToolService.js";
@@ -84,6 +88,7 @@ import {
   registerWorkspaceFsToolSession,
   unregisterWorkspaceFsToolSession
 } from "../workspaceFsToolService.js";
+import { getConversation } from "./conversations.js";
 import type { AcpStdioMcpServer } from "../shared/browserToolProtocol.js";
 import {
   clearAuthenticationTerminalsForSession,
@@ -385,6 +390,7 @@ export async function runAcpAgent({
     terminalManager.dispose();
     running.delete(args.sessionId);
     unregisterBrowserToolSession(args.sessionId);
+    unregisterGameToolSession(args.sessionId);
     unregisterSkillToolSession(args.sessionId);
     unregisterButlerToolSession(args.sessionId);
     unregisterDelegateToolSession(args.sessionId);
@@ -1254,6 +1260,21 @@ export async function runAcpAgent({
             webContents
           })
         );
+        const conv = args.conversationId ? getConversation(args.conversationId) : undefined;
+        const isGameSession =
+          conv?.kind === "game" ||
+          args.skills?.some((s) => s.id === "game-arena" || s.name === "game-arena");
+        if (isGameSession) {
+          const gameType = (conv?.metadata?.gameType as any) || "gomoku";
+          mcpServers.push(
+            await registerGameToolSession({
+              taskSessionId: args.sessionId,
+              conversationId: args.conversationId,
+              gameType,
+              webContents
+            })
+          );
+        }
       }
       if (args.skills?.length) {
         mcpServers.push(registerSkillToolSession(args.sessionId, args.skills));
