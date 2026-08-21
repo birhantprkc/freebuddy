@@ -40,25 +40,27 @@ export function resolveWindowsPowerShell(
     "powershell.exe"
   );
 
-  const override = env.FREEBUDDY_PWSH?.trim();
-  if (override && isFile(override)) return override;
+  const override = unwrapWindowsPathEntry(env.FREEBUDDY_PWSH || "");
+  if (override && path.win32.isAbsolute(override) && isFile(override)) {
+    return override;
+  }
 
-  const programFiles =
-    env.ProgramFiles ||
-    env.PROGRAMFILES ||
-    env.ProgramW6432 ||
-    path.win32.join(
-      path.win32.parse(systemRoot).root || "C:\\",
-      "Program Files"
-    );
-  const pwsh7 = path.win32.join(programFiles, "PowerShell", "7", "pwsh.exe");
-  if (isFile(pwsh7)) return pwsh7;
-
-  for (const rawEntry of (env.PATH || env.Path || "").split(";")) {
-    const dir = unwrapWindowsPathEntry(rawEntry);
-    if (!dir) continue;
-    const candidate = path.win32.join(dir, "pwsh.exe");
-    if (isFile(candidate)) return candidate;
+  const driveRoot = path.win32.parse(systemRoot).root || "C:\\";
+  const programFilesRoots = [
+    env.ProgramFiles,
+    env.PROGRAMFILES,
+    env.ProgramW6432,
+    path.win32.join(driveRoot, "Program Files")
+  ];
+  const seenRoots = new Set<string>();
+  for (const root of programFilesRoots) {
+    const programFiles = (root || "").trim();
+    if (!programFiles) continue;
+    const key = programFiles.toLowerCase();
+    if (seenRoots.has(key)) continue;
+    seenRoots.add(key);
+    const pwsh7 = path.win32.join(programFiles, "PowerShell", "7", "pwsh.exe");
+    if (isFile(pwsh7)) return pwsh7;
   }
 
   return powershell51;

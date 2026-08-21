@@ -87,12 +87,26 @@ test("resolveWindowsPowerShell prefers FREEBUDDY_PWSH when that file exists", ()
     resolveWindowsPowerShell(
       {
         SystemRoot: "C:\\Windows",
-        FREEBUDDY_PWSH: override,
+        FREEBUDDY_PWSH: `"${override}"`,
         ProgramFiles: "C:\\Program Files"
       },
       filesExist(override, PWSH7, POWERSHELL_51)
     ),
     override
+  );
+});
+
+test("resolveWindowsPowerShell ignores a relative FREEBUDDY_PWSH override", () => {
+  assert.equal(
+    resolveWindowsPowerShell(
+      {
+        SystemRoot: "C:\\Windows",
+        FREEBUDDY_PWSH: "pwsh.exe",
+        ProgramFiles: "C:\\Program Files"
+      },
+      filesExist("pwsh.exe", PWSH7, POWERSHELL_51)
+    ),
+    PWSH7
   );
 });
 
@@ -133,7 +147,22 @@ test("resolveWindowsPowerShell derives Program Files from SystemRoot when unset"
   );
 });
 
-test("resolveWindowsPowerShell finds pwsh.exe on PATH before falling back to 5.1", () => {
+test("resolveWindowsPowerShell uses ProgramW6432 when ProgramFiles has no pwsh", () => {
+  const wow64Pwsh = "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
+  assert.equal(
+    resolveWindowsPowerShell(
+      {
+        SystemRoot: "C:\\Windows",
+        ProgramFiles: "C:\\Program Files (x86)",
+        ProgramW6432: "C:\\Program Files"
+      },
+      filesExist(wow64Pwsh, POWERSHELL_51)
+    ),
+    wow64Pwsh
+  );
+});
+
+test("resolveWindowsPowerShell does not use PATH-discovered pwsh.exe", () => {
   const pathPwsh = "D:\\scoop\\shims\\pwsh.exe";
   assert.equal(
     resolveWindowsPowerShell(
@@ -144,7 +173,7 @@ test("resolveWindowsPowerShell finds pwsh.exe on PATH before falling back to 5.1
       },
       filesExist(pathPwsh, POWERSHELL_51)
     ),
-    pathPwsh
+    POWERSHELL_51
   );
 });
 
