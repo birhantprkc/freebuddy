@@ -61,11 +61,11 @@
   function updateMuteButtonUI() {
     if (!muteBtn) return;
     if (isMuted) {
-      muteBtn.textContent = "🔇";
+      muteBtn.textContent = "🔇 静音";
       muteBtn.classList.add("muted");
       muteBtn.title = "音效已静音（点击开启）";
     } else {
-      muteBtn.textContent = "🔊";
+      muteBtn.textContent = "🔊 音效";
       muteBtn.classList.remove("muted");
       muteBtn.title = "音效已开启（点击静音）";
     }

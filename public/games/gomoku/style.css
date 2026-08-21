@@ -302,6 +302,11 @@ body {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
+.btn.muted {
+  opacity: 0.65;
+  color: var(--text-muted);
+}
+
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
