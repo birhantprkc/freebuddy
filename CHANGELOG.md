@@ -2,6 +2,14 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.8.9] - 2026-08-21
+
+### 问题修复
+
+- keep pwsh probe on Program Files, skip PATH
+- prefer PowerShell 7 over hardcoded 5.1
+- extract Game Arena strings and remove CJK literals from src
+
 ## [0.8.8] - 2026-08-21
 
 ### 新功能
