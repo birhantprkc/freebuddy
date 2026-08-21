@@ -56,16 +56,11 @@
       const init = INITIAL_BLACK_COUNTS[p] || 0;
       const live = liveCounts[p] || 0;
       const capturedCount = init - live;
-      if (capturedCount > 0) {
+      for (let i = 0; i < capturedCount; i++) {
         const badge = document.createElement("span");
         badge.className = "mini-piece-badge black";
         badge.textContent = PIECE_NAMES[p] || "";
-        if (capturedCount > 1) {
-          const countSpan = document.createElement("span");
-          countSpan.className = "mini-piece-count";
-          countSpan.textContent = `×${capturedCount}`;
-          badge.appendChild(countSpan);
-        }
+        badge.title = PIECE_NAMES[p] || "";
         playerCapturedContainer.appendChild(badge);
       }
     }
@@ -76,16 +71,11 @@
       const init = INITIAL_RED_COUNTS[p] || 0;
       const live = liveCounts[p] || 0;
       const capturedCount = init - live;
-      if (capturedCount > 0) {
+      for (let i = 0; i < capturedCount; i++) {
         const badge = document.createElement("span");
         badge.className = "mini-piece-badge red";
         badge.textContent = PIECE_NAMES[p] || "";
-        if (capturedCount > 1) {
-          const countSpan = document.createElement("span");
-          countSpan.className = "mini-piece-count";
-          countSpan.textContent = `×${capturedCount}`;
-          badge.appendChild(countSpan);
-        }
+        badge.title = PIECE_NAMES[p] || "";
         agentCapturedContainer.appendChild(badge);
       }
     }
