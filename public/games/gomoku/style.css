@@ -176,27 +176,39 @@ body {
 }
 
 .turn-indicator {
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.06);
+  padding: 3px 12px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text-muted);
   transition: all 0.3s ease;
+  border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .turn-indicator.active-player {
-  background: #1e3a8a;
+  background: rgba(59, 130, 246, 0.14);
   color: #93c5fd;
-  border: 1px solid #3b82f6;
-  box-shadow: 0 0 10px var(--accent-glow);
+  border-color: rgba(59, 130, 246, 0.35);
 }
 
 .turn-indicator.active-agent {
-  background: #4c1d95;
+  background: rgba(139, 92, 246, 0.14);
   color: #c4b5fd;
-  border: 1px solid #8b5cf6;
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+.turn-indicator.win {
+  background: rgba(16, 185, 129, 0.14);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.turn-indicator.lose {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 /* Agent Dialogue Bubble Overlay */
