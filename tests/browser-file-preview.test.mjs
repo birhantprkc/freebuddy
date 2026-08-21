@@ -201,6 +201,70 @@ test("Browser preview resolves workspace-relative images to absolute file previe
   }
 });
 
+test("Browser preview converts file:// HTML URLs to render URLs without a workspace", async () => {
+  const { composeBrowserUrl, pathFromFileUrl } = await loadBrowserStoreModule();
+  const source =
+    "file:///Applications/FreeBuddy.app/Contents/Resources/app.asar/dist/games/xiangqi/index.html";
+  const url = composeBrowserUrl("", source, 6);
+  const parsed = new URL(url);
+
+  assert.equal(parsed.hostname, "render");
+  assert.equal(
+    parsed.pathname,
+    "/%2FApplications%2FFreeBuddy.app%2FContents%2FResources%2Fapp.asar%2Fdist%2Fgames%2Fxiangqi/index.html"
+  );
+  assert.equal(parsed.searchParams.get("v"), "6");
+  assert.equal(
+    pathFromFileUrl(source),
+    "/Applications/FreeBuddy.app/Contents/Resources/app.asar/dist/games/xiangqi/index.html"
+  );
+});
+
+test("Browser preview converts Windows file:// HTML URLs without a workspace", async () => {
+  const { composeBrowserUrl, pathFromFileUrl } = await loadBrowserStoreModule();
+  const source = "file:///C:/Users/me/FreeBuddy/dist/games/gomoku/index.html";
+  const url = composeBrowserUrl("", source, 2);
+  const parsed = new URL(url);
+
+  assert.equal(
+    pathFromFileUrl(source),
+    "C:/Users/me/FreeBuddy/dist/games/gomoku/index.html"
+  );
+  assert.equal(parsed.hostname, "render");
+  assert.equal(
+    parsed.pathname,
+    "/C%3A%2FUsers%2Fme%2FFreeBuddy%2Fdist%2Fgames%2Fgomoku/index.html"
+  );
+});
+
+test("bundled game entry uses HTTP on web and an absolute path in packaged Electron", async () => {
+  const { bundledGameEntry } = await loadBrowserStoreModule();
+  const previous = globalThis.window;
+  try {
+    globalThis.window = {
+      freebuddy: { platform: "web" },
+      location: { origin: "http://127.0.0.1:9", href: "http://127.0.0.1:9/" }
+    };
+    assert.equal(
+      bundledGameEntry("xiangqi"),
+      "http://127.0.0.1:9/games/xiangqi/index.html"
+    );
+
+    globalThis.window = {
+      freebuddy: { platform: "darwin" },
+      location: {
+        href: "file:///Applications/FreeBuddy.app/Contents/Resources/app.asar/dist/index.html"
+      }
+    };
+    assert.equal(
+      bundledGameEntry("xiangqi"),
+      "/Applications/FreeBuddy.app/Contents/Resources/app.asar/dist/games/xiangqi/index.html"
+    );
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
 test("Browser preview converts absolute HTML paths to render URLs without a workspace", async () => {
   const { composeBrowserUrl } = await loadBrowserStoreModule();
   const filePath = "/Users/me/docs/v2ex_discussion.html";

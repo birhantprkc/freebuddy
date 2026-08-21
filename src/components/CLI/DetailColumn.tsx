@@ -21,10 +21,12 @@ export function DetailColumn({ runningCount }: { runningCount: number }) {
 
   useEffect(() => {
     if (!activeId) return;
-    useDetailLayoutStore.getState().setActiveTab("overview");
     const conv = useConversationStore
       .getState()
       .conversations.find((c) => c.id === activeId);
+    useDetailLayoutStore
+      .getState()
+      .setActiveTab(conv?.kind === "game" ? "preview" : "overview");
     void useBrowserStore.getState().ensureFor(activeId, conv?.cwd);
   }, [activeId]);
 

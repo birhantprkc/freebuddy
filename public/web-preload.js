@@ -451,6 +451,24 @@
       onPreferencesChanged: function () { return noopUnsub(); }
     },
 
+    game: {
+      getState: function (conversationId) { return invoke("game:getState", conversationId); },
+      playerMove: function (conversationId, actionId) {
+        return invoke("game:playerMove", { conversationId: conversationId, actionId: actionId });
+      },
+      agentMove: function (conversationId, actionId, reason, speech, mood) {
+        return invoke("game:agentMove", {
+          conversationId: conversationId,
+          actionId: actionId,
+          reason: reason,
+          speech: speech,
+          mood: mood
+        });
+      },
+      resetGame: function (conversationId) { return invoke("game:resetGame", conversationId); },
+      onGameEvent: function (cb) { return subscribe("freebuddy://game-event", cb); }
+    },
+
     remote: {
       whoami: function () { return invoke("remote:whoami"); },
       getStatus: function () { return invoke("remote:getStatus"); },

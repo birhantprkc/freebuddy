@@ -42,6 +42,9 @@ test("classifyWsChannel routes global, session-scoped, and desktop-only channels
   assert.deepEqual(classifyWsChannel("freebuddy://browser-tool"), {
     kind: "conversationPayload"
   });
+  assert.deepEqual(classifyWsChannel("freebuddy://game-event"), {
+    kind: "conversationPayload"
+  });
 });
 
 test("conversation-scoped channels are classified for per-owner delivery", async () => {

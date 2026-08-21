@@ -145,3 +145,20 @@ test("webUIServer serves workspace files via /api/attachment and /api/browser-re
   assert.match(server, /handleBrowserRender/);
   assert.match(server, /handleBrowserRequest/);
 });
+
+test("webUIServer serves bundled game directory indexes instead of the SPA shell", () => {
+  const server = fs.readFileSync(
+    new URL("../electron/webUIServer.ts", import.meta.url),
+    "utf8"
+  );
+  const serveStatic = server.slice(
+    server.indexOf("function serveStatic"),
+    server.indexOf("function isAuthed")
+  );
+  const directoryBranch = serveStatic.slice(
+    serveStatic.indexOf("stat.isDirectory()"),
+    serveStatic.indexOf("} catch")
+  );
+  assert.match(directoryBranch, /serveFile\(res, indexPath\)/);
+  assert.doesNotMatch(directoryBranch, /serveSpaIndex/);
+});

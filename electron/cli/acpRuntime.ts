@@ -1260,7 +1260,9 @@ export async function runAcpAgent({
             webContents
           })
         );
-        const conv = args.conversationId ? getConversation(args.conversationId) : undefined;
+      }
+      if (args.conversationId) {
+        const conv = getConversation(args.conversationId);
         const isGameSession =
           conv?.kind === "game" ||
           args.skills?.some((s) => s.id === "game-arena" || s.name === "game-arena");
