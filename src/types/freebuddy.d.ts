@@ -917,6 +917,11 @@ declare global {
       speech?: string,
       mood?: string
     ): Promise<any>;
+    sendChat(
+      conversationId: string,
+      message: string,
+      mood?: string
+    ): Promise<any>;
     resetGame(conversationId: string): Promise<any>;
     playerResign(conversationId: string): Promise<any>;
     onGameEvent(cb: (event: any) => void): () => void;

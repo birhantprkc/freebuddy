@@ -31,6 +31,7 @@ import {
   handlePlayerMove,
   handlePlayerResign,
   handleAgentMove,
+  handleSendChat,
   handleResetGame,
   initGamePersistence
 } from "./gameToolService.js";
@@ -1273,6 +1274,27 @@ function registerButlerBuddyWindowIpc() {
         payload.actionId,
         payload.reason,
         payload.speech,
+        payload.mood,
+        event.sender
+      );
+    }
+  );
+  registerHandler(
+    "game:sendChat",
+    (
+      event,
+      payload: {
+        conversationId: string;
+        message: string;
+        mood?: "confident" | "mocking" | "nervous" | "calm" | "admiring";
+      }
+    ) => {
+      if (!requireOwnedConversation(payload.conversationId)) {
+        return { ok: false, error: "conversation_not_found" };
+      }
+      return handleSendChat(
+        payload.conversationId,
+        payload.message,
         payload.mood,
         event.sender
       );

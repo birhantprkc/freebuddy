@@ -1884,6 +1884,12 @@
     "promptXiangqiPlayerFirst": "【中国象棋对局开始】我执红先行，你执黑后手。准备迎战！",
     "promptXiangqiAgentFirst": "【中国象棋对局开始】本局你执红先行，请出招！",
     "promptGomokuPlayerFirst": "【五子棋对局开始】我执黑先行，你执白后手。准备接招！",
-    "promptGomokuAgentFirst": "【五子棋对局开始】本局你执黑先行，请落子！"
+    "promptGomokuAgentFirst": "【五子棋对局开始】本局你执黑先行，请落子！",
+    "hardModeTurnCommentaryXiangqi": "我走了「{{playerMove}}」，你应了一步「{{agentMove}}」{{reason}}。\n\n（提示：棋盘上双方已完成落子，现轮到我走棋。请针对刚才的交手在聊天中进行生动点评或心理战；若想在棋盘气泡中向我喊话，请调用 game_send_chat 工具。）",
+    "hardModeTurnCommentaryGomoku": "我落子在「{{playerMove}}」，你应了一步「{{agentMove}}」。\n\n（提示：棋盘上双方已完成落子，现轮到我行动。请在聊天中进行生动点评或心理战；若想在棋盘气泡中向我喊话，请调用 game_send_chat 工具。）",
+    "hardModeOpeningCommentaryXiangqi": "你开局走了「{{agentMove}}」{{reason}}。\n\n（提示：棋盘上你已完成开局落子，现轮到我走棋。请在聊天中简述你的开局意图或发起互动；若想在棋盘气泡中向我喊话，请调用 game_send_chat 工具。）",
+    "hardModeOpeningCommentaryGomoku": "你开局落子在「{{agentMove}}」。\n\n（提示：棋盘上你已完成开局落子，现轮到我行动。请在聊天中发起互动；若想在棋盘气泡中向我喊话，请调用 game_send_chat 工具。）",
+    "hardModeWonAgentXiangqi": "你走了「{{agentMove}}」，绝杀获胜！本局你赢了，请在聊天中发表胜利感言！",
+    "hardModeWonAgentGomoku": "你落子在「{{agentMove}}」，五连珠获胜！本局你赢了，请在聊天中发表胜利感言！"
   }
 }

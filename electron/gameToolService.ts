@@ -382,7 +382,7 @@ function searchInWorker(
         gameType: snapshot.gameType,
         board: snapshot.board,
         player: snapshot.agentSide,
-        maxDepth: snapshot.gameType === "xiangqi" ? 3 : 6,
+        maxDepth: 6,
         timeBudgetMs: 700,
         positionHistory,
         recentMoves
@@ -416,6 +416,9 @@ function applyEngineSuggestion(
       rejectAvoidableMate: true
     });
     if (!result.ok) continue;
+    if (reason && reason.trim()) {
+      game.addChat("agent", reason.trim());
+    }
     persistGameState(conversationId, game);
     broadcastGameUpdate(webContents, withAsciiBoard(game), conversationId);
     return true;
@@ -538,6 +541,28 @@ export function handleAgentMove(
     ok: true,
     actionId,
     gameId: game.gameId,
+    gameState: snapshot
+  };
+}
+
+export function handleSendChat(
+  conversationId: string,
+  message: string,
+  mood?: "confident" | "mocking" | "nervous" | "calm" | "admiring",
+  webContents?: WebContents
+): GameToolResult {
+  const game = getOrCreateGame(conversationId);
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return { ok: false, error: "Missing required 'message'." };
+  }
+  const chat = game.addChat("agent", trimmed, mood);
+  persistGameState(conversationId, game);
+  const snapshot = withAsciiBoard(game);
+  broadcastGameUpdate(webContents, snapshot, conversationId);
+  return {
+    ok: true,
+    chat,
     gameState: snapshot
   };
 }

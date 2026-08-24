@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath, dshAcpInstallCommand, parseDshAcpCompositionPackages, bundledDshAcpConfigPath, dshAcpCompositionReady, dshAcpManagedDemoBin, resolveDshAcpDemoDirFromBinary, quoteForShell, resolveDshAcpDemoBinJs } from "../dist-electron/cli/adapters.js";
+import { getAdapterDefinition, getCliCheckProbe, applyDshAcpNpmInstallEnv, dshAcpWindowsResiduePath, dshAcpInstallCommand, parseDshAcpCompositionPackages, bundledDshAcpConfigPath, dshAcpCompositionReady, dshAcpManagedDemoBin, resolveDshAcpDemoDirFromBinary, quoteForShell, resolveDshAcpDemoBinJs, cleanupLegacyDshAcpManagedFiles } from "../dist-electron/cli/adapters.js";
 
 test("Codex ACP checks the new Agent Client Protocol package version", () => {
   assert.deepEqual(getCliCheckProbe("codex-acp"), {
@@ -176,4 +176,59 @@ test("resolveDshAcpDemoBinJs defaults to standalone binary instead of picking up
   });
   assert.equal(standalone, undefined);
 });
+
+test("cleanupLegacyDshAcpManagedFiles removes legacy granular package.json and lockfile", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-legacy-cleanup-"));
+  const legacyPkg = {
+    dependencies: {
+      "@deepseek-ai/dsh-acp-demo": "^0.1.0-rc.6",
+      "@deepseek-ai/dsh-llm-deepseek": "^0.1.0-rc.6"
+    }
+  };
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify(legacyPkg));
+  fs.writeFileSync(path.join(root, "package-lock.json"), "{}");
+
+  cleanupLegacyDshAcpManagedFiles(root);
+  assert.equal(fs.existsSync(path.join(root, "package.json")), false);
+  assert.equal(fs.existsSync(path.join(root, "package-lock.json")), false);
+
+  const cleanPkg = {
+    dependencies: {
+      "deepseek-harness-acp": "^0.1.16"
+    }
+  };
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify(cleanPkg));
+  cleanupLegacyDshAcpManagedFiles(root);
+  assert.equal(fs.existsSync(path.join(root, "package.json")), true);
+});
+
+test("dshAcpCompositionReady validates required plugins in cordis.yml", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-ready-cfg-"));
+  const standalone = path.join(root, "node_modules", "deepseek-harness-acp");
+  fs.mkdirSync(path.join(standalone, "lib"), { recursive: true });
+  fs.writeFileSync(path.join(standalone, "package.json"), "{}");
+  const bin = path.join(standalone, "lib", "bin.js");
+  fs.writeFileSync(bin, "");
+
+  const probe = path.join(root, "node_modules", "@deepseek-ai", "dsh-llm-deepseek");
+  fs.mkdirSync(probe, { recursive: true });
+  fs.writeFileSync(path.join(probe, "package.json"), "{}");
+
+  const cordisYaml = path.join(root, "cordis.yml");
+  fs.writeFileSync(
+    cordisYaml,
+    "- name: '@deepseek-ai/dsh-llm-deepseek'\n- name: '@deepseek-ai/dsh-attachment-local'\n"
+  );
+
+  // Missing attachment-local
+  assert.equal(dshAcpCompositionReady(bin, cordisYaml), false);
+
+  // Add attachment-local
+  const attachment = path.join(root, "node_modules", "@deepseek-ai", "dsh-attachment-local");
+  fs.mkdirSync(attachment, { recursive: true });
+  fs.writeFileSync(path.join(attachment, "package.json"), "{}");
+
+  assert.equal(dshAcpCompositionReady(bin, cordisYaml), true);
+});
+
 

@@ -71,7 +71,10 @@ The engine enforces standard rules strictly. If a move you expected is illegal, 
 
 ## Difficulty Note
 
-When session difficulty is set to hard, a local engine may answer moves automatically on your behalf. In that case focus your replies on commentary and chat only, and do not attempt stale moves after the engine has already replied.
+When session difficulty is set to hard, a local engine answers moves automatically on your behalf. In that case:
+- Do NOT call `game_make_move` after the engine has already moved.
+- You may analyze the game and thoughts in the conversation chat.
+- When you want to send short in-character commentary or psychological banter (under 30 words) to display in the board dialogue bubble, call the `game_send_chat` tool.
 
 ## Prohibited Actions
 

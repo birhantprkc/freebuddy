@@ -460,6 +460,9 @@ test("isDefaultDshAcpBinary treats npm-global shims as the stock demo", () => {
 
 test("buildCommand puts koffi --import on argv on Windows when the composition uses the native sandbox", () => {
   const { root, binJs } = writeManagedDshRuntime();
+  const sandbox = path.join(root, "node_modules", "@deepseek-ai", "dsh-sandbox-local");
+  fs.mkdirSync(sandbox, { recursive: true });
+  fs.writeFileSync(path.join(sandbox, "package.json"), "{}");
   // The managed cordis.yml must mount the native sandbox for the guard to apply.
   fs.writeFileSync(
     path.join(root, "cordis.yml"),

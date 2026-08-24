@@ -4,7 +4,8 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  realpathSync as fsRealpath
+  realpathSync as fsRealpath,
+  unlinkSync
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -602,8 +603,10 @@ export function extraArgsHaveDshConfig(args: string[]): boolean {
 /** Resolve the `dsh-acp-demo` entry we should spawn with `node`, if any. */
 export function resolveDshAcpDemoBinJs(input: {
   binary?: string;
+  cwd?: string;
   dshAcpRuntimeRoot?: string;
 }): string | undefined {
+  const configPath = resolveDshAcpConfigPath(input.cwd, input.dshAcpRuntimeRoot);
   const standaloneManagedBin = input.dshAcpRuntimeRoot
     ? path.join(
         input.dshAcpRuntimeRoot,
@@ -613,7 +616,11 @@ export function resolveDshAcpDemoBinJs(input: {
         "bin.js"
       )
     : "";
-  if (isDefaultDshAcpBinary(input.binary) && standaloneManagedBin && existsSync(standaloneManagedBin)) {
+  const standaloneReady =
+    Boolean(standaloneManagedBin) &&
+    existsSync(standaloneManagedBin) &&
+    dshAcpCompositionReady(standaloneManagedBin, configPath);
+  if (isDefaultDshAcpBinary(input.binary) && standaloneReady) {
     return standaloneManagedBin;
   }
   const managedBin = input.dshAcpRuntimeRoot
@@ -629,7 +636,7 @@ export function resolveDshAcpDemoBinJs(input: {
   const managedReady =
     Boolean(managedBin) &&
     existsSync(managedBin) &&
-    dshAcpCompositionReady(managedBin);
+    dshAcpCompositionReady(managedBin, configPath);
   if (isDefaultDshAcpBinary(input.binary) && managedReady) return managedBin;
   const fromHint = dshAcpDemoBinJsFromBinaryHint(input.binary);
   if (fromHint) return fromHint;
@@ -985,6 +992,24 @@ export function patchDshAcpRuntimeFromCommand(command: {
   if (entry) patchDshAcpRuntimeFromBin(entry);
 }
 
+/** Clean up legacy package.json and lockfile in the managed runtime if they hold stale granular dependencies. */
+export function cleanupLegacyDshAcpManagedFiles(root: string): void {
+  const pkgJsonPath = path.join(root, "package.json");
+  if (existsSync(pkgJsonPath)) {
+    try {
+      const parsed = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+      const deps = { ...parsed.dependencies, ...parsed.devDependencies };
+      if (deps["@deepseek-ai/dsh-acp-demo"] || !deps["deepseek-harness-acp"]) {
+        unlinkSync(pkgJsonPath);
+        const lockPath = path.join(root, "package-lock.json");
+        if (existsSync(lockPath)) unlinkSync(lockPath);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** Refresh the managed composition from the bundled default before spawn/install. */
 export function syncDshAcpManagedConfig(dataDir: string): string {
   const root = dshAcpManagedRoot(dataDir);
@@ -994,6 +1019,7 @@ export function syncDshAcpManagedConfig(dataDir: string): string {
   } catch {
     /* ignore permission errors */
   }
+  cleanupLegacyDshAcpManagedFiles(root);
   patchDshAcpManagedRuntime(root);
   return root;
 }
@@ -1088,25 +1114,32 @@ export function isStandaloneDshAcpBinary(binary?: string): boolean {
   return base.startsWith("deepseek-harness-acp") || base.startsWith("dsh-acp");
 }
 
-export function dshAcpCompositionReady(binPath: string): boolean {
+export function dshAcpCompositionReady(
+  binPath: string,
+  configPath?: string
+): boolean {
   const pkgDir = resolveDshAcpDemoDirFromBinary(binPath) ?? path.dirname(binPath);
-  if (
-    pkgDir.endsWith("deepseek-harness-acp") ||
-    isStandaloneDshAcpBinary(binPath)
-  ) {
-    return (
-      existsSync(path.join(pkgDir, "package.json")) ||
-      nodeModulesHasPackage(pkgDir, "deepseek-harness-acp") ||
-      nodeModulesHasPackage(pkgDir, DSH_ACP_PROBE_PACKAGE)
-    );
+  if (!nodeModulesHasPackage(pkgDir, DSH_ACP_PROBE_PACKAGE)) {
+    return false;
   }
-  return nodeModulesHasPackage(pkgDir, DSH_ACP_PROBE_PACKAGE);
+  const cfg = configPath && existsSync(configPath) ? configPath : undefined;
+  if (cfg) {
+    try {
+      const packages = parseDshAcpCompositionPackages(readFileSync(cfg, "utf8"));
+      return packages.every((pkg) => nodeModulesHasPackage(pkgDir, pkg));
+    } catch {
+      /* ignore unreadable config */
+    }
+  }
+  return true;
 }
 
 /** Bare npm package names referenced by the bundled ACP composition. */
 export function parseDshAcpCompositionPackages(yamlText: string): string[] {
-  const names = new Set<string>(["@deepseek-ai/dsh-acp-demo"]);
-  for (const match of yamlText.matchAll(/^\s*name:\s*'(@deepseek-ai\/[^']+)'/gm)) {
+  const names = new Set<string>();
+  for (const match of yamlText.matchAll(
+    /^\s*(?:-\s+)?name:\s*['"]?(@deepseek-ai\/[^'"\s]+)['"]?/gm
+  )) {
     names.add(match[1].split("/").slice(0, 2).join("/"));
   }
   return [...names];
@@ -1445,6 +1478,7 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
     case "dsh-acp": {
       const nodeEntry = resolveDshAcpDemoBinJs({
         binary: input.binary,
+        cwd: input.cwd,
         dshAcpRuntimeRoot: input.dshAcpRuntimeRoot
       });
       const args = extraArgsHaveDshConfig(extra)

@@ -196,6 +196,73 @@ function extractAgentMoveFromText(text: string): {
   return null;
 }
 
+function buildHardModeCommentaryPrompt(
+  snapshot: any,
+  t: (key: string, options?: any) => string
+): string {
+  const isXiangqi = snapshot?.gameType === "xiangqi";
+  const history = snapshot?.moveHistory || [];
+  const agentMove = snapshot?.lastMove || (history.length > 0 ? history[history.length - 1] : null);
+  if (!agentMove) return "";
+
+  const prevMove = history.length >= 2 ? history[history.length - 2] : null;
+
+  const formatMove = (m: any) => {
+    if (!m) return "";
+    if (isXiangqi && m.chineseMove) {
+      return `${m.chineseMove} (${m.actionId})`;
+    }
+    return String(m.actionId || "");
+  };
+
+  const cleanReason = (rawReason?: string, moveStr?: string) => {
+    if (!rawReason) return "";
+    let r = rawReason.trim();
+    if (moveStr && r.startsWith(moveStr)) {
+      r = r.slice(moveStr.length).replace(/^[，,\s]+/, "").trim();
+    } else if (r.includes("，")) {
+      r = r.split("，").slice(1).join("，").trim();
+    } else if (r.includes(",")) {
+      r = r.split(",").slice(1).join(",").trim();
+    }
+    return r ? `（${r}）` : "";
+  };
+
+  const agentMoveLabel = formatMove(agentMove);
+  const playerMoveLabel = formatMove(prevMove);
+  const reasonText = isXiangqi
+    ? cleanReason(agentMove.reason, agentMove.chineseMove)
+    : "";
+
+  if (snapshot.status === "agent_won") {
+    return isXiangqi
+      ? t("game.hardModeWonAgentXiangqi", { agentMove: agentMoveLabel })
+      : t("game.hardModeWonAgentGomoku", { agentMove: agentMoveLabel });
+  }
+
+  if (prevMove) {
+    return isXiangqi
+      ? t("game.hardModeTurnCommentaryXiangqi", {
+          playerMove: playerMoveLabel,
+          agentMove: agentMoveLabel,
+          reason: reasonText
+        })
+      : t("game.hardModeTurnCommentaryGomoku", {
+          playerMove: playerMoveLabel,
+          agentMove: agentMoveLabel
+        });
+  }
+
+  return isXiangqi
+    ? t("game.hardModeOpeningCommentaryXiangqi", {
+        agentMove: agentMoveLabel,
+        reason: reasonText
+      })
+    : t("game.hardModeOpeningCommentaryGomoku", {
+        agentMove: agentMoveLabel
+      });
+}
+
 function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   return (
@@ -420,11 +487,13 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     stepCount: number;
   } | null>(null);
   const autoRemindCountRef = useRef(0);
+  const lastEngineCommentedStepRef = useRef<number>(-1);
 
   useEffect(() => {
     pendingGameTurnPromptRef.current = null;
     autoRemindCountRef.current = 0;
     processedMessageIdsRef.current.clear();
+    lastEngineCommentedStepRef.current = -1;
   }, [activeId]);
 
   const activeConversation = useConversationStore((s) =>
@@ -581,12 +650,39 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
 
     window.addEventListener("message", handleMessage);
     const unbindGameEvent = window.freebuddy?.game?.onGameEvent((event: any) => {
-      if (event?.conversationId && event.conversationId !== activeId) return;
+      if (!activeId || (event?.conversationId && event.conversationId !== activeId)) return;
       if (frameRef.current?.contentWindow && event?.payload) {
         frameRef.current.contentWindow.postMessage(
           { type: "FREEBUDDY_GAME_SYNC", payload: event.payload },
           "*"
         );
+      }
+
+      // If an engine move was performed in hard mode, prompt the AI agent to give a commentary
+      const snapshot = event?.payload;
+      if (
+        snapshot &&
+        snapshot.lastMove &&
+        snapshot.lastMove.player === snapshot.agentSide &&
+        lastEngineCommentedStepRef.current !== snapshot.stepCount &&
+        sendMessage
+      ) {
+        lastEngineCommentedStepRef.current = snapshot.stepCount;
+        const promptText = buildHardModeCommentaryPrompt(snapshot, t);
+        if (!promptText) return;
+
+        if (useConversationStore.getState().isRunning(activeId)) {
+          pendingGameTurnPromptRef.current = {
+            conversationId: activeId,
+            prompt: promptText,
+            stepCount: Number(snapshot.stepCount ?? 0)
+          };
+        } else {
+          void sendMessage({
+            conversationId: activeId,
+            prompt: promptText
+          });
+        }
       }
     });
 
@@ -596,7 +692,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     };
   }, [activeId, agentInfo, sendMessage, t]);
 
-  // Observe assistant messages in game conversations to extract moves even without native MCP tool calling
+  // Observe assistant messages in game conversations to extract moves or commentary
   useEffect(() => {
     if (!activeId || !messages.length) return;
     const lastMsg = messages[messages.length - 1];

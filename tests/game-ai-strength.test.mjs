@@ -231,6 +231,27 @@ test("xiangqi search returns a legal move with a factual reason", () => {
   assert.match(best.reason, /[进平退]/);
 });
 
+test("xiangqi quiescence search avoids sacrificing Rook for defended Pawn", () => {
+  // Red Rook at e3, defended Black Pawn at e6 defended by Black Cannon at e7
+  const board = Array.from({ length: 10 }, () => Array(9).fill(0));
+  board[0][4] = 1;   // Red King e0
+  board[9][4] = -1;  // Black King e9
+  board[2][4] = 5;   // Red Rook e2
+  board[6][4] = -7;  // Black Pawn e6
+  board[7][4] = -6;  // Black Cannon e7 (defends e6)
+
+  // Red to move: Taking e6 with Rook (e2e6) wins a pawn but loses the Rook to cannon (e7e6).
+  // With Q-search, Red should NOT play e2e6 (Rook takes Pawn).
+  const best = findBestXiangqiMove(board, 1, {
+    maxDepth: 2,
+    timeBudgetMs: 400
+  });
+
+  assert.ok(best);
+  assert.notEqual(best.actionId, "e2e6", "Rook should not sacrifice itself for a defended pawn");
+});
+
+
 test("hard difficulty triggers automatic engine reply after player move", async () => {
   const conversationId = `conv-hard-${Date.now()}`;
   initGamePersistence(

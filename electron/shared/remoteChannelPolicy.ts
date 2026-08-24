@@ -175,6 +175,7 @@ const ALLOW = [
   "game:getState",
   "game:playerMove",
   "game:agentMove",
+  "game:sendChat",
   "game:resetGame",
   "game:playerResign"
 ] as const;
