@@ -1153,11 +1153,14 @@ export function parseDshAcpCompositionPackages(yamlText: string): string[] {
 export function dshAcpInstallCommand(options?: {
   yamlText?: string;
   prefix?: string;
+  platform?: NodeJS.Platform;
 }): string {
+  const isWin = (options?.platform ?? process.platform) === "win32";
   const target = options?.prefix
     ? `--prefix ${quoteForShell(options.prefix)}`
     : "-g";
-  return `npm install ${target} deepseek-harness-acp`;
+  const extra = isWin ? " @deepseek-ai/dsh-bash-local" : "";
+  return `npm install ${target} deepseek-harness-acp${extra}`;
 }
 
 export function hasExplicitToolSessionArg(

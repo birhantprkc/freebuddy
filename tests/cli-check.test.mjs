@@ -73,7 +73,11 @@ test("dsh-acp uses standalone deepseek-harness-acp package", () => {
   });
   const hint = getAdapterDefinition("dsh-acp")?.installHint;
   assert.equal(hint, dshAcpInstallCommand());
-  assert.equal(hint, "npm install -g deepseek-harness-acp");
+  if (process.platform === "win32") {
+    assert.equal(hint, "npm install -g deepseek-harness-acp @deepseek-ai/dsh-bash-local");
+  } else {
+    assert.equal(hint, "npm install -g deepseek-harness-acp");
+  }
   assert.equal(getAdapterDefinition("dsh-acp")?.defaultBinary, "deepseek-harness-acp");
 });
 
@@ -91,16 +95,31 @@ test("bundled DeepSeek ACP config disables zstd persistence on Windows-safe defa
 });
 
 test("dsh-acp install command matches standalone deepseek-harness-acp package", () => {
-  const hint = dshAcpInstallCommand();
-  assert.equal(hint, "npm install -g deepseek-harness-acp");
+  assert.equal(
+    dshAcpInstallCommand({ platform: "darwin" }),
+    "npm install -g deepseek-harness-acp"
+  );
+  assert.equal(
+    dshAcpInstallCommand({ platform: "linux" }),
+    "npm install -g deepseek-harness-acp"
+  );
+  assert.equal(
+    dshAcpInstallCommand({ platform: "win32" }),
+    "npm install -g deepseek-harness-acp @deepseek-ai/dsh-bash-local"
+  );
   const renderer = fs.readFileSync(
     new URL("../src/config/cliAdapters.ts", import.meta.url),
     "utf8"
   );
-  assert.equal(renderer.includes(hint), true);
-  const prefixed = dshAcpInstallCommand({ prefix: "/tmp/freebuddy-dsh" });
-  assert.match(prefixed, /--prefix /);
-  assert.equal(prefixed.includes(" -g "), false);
+  assert.equal(renderer.includes("npm install -g deepseek-harness-acp"), true);
+  const prefixedWin = dshAcpInstallCommand({ prefix: "C:\\tmp\\dsh", platform: "win32" });
+  assert.match(prefixedWin, /--prefix /);
+  assert.match(prefixedWin, /@deepseek-ai\/dsh-bash-local/);
+  assert.equal(prefixedWin.includes(" -g "), false);
+  const prefixedMac = dshAcpInstallCommand({ prefix: "/tmp/freebuddy-dsh", platform: "darwin" });
+  assert.match(prefixedMac, /--prefix /);
+  assert.equal(prefixedMac.includes(" -g "), false);
+  assert.equal(prefixedMac.includes("@deepseek-ai/dsh-bash-local"), false);
 });
 
 test("dsh-acp npm installs skip koffi rebuild scripts", () => {

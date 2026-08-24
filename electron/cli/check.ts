@@ -395,8 +395,16 @@ export async function cliCheck(
       return result;
     }
     if (!resolved) {
-      upsertRuntime(runtimeKey, false, undefined, undefined, "binary not found");
-      trackAgentSetup(adapter, "check", "missing", "binary not found");
+      const managedBinExists = fs.existsSync(managedBin);
+      const err = managedBinExists ? DSH_ACP_PLUGIN_TREE_MISSING : "binary not found";
+      upsertRuntime(
+        runtimeKey,
+        false,
+        managedBinExists ? managedBin : undefined,
+        undefined,
+        err
+      );
+      trackAgentSetup(adapter, "check", managedBinExists ? "probe_failed" : "missing", err);
       return { installed: false };
     }
     if (!dshAcpCompositionReady(resolved, cfgPath)) {
