@@ -852,6 +852,8 @@ const game = {
       mood
     }),
   resetGame: (conversationId: string) => ipcRenderer.invoke("game:resetGame", conversationId),
+  playerResign: (conversationId: string) =>
+    ipcRenderer.invoke("game:playerResign", conversationId),
   onGameEvent: (cb: (event: unknown) => void): (() => void) => {
     const channel = "freebuddy://game-event";
     const handler = (_e: IpcRendererEvent, payload: unknown) => cb(payload);

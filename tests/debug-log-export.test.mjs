@@ -65,13 +65,16 @@ test("app logs are limited to the local export day without changing session scop
   assert.match(exporter, /readSessionLogFiles\(mode, masks, conversationId\)/);
 });
 
-test("conversation-scoped export filters sessions by conversation_messages.task_id", () => {
-  assert.match(exporter, /function sessionIdsForConversation/);
+test("conversation-scoped export filters task logs and merges their resumable session", () => {
+  assert.match(exporter, /function sessionsForConversation/);
   assert.match(
     exporter,
-    /SELECT DISTINCT task_id FROM conversation_messages WHERE conversation_id = \? AND task_id IS NOT NULL/
+    /SELECT DISTINCT m\.task_id, t\.tool_session_id/
   );
-  assert.match(exporter, /allowed\.has\(n\.replace\(\/\\\.jsonl\$\/, ""\)\)/);
+  assert.match(exporter, /LEFT JOIN cli_tasks t ON t\.id = m\.task_id/);
+  assert.match(exporter, /selection\.taskIds\.has\(n\.replace\(\/\\\.jsonl\$\/, ""\)\)/);
+  assert.match(exporter, /groupSessionLogEntries/);
+  assert.match(exporter, /collapseAcpHistoryReplayLines/);
   assert.match(exporter, /exportScope: scope/);
   // IPC + preload thread the optional conversationId through to the exporter.
   assert.match(ipc, /"debugLogs:preview", \(_event, mode: unknown, conversationId: unknown\)/);

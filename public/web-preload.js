@@ -466,6 +466,7 @@
         });
       },
       resetGame: function (conversationId) { return invoke("game:resetGame", conversationId); },
+      playerResign: function (conversationId) { return invoke("game:playerResign", conversationId); },
       onGameEvent: function (cb) { return subscribe("freebuddy://game-event", cb); }
     },
 

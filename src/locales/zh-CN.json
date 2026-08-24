@@ -1855,6 +1855,10 @@
     "aiOpponent": "AI 对手",
     "gameModel": "对弈模型",
     "turnOrder": "先后手",
+    "difficulty": "难度",
+    "difficultyEasy": "简单 · AI 自由对弈",
+    "difficultyHard": "困难 · 引擎加持",
+    "difficultyHardHint": "困难模式下，本地引擎将代替 AI 自动应答落子，棋力最强",
     "gomoku": "五子棋",
     "xiangqi": "中国象棋",
     "go": "围棋",
@@ -1874,6 +1878,8 @@
     "playerMoveGomoku": "玩家落子：{{actionId}}",
     "promptGameReset": "【重新开局】我已重置了棋盘，准备开始新一局！",
     "promptRemindAgent": "轮到你行动，请尽快出招。",
+    "promptRemindAgentWithTurn": "【系统催促·第 {{step}} 手·轮到你】请立即调用 game_get_state 核实当前局面；确认轮到你之后必须调用 game_make_move 落子。不要以任何理由让玩家代走或继续等待。",
+    "promptAgentMoveRejected": "你刚才尝试的走法 {{actionId}} 被规则引擎拒绝（{{error}}）。当前仍是第 {{step}} 手后的你的回合。请重新调用 game_get_state，并选择另一个合法安全着法调用 game_make_move。",
     "promptResign": "我认输了，这一局你下得漂亮！",
     "promptXiangqiPlayerFirst": "【中国象棋对局开始】我执红先行，你执黑后手。准备迎战！",
     "promptXiangqiAgentFirst": "【中国象棋对局开始】本局你执红先行，请出招！",
@@ -1881,4 +1887,3 @@
     "promptGomokuAgentFirst": "【五子棋对局开始】本局你执黑先行，请落子！"
   }
 }
-

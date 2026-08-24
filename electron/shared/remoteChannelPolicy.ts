@@ -175,7 +175,8 @@ const ALLOW = [
   "game:getState",
   "game:playerMove",
   "game:agentMove",
-  "game:resetGame"
+  "game:resetGame",
+  "game:playerResign"
 ] as const;
 
 const ADMIN_ONLY = [

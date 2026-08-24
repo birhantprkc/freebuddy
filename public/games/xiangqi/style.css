@@ -218,6 +218,14 @@ body {
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
 }
 
+.turn-indicator.in-check {
+  background: rgba(239, 68, 68, 0.28);
+  color: #fecaca;
+  border: 1px solid #f87171;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.55);
+  animation: check-alert-pulse 1s infinite ease-in-out;
+}
+
 /* Agent Dialogue Bubble */
 .agent-speech-banner {
   position: relative;
@@ -298,6 +306,11 @@ body {
   color: var(--text-muted);
 }
 
+.status-text.in-check {
+  color: #fca5a5;
+  font-weight: 700;
+}
+
 .btn-group {
   display: flex;
   gap: 8px;
@@ -373,6 +386,11 @@ body {
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }
   50% { box-shadow: 0 0 12px rgba(245, 158, 11, 0.6); }
+}
+
+@keyframes check-alert-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
 }
 
 /* Share Modal */
@@ -478,4 +496,3 @@ body {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
-

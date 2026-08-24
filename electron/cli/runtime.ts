@@ -234,13 +234,14 @@ export async function cliRun(
   await waitForCodexToolchainAutoUpdate(args.adapter);
 
   const skillSupport = definition?.capabilities.skills;
+  let nativeSkillsMounted = false;
   if (
     !readOnlyWorkspace &&
     args.cwd &&
     args.skills &&
     skillSupport?.nativeDirs?.length
   ) {
-    reconcileNativeSkillLinks(
+    nativeSkillsMounted = reconcileNativeSkillLinks(
       args.cwd,
       skillSupport.nativeDirs,
       args.skills,
@@ -249,7 +250,12 @@ export async function cliRun(
   }
   const effectiveArgs: CliRunArgs =
     args.announceSkills && args.skills?.length
-      ? { ...args, prompt: buildSkillAnnouncement(args.prompt, args.skills) }
+      ? {
+          ...args,
+          prompt: buildSkillAnnouncement(args.prompt, args.skills, {
+            nativeSkillsMounted
+          })
+        }
       : args;
   const withWorkspace: CliRunArgs =
     effectiveArgs.adapter === "dsh-acp"

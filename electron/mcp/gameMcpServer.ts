@@ -6,6 +6,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import type { GameAction, GameToolResult } from "../shared/gameToolProtocol.js";
+import { formatGameStateText } from "../games/boardDisplay.js";
 
 function bridgeEnvironment(): { endpoint: string; token: string } {
   const endpoint = process.env.FREEBUDDY_GAME_ENDPOINT?.trim();
@@ -43,15 +44,37 @@ export async function invokeGameBridge(
 }
 
 function toolResult(result: GameToolResult) {
+  const text =
+    result.ok && typeof result.message === "string"
+      ? result.message
+      : JSON.stringify(result, null, 2);
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify(result, null, 2)
+        text
       }
     ],
     structuredContent: result,
     ...(result.ok === false ? { isError: true } : {})
+  };
+}
+
+function compactStateResult(result: GameToolResult): GameToolResult {
+  const state = result.gameState;
+  if (!state) return result;
+  return {
+    ok: result.ok,
+    gameId: result.gameId,
+    gameType: state.gameType,
+    status: state.status,
+    turn: state.turn,
+    playerSide: state.playerSide,
+    agentSide: state.agentSide,
+    stepCount: state.stepCount,
+    winner: state.winner,
+    lastMove: state.lastMove,
+    candidateMoveCount: state.legalMoves.length
   };
 }
 
@@ -74,7 +97,7 @@ export function createGameMcpServer(): McpServer {
     {
       title: "Get Board State",
       description:
-        "获取当前棋盘/牌局最新局势。返回当前执子方、手牌/棋盘矩阵、上一步着法，以及按战术威胁排序的合法候选走法列表 (legalMoves)。",
+        "获取当前棋盘/牌局最新局势。返回带坐标的 ASCII 棋盘、双方威胁警告（含对方吃子威胁）、以及按战术价值排序并标注安全性（[丢X]/[兑子]/[得子]）的合法候选走法列表。",
       inputSchema: {},
       annotations: {
         readOnlyHint: true,
@@ -84,7 +107,18 @@ export function createGameMcpServer(): McpServer {
     },
     async () => {
       try {
-        return toolResult(await invokeGameBridge("get_state", {}));
+        const result = await invokeGameBridge("get_state", {});
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: result.gameState
+                ? formatGameStateText(result.gameState)
+                : JSON.stringify(result, null, 2)
+            }
+          ],
+          structuredContent: compactStateResult(result)
+        };
       } catch (error) {
         return toolError(error);
       }
@@ -97,7 +131,7 @@ export function createGameMcpServer(): McpServer {
     {
       title: "Make Game Move",
       description:
-        "在当前对局中执行落子或出牌。必须传入合法的 actionId (如 'H8'、'E5' 等)。若落子非法将返回错误信息供你调整。",
+        "在当前对局中执行落子或出牌。必须传入合法的 actionId。成功后只返回精简确认；吃子、将军与绝杀由服务端给出准确事实，请勿自行臆测。",
       inputSchema: {
         actionId: z
           .string()
@@ -108,7 +142,7 @@ export function createGameMcpServer(): McpServer {
           .string()
           .trim()
           .optional()
-          .describe("简要阐明本步落子的战术意图（进攻/防守/封堵）")
+          .describe("只写简短战术意图；不要自行声称吃子、将军或绝杀")
       },
       annotations: {
         readOnlyHint: false,

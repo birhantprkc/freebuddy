@@ -1,12 +1,14 @@
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 import type { WebContents } from "electron";
 
 import { waitForActiveBridgePort } from "./agentBridge.js";
 import { safeSendToWebContents } from "./cli/ipcSend.js";
-import { GomokuGameInstance, PLAYER_BLACK as GOMOKU_BLACK, PLAYER_WHITE as GOMOKU_WHITE } from "./games/gomokuEngine.js";
-import { XiangqiGameInstance, PLAYER_RED as XIANGQI_RED, PLAYER_BLACK as XIANGQI_BLACK } from "./games/xiangqiEngine.js";
+import { GomokuGameInstance } from "./games/gomokuEngine.js";
+import { renderGomokuBoardAscii, renderXiangqiBoardAscii } from "./games/boardDisplay.js";
+import { XiangqiGameInstance } from "./games/xiangqiEngine.js";
 import type {
   GameAction,
   GameChatMessage,
@@ -26,11 +28,29 @@ export interface GameInstance {
   gameId: string;
   status: GameStatus;
   turn: number;
+  playerSide: number;
+  agentSide: number;
   winner: number | null;
   moveHistory: GameMoveRecord[];
   chatHistory: GameChatMessage[];
   getSnapshot(options?: { includeHistory?: boolean }): GameStateSnapshot;
-  applyMove(actionId: string, player: number, reason?: string): { ok: boolean; error?: string; winner?: number | null; chineseMove?: string };
+  applyMove(
+    actionId: string,
+    player: number,
+    reason?: string,
+    options?: { rejectAvoidableMate?: boolean }
+  ): {
+    ok: boolean;
+    error?: string;
+    winner?: number | null;
+    draw?: boolean;
+    chineseMove?: string;
+    capturedPiece?: number;
+    capturedPieceName?: string;
+    isCheck?: boolean;
+    isCheckmate?: boolean;
+    isStalemate?: boolean;
+  };
   addChat(sender: "player" | "agent" | "system", message: string, mood?: any): GameChatMessage;
   resign(player: number, reason?: string): { ok: boolean; winner: number };
 }
@@ -57,6 +77,29 @@ const bindingsByToken = new Map<string, GameSessionBinding>();
 const tokensByTaskSession = new Map<string, string>();
 const activeGamesByConversation = new Map<string, GameInstance>();
 
+interface PendingAutoMove {
+  timer: NodeJS.Timeout;
+  worker?: Worker;
+}
+
+interface EngineSuggestion {
+  actionId: string;
+  reason?: string;
+}
+
+const pendingAutoMoves = new Map<string, PendingAutoMove>();
+
+export const ENGINE_AUTO_MOVE_DELAY_MS = 550;
+
+function withAsciiBoard(game: GameInstance): GameStateSnapshot {
+  const snapshot = game.getSnapshot();
+  snapshot.asciiBoard =
+    snapshot.gameType === "xiangqi"
+      ? renderXiangqiBoardAscii(snapshot.board)
+      : renderGomokuBoardAscii(snapshot.board);
+  return snapshot;
+}
+
 function gameMcpServerPath(): string {
   return fileURLToPath(new URL("./mcp/gameMcpServer.js", import.meta.url));
 }
@@ -82,18 +125,24 @@ export function getOrCreateGame(conversationId: string, gameType: GameType = "go
     const conv = getConversationFn ? getConversationFn(conversationId) : undefined;
     const saved = conv?.metadata?.gameState as GameStateSnapshot | undefined;
     const effectiveType = (saved?.gameType || conv?.metadata?.gameType || gameType) as GameType;
+    const configuredPlayerSide =
+      saved?.playerSide === 1 || saved?.playerSide === 2
+        ? saved.playerSide
+        : conv?.metadata?.hand === "agent_first"
+          ? 2
+          : 1;
 
     if (effectiveType === "xiangqi") {
       if (saved && saved.board && Array.isArray(saved.board) && saved.board.length === 10) {
-        game = XiangqiGameInstance.fromSnapshot(saved);
+        game = XiangqiGameInstance.fromSnapshot(saved, configuredPlayerSide);
       } else {
-        game = new XiangqiGameInstance(conversationId);
+        game = new XiangqiGameInstance(conversationId, configuredPlayerSide);
       }
     } else {
       if (saved && saved.board && Array.isArray(saved.board) && saved.board.length === 15) {
-        game = GomokuGameInstance.fromSnapshot(saved);
+        game = GomokuGameInstance.fromSnapshot(saved, configuredPlayerSide);
       } else {
-        game = new GomokuGameInstance(conversationId);
+        game = new GomokuGameInstance(conversationId, configuredPlayerSide);
       }
     }
     activeGamesByConversation.set(conversationId, game);
@@ -141,7 +190,7 @@ export async function dispatchGameAction(
     return {
       ok: true,
       gameId: game.gameId,
-      gameState: game.getSnapshot()
+      gameState: withAsciiBoard(game)
     };
   }
 
@@ -166,25 +215,54 @@ export async function dispatchGameAction(
       return { ok: false, error: "Missing required 'actionId'." };
     }
 
-    // Agent is player 2
-    const res = game.applyMove(actionId, 2, reason);
+    const res = game.applyMove(actionId, game.agentSide, reason, {
+      rejectAvoidableMate: true
+    });
     if (!res.ok) {
       return { ok: false, error: res.error };
     }
+    cancelAgentAutoMove(binding.conversationId);
+
+    const trimmedReason = reason?.trim();
+    const chat =
+      trimmedReason && trimmedReason.length > 0
+        ? game.addChat("agent", trimmedReason)
+        : undefined;
 
     persistGameState(binding.conversationId, game);
-    const snapshot = game.getSnapshot();
+    const snapshot = withAsciiBoard(game);
     broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     const moveLabel = res.chineseMove ? `${res.chineseMove} (${actionId})` : actionId;
+    const factParts: string[] = [];
+    if (res.capturedPieceName) factParts.push(`吃${res.capturedPieceName}`);
+    if (res.isCheckmate) factParts.push("绝杀");
+    else if (res.isCheck) factParts.push("将军");
+    if (res.draw) factParts.push("三次重复，和棋");
+    const factSuffix = factParts.length > 0 ? `；${factParts.join("，")}` : "";
     return {
       ok: true,
       actionId,
       gameId: game.gameId,
-      gameState: snapshot,
+      gameType: snapshot.gameType,
+      status: snapshot.status,
+      winner: snapshot.winner,
+      stepCount: snapshot.stepCount,
+      chat,
+      moveFacts: {
+        chineseMove: res.chineseMove,
+        capturedPiece: res.capturedPiece,
+        capturedPieceName: res.capturedPieceName,
+        isCheck: res.isCheck ?? false,
+        isCheckmate: res.isCheckmate ?? false,
+        isStalemate: res.isStalemate ?? false,
+        draw: res.draw ?? false
+      },
       message: res.winner
-        ? `落子 ${moveLabel} 成功，并获得胜利！`
-        : `落子 ${moveLabel} 成功，轮到玩家行动。`
+        ? `落子 ${moveLabel} 成功${factSuffix}，本局获胜。`
+        : res.draw
+          ? `落子 ${moveLabel} 成功${factSuffix}。`
+          : `落子 ${moveLabel} 成功${factSuffix}，轮到玩家行动。`
     };
   }
 
@@ -197,21 +275,27 @@ export async function dispatchGameAction(
 
     const chat = game.addChat("agent", message, mood);
     persistGameState(binding.conversationId, game);
-    const snapshot = game.getSnapshot();
+    const snapshot = withAsciiBoard(game);
     broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     return {
       ok: true,
       chat,
-      gameState: snapshot
+      gameId: game.gameId,
+      gameType: snapshot.gameType,
+      status: snapshot.status,
+      stepCount: snapshot.stepCount
     };
   }
 
   if (action === "resign") {
     const reason = typeof params.reason === "string" ? params.reason : undefined;
-    const res = game.resign(2, reason);
+    const res = game.resign(game.agentSide, reason);
+    if (!res.ok) {
+      return { ok: false, error: "Game is already over." };
+    }
     persistGameState(binding.conversationId, game);
-    const snapshot = game.getSnapshot();
+    const snapshot = withAsciiBoard(game);
     broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     return {
@@ -224,21 +308,185 @@ export async function dispatchGameAction(
   if (action === "reset") {
     const newGame =
       binding.gameType === "xiangqi"
-        ? new XiangqiGameInstance(binding.conversationId)
-        : new GomokuGameInstance(binding.conversationId);
+        ? new XiangqiGameInstance(binding.conversationId, game.playerSide)
+        : new GomokuGameInstance(binding.conversationId, game.playerSide);
     activeGamesByConversation.set(binding.conversationId, newGame);
     persistGameState(binding.conversationId, newGame);
-    const snapshot = newGame.getSnapshot();
+    const snapshot = withAsciiBoard(newGame);
     broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
+    const autoPlayScheduled = scheduleAgentAutoMove(
+      binding.conversationId,
+      binding.webContents
+    );
 
     return {
       ok: true,
       gameState: snapshot,
+      agentAutoPlayScheduled: autoPlayScheduled,
       message: "对局已重置。"
     };
   }
 
   return { ok: false, error: `Unknown game action '${action}'.` };
+}
+
+function conversationDifficulty(conversationId: string): string | undefined {
+  const conv = getConversationFn ? getConversationFn(conversationId) : undefined;
+  return conv?.metadata?.gameDifficulty;
+}
+
+export function cancelAgentAutoMove(conversationId: string): void {
+  const pending = pendingAutoMoves.get(conversationId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    if (pending.worker) void pending.worker.terminate();
+    pendingAutoMoves.delete(conversationId);
+  }
+}
+
+function searchInWorker(
+  conversationId: string,
+  pending: PendingAutoMove,
+  snapshot: GameStateSnapshot,
+  positionHistory?: string[],
+  recentMoves?: GameMoveRecord[]
+): Promise<EngineSuggestion | null> {
+  return new Promise((resolve) => {
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL("./games/gameSearchWorker.js", import.meta.url));
+    } catch (err) {
+      console.warn(`[FreeBuddy] Failed to start engine worker for ${conversationId}:`, err);
+      resolve(null);
+      return;
+    }
+    pending.worker = worker;
+    let settled = false;
+    const finish = (suggestion: EngineSuggestion | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(safetyTimer);
+      void worker.terminate();
+      resolve(suggestion);
+    };
+    const safetyTimer = setTimeout(() => finish(null), 1_500);
+    worker.once("message", (message: { ok?: boolean; suggestion?: EngineSuggestion }) => {
+      finish(message?.ok ? message.suggestion ?? null : null);
+    });
+    worker.once("error", (err) => {
+      console.warn(`[FreeBuddy] Engine worker failed for ${conversationId}:`, err);
+      finish(null);
+    });
+    try {
+      worker.postMessage({
+        gameType: snapshot.gameType,
+        board: snapshot.board,
+        player: snapshot.agentSide,
+        maxDepth: snapshot.gameType === "xiangqi" ? 3 : 6,
+        timeBudgetMs: 700,
+        positionHistory,
+        recentMoves
+      });
+    } catch (err) {
+      console.warn(`[FreeBuddy] Failed to dispatch engine search for ${conversationId}:`, err);
+      finish(null);
+    }
+  });
+}
+
+function applyEngineSuggestion(
+  conversationId: string,
+  game: GameInstance,
+  suggestion: EngineSuggestion | null,
+  webContents?: WebContents
+): boolean {
+  const snapshot = game.getSnapshot();
+  const safeFallbackIds = snapshot.legalMoves
+    .filter((move) => move.allowsMate !== true)
+    .map((move) => move.actionId);
+  const allFallbackIds = snapshot.legalMoves.map((move) => move.actionId);
+  const actionIds = [suggestion?.actionId, ...safeFallbackIds, ...allFallbackIds].filter(
+    (actionId, index, all): actionId is string =>
+      Boolean(actionId) && all.indexOf(actionId) === index
+  );
+
+  for (const actionId of actionIds) {
+    const reason = actionId === suggestion?.actionId ? suggestion.reason : "选择安全合法着法";
+    const result = game.applyMove(actionId, game.agentSide, reason, {
+      rejectAvoidableMate: true
+    });
+    if (!result.ok) continue;
+    persistGameState(conversationId, game);
+    broadcastGameUpdate(webContents, withAsciiBoard(game), conversationId);
+    return true;
+  }
+  return false;
+}
+
+function scheduleAgentAutoMove(
+  conversationId: string,
+  webContents?: WebContents
+): boolean {
+  if (conversationDifficulty(conversationId) !== "hard") return false;
+  const game = activeGamesByConversation.get(conversationId);
+  if (!game || game.status !== "playing" || game.turn !== game.agentSide) {
+    return false;
+  }
+
+  if (pendingAutoMoves.has(conversationId)) return true;
+  let pending: PendingAutoMove;
+  const expectedGameId = game.gameId;
+  const expectedStepCount = game.moveHistory.length;
+  const timer = setTimeout(() => {
+    void (async () => {
+      try {
+        const inst = getOrCreateGame(conversationId);
+        if (
+          inst.gameId !== expectedGameId ||
+          inst.status !== "playing" ||
+          inst.turn !== inst.agentSide ||
+          inst.moveHistory.length !== expectedStepCount
+        ) return;
+
+        const boardSnapshot = inst.getSnapshot();
+        const suggestion = await searchInWorker(
+          conversationId,
+          pending,
+          boardSnapshot,
+          inst instanceof XiangqiGameInstance ? inst.positionHistory : undefined,
+          inst.moveHistory
+        );
+        const current = getOrCreateGame(conversationId);
+        if (
+          current.gameId !== expectedGameId ||
+          current.status !== "playing" ||
+          current.turn !== current.agentSide ||
+          current.moveHistory.length !== expectedStepCount
+        ) return;
+        if (!applyEngineSuggestion(conversationId, current, suggestion, webContents)) {
+          console.warn(`[FreeBuddy] Engine found no acceptable move for ${conversationId}.`);
+        }
+      } catch (err) {
+        console.warn(`[FreeBuddy] Engine auto move failed for ${conversationId}:`, err);
+      } finally {
+        if (pendingAutoMoves.get(conversationId) === pending) {
+          pendingAutoMoves.delete(conversationId);
+        }
+      }
+    })();
+  }, ENGINE_AUTO_MOVE_DELAY_MS);
+  pending = { timer };
+  pendingAutoMoves.set(conversationId, pending);
+  return true;
+}
+
+export function handleGetGameState(
+  conversationId: string,
+  webContents?: WebContents
+): GameStateSnapshot {
+  const game = getOrCreateGame(conversationId);
+  scheduleAgentAutoMove(conversationId, webContents);
+  return game.getSnapshot();
 }
 
 export function handlePlayerMove(
@@ -247,21 +495,20 @@ export function handlePlayerMove(
   webContents?: WebContents
 ): GameToolResult {
   const game = getOrCreateGame(conversationId);
-  if (game.turn === 2 && game.status === "playing") {
-    game.turn = 1;
-  }
-  const res = game.applyMove(actionId, 1);
+  const res = game.applyMove(actionId, game.playerSide);
   if (!res.ok) {
     return { ok: false, error: res.error };
   }
   persistGameState(conversationId, game);
-  const snapshot = game.getSnapshot();
+  const snapshot = withAsciiBoard(game);
   broadcastGameUpdate(webContents, snapshot, conversationId);
+  const autoPlayScheduled = scheduleAgentAutoMove(conversationId, webContents);
   return {
     ok: true,
     actionId,
     gameId: game.gameId,
-    gameState: snapshot
+    gameState: snapshot,
+    agentAutoPlayScheduled: autoPlayScheduled
   };
 }
 
@@ -274,15 +521,18 @@ export function handleAgentMove(
   webContents?: WebContents
 ): GameToolResult {
   const game = getOrCreateGame(conversationId);
-  const res = game.applyMove(actionId, 2, reason);
+  const res = game.applyMove(actionId, game.agentSide, reason, {
+    rejectAvoidableMate: true
+  });
   if (!res.ok) {
     return { ok: false, error: res.error };
   }
+  cancelAgentAutoMove(conversationId);
   if (speech) {
     game.addChat("agent", speech, mood);
   }
   persistGameState(conversationId, game);
-  const snapshot = game.getSnapshot();
+  const snapshot = withAsciiBoard(game);
   broadcastGameUpdate(webContents, snapshot, conversationId);
   return {
     ok: true,
@@ -296,18 +546,41 @@ export function handleResetGame(
   conversationId: string,
   webContents?: WebContents
 ): GameToolResult {
-  const existing = activeGamesByConversation.get(conversationId);
-  const isXiangqi = existing?.getSnapshot().gameType === "xiangqi";
+  cancelAgentAutoMove(conversationId);
+  const existing = getOrCreateGame(conversationId);
+  const isXiangqi = existing.getSnapshot().gameType === "xiangqi";
   const newGame = isXiangqi
-    ? new XiangqiGameInstance(conversationId)
-    : new GomokuGameInstance(conversationId);
+    ? new XiangqiGameInstance(conversationId, existing.playerSide)
+    : new GomokuGameInstance(conversationId, existing.playerSide);
   activeGamesByConversation.set(conversationId, newGame);
   persistGameState(conversationId, newGame);
-  const snapshot = newGame.getSnapshot();
+  const snapshot = withAsciiBoard(newGame);
   broadcastGameUpdate(webContents, snapshot, conversationId);
+  const autoPlayScheduled = scheduleAgentAutoMove(conversationId, webContents);
   return {
     ok: true,
     gameId: newGame.gameId,
+    gameState: snapshot,
+    agentAutoPlayScheduled: autoPlayScheduled
+  };
+}
+
+export function handlePlayerResign(
+  conversationId: string,
+  webContents?: WebContents
+): GameToolResult {
+  cancelAgentAutoMove(conversationId);
+  const game = getOrCreateGame(conversationId);
+  const result = game.resign(game.playerSide);
+  if (!result.ok) {
+    return { ok: false, error: "Game is already over." };
+  }
+  persistGameState(conversationId, game);
+  const snapshot = withAsciiBoard(game);
+  broadcastGameUpdate(webContents, snapshot, conversationId);
+  return {
+    ok: true,
+    gameId: game.gameId,
     gameState: snapshot
   };
 }

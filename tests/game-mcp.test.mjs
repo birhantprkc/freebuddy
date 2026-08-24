@@ -58,8 +58,11 @@ test("Game tool service dispatches actions correctly", async () => {
   });
   assert.equal(legalMoveRes.ok, true);
   assert.equal(legalMoveRes.actionId, "H9");
-  assert.equal(legalMoveRes.gameState.turn, PLAYER_BLACK);
-  assert.equal(legalMoveRes.gameState.board[6][7], PLAYER_WHITE);
+  assert.equal(legalMoveRes.gameState, undefined, "move acknowledgements should stay compact");
+  assert.equal(legalMoveRes.status, "playing");
+  const stateAfterMove = await dispatchGameAction(binding, "get_state", {});
+  assert.equal(stateAfterMove.gameState.turn, PLAYER_BLACK);
+  assert.equal(stateAfterMove.gameState.board[6][7], PLAYER_WHITE);
 
   // 5. Agent sends in-game chat
   const chatRes = await dispatchGameAction(binding, "send_chat", {
@@ -73,9 +76,17 @@ test("Game tool service dispatches actions correctly", async () => {
 
   // 6. Test get_history action
   const historyRes = await dispatchGameAction(binding, "get_history", {});
-  assert.equal(historyRes.ok, true);
   assert.equal(historyRes.moveHistory.length, 2, "Should have 2 moves in history");
-  assert.equal(historyRes.chatHistory.length, 1, "Should have 1 chat in history");
+  assert.equal(
+    historyRes.chatHistory.length,
+    2,
+    "Should have make_move reason chat + explicit send_chat"
+  );
+  assert.equal(
+    historyRes.chatHistory[0].message,
+    "抢占中路邻近要点",
+    "make_move reason should be emitted as an agent chat"
+  );
 
   // Verify lean snapshot in get_state does not contain full moveHistory
   assert.equal(stateRes.gameState.moveHistory, undefined, "Lean snapshot should omit moveHistory");
@@ -136,6 +147,7 @@ test("packaged and WebUI game wiring loads the board without a workspace", () =>
   assert.match(detail, /conv\?\.kind === "game" \? "preview" : "overview"/);
   assert.match(preload, /invoke\("game:getState"/);
   assert.match(preload, /invoke\("game:playerMove"/);
+  assert.match(preload, /invoke\("game:playerResign"/);
   assert.match(preload, /subscribe\("freebuddy:\/\/game-event"/);
   assert.match(acpRuntime, /registerGameToolSession/);
   const gameBlock = acpRuntime.slice(
@@ -149,4 +161,3 @@ test("packaged and WebUI game wiring loads the board without a workspace", () =>
   );
   assert.match(gameService, /conversationId: conversationId \|\| snapshot\.gameId/);
 });
-

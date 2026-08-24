@@ -1870,6 +1870,10 @@
     "aiOpponent": "AI Opponent",
     "gameModel": "Model",
     "turnOrder": "Turn Order",
+    "difficulty": "Difficulty",
+    "difficultyEasy": "Easy · AI free play",
+    "difficultyHard": "Hard · Engine boosted",
+    "difficultyHardHint": "In hard mode the local engine replies automatically for the AI, offering the strongest play",
     "gomoku": "Gomoku",
     "xiangqi": "Chinese Chess",
     "go": "Go",
@@ -1889,6 +1893,8 @@
     "playerMoveGomoku": "Player placed stone: {{actionId}}",
     "promptGameReset": "[Restart Game] I have reset the board. Ready for a new match!",
     "promptRemindAgent": "It is your turn. Please make your move.",
+    "promptRemindAgentWithTurn": "[System reminder - move {{step}} - your turn] Call game_get_state immediately to verify the board. Once confirmed it is your turn you MUST call game_make_move. Never ask the player to move for you or keep waiting.",
+    "promptAgentMoveRejected": "Your attempted move {{actionId}} was rejected by the rules engine ({{error}}). It is still your turn after move {{step}}. Call game_get_state again and choose another legal safe move with game_make_move.",
     "promptResign": "I resign. Well played!",
     "promptXiangqiPlayerFirst": "[Chinese Chess Match Start] I play Red and move first. You play Black. Prepare for battle!",
     "promptXiangqiAgentFirst": "[Chinese Chess Match Start] You play Red and move first. Please make your move!",
@@ -1896,4 +1902,3 @@
     "promptGomokuAgentFirst": "[Gomoku Match Start] You play Black and move first. Please place your stone!"
   }
 }
-

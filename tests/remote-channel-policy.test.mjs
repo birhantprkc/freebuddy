@@ -142,7 +142,8 @@ test("the chat surface the web client depends on stays callable", async () => {
     "game:getState",
     "game:playerMove",
     "game:agentMove",
-    "game:resetGame"
+    "game:resetGame",
+    "game:playerResign"
   ]) {
     assert.equal(
       isRemoteChannelCallable(channel, false),

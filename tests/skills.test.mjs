@@ -24,9 +24,22 @@ const snapshot = (name, rootPath) => ({
 test("skill announcement exposes the selected catalog without replacing the prompt", () => {
   const result = buildSkillAnnouncement("Fix the bug", [snapshot("verify-change", "/tmp/skill")]);
   assert.match(result, /verify-change \(1\.2\.3\): verify-change instructions/);
+  assert.match(result, /freebuddy-skills MCP server/);
   assert.match(result, /skill_list and skill_load/);
   assert.match(result, /skill_read_resource/);
+  assert.match(result, /Do not call adapter-native skill commands/);
   assert.ok(result.endsWith("Fix the bug"));
+});
+
+test("skill announcement mentions native discovery only after skills were mounted", () => {
+  const result = buildSkillAnnouncement(
+    "Play the game",
+    [snapshot("game-arena", "/tmp/game-arena")],
+    { nativeSkillsMounted: true }
+  );
+  assert.match(result, /freebuddy-skills MCP tools/);
+  assert.match(result, /Adapter-native skill discovery may also expose the mounted copies/);
+  assert.doesNotMatch(result, /Do not call adapter-native skill commands/);
 });
 
 test("native skill mounting reconciles only FreeBuddy-owned symlinks", () => {
@@ -46,13 +59,14 @@ test("native skill mounting reconciles only FreeBuddy-owned symlinks", () => {
   );
   fs.mkdirSync(path.join(nativeDir, "user-owned"));
 
-  reconcileNativeSkillLinks(
+  const mounted = reconcileNativeSkillLinks(
     cwd,
     [".agents/skills"],
     [snapshot("selected", selectedRoot)],
     [selectedRoot, staleRoot]
   );
 
+  assert.equal(mounted, true);
   assert.equal(
     fs.realpathSync(path.join(nativeDir, "selected")),
     fs.realpathSync(selectedRoot)
@@ -74,6 +88,14 @@ test("skill persistence, IPC, MCP, and conversation snapshots stay wired", () =>
   assert.match(ipc, /skills:installFromMarket/);
   assert.match(acp, /registerSkillToolSession/);
   assert.match(conversations, /resolveSkillSnapshots/);
+});
+
+test("runtime reports native skill access only when it actually mounts the links", () => {
+  const runtime = fs.readFileSync(new URL("../electron/cli/runtime.ts", import.meta.url), "utf8");
+  assert.match(runtime, /let nativeSkillsMounted = false/);
+  assert.match(runtime, /nativeSkillsMounted = reconcileNativeSkillLinks/);
+  assert.match(runtime, /buildSkillAnnouncement\(args\.prompt, args\.skills, \{/);
+  assert.match(runtime, /nativeSkillsMounted/);
 });
 
 test("skill ZIP extraction accepts a normal Skill package", () => {

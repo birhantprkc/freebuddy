@@ -12,8 +12,8 @@
     <header class="game-header">
       <div class="player-col left">
         <div class="player-badge">
-          <span class="stone-dot black"></span>
-          <span>你 (黑棋)</span>
+          <span id="player-side-dot" class="stone-dot black"></span>
+          <span id="player-side-label">你 (黑棋)</span>
         </div>
       </div>
       <div id="turn-badge" class="turn-indicator active-player">
@@ -24,8 +24,8 @@
           <div class="player-badge">
             <span id="agent-avatar-icon" class="agent-avatar-mini">🤖</span>
             <span id="agent-name-label">AI Agent</span>
-            <span class="side-tag">(白棋)</span>
-            <span class="stone-dot white"></span>
+            <span id="agent-side-label" class="side-tag">(白棋)</span>
+            <span id="agent-side-dot" class="stone-dot white"></span>
           </div>
         </div>
       </div>

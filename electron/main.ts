@@ -27,8 +27,9 @@ import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
 import { getSetting, setSetting } from "./cli/settings.js";
 import {
-  getOrCreateGame,
+  handleGetGameState,
   handlePlayerMove,
+  handlePlayerResign,
   handleAgentMove,
   handleResetGame,
   initGamePersistence
@@ -1241,7 +1242,7 @@ function registerButlerBuddyWindowIpc() {
   });
   registerHandler("game:getState", (_event, conversationId: string) => {
     if (!requireOwnedConversation(conversationId)) return undefined;
-    return getOrCreateGame(conversationId).getSnapshot();
+    return handleGetGameState(conversationId, _event.sender);
   });
   registerHandler(
     "game:playerMove",
@@ -1282,6 +1283,12 @@ function registerButlerBuddyWindowIpc() {
       return { ok: false, error: "conversation_not_found" };
     }
     return handleResetGame(conversationId, event.sender);
+  });
+  registerHandler("game:playerResign", (event, conversationId: string) => {
+    if (!requireOwnedConversation(conversationId)) {
+      return { ok: false, error: "conversation_not_found" };
+    }
+    return handlePlayerResign(conversationId, event.sender);
   });
   ipcMain.handle(
     "butlerBuddy:updatePreferences",

@@ -7,7 +7,9 @@
 
   // State
   let board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(0));
-  let turn = 1; // 1: Player (Black), 2: Agent (White)
+  let turn = 1; // 1: Black, 2: White
+  let playerSide = 1;
+  let agentSide = 2;
   let status = "playing";
   let lastMove = null;
   let hoverCoord = null;
@@ -24,6 +26,21 @@
   const agentNameLabel = document.getElementById("agent-name-label");
   const agentAvatarIcon = document.getElementById("agent-avatar-icon");
   const speechAvatar = document.getElementById("speech-avatar");
+  const playerSideDot = document.getElementById("player-side-dot");
+  const playerSideLabel = document.getElementById("player-side-label");
+  const agentSideLabel = document.getElementById("agent-side-label");
+  const agentSideDot = document.getElementById("agent-side-dot");
+
+  function sideName(side) {
+    return side === 1 ? "黑子" : "白子";
+  }
+
+  function updateSideLabels() {
+    if (playerSideLabel) playerSideLabel.textContent = `你 (${playerSide === 1 ? "黑棋" : "白棋"})`;
+    if (agentSideLabel) agentSideLabel.textContent = `(${agentSide === 1 ? "黑棋" : "白棋"})`;
+    if (playerSideDot) playerSideDot.className = `stone-dot ${playerSide === 1 ? "black" : "white"}`;
+    if (agentSideDot) agentSideDot.className = `stone-dot ${agentSide === 1 ? "black" : "white"}`;
+  }
 
   function updateAgentInfo(info) {
     if (!info) return;
@@ -335,13 +352,13 @@
     if (lastMove) {
       const lx = padding + lastMove.x * cellSize;
       const ly = padding + lastMove.y * cellSize;
-      ctx.strokeStyle = lastMove.player === 1 ? "#ef4444" : "#3b82f6";
+      ctx.strokeStyle = lastMove.player === playerSide ? "#ef4444" : "#3b82f6";
       ctx.lineWidth = 2.5;
       ctx.strokeRect(lx - stoneRadius * 0.4, ly - stoneRadius * 0.4, stoneRadius * 0.8, stoneRadius * 0.8);
     }
 
     // Hover stone preview & crosshair snap circle
-    if (hoverCoord && status === "playing" && turn === 1 && board[hoverCoord.y][hoverCoord.x] === 0) {
+    if (hoverCoord && status === "playing" && turn === playerSide && board[hoverCoord.y][hoverCoord.x] === 0) {
       const hx = padding + hoverCoord.x * cellSize;
       const hy = padding + hoverCoord.y * cellSize;
 
@@ -354,19 +371,24 @@
 
       ctx.save();
       ctx.globalAlpha = 0.55;
-      drawStone(hx, hy, stoneRadius, 1);
+      drawStone(hx, hy, stoneRadius, playerSide);
       ctx.restore();
     }
   }
 
   function handleCanvasClick(e) {
+    if (!initialized) {
+      statusText.textContent = "正在同步服务器棋面，请稍候...";
+      window.parent.postMessage({ type: "REQUEST_SYNC" }, "*");
+      return;
+    }
     if (status !== "playing") {
       statusText.textContent = "本局已结束，请点击下方【重新开局】发起新一轮对战。";
       return;
     }
 
-    if (turn !== 1) {
-      statusText.textContent = "当前轮到 AI Agent (白子) 行动，请稍候或点击下方【催促 Agent】。";
+    if (turn !== playerSide) {
+      statusText.textContent = `当前轮到 AI Agent (${sideName(agentSide)}) 行动，请稍候或点击下方【催促 Agent】。`;
       return;
     }
 
@@ -382,9 +404,9 @@
     const actionId = coordToString(x, y);
 
     // Local optimistic update
-    board[y][x] = 1;
-    lastMove = { x, y, player: 1, actionId };
-    turn = 2;
+    board[y][x] = playerSide;
+    lastMove = { x, y, player: playerSide, actionId };
+    turn = agentSide;
     hoverCoord = null;
     playStoneSound();
     updateUI();
@@ -456,14 +478,14 @@
       restartBtn.className = "btn";
       restartBtn.textContent = "重新开局";
       resignBtn.style.display = "inline-block";
-      if (turn === 1) {
+      if (turn === playerSide) {
         turnBadge.className = "turn-indicator active-player";
-        turnBadge.textContent = "轮到你行动 (黑子)";
+        turnBadge.textContent = `轮到你行动 (${sideName(playerSide)})`;
         statusText.textContent = "请在棋盘上点击落子";
         if (retryAgentBtn) retryAgentBtn.style.display = "none";
       } else {
         turnBadge.className = "turn-indicator active-agent";
-        turnBadge.textContent = "Agent 正在思考中... (白子)";
+        turnBadge.textContent = `Agent 正在思考中... (${sideName(agentSide)})`;
         statusText.textContent = "AI Agent 正在思考并落子中...";
       }
     }
@@ -476,6 +498,8 @@
     const prevMove = lastMove;
     board = snapshot.board || board;
     turn = snapshot.turn ?? turn;
+    playerSide = snapshot.playerSide ?? playerSide;
+    agentSide = snapshot.agentSide ?? agentSide;
     status = snapshot.status || status;
     lastMove = snapshot.lastMove || null;
 
@@ -492,6 +516,7 @@
     }
     initialized = true;
 
+    updateSideLabels();
     updateUI();
     drawBoard();
   }
@@ -510,9 +535,15 @@
       updateAgentInfo(data.payload);
     } else if (data.type === "AGENT_CHAT") {
       speechText.textContent = data.payload?.message || "";
+    } else if (data.type === "MOVE_REJECTED") {
+      statusText.textContent =
+        "⚠ 落子被拒绝：" + (data.payload?.error || "非法落子") + " 正在恢复服务器棋面...";
+      // The gomoku board applies an optimistic local update on click; ask the
+      // host for the authoritative state so the stone is removed again.
+      window.parent.postMessage({ type: "REQUEST_SYNC" }, "*");
     } else if (data.type === "AGENT_STALLED") {
       const isStalled = Boolean(data.payload?.stalled);
-      if (isStalled && turn === 2 && status === "playing") {
+      if (isStalled && turn === agentSide && status === "playing") {
         if (retryAgentBtn) retryAgentBtn.style.display = "inline-block";
         statusText.textContent = "AI 回复结束但未落子，请点击【重试】";
       } else {
@@ -654,7 +685,9 @@
     sCtx.font = "14px -apple-system, sans-serif";
     sCtx.fillStyle = "#e2e8f0";
     sCtx.textAlign = "right";
-    sCtx.fillText(`⚫ 玩家 (黑)  VS  ⚪ ${agentDisplay} (白)`, cardWidth - 40, 138);
+    const playerStone = playerSide === 1 ? "⚫" : "⚪";
+    const agentStone = agentSide === 1 ? "⚫" : "⚪";
+    sCtx.fillText(`${playerStone} 玩家 (${playerSide === 1 ? "黑" : "白"})  VS  ${agentStone} ${agentDisplay} (${agentSide === 1 ? "黑" : "白"})`, cardWidth - 40, 138);
     sCtx.textAlign = "left";
 
     // 4. Draw Chessboard
