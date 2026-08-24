@@ -74,7 +74,7 @@ test("dsh-acp uses standalone deepseek-harness-acp package", () => {
   const hint = getAdapterDefinition("dsh-acp")?.installHint;
   assert.equal(hint, dshAcpInstallCommand());
   if (process.platform === "win32") {
-    assert.equal(hint, "npm install -g deepseek-harness-acp @deepseek-ai/dsh-bash-local");
+    assert.equal(hint, "npm install -g deepseek-harness-acp @deepseek-ai/dsh-bash-local@next");
   } else {
     assert.equal(hint, "npm install -g deepseek-harness-acp");
   }
@@ -105,7 +105,7 @@ test("dsh-acp install command matches standalone deepseek-harness-acp package", 
   );
   assert.equal(
     dshAcpInstallCommand({ platform: "win32" }),
-    "npm install -g deepseek-harness-acp @deepseek-ai/dsh-bash-local"
+    "npm install -g deepseek-harness-acp @deepseek-ai/dsh-bash-local@next"
   );
   const renderer = fs.readFileSync(
     new URL("../src/config/cliAdapters.ts", import.meta.url),
@@ -114,7 +114,7 @@ test("dsh-acp install command matches standalone deepseek-harness-acp package", 
   assert.equal(renderer.includes("npm install -g deepseek-harness-acp"), true);
   const prefixedWin = dshAcpInstallCommand({ prefix: "C:\\tmp\\dsh", platform: "win32" });
   assert.match(prefixedWin, /--prefix /);
-  assert.match(prefixedWin, /@deepseek-ai\/dsh-bash-local/);
+  assert.match(prefixedWin, /@deepseek-ai\/dsh-bash-local@next/);
   assert.equal(prefixedWin.includes(" -g "), false);
   const prefixedMac = dshAcpInstallCommand({ prefix: "/tmp/freebuddy-dsh", platform: "darwin" });
   assert.match(prefixedMac, /--prefix /);

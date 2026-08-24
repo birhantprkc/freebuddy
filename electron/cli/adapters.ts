@@ -1159,7 +1159,7 @@ export function dshAcpInstallCommand(options?: {
   const target = options?.prefix
     ? `--prefix ${quoteForShell(options.prefix)}`
     : "-g";
-  const extra = isWin ? " @deepseek-ai/dsh-bash-local" : "";
+  const extra = isWin ? " @deepseek-ai/dsh-bash-local@next" : "";
   return `npm install ${target} deepseek-harness-acp${extra}`;
 }
 
