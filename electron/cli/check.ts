@@ -5,6 +5,8 @@ import { BrowserWindow } from "electron";
 import {
   adapterBinary,
   applyDshAcpNpmInstallEnv,
+  bundledDshAcpConfigPath,
+  cleanupLegacyDshAcpManagedFiles,
   dshAcpCompositionReady,
   dshAcpInstallCommand,
   dshAcpManagedDemoBin,
@@ -384,8 +386,9 @@ export async function cliCheck(
     }
   }
   if (adapter === "dsh-acp") {
+    const cfgPath = bundledDshAcpConfigPath();
     const managedBin = dshAcpManagedDemoBin(getDataDir());
-    if (fs.existsSync(managedBin) && dshAcpCompositionReady(managedBin)) {
+    if (fs.existsSync(managedBin) && dshAcpCompositionReady(managedBin, cfgPath)) {
       const result: CliCheckResult = { installed: true, path: managedBin };
       upsertRuntime(runtimeKey, true, managedBin);
       trackAgentSetup(adapter, "check", "detected");
@@ -396,7 +399,7 @@ export async function cliCheck(
       trackAgentSetup(adapter, "check", "missing", "binary not found");
       return { installed: false };
     }
-    if (!dshAcpCompositionReady(resolved)) {
+    if (!dshAcpCompositionReady(resolved, cfgPath)) {
       upsertRuntime(
         runtimeKey,
         false,
@@ -913,6 +916,7 @@ async function removeDshAcpWindowsResidue(
 
 function prepareDshAcpManagedInstall(): string {
   const root = syncDshAcpManagedConfig(getDataDir());
+  cleanupLegacyDshAcpManagedFiles(root);
   return dshAcpInstallCommand({ prefix: root });
 }
 

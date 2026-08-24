@@ -7,8 +7,8 @@ import type {
 } from "../shared/gameToolProtocol.js";
 
 export const BOARD_SIZE = 15;
-export const PLAYER_BLACK = 1; // Human / Player
-export const PLAYER_WHITE = 2; // AI / Agent
+export const PLAYER_BLACK = 1;
+export const PLAYER_WHITE = 2;
 
 const COLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"];
 
@@ -210,19 +210,26 @@ export class GomokuGameInstance {
   public gameId: string;
   public status: GameStatus = "playing";
   public turn: number = PLAYER_BLACK; // Black moves first
+  public playerSide: number;
+  public agentSide: number;
   public board: number[][];
   public moveHistory: GameMoveRecord[] = [];
   public chatHistory: GameChatMessage[] = [];
   public winner: number | null = null;
   public updatedAt: number = Date.now();
 
-  constructor(gameId: string) {
+  constructor(gameId: string, playerSide: number = PLAYER_BLACK) {
     this.gameId = gameId;
+    this.playerSide = playerSide === PLAYER_WHITE ? PLAYER_WHITE : PLAYER_BLACK;
+    this.agentSide = this.playerSide === PLAYER_BLACK ? PLAYER_WHITE : PLAYER_BLACK;
     this.board = createEmptyBoard();
   }
 
-  public static fromSnapshot(snapshot: GameStateSnapshot): GomokuGameInstance {
-    const inst = new GomokuGameInstance(snapshot.gameId);
+  public static fromSnapshot(
+    snapshot: GameStateSnapshot,
+    playerSide: number = snapshot.playerSide ?? PLAYER_BLACK
+  ): GomokuGameInstance {
+    const inst = new GomokuGameInstance(snapshot.gameId, playerSide);
     inst.status = snapshot.status;
     inst.turn = snapshot.turn;
     inst.winner = snapshot.winner ?? null;
@@ -240,6 +247,8 @@ export class GomokuGameInstance {
       gameId: this.gameId,
       status: this.status,
       turn: this.turn,
+      playerSide: this.playerSide,
+      agentSide: this.agentSide,
       stepCount: this.moveHistory.length,
       winner: this.winner,
       board: this.board.map((row) => [...row]),
@@ -291,7 +300,7 @@ export class GomokuGameInstance {
 
     // Check win
     if (checkWin(this.board, x, y, player)) {
-      this.status = player === PLAYER_BLACK ? "player_won" : "agent_won";
+      this.status = player === this.playerSide ? "player_won" : "agent_won";
       this.winner = player;
       return { ok: true, winner: player };
     }
@@ -325,11 +334,11 @@ export class GomokuGameInstance {
       return { ok: false, winner: this.winner || 0 };
     }
     const winningPlayer = player === PLAYER_BLACK ? PLAYER_WHITE : PLAYER_BLACK;
-    this.status = winningPlayer === PLAYER_BLACK ? "player_won" : "agent_won";
+    this.status = winningPlayer === this.playerSide ? "player_won" : "agent_won";
     this.winner = winningPlayer;
     this.updatedAt = Date.now();
     this.addChat(
-      player === PLAYER_BLACK ? "player" : "agent",
+      player === this.playerSide ? "player" : "agent",
       reason ? `认输: ${reason}` : "我认输了，这一局你下得漂亮！",
       "calm"
     );

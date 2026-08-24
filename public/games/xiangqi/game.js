@@ -11,13 +11,17 @@
 
   // State
   let board = createInitialBoard();
-  let turn = 1; // 1: Player (Red), 2: Agent (Black)
+  let turn = 1; // 1: Red, 2: Black
+  let playerSide = 1;
+  let agentSide = 2;
   let status = "playing";
   let lastMove = null;
   let selectedCoord = null;
   let legalTargets = [];
   let hoverCoord = null;
   let initialized = false;
+  let playerWasInCheck = false;
+  let agentWasInCheck = false;
 
   // DOM Elements
   const canvas = document.getElementById("xiangqi-canvas");
@@ -33,6 +37,34 @@
   const agentNameLabel = document.getElementById("agent-name-label");
   const agentAvatarIcon = document.getElementById("agent-avatar-icon");
   const speechAvatar = document.getElementById("speech-avatar");
+  const playerBadge = document.getElementById("player-badge");
+  const agentBadge = document.getElementById("agent-badge");
+  const playerPieceIndicator = document.getElementById("player-piece-indicator");
+  const agentPieceIndicator = document.getElementById("agent-piece-indicator");
+  const playerSideLabel = document.getElementById("player-side-label");
+  const agentSideLabel = document.getElementById("agent-side-label");
+
+  function sideName(side) {
+    return side === 1 ? "红方" : "黑方";
+  }
+
+  function updateSideLabels() {
+    const playerIsRed = playerSide === 1;
+    if (playerBadge) playerBadge.className = `player-badge ${playerIsRed ? "red" : "black"}`;
+    if (agentBadge) agentBadge.className = `player-badge ${playerIsRed ? "black" : "red"}`;
+    if (playerPieceIndicator) {
+      playerPieceIndicator.className = `piece-indicator ${playerIsRed ? "red" : "black"}`;
+      playerPieceIndicator.textContent = playerIsRed ? "帥" : "將";
+    }
+    if (agentPieceIndicator) {
+      agentPieceIndicator.className = `piece-indicator ${playerIsRed ? "black" : "red"}`;
+      agentPieceIndicator.textContent = playerIsRed ? "將" : "帥";
+    }
+    if (playerSideLabel) playerSideLabel.textContent = `你 (${sideName(playerSide)})`;
+    if (agentSideLabel) agentSideLabel.textContent = `(${sideName(agentSide)})`;
+    if (playerCapturedContainer) playerCapturedContainer.title = `你吃掉的${sideName(agentSide).slice(0, 1)}子`;
+    if (agentCapturedContainer) agentCapturedContainer.title = `AI 吃掉的${sideName(playerSide).slice(0, 1)}子`;
+  }
 
   function updateAgentInfo(info) {
     if (!info) return;
@@ -73,30 +105,33 @@
       }
     }
 
-    // Player captured (Missing Black pieces)
+    const playerCapturedOrder = playerSide === 1 ? BLACK_ORDER : RED_ORDER;
+    const agentCapturedOrder = playerSide === 1 ? RED_ORDER : BLACK_ORDER;
+
+    // Pieces captured by the player (missing opponent pieces).
     playerCapturedContainer.innerHTML = "";
-    for (const p of BLACK_ORDER) {
-      const init = INITIAL_BLACK_COUNTS[p] || 0;
+    for (const p of playerCapturedOrder) {
+      const init = (p > 0 ? INITIAL_RED_COUNTS : INITIAL_BLACK_COUNTS)[p] || 0;
       const live = liveCounts[p] || 0;
       const capturedCount = init - live;
       for (let i = 0; i < capturedCount; i++) {
         const badge = document.createElement("span");
-        badge.className = "mini-piece-badge black";
+        badge.className = `mini-piece-badge ${p > 0 ? "red" : "black"}`;
         badge.textContent = PIECE_NAMES[p] || "";
         badge.title = PIECE_NAMES[p] || "";
         playerCapturedContainer.appendChild(badge);
       }
     }
 
-    // Agent captured (Missing Red pieces)
+    // Pieces captured by the Agent (missing player pieces).
     agentCapturedContainer.innerHTML = "";
-    for (const p of RED_ORDER) {
-      const init = INITIAL_RED_COUNTS[p] || 0;
+    for (const p of agentCapturedOrder) {
+      const init = (p > 0 ? INITIAL_RED_COUNTS : INITIAL_BLACK_COUNTS)[p] || 0;
       const live = liveCounts[p] || 0;
       const capturedCount = init - live;
       for (let i = 0; i < capturedCount; i++) {
         const badge = document.createElement("span");
-        badge.className = "mini-piece-badge red";
+        badge.className = `mini-piece-badge ${p > 0 ? "red" : "black"}`;
         badge.textContent = PIECE_NAMES[p] || "";
         badge.title = PIECE_NAMES[p] || "";
         agentCapturedContainer.appendChild(badge);
@@ -651,66 +686,80 @@
     }
   }
 
-  // Client-side quick legal move calculator for instant response
-  function getClientLegalMoves(fromX, fromY) {
+  function isSameSide(pieceA, pieceB) {
+    return pieceA !== 0 && pieceB !== 0 && (pieceA > 0) === (pieceB > 0);
+  }
+
+  // Generate piece-rule moves for either side. King safety is filtered by
+  // getClientLegalMoves below so the instant UI matches the backend rules.
+  function getClientPseudoLegalMoves(fromX, fromY) {
     const piece = board[fromY][fromX];
-    if (piece <= 0) return []; // Red pieces only for player
+    if (piece === 0) return [];
+    const isRed = piece > 0;
     const absPiece = Math.abs(piece);
     const moves = [];
 
     const addIfValid = (tx, ty) => {
       if (tx < 0 || tx >= BOARD_COLS || ty < 0 || ty >= BOARD_ROWS) return;
-      if (board[ty][tx] > 0) return; // Cannot capture own red pieces
+      if (isSameSide(piece, board[ty][tx])) return;
       moves.push({ toX: tx, toY: ty });
     };
 
     switch (absPiece) {
-      case 1: { // 帥 King
+      case 1: { // 帥/將 King
+        const minY = isRed ? 0 : 7;
+        const maxY = isRed ? 2 : 9;
         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
         for (const [dx, dy] of dirs) {
           const nx = fromX + dx;
           const ny = fromY + dy;
-          if (nx >= 3 && nx <= 5 && ny >= 0 && ny <= 2) {
+          if (nx >= 3 && nx <= 5 && ny >= minY && ny <= maxY) {
             addIfValid(nx, ny);
           }
         }
         // Flying general
-        let cy = fromY + 1;
-        while (cy < BOARD_ROWS) {
+        const stepY = isRed ? 1 : -1;
+        const opponentKing = isRed ? -1 : 1;
+        let cy = fromY + stepY;
+        while (cy >= 0 && cy < BOARD_ROWS) {
           const p = board[cy][fromX];
           if (p !== 0) {
-            if (p === -1) moves.push({ toX: fromX, toY: cy });
+            if (p === opponentKing) moves.push({ toX: fromX, toY: cy });
             break;
           }
-          cy++;
+          cy += stepY;
         }
         break;
       }
-      case 2: { // 仕 Advisor
+      case 2: { // 仕/士 Advisor
+        const minY = isRed ? 0 : 7;
+        const maxY = isRed ? 2 : 9;
         const dirs = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
         for (const [dx, dy] of dirs) {
           const nx = fromX + dx;
           const ny = fromY + dy;
-          if (nx >= 3 && nx <= 5 && ny >= 0 && ny <= 2) {
+          if (nx >= 3 && nx <= 5 && ny >= minY && ny <= maxY) {
             addIfValid(nx, ny);
           }
         }
         break;
       }
-      case 3: { // 相 Bishop
+      case 3: { // 相/象 Bishop
+        const minY = isRed ? 0 : 5;
+        const maxY = isRed ? 4 : 9;
         const dirs = [[2, 2], [2, -2], [-2, 2], [-2, -2]];
         for (const [dx, dy] of dirs) {
           const nx = fromX + dx;
           const ny = fromY + dy;
           const ex = fromX + dx / 2;
           const ey = fromY + dy / 2;
-          if (nx >= 0 && nx < BOARD_COLS && ny >= 0 && ny <= 4) {
+          if (nx >= 0 && nx < BOARD_COLS && ny >= minY && ny <= maxY) {
             if (board[ey][ex] === 0) addIfValid(nx, ny);
           }
         }
         break;
       }
-      case 4: { // 傌 Knight
+      case 4: { // 傌/馬 Knight
         const km = [
           { dx: 1, dy: 2, lx: 0, ly: 1 }, { dx: -1, dy: 2, lx: 0, ly: 1 },
           { dx: 1, dy: -2, lx: 0, ly: -1 }, { dx: -1, dy: -2, lx: 0, ly: -1 },
@@ -726,7 +775,7 @@
         }
         break;
       }
-      case 5: { // 俥 Rook
+      case 5: { // 俥/車 Rook
         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
         for (const [dx, dy] of dirs) {
           let nx = fromX + dx, ny = fromY + dy;
@@ -735,7 +784,7 @@
             if (t === 0) {
               moves.push({ toX: nx, toY: ny });
             } else {
-              if (t < 0) moves.push({ toX: nx, toY: ny });
+              if (!isSameSide(piece, t)) moves.push({ toX: nx, toY: ny });
               break;
             }
             nx += dx; ny += dy;
@@ -743,7 +792,7 @@
         }
         break;
       }
-      case 6: { // 炮 Cannon
+      case 6: { // 炮/砲 Cannon
         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
         for (const [dx, dy] of dirs) {
           let nx = fromX + dx, ny = fromY + dy;
@@ -755,7 +804,7 @@
               else jumped = true;
             } else {
               if (t !== 0) {
-                if (t < 0) moves.push({ toX: nx, toY: ny });
+                if (!isSameSide(piece, t)) moves.push({ toX: nx, toY: ny });
                 break;
               }
             }
@@ -764,9 +813,10 @@
         }
         break;
       }
-      case 7: { // 兵 Pawn
-        addIfValid(fromX, fromY + 1);
-        if (fromY >= 5) {
+      case 7: { // 兵/卒 Pawn
+        addIfValid(fromX, fromY + (isRed ? 1 : -1));
+        const crossedRiver = isRed ? fromY >= 5 : fromY <= 4;
+        if (crossedRiver) {
           addIfValid(fromX - 1, fromY);
           addIfValid(fromX + 1, fromY);
         }
@@ -777,14 +827,83 @@
     return moves;
   }
 
+  function isClientKingInCheck(redSide) {
+    const kingPiece = redSide ? 1 : -1;
+    let king = null;
+    for (let y = 0; y < BOARD_ROWS && !king; y++) {
+      for (let x = 0; x < BOARD_COLS; x++) {
+        if (board[y][x] === kingPiece) {
+          king = { x, y };
+          break;
+        }
+      }
+    }
+    if (!king) return true;
+
+    for (let y = 0; y < BOARD_ROWS; y++) {
+      for (let x = 0; x < BOARD_COLS; x++) {
+        const piece = board[y][x];
+        if (piece === 0 || (piece > 0) === redSide) continue;
+        const attacks = getClientPseudoLegalMoves(x, y);
+        if (attacks.some((move) => move.toX === king.x && move.toY === king.y)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Player-facing targets must also resolve check. Previously this returned
+  // pseudo-legal moves, so the UI offered moves that the backend rejected and
+  // the optimistically moved piece appeared to bounce back.
+  function getClientLegalMoves(fromX, fromY) {
+    const piece = board[fromY][fromX];
+    const playerIsRed = playerSide === 1;
+    if (piece === 0 || (piece > 0) !== playerIsRed) return [];
+
+    return getClientPseudoLegalMoves(fromX, fromY).filter((move) => {
+      const captured = board[move.toY][move.toX];
+      board[move.toY][move.toX] = piece;
+      board[fromY][fromX] = 0;
+      const safe = !isClientKingInCheck(playerIsRed);
+      board[fromY][fromX] = piece;
+      board[move.toY][move.toX] = captured;
+      return safe;
+    });
+  }
+
+  function getClientKingSafetyRejectedMoves(fromX, fromY, legalMoves) {
+    const legalKeys = new Set(
+      legalMoves.map((move) => `${move.toX},${move.toY}`)
+    );
+    return getClientPseudoLegalMoves(fromX, fromY).filter(
+      (move) => !legalKeys.has(`${move.toX},${move.toY}`)
+    );
+  }
+
+  function describeKingSafetyRejection(piece, fromY, rejectedMoves) {
+    if (rejectedMoves.length === 0) return "";
+    const kingName = playerSide === 1 ? "帅" : "将";
+    const isPawnSideways = Math.abs(piece) === 7
+      && rejectedMoves.some((move) => move.toY === fromY);
+    return isPawnSideways
+      ? `兵的横走会让己方${kingName}被将军，不能走。`
+      : `另有 ${rejectedMoves.length} 个着法会让己方${kingName}被将军，不能走。`;
+  }
+
   function handleCanvasClick(e) {
+    if (!initialized) {
+      statusText.textContent = "正在同步服务器棋面，请稍候...";
+      window.parent.postMessage({ type: "REQUEST_SYNC" }, "*");
+      return;
+    }
     if (status !== "playing") {
       statusText.textContent = "本局已结束，请点击下方【重新开局】。";
       return;
     }
 
-    if (turn !== 1) {
-      statusText.textContent = "当前轮到 AI Agent (黑方) 走子，请稍候...";
+    if (turn !== playerSide) {
+      statusText.textContent = `当前轮到 AI Agent (${sideName(agentSide)}) 走子，请稍候...`;
       return;
     }
 
@@ -794,11 +913,17 @@
     const { x, y } = coord;
     const clickedPiece = board[y][x];
 
-    // Case 1: Clicking own Red piece -> Select it
-    if (clickedPiece > 0) {
+    // Case 1: Clicking a piece controlled by the player -> select it.
+    if (clickedPiece !== 0 && (clickedPiece > 0) === (playerSide === 1)) {
       selectedCoord = { x, y };
       legalTargets = getClientLegalMoves(x, y);
-      statusText.textContent = `已选择【${PIECE_NAMES[clickedPiece]}】，点击绿色标记点移动。`;
+      const rejectedMoves = getClientKingSafetyRejectedMoves(x, y, legalTargets);
+      const rejectionHint = describeKingSafetyRejection(clickedPiece, y, rejectedMoves);
+      statusText.textContent = legalTargets.length > 0
+        ? `已选择【${PIECE_NAMES[clickedPiece]}】，点击绿色标记点移动。${rejectionHint ? ` ${rejectionHint}` : ""}`
+        : isClientKingInCheck(playerSide === 1)
+          ? `【${PIECE_NAMES[clickedPiece]}】当前没有能解除将军的合法着法。`
+          : rejectionHint || `【${PIECE_NAMES[clickedPiece]}】当前没有合法着法。`;
       playSelectSound();
       drawBoard();
       return;
@@ -812,13 +937,13 @@
         const fromY = selectedCoord.y;
         const actionId = moveToString(fromX, fromY, x, y);
         const movingPiece = board[fromY][fromX];
-        const isCapture = board[y][x] < 0;
+        const isCapture = board[y][x] !== 0 && (board[y][x] > 0) !== (movingPiece > 0);
 
         // Apply local optimistic update
         board[y][x] = movingPiece;
         board[fromY][fromX] = 0;
-        lastMove = { fromX, fromY, toX: x, toY: y, actionId, player: 1 };
-        turn = 2;
+        lastMove = { fromX, fromY, toX: x, toY: y, actionId, player: playerSide };
+        turn = agentSide;
         selectedCoord = null;
         legalTargets = [];
 
@@ -832,6 +957,16 @@
           payload: { actionId, fromX, fromY, toX: x, toY: y }
         }, "*");
       } else {
+        const pseudoTarget = getClientPseudoLegalMoves(
+          selectedCoord.x,
+          selectedCoord.y
+        ).some((move) => move.toX === x && move.toY === y);
+        if (pseudoTarget) {
+          const kingName = playerSide === 1 ? "帅" : "将";
+          statusText.textContent = `这步会让己方${kingName}被将军，不能走。`;
+          drawBoard();
+          return;
+        }
         selectedCoord = null;
         legalTargets = [];
         drawBoard();
@@ -840,6 +975,18 @@
   }
 
   function updateUI() {
+    const playerInCheck =
+      status === "playing" && turn === playerSide && isClientKingInCheck(playerSide === 1);
+    const agentInCheck =
+      status === "playing" && turn === agentSide && isClientKingInCheck(agentSide === 1);
+    statusText.className = "status-text";
+
+    if ((playerInCheck && !playerWasInCheck) || (agentInCheck && !agentWasInCheck)) {
+      playCheckSound();
+    }
+    playerWasInCheck = playerInCheck;
+    agentWasInCheck = agentInCheck;
+
     if (status === "player_won") {
       if (!gameOverSoundPlayed) {
         gameOverSoundPlayed = true;
@@ -877,15 +1024,29 @@
       restartBtn.className = "btn";
       restartBtn.textContent = "重新开局";
       resignBtn.style.display = "inline-block";
-      if (turn === 1) {
-        turnBadge.className = "turn-indicator active-player";
-        turnBadge.textContent = "轮到你行动 (红方)";
-        statusText.textContent = "点击己方棋子，再点击目标位置移动";
+      if (turn === playerSide) {
+        if (playerInCheck) {
+          turnBadge.className = "turn-indicator in-check";
+          turnBadge.textContent = "⚠️ 将军！请立即应将";
+          statusText.className = "status-text in-check";
+          statusText.textContent = `${playerSide === 1 ? "红帅" : "黑将"}正被攻击，只能选择能够解除将军的绿色目标点。`;
+        } else {
+          turnBadge.className = "turn-indicator active-player";
+          turnBadge.textContent = `轮到你行动 (${sideName(playerSide)})`;
+          statusText.textContent = "点击己方棋子，再点击目标位置移动";
+        }
         if (retryAgentBtn) retryAgentBtn.style.display = "none";
       } else {
-        turnBadge.className = "turn-indicator active-agent";
-        turnBadge.textContent = "Agent 正在思考中... (黑方)";
-        statusText.textContent = "AI Agent 正在思考走子方案...";
+        if (agentInCheck) {
+          turnBadge.className = "turn-indicator in-check";
+          turnBadge.textContent = "⚔️ 你已将军！等待 Agent 应将";
+          statusText.className = "status-text in-check";
+          statusText.textContent = `${agentSide === 1 ? "红帅" : "黑将"}正被攻击，Agent 本回合必须解除将军。`;
+        } else {
+          turnBadge.className = "turn-indicator active-agent";
+          turnBadge.textContent = `Agent 正在思考中... (${sideName(agentSide)})`;
+          statusText.textContent = "AI Agent 正在思考走子方案...";
+        }
       }
     }
 
@@ -897,6 +1058,8 @@
     const prevMove = lastMove;
     board = snapshot.board || board;
     turn = snapshot.turn ?? turn;
+    playerSide = snapshot.playerSide ?? playerSide;
+    agentSide = snapshot.agentSide ?? agentSide;
     status = snapshot.status || status;
     lastMove = snapshot.lastMove || null;
 
@@ -914,6 +1077,7 @@
 
     selectedCoord = null;
     legalTargets = [];
+    updateSideLabels();
     updateUI();
     drawBoard();
   }
@@ -932,9 +1096,15 @@
       updateAgentInfo(data.payload);
     } else if (data.type === "AGENT_CHAT") {
       speechText.textContent = data.payload?.message || "";
+    } else if (data.type === "MOVE_REJECTED") {
+      selectedCoord = null;
+      legalTargets = [];
+      statusText.textContent =
+        "⚠ 着法被拒绝：" + (data.payload?.error || "非法着法") + " 棋面已恢复为服务器状态。";
+      drawBoard();
     } else if (data.type === "AGENT_STALLED") {
       const isStalled = Boolean(data.payload?.stalled);
-      if (isStalled && turn === 2 && status === "playing") {
+      if (isStalled && turn === agentSide && status === "playing") {
         if (retryAgentBtn) retryAgentBtn.style.display = "inline-block";
         statusText.textContent = "AI 回复结束但未走子，请点击【重试】";
       } else {
@@ -1071,7 +1241,9 @@
     sCtx.font = "14px -apple-system, sans-serif";
     sCtx.fillStyle = "#e2e8f0";
     sCtx.textAlign = "right";
-    sCtx.fillText(`🔴 玩家 (红)  VS  ⚫ ${agentDisplay} (黑)`, cardWidth - 40, 138);
+    const playerDot = playerSide === 1 ? "🔴" : "⚫";
+    const agentDot = agentSide === 1 ? "🔴" : "⚫";
+    sCtx.fillText(`${playerDot} 玩家 (${playerSide === 1 ? "红" : "黑"})  VS  ${agentDot} ${agentDisplay} (${agentSide === 1 ? "红" : "黑"})`, cardWidth - 40, 138);
     sCtx.textAlign = "left";
 
     // 4. Draw Chessboard (9:10 ratio)

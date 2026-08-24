@@ -26,7 +26,9 @@ import {
   type PathMask
 } from "./shared/logSanitize.js";
 import {
+  collapseAcpHistoryReplayLines,
   filterJsonlLinesByTimestamp,
+  groupSessionLogEntries,
   localDayRange,
   type TimestampRange
 } from "./shared/debugLogExportCore.js";
@@ -169,23 +171,42 @@ function readAppLogFiles(
   return out;
 }
 
-// On failure returns an empty set so a broken scope filter can never leak
-// other conversations' sessions into a conversation-scoped export.
-function sessionIdsForConversation(conversationId: string): Set<string> {
-  const ids = new Set<string>();
+interface ConversationSessionSelection {
+  taskIds: Set<string>;
+  toolSessionIdByTask: Map<string, string>;
+}
+
+// On failure returns an empty selection so a broken scope filter can never
+// leak other conversations' sessions into a conversation-scoped export.
+function sessionsForConversation(conversationId: string): ConversationSessionSelection {
+  const selection: ConversationSessionSelection = {
+    taskIds: new Set<string>(),
+    toolSessionIdByTask: new Map<string, string>()
+  };
   try {
     const rows = getDb()
       .prepare(
-        "SELECT DISTINCT task_id FROM conversation_messages WHERE conversation_id = ? AND task_id IS NOT NULL"
+        `SELECT DISTINCT m.task_id, t.tool_session_id
+         FROM conversation_messages m
+         LEFT JOIN cli_tasks t ON t.id = m.task_id
+         WHERE m.conversation_id = ? AND m.task_id IS NOT NULL`
       )
-      .all(conversationId) as Array<{ task_id: string }>;
+      .all(conversationId) as Array<{ task_id: string; tool_session_id: string | null }>;
     for (const row of rows) {
-      if (row.task_id) ids.add(row.task_id);
+      if (!row.task_id) continue;
+      selection.taskIds.add(row.task_id);
+      const toolSessionId = row.tool_session_id?.trim();
+      if (toolSessionId) selection.toolSessionIdByTask.set(row.task_id, toolSessionId);
     }
   } catch {
     /* keep empty */
   }
-  return ids;
+  return selection;
+}
+
+function safeSessionLogName(logicalSessionId: string): string {
+  const safe = logicalSessionId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 160);
+  return `${safe || "session"}.jsonl`;
 }
 
 function readSessionLogFiles(
@@ -200,52 +221,68 @@ function readSessionLogFiles(
   } catch {
     return out;
   }
+  let toolSessionIdByTask = new Map<string, string>();
   if (conversationId) {
-    const allowed = sessionIdsForConversation(conversationId);
-    names = names.filter((n) => allowed.has(n.replace(/\.jsonl$/, "")));
+    const selection = sessionsForConversation(conversationId);
+    toolSessionIdByTask = selection.toolSessionIdByTask;
+    names = names.filter((n) => selection.taskIds.has(n.replace(/\.jsonl$/, "")));
   }
-  const stat: Array<{ name: string; mtimeMs: number }> = [];
+  const stat: Array<{ taskId: string; name: string; mtimeMs: number }> = [];
   const recencyCutoff = Date.now() - LOG_RETENTION_DAYS * 86_400_000; // sessions are "近 7 天"
   for (const name of names) {
     try {
       const mtimeMs = fs.statSync(path.join(getLogDir(), name)).mtimeMs;
       if (mtimeMs < recencyCutoff) continue;
-      stat.push({ name, mtimeMs });
+      stat.push({ taskId: name.replace(/\.jsonl$/, ""), name, mtimeMs });
     } catch {
       /* file deleted or unreadable mid-scan — skip it, keep the rest */
     }
   }
-  stat.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  for (const { name } of stat.slice(0, MAX_SESSION_FILES)) {
-    const file = path.join(getLogDir(), name);
-    try {
-      const size = fs.statSync(file).size;
-      let text: string;
-      let truncated = false;
-      if (size > SESSION_TAIL_BYTES) {
-        const fd = fs.openSync(file, "r");
-        try {
-          const buf = Buffer.alloc(SESSION_TAIL_BYTES);
-          const bytesRead = fs.readSync(fd, buf, 0, SESSION_TAIL_BYTES, size - SESSION_TAIL_BYTES);
-          text = buf.subarray(0, bytesRead).toString("utf8");
-        } finally {
-          fs.closeSync(fd);
+  const groups = groupSessionLogEntries(
+    stat,
+    toolSessionIdByTask,
+    MAX_SESSION_FILES
+  );
+  for (const group of groups) {
+    const mergedLines: string[] = [];
+    for (const { name } of group.entries) {
+      const file = path.join(getLogDir(), name);
+      try {
+        const size = fs.statSync(file).size;
+        let text: string;
+        let truncated = false;
+        if (size > SESSION_TAIL_BYTES) {
+          const fd = fs.openSync(file, "r");
+          try {
+            const buf = Buffer.alloc(SESSION_TAIL_BYTES);
+            const bytesRead = fs.readSync(fd, buf, 0, SESSION_TAIL_BYTES, size - SESSION_TAIL_BYTES);
+            text = buf.subarray(0, bytesRead).toString("utf8");
+          } finally {
+            fs.closeSync(fd);
+          }
+          const idx = text.indexOf("\n");
+          if (idx >= 0) text = text.slice(idx + 1); // drop partial first line
+          truncated = true;
+        } else {
+          text = fs.readFileSync(file, "utf8");
         }
-        const idx = text.indexOf("\n");
-        if (idx >= 0) text = text.slice(idx + 1); // drop partial first line
-        truncated = true;
-      } else {
-        text = fs.readFileSync(file, "utf8");
+        const compacted = collapseAcpHistoryReplayLines(text.split("\n"));
+        const lines = filterLines(compacted, "session", mode, masks);
+        if (truncated) {
+          lines.unshift(
+            JSON.stringify({
+              type: "system",
+              content: `[export] ${name} truncated to last 2MB`
+            })
+          );
+        }
+        mergedLines.push(...lines);
+      } catch {
+        /* skip unreadable file */
       }
-      const lines = filterLines(text.split("\n"), "session", mode, masks);
-      if (truncated) {
-        lines.unshift(
-          JSON.stringify({ type: "system", content: "[export] truncated to last 2MB" })
-        );
-      }
-      out.push({ name, lines });
-    } catch {
-      /* skip unreadable file */
+    }
+    if (mergedLines.length > 0) {
+      out.push({ name: safeSessionLogName(group.logicalSessionId), lines: mergedLines });
     }
   }
   return out;

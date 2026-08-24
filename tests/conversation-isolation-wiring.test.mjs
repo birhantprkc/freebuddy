@@ -99,7 +99,8 @@ test("game IPC handlers enforce conversation ownership", () => {
     "game:getState",
     "game:playerMove",
     "game:agentMove",
-    "game:resetGame"
+    "game:resetGame",
+    "game:playerResign"
   ]) {
     const start = main.indexOf(`"${channel}"`);
     assert.ok(start > 0, `${channel} is registered`);

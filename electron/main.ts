@@ -27,9 +27,11 @@ import { initFileBridge } from "./fileBridge.js";
 import { getDb } from "./cli/db.js";
 import { getSetting, setSetting } from "./cli/settings.js";
 import {
-  getOrCreateGame,
+  handleGetGameState,
   handlePlayerMove,
+  handlePlayerResign,
   handleAgentMove,
+  handleSendChat,
   handleResetGame,
   initGamePersistence
 } from "./gameToolService.js";
@@ -1241,7 +1243,7 @@ function registerButlerBuddyWindowIpc() {
   });
   registerHandler("game:getState", (_event, conversationId: string) => {
     if (!requireOwnedConversation(conversationId)) return undefined;
-    return getOrCreateGame(conversationId).getSnapshot();
+    return handleGetGameState(conversationId, _event.sender);
   });
   registerHandler(
     "game:playerMove",
@@ -1277,11 +1279,38 @@ function registerButlerBuddyWindowIpc() {
       );
     }
   );
+  registerHandler(
+    "game:sendChat",
+    (
+      event,
+      payload: {
+        conversationId: string;
+        message: string;
+        mood?: "confident" | "mocking" | "nervous" | "calm" | "admiring";
+      }
+    ) => {
+      if (!requireOwnedConversation(payload.conversationId)) {
+        return { ok: false, error: "conversation_not_found" };
+      }
+      return handleSendChat(
+        payload.conversationId,
+        payload.message,
+        payload.mood,
+        event.sender
+      );
+    }
+  );
   registerHandler("game:resetGame", (event, conversationId: string) => {
     if (!requireOwnedConversation(conversationId)) {
       return { ok: false, error: "conversation_not_found" };
     }
     return handleResetGame(conversationId, event.sender);
+  });
+  registerHandler("game:playerResign", (event, conversationId: string) => {
+    if (!requireOwnedConversation(conversationId)) {
+      return { ok: false, error: "conversation_not_found" };
+    }
+    return handlePlayerResign(conversationId, event.sender);
   });
   ipcMain.handle(
     "butlerBuddy:updatePreferences",

@@ -196,6 +196,73 @@ function extractAgentMoveFromText(text: string): {
   return null;
 }
 
+function buildHardModeCommentaryPrompt(
+  snapshot: any,
+  t: (key: string, options?: any) => string
+): string {
+  const isXiangqi = snapshot?.gameType === "xiangqi";
+  const history = snapshot?.moveHistory || [];
+  const agentMove = snapshot?.lastMove || (history.length > 0 ? history[history.length - 1] : null);
+  if (!agentMove) return "";
+
+  const prevMove = history.length >= 2 ? history[history.length - 2] : null;
+
+  const formatMove = (m: any) => {
+    if (!m) return "";
+    if (isXiangqi && m.chineseMove) {
+      return `${m.chineseMove} (${m.actionId})`;
+    }
+    return String(m.actionId || "");
+  };
+
+  const cleanReason = (rawReason?: string, moveStr?: string) => {
+    if (!rawReason) return "";
+    let r = rawReason.trim();
+    if (moveStr && r.startsWith(moveStr)) {
+      r = r.slice(moveStr.length).replace(/^[，,\s]+/, "").trim();
+    } else if (r.includes("，")) {
+      r = r.split("，").slice(1).join("，").trim();
+    } else if (r.includes(",")) {
+      r = r.split(",").slice(1).join(",").trim();
+    }
+    return r ? `（${r}）` : "";
+  };
+
+  const agentMoveLabel = formatMove(agentMove);
+  const playerMoveLabel = formatMove(prevMove);
+  const reasonText = isXiangqi
+    ? cleanReason(agentMove.reason, agentMove.chineseMove)
+    : "";
+
+  if (snapshot.status === "agent_won") {
+    return isXiangqi
+      ? t("game.hardModeWonAgentXiangqi", { agentMove: agentMoveLabel })
+      : t("game.hardModeWonAgentGomoku", { agentMove: agentMoveLabel });
+  }
+
+  if (prevMove) {
+    return isXiangqi
+      ? t("game.hardModeTurnCommentaryXiangqi", {
+          playerMove: playerMoveLabel,
+          agentMove: agentMoveLabel,
+          reason: reasonText
+        })
+      : t("game.hardModeTurnCommentaryGomoku", {
+          playerMove: playerMoveLabel,
+          agentMove: agentMoveLabel
+        });
+  }
+
+  return isXiangqi
+    ? t("game.hardModeOpeningCommentaryXiangqi", {
+        agentMove: agentMoveLabel,
+        reason: reasonText
+      })
+    : t("game.hardModeOpeningCommentaryGomoku", {
+        agentMove: agentMoveLabel
+      });
+}
+
 function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   return (
@@ -414,6 +481,20 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
 
   // Bridge game canvas iframe with FreeBuddy Game Service and Agent session
   const processedMessageIdsRef = useRef<Set<string>>(new Set());
+  const pendingGameTurnPromptRef = useRef<{
+    conversationId: string;
+    prompt: string;
+    stepCount: number;
+  } | null>(null);
+  const autoRemindCountRef = useRef(0);
+  const lastEngineCommentedStepRef = useRef<number>(-1);
+
+  useEffect(() => {
+    pendingGameTurnPromptRef.current = null;
+    autoRemindCountRef.current = 0;
+    processedMessageIdsRef.current.clear();
+    lastEngineCommentedStepRef.current = -1;
+  }, [activeId]);
 
   const activeConversation = useConversationStore((s) =>
     activeId ? s.conversations.find((c) => c.id === activeId) : undefined
@@ -453,18 +534,52 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       const data = event.data;
-      if (!data || typeof data !== "object" || !activeId) return;
+      if (
+        !data ||
+        typeof data !== "object" ||
+        !activeId ||
+        event.source !== frameRef.current?.contentWindow
+      ) return;
 
       if (data.type === "PLAYER_MOVE" && data.payload?.actionId) {
         const actionId = String(data.payload.actionId);
         try {
           const moveRes = await window.freebuddy?.game?.playerMove(activeId, actionId);
+
+          // Engine rejected the move (e.g. it does not resolve a check).
+          // Tell the board so it can revert, and never prompt the agent for
+          // an illegal move.
+          if (moveRes && moveRes.ok === false) {
+            if (frameRef.current?.contentWindow) {
+              frameRef.current.contentWindow.postMessage(
+                {
+                  type: "MOVE_REJECTED",
+                  payload: { actionId, error: String(moveRes.error || "") }
+                },
+                "*"
+              );
+              try {
+                const state = await window.freebuddy?.game?.getState(activeId);
+                if (state && frameRef.current?.contentWindow) {
+                  frameRef.current.contentWindow.postMessage(
+                    { type: "FREEBUDDY_GAME_SYNC", payload: { ...state, agentInfo } },
+                    "*"
+                  );
+                }
+              } catch {
+                /* best effort */
+              }
+            }
+            return;
+          }
+
           const legalMoves = moveRes?.gameState?.legalMoves;
           const candidateList = legalMoves && legalMoves.length > 0
             ? legalMoves.slice(0, 12).map((m: any) => `${m.coord}(${m.description || ""})`).join(", ")
             : "H8, G7, I9, H9";
           const suggestedCoord = legalMoves?.[0]?.coord || "H8";
 
+          if (moveRes?.agentAutoPlayScheduled === true) return;
           if (sendMessage) {
             const isXiangqi = moveRes?.gameState?.gameType === "xiangqi";
             const isWon = moveRes?.gameState?.status === "player_won";
@@ -472,10 +587,21 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
               ? (isXiangqi ? t("game.playerMoveWonXiangqi", { actionId }) : t("game.playerMoveWonGomoku", { actionId }))
               : (isXiangqi ? t("game.playerMoveXiangqi", { actionId }) : t("game.playerMoveGomoku", { actionId }));
 
-            void sendMessage({
-              conversationId: activeId,
-              prompt: promptText
-            });
+            // The agent may still be streaming its reply for the previous
+            // move; sendMessage drops prompts while a run is active, so queue
+            // the turn prompt and flush it when generation ends.
+            if (useConversationStore.getState().isRunning(activeId)) {
+              pendingGameTurnPromptRef.current = {
+                conversationId: activeId,
+                prompt: promptText,
+                stepCount: Number(moveRes?.gameState?.stepCount ?? 0)
+              };
+            } else {
+              void sendMessage({
+                conversationId: activeId,
+                prompt: promptText
+              });
+            }
           }
         } catch (err) {
           console.error("[FreeBuddy] Failed to process player game move:", err);
@@ -494,8 +620,8 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         }
       } else if (data.type === "GAME_RESET") {
         try {
-          await window.freebuddy?.game?.resetGame(activeId);
-          if (sendMessage) {
+          const resetRes = await window.freebuddy?.game?.resetGame(activeId);
+          if (sendMessage && resetRes?.agentAutoPlayScheduled !== true) {
             void sendMessage({
               conversationId: activeId,
               prompt: t("game.promptGameReset")
@@ -512,7 +638,8 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
           });
         }
       } else if (data.type === "GAME_RESIGN") {
-        if (sendMessage) {
+        const resignRes = await window.freebuddy?.game?.playerResign(activeId);
+        if (resignRes?.ok !== false && sendMessage) {
           void sendMessage({
             conversationId: activeId,
             prompt: t("game.promptResign")
@@ -523,12 +650,39 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
 
     window.addEventListener("message", handleMessage);
     const unbindGameEvent = window.freebuddy?.game?.onGameEvent((event: any) => {
-      if (event?.conversationId && event.conversationId !== activeId) return;
+      if (!activeId || (event?.conversationId && event.conversationId !== activeId)) return;
       if (frameRef.current?.contentWindow && event?.payload) {
         frameRef.current.contentWindow.postMessage(
           { type: "FREEBUDDY_GAME_SYNC", payload: event.payload },
           "*"
         );
+      }
+
+      // If an engine move was performed in hard mode, prompt the AI agent to give a commentary
+      const snapshot = event?.payload;
+      if (
+        snapshot &&
+        snapshot.lastMove &&
+        snapshot.lastMove.player === snapshot.agentSide &&
+        lastEngineCommentedStepRef.current !== snapshot.stepCount &&
+        sendMessage
+      ) {
+        lastEngineCommentedStepRef.current = snapshot.stepCount;
+        const promptText = buildHardModeCommentaryPrompt(snapshot, t);
+        if (!promptText) return;
+
+        if (useConversationStore.getState().isRunning(activeId)) {
+          pendingGameTurnPromptRef.current = {
+            conversationId: activeId,
+            prompt: promptText,
+            stepCount: Number(snapshot.stepCount ?? 0)
+          };
+        } else {
+          void sendMessage({
+            conversationId: activeId,
+            prompt: promptText
+          });
+        }
       }
     });
 
@@ -536,9 +690,9 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
       window.removeEventListener("message", handleMessage);
       unbindGameEvent?.();
     };
-  }, [activeId, sendMessage]);
+  }, [activeId, agentInfo, sendMessage, t]);
 
-  // Observe assistant messages in game conversations to extract moves even without native MCP tool calling
+  // Observe assistant messages in game conversations to extract moves or commentary
   useEffect(() => {
     if (!activeId || !messages.length) return;
     const lastMsg = messages[messages.length - 1];
@@ -549,17 +703,45 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         const moveKey = `${lastMsg.id}:${move.action}`;
         if (!processedMessageIdsRef.current.has(moveKey)) {
           processedMessageIdsRef.current.add(moveKey);
-          void window.freebuddy?.game?.agentMove(
-            activeId,
-            move.action,
-            move.thought,
-            move.speech,
-            move.mood
-          );
+          void (async () => {
+            const moveRes = await window.freebuddy?.game?.agentMove(
+              activeId,
+              move.action,
+              move.thought,
+              move.speech,
+              move.mood
+            );
+            if (moveRes?.ok !== false) return;
+
+            const state = await window.freebuddy?.game?.getState(activeId);
+            if (!state || state.status !== "playing" || state.turn !== state.agentSide) return;
+            if (frameRef.current?.contentWindow) {
+              frameRef.current.contentWindow.postMessage(
+                { type: "FREEBUDDY_GAME_SYNC", payload: { ...state, agentInfo } },
+                "*"
+              );
+            }
+            const prompt = t("game.promptAgentMoveRejected", {
+              actionId: move.action,
+              error: String(moveRes.error || "illegal move"),
+              step: state.stepCount
+            });
+            if (useConversationStore.getState().isRunning(activeId)) {
+              pendingGameTurnPromptRef.current = {
+                conversationId: activeId,
+                prompt,
+                stepCount: state.stepCount
+              };
+            } else if (sendMessage) {
+              void sendMessage({ conversationId: activeId, prompt });
+            }
+          })().catch((err) => {
+            console.error("[FreeBuddy] Failed to recover rejected Agent move:", err);
+          });
         }
       }
     }
-  }, [activeId, messages]);
+  }, [activeId, agentInfo, messages, sendMessage, t]);
 
   // Monitor for abnormal stalls (Agent finished generation but turn is still White/2)
   useEffect(() => {
@@ -569,16 +751,43 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     const checkStall = async () => {
       try {
         const state = await window.freebuddy?.game?.getState(activeId);
-        if (state && state.status === "playing" && state.turn === 2 && !isRunning) {
-          timer = setTimeout(() => {
-            if (frameRef.current?.contentWindow) {
-              frameRef.current.contentWindow.postMessage(
-                { type: "AGENT_STALLED", payload: { stalled: true } },
-                "*"
-              );
-            }
-          }, 2500);
+        if (
+          state &&
+          state.status === "playing" &&
+          state.turn === state.agentSide
+        ) {
+          if (frameRef.current?.contentWindow) {
+            frameRef.current.contentWindow.postMessage(
+              { type: "AGENT_STALLED", payload: { stalled: false } },
+              "*"
+            );
+          }
+          if (!isRunning) {
+            timer = setTimeout(() => {
+              // Auto-send one remind carrying step facts so replayed history
+              // cannot convince the agent it is not its turn. The counter only
+              // resets when the turn actually leaves the agent (real
+              // progress) - resetting it during a run would loop reminders.
+              if (autoRemindCountRef.current < 1 && sendMessage) {
+                autoRemindCountRef.current += 1;
+                void sendMessage({
+                  conversationId: activeId,
+                  prompt: t("game.promptRemindAgentWithTurn", {
+                    step: state.stepCount
+                  })
+                });
+                return;
+              }
+              if (frameRef.current?.contentWindow) {
+                frameRef.current.contentWindow.postMessage(
+                  { type: "AGENT_STALLED", payload: { stalled: true } },
+                  "*"
+                );
+              }
+            }, 2500);
+          }
         } else {
+          autoRemindCountRef.current = 0;
           if (frameRef.current?.contentWindow) {
             frameRef.current.contentWindow.postMessage(
               { type: "AGENT_STALLED", payload: { stalled: false } },
@@ -596,7 +805,56 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [activeId, isRunning, messages]);
+  }, [activeId, isRunning, messages, sendMessage, t]);
+
+  // Flush a queued game-turn prompt once the agent finishes generating. This
+  // covers the race where the player moves while the agent is still streaming
+  // its reply for the previous move (sendMessage silently drops prompts while
+  // a run is active).
+  useEffect(() => {
+    if (!activeId || isRunning) return;
+    const pending = pendingGameTurnPromptRef.current;
+    if (!pending || pending.conversationId !== activeId) return;
+    pendingGameTurnPromptRef.current = null;
+    void (async () => {
+      try {
+        const state = await window.freebuddy?.game?.getState(activeId);
+        if (
+          !state ||
+          state.status !== "playing" ||
+          state.turn !== state.agentSide ||
+          state.stepCount !== pending.stepCount
+        ) return;
+        if (!sendMessage) return;
+        void sendMessage({ conversationId: activeId, prompt: pending.prompt });
+      } catch (err) {
+        console.error("[FreeBuddy] Failed to flush queued game turn prompt:", err);
+      }
+    })();
+  }, [activeId, isRunning, messages.length, sendMessage]);
+
+  // RUN_END_RESYNC: converge the board with backend truth whenever a
+  // generation run finishes. Protects the iframe from any missed broadcast
+  // leaving it stuck on a stale turn indicator.
+  useEffect(() => {
+    if (!activeId || isRunning) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const state = await window.freebuddy?.game?.getState(activeId);
+        if (cancelled || !state || !frameRef.current?.contentWindow) return;
+        frameRef.current.contentWindow.postMessage(
+          { type: "FREEBUDDY_GAME_SYNC", payload: { ...state, agentInfo } },
+          "*"
+        );
+      } catch {
+        /* best effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, isRunning, agentInfo]);
 
   useEffect(() => {
     if (!nativeBrowserAvailable || !isNativeRemote || !entry?.manualEntry) {

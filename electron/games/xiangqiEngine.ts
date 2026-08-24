@@ -35,6 +35,24 @@ export interface RawXiangqiMove {
   captured?: number;
 }
 
+export interface XiangqiMoveOptions {
+  /** Reject an avoidable move that gives the opponent mate in one. */
+  rejectAvoidableMate?: boolean;
+}
+
+export interface XiangqiMoveResult {
+  ok: boolean;
+  error?: string;
+  winner?: number | null;
+  draw?: boolean;
+  chineseMove?: string;
+  capturedPiece?: number;
+  capturedPieceName?: string;
+  isCheck?: boolean;
+  isCheckmate?: boolean;
+  isStalemate?: boolean;
+}
+
 export function coordToString(x: number, y: number): string {
   const col = COL_LETTERS[x] || `${x}`;
   return `${col}${y}`;
@@ -42,6 +60,10 @@ export function coordToString(x: number, y: number): string {
 
 export function moveToString(fromX: number, fromY: number, toX: number, toY: number): string {
   return `${coordToString(fromX, fromY)}${coordToString(toX, toY)}`;
+}
+
+export function xiangqiPositionKey(board: number[][], turn: number): string {
+  return `${turn}|${board.map((row) => row.join(",")).join("/")}`;
 }
 
 export function stringToMove(moveStr: string): { fromX: number; fromY: number; toX: number; toY: number } | null {
@@ -457,23 +479,207 @@ const PIECE_VALUES: Record<number, number> = {
   [PIECE_PAWN]: 100
 };
 
-export function getCandidateMoves(board: number[][], player: number): LegalGameMove[] {
+export function pieceValue(piece: number): number {
+  return PIECE_VALUES[Math.abs(piece)] || 100;
+}
+
+export interface OpponentCaptureThreat {
+  targetCoord: string;
+  targetName: string;
+  attackerCoord: string;
+  attackerName: string;
+  defended: boolean;
+  value: number;
+}
+
+/**
+ * Static 2-ply threat scan: which of `mover`'s pieces can the opponent
+ * capture right now, and can `mover` recapture afterwards (defended)?
+ */
+export function getOpponentCaptureThreats(
+  board: number[][],
+  mover: number
+): OpponentCaptureThreat[] {
+  const opponent = mover === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
+  const seen = new Map<string, OpponentCaptureThreat>();
+
+  for (const m of getLegalMoves(board, opponent)) {
+    if (m.captured === undefined) continue;
+
+    const key = `${m.toX},${m.toY}`;
+    const value = pieceValue(m.captured);
+    const existing = seen.get(key);
+    if (existing && existing.value >= value) continue;
+
+    const nextBoard = board.map((row) => [...row]);
+    nextBoard[m.toY][m.toX] = m.piece;
+    nextBoard[m.fromY][m.fromX] = 0;
+
+    let defended = false;
+    for (const reply of getLegalMoves(nextBoard, mover)) {
+      if (
+        reply.captured !== undefined &&
+        reply.toX === m.toX &&
+        reply.toY === m.toY
+      ) {
+        defended = true;
+        break;
+      }
+    }
+
+    seen.set(key, {
+      targetCoord: coordToString(m.toX, m.toY),
+      targetName: getPieceName(m.captured),
+      attackerCoord: coordToString(m.fromX, m.fromY),
+      attackerName: getPieceName(m.piece),
+      defended,
+      value
+    });
+  }
+
+  return [...seen.values()].sort(
+    (a, b) => (a.defended ? 1 : 0) - (b.defended ? 1 : 0) || b.value - a.value
+  );
+}
+
+function boardAfterMove(board: number[][], move: RawXiangqiMove): number[][] {
+  const nextBoard = board.map((row) => [...row]);
+  nextBoard[move.toY][move.toX] = move.piece;
+  nextBoard[move.fromY][move.fromX] = 0;
+  return nextBoard;
+}
+
+interface CaptureExchangeLoss {
+  targetCoord: string;
+  targetPiece: number;
+  /** Material lost after the best immediate legal recapture. */
+  netLoss: number;
+}
+
+/**
+ * Score every immediate capture separately. This intentionally excludes King
+ * captures: when the side to move is already in check, treating the King as a
+ * 10000-point baseline masks newly hung Rooks/Cannons.
+ */
+function captureExchangeLosses(
+  board: number[][],
+  attacker: number,
+  defender: number
+): Map<string, CaptureExchangeLoss> {
+  const losses = new Map<string, CaptureExchangeLoss>();
+  for (const capture of getLegalMoves(board, attacker)) {
+    if (
+      capture.captured === undefined ||
+      Math.abs(capture.captured) === PIECE_KING
+    ) {
+      continue;
+    }
+
+    const afterCapture = boardAfterMove(board, capture);
+    let recaptureValue = 0;
+    for (const reply of getLegalMoves(afterCapture, defender)) {
+      if (
+        reply.captured !== undefined &&
+        reply.toX === capture.toX &&
+        reply.toY === capture.toY
+      ) {
+        recaptureValue = Math.max(recaptureValue, pieceValue(reply.captured));
+      }
+    }
+
+    const targetCoord = coordToString(capture.toX, capture.toY);
+    const netLoss = Math.max(0, pieceValue(capture.captured) - recaptureValue);
+    const existing = losses.get(targetCoord);
+    if (!existing || netLoss > existing.netLoss) {
+      losses.set(targetCoord, {
+        targetCoord,
+        targetPiece: capture.captured,
+        netLoss
+      });
+    }
+  }
+  return losses;
+}
+
+/** True if `attacker` has a move after which `defender` has zero legal replies. */
+export function canDeliverMateInOne(board: number[][], attacker: number, defender: number): boolean {
+  for (const m of getLegalMoves(board, attacker)) {
+    const nextBoard = board.map((row) => [...row]);
+    nextBoard[m.toY][m.toX] = m.piece;
+    nextBoard[m.fromY][m.fromX] = 0;
+    if (!isKingInCheck(nextBoard, defender)) continue;
+    if (getLegalMoves(nextBoard, defender).length === 0) return true;
+  }
+  return false;
+}
+
+export function moveAllowsMateInOne(
+  board: number[][],
+  move: RawXiangqiMove,
+  player: number
+): boolean {
+  const opponent = player === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
+  return canDeliverMateInOne(boardAfterMove(board, move), opponent, player);
+}
+
+export function getCandidateMoves(
+  board: number[][],
+  player: number,
+  recentMoves: GameMoveRecord[] = [],
+  limit = 30
+): LegalGameMove[] {
   const legal = getLegalMoves(board, player);
   if (legal.length === 0) return [];
 
   const opponent = player === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
+  const baselineLosses = captureExchangeLosses(board, opponent, player);
+  const previousOwnMove = [...recentMoves].reverse().find((move) => move.player === player);
 
   const scored = legal.map((move) => {
     const actionId = moveToString(move.fromX, move.fromY, move.toX, move.toY);
     const chineseDesc = toChineseNotation(board, move, player);
 
     // Simulate move
-    const nextBoard = board.map((row) => [...row]);
-    nextBoard[move.toY][move.toX] = move.piece;
-    nextBoard[move.fromY][move.fromX] = 0;
+    const nextBoard = boardAfterMove(board, move);
 
     const oppInCheck = isKingInCheck(nextBoard, opponent);
-    const oppLegalCount = oppInCheck ? getLegalMoves(nextBoard, opponent).length : 10;
+    const oppMovesAfter = getLegalMoves(nextBoard, opponent);
+    const oppLegalCount = oppInCheck ? oppMovesAfter.length : 10;
+
+    // Compare threats per target instead of using one global maximum. The
+    // moved piece is always a new target at its destination; other pieces only
+    // count when this move newly exposes or worsens their exchange loss.
+    const replyLosses = captureExchangeLosses(nextBoard, opponent, player);
+    let createdLoss = 0;
+    let lossPiece: number | undefined;
+    const destination = coordToString(move.toX, move.toY);
+    for (const loss of replyLosses.values()) {
+      const baseline =
+        loss.targetCoord === destination
+          ? 0
+          : baselineLosses.get(loss.targetCoord)?.netLoss ?? 0;
+      const delta = Math.max(0, loss.netLoss - baseline);
+      if (delta > createdLoss) {
+        createdLoss = delta;
+        lossPiece = loss.targetPiece;
+      }
+    }
+    const ourGain = move.captured ? pieceValue(move.captured) : 0;
+    const materialDelta = ourGain - createdLoss;
+
+    // Does this move hand the opponent a one-move mate?
+    const allowsMate = moveAllowsMateInOne(board, move, player);
+
+    let safety: "lose" | "trade" | "gain" | undefined;
+    if (createdLoss > 0 && materialDelta < 0 && Math.abs(move.piece) !== PIECE_KING) {
+      safety = "lose";
+    } else if (createdLoss > 0 && ourGain > 0 && materialDelta === 0) {
+      safety = "trade";
+    } else if (ourGain > createdLoss) {
+      safety = "gain";
+    }
+
+    if (allowsMate) safety = "lose";
 
     let priority = 10;
     let threatLevel: "winning" | "critical_block" | "attack" | "normal" = "normal";
@@ -482,7 +688,7 @@ export function getCandidateMoves(board: number[][], player: number): LegalGameM
       threatLevel = "winning";
       priority = 10000;
     } else if (move.captured) {
-      const capVal = PIECE_VALUES[Math.abs(move.captured)] || 100;
+      const capVal = ourGain;
       priority = 200 + capVal;
       threatLevel = capVal >= 400 ? "attack" : "normal";
     } else if (oppInCheck) {
@@ -496,10 +702,22 @@ export function getCandidateMoves(board: number[][], player: number): LegalGameM
       if (absPiece === PIECE_ROOK && (move.toY === 0 || move.toY === 9 || move.toX === 1 || move.toX === 7)) priority += 60;
     }
 
+    if (allowsMate) {
+      priority -= 100000;
+    } else if (safety === "lose") {
+      priority -= Math.max(100, -materialDelta) * 2;
+    } else if (safety === "gain") {
+      priority += ourGain / 2;
+    }
+
     let fullDesc = `${chineseDesc} (${coordToString(move.fromX, move.fromY)}->${coordToString(move.toX, move.toY)})`;
     if (threatLevel === "winning") fullDesc += " [绝杀将军]";
     else if (move.captured) fullDesc += ` [吃${getPieceName(move.captured)}]`;
     else if (oppInCheck) fullDesc += " [将军]";
+    if (allowsMate) fullDesc += " [招致绝杀!]";
+    else if (safety === "lose") fullDesc += ` [丢${getPieceName(lossPiece ?? move.piece)}!]`;
+    else if (safety === "trade") fullDesc += " [兑子]";
+    else if (safety === "gain" && move.captured) fullDesc += " [得子]";
 
     return {
       actionId,
@@ -512,13 +730,36 @@ export function getCandidateMoves(board: number[][], player: number): LegalGameM
       coord: actionId,
       description: fullDesc,
       threatLevel,
+      safety,
+      allowsMate,
+      lossPiece:
+        safety === "lose" && !allowsMate
+          ? getPieceName(lossPiece ?? move.piece)
+          : undefined,
       priority
     };
   });
 
+  // Discourage immediate backtracking/oscillation while keeping the move
+  // legal and available when tactics require it.
+  for (const candidate of scored) {
+    if (
+      previousOwnMove?.fromX === candidate.toX &&
+      previousOwnMove?.fromY === candidate.toY &&
+      previousOwnMove?.toX === candidate.fromX &&
+      previousOwnMove?.toY === candidate.fromY
+    ) {
+      candidate.priority -= 250;
+    }
+    const repeats = recentMoves.filter(
+      (move) => move.player === player && move.actionId === candidate.actionId
+    ).length;
+    candidate.priority -= repeats * 120;
+  }
+
   scored.sort((a, b) => b.priority - a.priority);
 
-  return scored.slice(0, 30).map((s) => ({
+  return scored.slice(0, limit).map((s) => ({
     actionId: s.actionId,
     x: s.x,
     y: s.y,
@@ -528,7 +769,10 @@ export function getCandidateMoves(board: number[][], player: number): LegalGameM
     toY: s.toY,
     coord: s.coord,
     description: s.description,
-    threatLevel: s.threatLevel
+    threatLevel: s.threatLevel,
+    safety: s.safety,
+    allowsMate: s.allowsMate,
+    lossPiece: s.lossPiece
   }));
 }
 
@@ -536,24 +780,36 @@ export class XiangqiGameInstance {
   public gameId: string;
   public status: GameStatus = "playing";
   public turn: number = PLAYER_RED; // Red moves first
+  public playerSide: number;
+  public agentSide: number;
   public board: number[][];
   public moveHistory: GameMoveRecord[] = [];
+  public positionHistory: string[];
   public chatHistory: GameChatMessage[] = [];
   public winner: number | null = null;
   public updatedAt: number = Date.now();
 
-  constructor(gameId: string) {
+  constructor(gameId: string, playerSide: number = PLAYER_RED) {
     this.gameId = gameId;
+    this.playerSide = playerSide === PLAYER_BLACK ? PLAYER_BLACK : PLAYER_RED;
+    this.agentSide = this.playerSide === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
     this.board = createInitialBoard();
+    this.positionHistory = [xiangqiPositionKey(this.board, this.turn)];
   }
 
-  public static fromSnapshot(snapshot: GameStateSnapshot): XiangqiGameInstance {
-    const inst = new XiangqiGameInstance(snapshot.gameId);
+  public static fromSnapshot(
+    snapshot: GameStateSnapshot,
+    playerSide: number = snapshot.playerSide ?? PLAYER_RED
+  ): XiangqiGameInstance {
+    const inst = new XiangqiGameInstance(snapshot.gameId, playerSide);
     inst.status = snapshot.status;
     inst.turn = snapshot.turn;
     inst.winner = snapshot.winner ?? null;
     inst.board = snapshot.board ? snapshot.board.map((row) => [...row]) : createInitialBoard();
     inst.moveHistory = [...(snapshot.moveHistory || [])];
+    inst.positionHistory = snapshot.positionHistory?.length
+      ? [...snapshot.positionHistory]
+      : [xiangqiPositionKey(inst.board, inst.turn)];
     inst.chatHistory = [...(snapshot.chatHistory || [])];
     inst.updatedAt = snapshot.updatedAt || Date.now();
     return inst;
@@ -566,13 +822,19 @@ export class XiangqiGameInstance {
       gameId: this.gameId,
       status: this.status,
       turn: this.turn,
+      playerSide: this.playerSide,
+      agentSide: this.agentSide,
       stepCount: this.moveHistory.length,
       winner: this.winner,
       board: this.board.map((row) => [...row]),
       lastMove: this.moveHistory.length > 0 ? this.moveHistory[this.moveHistory.length - 1] : null,
       moveHistory: includeHistory ? [...this.moveHistory] : undefined,
+      positionHistory: includeHistory ? [...this.positionHistory] : undefined,
       recentMoves: this.moveHistory.slice(-3),
-      legalMoves: this.status === "playing" ? getCandidateMoves(this.board, this.turn) : [],
+      legalMoves:
+        this.status === "playing"
+          ? getCandidateMoves(this.board, this.turn, this.moveHistory)
+          : [],
       chatHistory: includeHistory ? [...this.chatHistory] : this.chatHistory.slice(-3),
       updatedAt: this.updatedAt
     };
@@ -581,8 +843,9 @@ export class XiangqiGameInstance {
   public applyMove(
     actionId: string,
     player: number,
-    reason?: string
-  ): { ok: boolean; error?: string; winner?: number | null; chineseMove?: string } {
+    reason?: string,
+    options: XiangqiMoveOptions = {}
+  ): XiangqiMoveResult {
     if (this.status !== "playing") {
       return { ok: false, error: `Game is already over with status '${this.status}'.` };
     }
@@ -613,12 +876,33 @@ export class XiangqiGameInstance {
       return { ok: false, error: `Move '${actionId}' (${getPieceName(piece)}) is illegal according to Xiangqi rules or leaves King in check.` };
     }
 
+    if (options.rejectAvoidableMate && moveAllowsMateInOne(this.board, match, player)) {
+      const hasSafeAlternative = legalMoves.some(
+        (move) =>
+          move !== match &&
+          !moveAllowsMateInOne(this.board, move, player)
+      );
+      if (hasSafeAlternative) {
+        return {
+          ok: false,
+          error: `Move '${actionId}' rejected: it allows mate in one while a safe legal alternative exists.`
+        };
+      }
+    }
+
     const chineseMove = toChineseNotation(this.board, match, player);
     const capturedPiece = this.board[toY][toX] !== 0 ? this.board[toY][toX] : undefined;
 
     // Apply move
     this.board[toY][toX] = piece;
     this.board[fromY][fromX] = 0;
+
+    const opponent = player === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
+    const isCheck = isKingInCheck(this.board, opponent);
+    const opponentLegalMoves = getLegalMoves(this.board, opponent);
+    const isCheckmate = isCheck && opponentLegalMoves.length === 0;
+    const isStalemate = !isCheck && opponentLegalMoves.length === 0;
+    const positionKey = xiangqiPositionKey(this.board, opponent);
 
     const moveRecord: GameMoveRecord = {
       actionId,
@@ -630,28 +914,47 @@ export class XiangqiGameInstance {
       toY,
       piece,
       capturedPiece,
+      chineseMove,
+      capturedPieceName:
+        capturedPiece !== undefined ? getPieceName(capturedPiece) : undefined,
+      givesCheck: isCheck,
+      checkmate: isCheckmate,
+      positionKey,
       player,
       stepIndex: this.moveHistory.length + 1,
       timestamp: Date.now(),
       reason
     };
     this.moveHistory.push(moveRecord);
+    this.positionHistory.push(positionKey);
     this.updatedAt = Date.now();
 
-    // Check opponent status
-    const opponent = player === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
-    const opponentLegalMoves = getLegalMoves(this.board, opponent);
+    const facts = {
+      chineseMove,
+      capturedPiece,
+      capturedPieceName:
+        capturedPiece !== undefined ? getPieceName(capturedPiece) : undefined,
+      isCheck,
+      isCheckmate,
+      isStalemate
+    };
 
     if (opponentLegalMoves.length === 0) {
       // Opponent is checkmated or stalemated
-      this.status = player === PLAYER_RED ? "player_won" : "agent_won";
+      this.status = player === this.playerSide ? "player_won" : "agent_won";
       this.winner = player;
-      return { ok: true, winner: player, chineseMove };
+      return { ok: true, winner: player, ...facts };
     }
 
     // Switch turn
     this.turn = opponent;
-    return { ok: true, chineseMove };
+    const repetitions = this.positionHistory.filter((key) => key === positionKey).length;
+    if (repetitions >= 3) {
+      this.status = "draw";
+      this.winner = null;
+      return { ok: true, winner: null, draw: true, ...facts };
+    }
+    return { ok: true, ...facts };
   }
 
   public addChat(
@@ -675,11 +978,11 @@ export class XiangqiGameInstance {
       return { ok: false, winner: this.winner || 0 };
     }
     const winningPlayer = player === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
-    this.status = winningPlayer === PLAYER_RED ? "player_won" : "agent_won";
+    this.status = winningPlayer === this.playerSide ? "player_won" : "agent_won";
     this.winner = winningPlayer;
     this.updatedAt = Date.now();
     this.addChat(
-      player === PLAYER_RED ? "player" : "agent",
+      player === this.playerSide ? "player" : "agent",
       reason ? `认输: ${reason}` : "我认输了，这一局你下得漂亮！",
       "calm"
     );

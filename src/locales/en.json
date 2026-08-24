@@ -1870,6 +1870,10 @@
     "aiOpponent": "AI Opponent",
     "gameModel": "Model",
     "turnOrder": "Turn Order",
+    "difficulty": "Difficulty",
+    "difficultyEasy": "Easy · AI free play",
+    "difficultyHard": "Hard · Engine boosted",
+    "difficultyHardHint": "In hard mode the local engine replies automatically for the AI, offering the strongest play",
     "gomoku": "Gomoku",
     "xiangqi": "Chinese Chess",
     "go": "Go",
@@ -1889,11 +1893,18 @@
     "playerMoveGomoku": "Player placed stone: {{actionId}}",
     "promptGameReset": "[Restart Game] I have reset the board. Ready for a new match!",
     "promptRemindAgent": "It is your turn. Please make your move.",
+    "promptRemindAgentWithTurn": "[System reminder - move {{step}} - your turn] Call game_get_state immediately to verify the board. Once confirmed it is your turn you MUST call game_make_move. Never ask the player to move for you or keep waiting.",
+    "promptAgentMoveRejected": "Your attempted move {{actionId}} was rejected by the rules engine ({{error}}). It is still your turn after move {{step}}. Call game_get_state again and choose another legal safe move with game_make_move.",
     "promptResign": "I resign. Well played!",
     "promptXiangqiPlayerFirst": "[Chinese Chess Match Start] I play Red and move first. You play Black. Prepare for battle!",
     "promptXiangqiAgentFirst": "[Chinese Chess Match Start] You play Red and move first. Please make your move!",
     "promptGomokuPlayerFirst": "[Gomoku Match Start] I play Black and move first. You play White. Prepare for the game!",
-    "promptGomokuAgentFirst": "[Gomoku Match Start] You play Black and move first. Please place your stone!"
+    "promptGomokuAgentFirst": "[Gomoku Match Start] You play Black and move first. Please place your stone!",
+    "hardModeTurnCommentaryXiangqi": "I played \"{{playerMove}}\", and you replied with \"{{agentMove}}\"{{reason}}.\n\n(Note: Both moves are placed on the board, and it is my turn now. Please share your in-character tactical commentary or reaction in chat. If you want to say something in the board speech bubble, call the game_send_chat tool.)",
+    "hardModeTurnCommentaryGomoku": "I placed a stone at \"{{playerMove}}\", and you replied with \"{{agentMove}}\".\n\n(Note: Both stones are placed on the board, and it is my turn now. Please share your in-character reaction in chat. If you want to say something in the board speech bubble, call the game_send_chat tool.)",
+    "hardModeOpeningCommentaryXiangqi": "You opened the game with \"{{agentMove}}\"{{reason}}.\n\n(Note: Your opening move is placed on the board, and it is my turn now. Please share your opening thoughts in chat. If you want to say something in the board speech bubble, call the game_send_chat tool.)",
+    "hardModeOpeningCommentaryGomoku": "You opened the game at \"{{agentMove}}\".\n\n(Note: Your opening move is placed on the board, and it is my turn now. Please share your opening thoughts in chat. If you want to say something in the board speech bubble, call the game_send_chat tool.)",
+    "hardModeWonAgentXiangqi": "You played \"{{agentMove}}\", checkmate win! You won this match - please share your victory thoughts in chat!",
+    "hardModeWonAgentGomoku": "You placed at \"{{agentMove}}\", five-in-a-row win! You won this match - please share your victory thoughts in chat!"
   }
 }
-

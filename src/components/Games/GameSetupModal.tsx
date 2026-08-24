@@ -63,6 +63,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [selectedHand, setSelectedHand] = useState<"player_first" | "agent_first">("player_first");
+  const [selectedDifficulty, setSelectedDifficulty] = useState<"easy" | "hard">("easy");
   const [isLaunching, setIsLaunching] = useState(false);
 
   // Model probing states
@@ -203,7 +204,8 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
           gameType: gamePath,
           opponentAgentId: selectedMember.id,
           opponentModel: selectedModel || undefined,
-          hand: selectedHand
+          hand: selectedHand,
+          gameDifficulty: selectedDifficulty
         },
         configOptionOverrides: configOverrides,
         skillIds: ["game-arena"]
@@ -216,30 +218,33 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
       useDetailLayoutStore.getState().setActiveTab("preview");
       useDetailLayoutStore.getState().setDetailCollapsed(false);
 
-      // Send opening welcome prompt
-      if (selectedGame === "chinese_chess") {
-        if (selectedHand === "player_first") {
-          void convStore.sendMessage({
-            conversationId: conv.id,
-            prompt: t("game.promptXiangqiPlayerFirst")
-          });
+      // Hard-mode Agent-first games are opened by the local engine as soon as
+      // the board requests its initial state; avoid racing it with an LLM run.
+      if (!(selectedDifficulty === "hard" && selectedHand === "agent_first")) {
+        if (selectedGame === "chinese_chess") {
+          if (selectedHand === "player_first") {
+            void convStore.sendMessage({
+              conversationId: conv.id,
+              prompt: t("game.promptXiangqiPlayerFirst")
+            });
+          } else {
+            void convStore.sendMessage({
+              conversationId: conv.id,
+              prompt: t("game.promptXiangqiAgentFirst")
+            });
+          }
         } else {
-          void convStore.sendMessage({
-            conversationId: conv.id,
-            prompt: t("game.promptXiangqiAgentFirst")
-          });
-        }
-      } else {
-        if (selectedHand === "player_first") {
-          void convStore.sendMessage({
-            conversationId: conv.id,
-            prompt: t("game.promptGomokuPlayerFirst")
-          });
-        } else {
-          void convStore.sendMessage({
-            conversationId: conv.id,
-            prompt: t("game.promptGomokuAgentFirst")
-          });
+          if (selectedHand === "player_first") {
+            void convStore.sendMessage({
+              conversationId: conv.id,
+              prompt: t("game.promptGomokuPlayerFirst")
+            });
+          } else {
+            void convStore.sendMessage({
+              conversationId: conv.id,
+              prompt: t("game.promptGomokuAgentFirst")
+            });
+          }
         }
       }
 
@@ -375,6 +380,30 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Difficulty */}
+          <div className="game-setup-field">
+            <span className="game-setup-field-label">{t("game.difficulty")}</span>
+            <div className="game-setup-choice-group two-cols">
+              <button
+                type="button"
+                className={selectedDifficulty === "easy" ? "active" : ""}
+                onClick={() => setSelectedDifficulty("easy")}
+              >
+                {t("game.difficultyEasy")}
+              </button>
+              <button
+                type="button"
+                className={selectedDifficulty === "hard" ? "active" : ""}
+                onClick={() => setSelectedDifficulty("hard")}
+              >
+                {t("game.difficultyHard")}
+              </button>
+            </div>
+            {selectedDifficulty === "hard" ? (
+              <p className="game-setup-dialog-desc">{t("game.difficultyHardHint")}</p>
+            ) : null}
           </div>
         </div>
 
