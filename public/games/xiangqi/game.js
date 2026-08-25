@@ -258,8 +258,12 @@
       }
     }
 
-    const playerCapturedOrder = playerSide === 1 ? BLACK_ORDER : RED_ORDER;
-    const agentCapturedOrder = playerSide === 1 ? RED_ORDER : BLACK_ORDER;
+    const isLeftRed = (gameMode === "agent_vs_agent" || gameMode === "agent_vs_engine" || playerSide === 0)
+      ? true
+      : playerSide === 1;
+
+    const playerCapturedOrder = isLeftRed ? BLACK_ORDER : RED_ORDER;
+    const agentCapturedOrder = isLeftRed ? RED_ORDER : BLACK_ORDER;
 
     // Pieces captured by the player (missing opponent pieces).
     playerCapturedContainer.innerHTML = "";

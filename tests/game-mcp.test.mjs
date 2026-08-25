@@ -276,6 +276,7 @@ test("Game mode architecture and spectator support in multi-agent and engine mod
   // Frontend scripts handle spectator mode and participants
   assert.match(gomoku, /playerSide === 0 \|\| gameMode === "agent_vs_agent"/);
   assert.match(xiangqi, /playerSide === 0 \|\| gameMode === "agent_vs_agent"/);
+  assert.match(xiangqi, /isLeftRed\s*=\s*\(gameMode === "agent_vs_agent"/);
 });
 
 test("full moveHistory is persisted and completely restored on getState and state sync", async () => {

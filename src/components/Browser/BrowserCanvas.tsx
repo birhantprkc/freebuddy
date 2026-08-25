@@ -943,7 +943,10 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
           }
         } else {
           // player_vs_agent
-          if (snapshot.lastMove.player === snapshot.agentSide) {
+          if (
+            conv?.metadata?.gameDifficulty === "hard" &&
+            snapshot.lastMove.player === snapshot.agentSide
+          ) {
             lastEngineCommentedStepRef.current = snapshot.stepCount;
             const promptText = buildHardModeCommentaryPrompt(snapshot, t);
             if (promptText) {
