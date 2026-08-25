@@ -81,9 +81,23 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
 
   const convStore = useConversationStore();
+  const isPlayableGameAgent = useCallback(
+    (m: CLIMember) =>
+      m.enabled !== false && m.profile !== "butler" && m.id !== "cli-butlerbuddy",
+    []
+  );
+
+  const playableMembers = useMemo(
+    () => convStore.members.filter(isPlayableGameAgent),
+    [convStore.members, isPlayableGameAgent]
+  );
+  const fallbackBuiltin = useMemo(
+    () => builtinCliMembers.filter(isPlayableGameAgent),
+    [isPlayableGameAgent]
+  );
   const members = useMemo(
-    () => convStore.members.filter((m) => m.enabled !== false),
-    [convStore.members]
+    () => (playableMembers.length > 0 ? playableMembers : fallbackBuiltin),
+    [playableMembers, fallbackBuiltin]
   );
 
   const [selectedMode, setSelectedMode] = useState<GameBattleMode>("player_vs_agent");
@@ -116,10 +130,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
   // Initialize selected agents
   useEffect(() => {
     if (!open) return;
-    const defaultAgent =
-      members.find((m) => m.id === "cli-butlerbuddy") ||
-      members[0] ||
-      builtinCliMembers[0];
+    const defaultAgent = members[0] || fallbackBuiltin[0] || builtinCliMembers[0];
 
     if (!selectedAgentId || !members.some((m) => m.id === selectedAgentId)) {
       if (defaultAgent) setSelectedAgentId(defaultAgent.id);
@@ -128,36 +139,37 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
       if (defaultAgent) setAgent1Id(defaultAgent.id);
     }
     if (!agent2Id || !members.some((m) => m.id === agent2Id)) {
-      const secondAgent = members.find((m) => m.id !== defaultAgent?.id) || defaultAgent;
+      const secondAgent =
+        members.find((m) => m.id !== defaultAgent?.id) || members[0] || defaultAgent;
       if (secondAgent) setAgent2Id(secondAgent.id);
     }
-  }, [open, members, selectedAgentId, agent1Id, agent2Id]);
+  }, [open, members, fallbackBuiltin, selectedAgentId, agent1Id, agent2Id]);
 
   const selectedMember: CLIMember | undefined = useMemo(() => {
     return (
       members.find((m) => m.id === selectedAgentId) ||
-      builtinCliMembers.find((m) => m.id === selectedAgentId) ||
+      fallbackBuiltin.find((m) => m.id === selectedAgentId) ||
       members[0] ||
-      builtinCliMembers[0]
+      fallbackBuiltin[0]
     );
-  }, [members, selectedAgentId]);
+  }, [members, fallbackBuiltin, selectedAgentId]);
 
   const agent1Member: CLIMember | undefined = useMemo(() => {
     return (
       members.find((m) => m.id === agent1Id) ||
-      builtinCliMembers.find((m) => m.id === agent1Id) ||
+      fallbackBuiltin.find((m) => m.id === agent1Id) ||
       selectedMember
     );
-  }, [members, agent1Id, selectedMember]);
+  }, [members, fallbackBuiltin, agent1Id, selectedMember]);
 
   const agent2Member: CLIMember | undefined = useMemo(() => {
     return (
       members.find((m) => m.id === agent2Id) ||
-      builtinCliMembers.find((m) => m.id === agent2Id) ||
+      fallbackBuiltin.find((m) => m.id === agent2Id) ||
       members[1] ||
       selectedMember
     );
-  }, [members, agent2Id, selectedMember]);
+  }, [members, fallbackBuiltin, agent2Id, selectedMember]);
 
   // Session probe input helper
   const sessionProbeInputForAgent = useCallback(
@@ -487,7 +499,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
                   >
                     {members.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.name} ({m.profile === "butler" ? t("game.butlerAssistant") : m.cli.adapter})
+                        {m.name} ({m.cli.adapter})
                       </option>
                     ))}
                   </select>
@@ -570,7 +582,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
                     >
                       {members.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.name} ({m.profile === "butler" ? t("game.butlerAssistant") : m.cli.adapter})
+                          {m.name} ({m.cli.adapter})
                         </option>
                       ))}
                     </select>
@@ -620,7 +632,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
                     >
                       {members.map((m) => (
                         <option key={m.id} value={m.id}>
-                          {m.name} ({m.profile === "butler" ? t("game.butlerAssistant") : m.cli.adapter})
+                          {m.name} ({m.cli.adapter})
                         </option>
                       ))}
                     </select>
@@ -669,7 +681,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
                   >
                     {members.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.name} ({m.profile === "butler" ? t("game.butlerAssistant") : m.cli.adapter})
+                        {m.name} ({m.cli.adapter})
                       </option>
                     ))}
                   </select>
