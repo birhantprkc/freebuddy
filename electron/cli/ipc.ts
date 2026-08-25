@@ -441,32 +441,49 @@ export function registerCliIpc() {
 
   const LAST_SELECTED_WORKSPACE_KEY = "workspace.lastSelectedDirectory";
 
+  function getValidParentOrDir(targetPath: string): string {
+    try {
+      const resolved = path.resolve(targetPath);
+      if (!fs.existsSync(resolved)) return resolved;
+      const stat = fs.statSync(resolved);
+      const dir = stat.isDirectory() ? resolved : path.dirname(resolved);
+      const parent = path.dirname(dir);
+      if (parent && parent !== dir && fs.existsSync(parent)) {
+        const parentStat = fs.statSync(parent);
+        if (parentStat.isDirectory()) {
+          return parent;
+        }
+      }
+      return dir;
+    } catch {
+      return targetPath;
+    }
+  }
+
   function resolveDefaultOpenDirectory(explicitPath?: string): string {
-    // 1. Explicit path passed from frontend (if provided and exists on disk)
+    // 1. Explicit path passed from frontend (use its parent so user can choose among sibling projects)
     if (explicitPath && typeof explicitPath === "string" && explicitPath.trim()) {
       try {
         const candidate = path.resolve(explicitPath.trim());
         if (fs.existsSync(candidate)) {
-          const stat = fs.statSync(candidate);
-          return stat.isDirectory() ? candidate : path.dirname(candidate);
+          return getValidParentOrDir(candidate);
         }
       } catch {
         // ignore
       }
     }
 
-    // 2. Last explicitly selected workspace path
+    // 2. Last explicitly selected workspace path's parent
     try {
       const lastSelected = getSetting(LAST_SELECTED_WORKSPACE_KEY);
       if (lastSelected && fs.existsSync(lastSelected)) {
-        const stat = fs.statSync(lastSelected);
-        return stat.isDirectory() ? lastSelected : path.dirname(lastSelected);
+        return getValidParentOrDir(lastSelected);
       }
     } catch {
       // ignore
     }
 
-    // 3. Most recently used workspace from conversations database
+    // 3. Most recently used workspace from conversations database's parent
     try {
       const db = getDb();
       const rows = db
@@ -479,15 +496,14 @@ export function registerCliIpc() {
       for (const row of rows) {
         const candidate = row.cwd?.trim();
         if (candidate && fs.existsSync(candidate)) {
-          const stat = fs.statSync(candidate);
-          if (stat.isDirectory()) return candidate;
+          return getValidParentOrDir(candidate);
         }
       }
     } catch {
       // ignore
     }
 
-    // 4. Projects database
+    // 4. Projects database's parent
     try {
       const db = getDb();
       const rows = db
@@ -500,8 +516,7 @@ export function registerCliIpc() {
       for (const row of rows) {
         const candidate = row.primary_path?.trim();
         if (candidate && fs.existsSync(candidate)) {
-          const stat = fs.statSync(candidate);
-          if (stat.isDirectory()) return candidate;
+          return getValidParentOrDir(candidate);
         }
       }
     } catch {

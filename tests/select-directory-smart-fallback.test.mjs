@@ -14,6 +14,7 @@ test("selectDirectory supports defaultPath and persists last selected workspace 
   const projectModal = read("../src/components/CLI/ProjectFormModal.tsx");
 
   assert.match(ipc, /resolveDefaultOpenDirectory/);
+  assert.match(ipc, /getValidParentOrDir/);
   assert.match(ipc, /LAST_SELECTED_WORKSPACE_KEY\s*=\s*"workspace\.lastSelectedDirectory"/);
   assert.match(ipc, /setSetting\(LAST_SELECTED_WORKSPACE_KEY,\s*selected\)/);
   assert.match(ipc, /dialog\.showOpenDialog\(win,\s*\{\s*properties:\s*\["openDirectory"\],\s*defaultPath/);
