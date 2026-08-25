@@ -2,6 +2,22 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.8.16] - 2026-08-25
+
+### 新功能
+
+- display DEV badge in sidebar header and document title in dev mode
+- isolate userData, app name, and window title for dev mode
+- optimize arena layout, move history persistence and agent autonomy
+
+### 问题修复
+
+- filter out butler official agents from game selection
+- default directory picker to parent of last selected folder
+- remember last selected directory and avoid downloads fallback
+- hide difficulty selector in dual-agent and engine modes
+- guard hard-mode commentary prompt and fix captured tray side in dual-agent xiangqi
+
 ## [0.8.15] - 2026-08-24
 
 ### 问题修复
