@@ -257,7 +257,7 @@ declare global {
     appendMessage(input: AppendMessageInput): Promise<ConversationMessage>;
     updateMessage(input: UpdateMessageInput): Promise<void>;
 
-    selectDirectory(): Promise<string | null>;
+    selectDirectory(defaultPath?: string): Promise<string | null>;
     searchWorkspaceFiles(
       cwd: string,
       query: string,
@@ -485,7 +485,7 @@ declare global {
     setTrusted(id: string, trusted: boolean): Promise<SkillRecord | undefined>;
     delete(id: string): Promise<boolean>;
     read(id: string): Promise<string | undefined>;
-    selectDirectory(): Promise<string | null>;
+    selectDirectory(defaultPath?: string): Promise<string | null>;
     selectArchive(): Promise<string | null>;
     reveal(id: string): Promise<boolean>;
     marketProviders(): Promise<MarketProviderInfo[]>;

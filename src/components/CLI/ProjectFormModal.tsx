@@ -68,7 +68,7 @@ export function ProjectFormModal({
 
   const addFolder = async () => {
     try {
-      const path = await cliClient.selectDirectory();
+      const path = await cliClient.selectDirectory(primaryPath || folders[0] || undefined);
       if (!path) return;
       const normalized = normalizeFolderPath(path);
       if (folders.some((folder) => pathsEqual(folder, normalized))) return;

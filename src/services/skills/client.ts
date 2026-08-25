@@ -24,7 +24,8 @@ export const skillsClient = {
     api().setTrusted(id, trusted),
   delete: (id: string): Promise<boolean> => api().delete(id),
   read: (id: string): Promise<string | undefined> => api().read(id),
-  selectDirectory: (): Promise<string | null> => api().selectDirectory(),
+  selectDirectory: (defaultPath?: string): Promise<string | null> =>
+    api().selectDirectory(defaultPath),
   selectArchive: (): Promise<string | null> => api().selectArchive(),
   reveal: (id: string): Promise<boolean> => api().reveal(id),
   marketProviders: (): Promise<MarketProviderInfo[]> => api().marketProviders(),

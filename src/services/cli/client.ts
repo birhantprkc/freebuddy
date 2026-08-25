@@ -319,8 +319,8 @@ export const cliClient = {
   updateMessage(input: UpdateMessageInput): Promise<void> {
     return api().updateMessage(input);
   },
-  selectDirectory(): Promise<string | null> {
-    return api().selectDirectory();
+  selectDirectory(defaultPath?: string): Promise<string | null> {
+    return api().selectDirectory(defaultPath);
   },
   searchWorkspaceFiles(
     cwd: string,
