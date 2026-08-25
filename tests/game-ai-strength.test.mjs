@@ -515,6 +515,7 @@ test("game lobby persists difficulty into conversation metadata", () => {
     "utf8"
   );
   assert.match(canvas, /agentAutoPlayScheduled/);
+  assert.match(canvas, /gameDifficulty === "hard"\s*&&\s*snapshot\.lastMove\.player === snapshot\.agentSide/);
 
   const gomokuBoard = fs.readFileSync(
     new URL("../public/games/gomoku/game.js", import.meta.url),

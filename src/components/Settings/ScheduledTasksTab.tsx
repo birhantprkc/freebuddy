@@ -414,7 +414,7 @@ export function ScheduledTasksTab({
   };
 
   const chooseWorkingDirectory = async () => {
-    const directory = await cliClient.selectDirectory();
+    const directory = await cliClient.selectDirectory(draft.cwd || undefined);
     if (directory) {
       setDraft((current) => ({ ...current, cwd: directory }));
     }

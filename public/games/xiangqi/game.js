@@ -20,6 +20,7 @@
   let legalTargets = [];
   let hoverCoord = null;
   let initialized = false;
+  let winner = null;
   let playerWasInCheck = false;
   let agentWasInCheck = false;
 
@@ -34,55 +35,207 @@
   const retryAgentBtn = document.getElementById("retry-agent-btn");
   const playerCapturedContainer = document.getElementById("player-captured");
   const agentCapturedContainer = document.getElementById("agent-captured");
-  const agentNameLabel = document.getElementById("agent-name-label");
+  const playerAvatarIcon = document.getElementById("player-avatar-icon");
+  const playerNameLabel = document.getElementById("player-name-label");
+  const playerSideLabel = document.getElementById("player-side-label");
+  const playerPieceIndicator = document.getElementById("player-piece-indicator");
   const agentAvatarIcon = document.getElementById("agent-avatar-icon");
-  const speechAvatar = document.getElementById("speech-avatar");
+  const agentNameLabel = document.getElementById("agent-name-label");
+  const agentSideLabel = document.getElementById("agent-side-label");
+  const agentPieceIndicator = document.getElementById("agent-piece-indicator");
   const playerBadge = document.getElementById("player-badge");
   const agentBadge = document.getElementById("agent-badge");
-  const playerPieceIndicator = document.getElementById("player-piece-indicator");
-  const agentPieceIndicator = document.getElementById("agent-piece-indicator");
-  const playerSideLabel = document.getElementById("player-side-label");
-  const agentSideLabel = document.getElementById("agent-side-label");
+  const speechAvatar = document.getElementById("speech-avatar");
+  const moveHistoryPanel = document.getElementById("move-history-panel");
+  const moveHistoryList = document.getElementById("move-history-list");
+  const historyStepCount = document.getElementById("history-step-count");
+  const historyEmpty = document.getElementById("history-empty");
+  const historyListWrapper = document.getElementById("history-list-wrapper");
+
+  let participants = null;
+  let gameMode = "player_vs_agent";
+  let moveHistory = [];
 
   function sideName(side) {
     return side === 1 ? "红方" : "黑方";
   }
 
+  function updateMoveHistory(history) {
+    moveHistory = history || [];
+    if (!moveHistoryList) return;
+
+    if (historyStepCount) {
+      historyStepCount.textContent = `${moveHistory.length} 手`;
+    }
+
+    if (moveHistory.length === 0) {
+      if (historyEmpty) historyEmpty.style.display = "block";
+      moveHistoryList.innerHTML = "";
+      return;
+    }
+
+    if (historyEmpty) historyEmpty.style.display = "none";
+    moveHistoryList.innerHTML = "";
+
+    moveHistory.forEach((move, idx) => {
+      const isLatest = idx === moveHistory.length - 1;
+      const li = document.createElement("li");
+      li.className = `history-item${isLatest ? " latest" : ""}`;
+
+      const stepNum = document.createElement("span");
+      stepNum.className = "step-num";
+      stepNum.textContent = `${String(idx + 1).padStart(2, "0")}.`;
+
+      const avatarMini = document.createElement("span");
+      avatarMini.className = "history-avatar-mini";
+      const participant = move.player === 1 ? participants?.side1 : participants?.side2;
+      const defaultEmoji = move.player === 1 ? (playerSide === 1 ? "👤" : "🤖") : (playerSide === 2 ? "👤" : "🤖");
+      renderAvatar(avatarMini, participant, defaultEmoji);
+
+      const actorTag = document.createElement("span");
+      const isRed = move.player === 1;
+      actorTag.className = `actor-tag ${isRed ? "red" : "black"}`;
+      actorTag.textContent = isRed ? "红" : "黑";
+
+      const notation = document.createElement("span");
+      notation.className = "move-notation";
+      notation.textContent = move.chineseMove
+        ? `${move.chineseMove}`
+        : move.actionId;
+      if (move.reason) {
+        notation.title = move.reason;
+      }
+
+      const tagsWrap = document.createElement("span");
+      tagsWrap.className = "history-tags";
+
+      if (move.capturedPieceName) {
+        const eatBadge = document.createElement("span");
+        eatBadge.className = "tag-badge";
+        eatBadge.textContent = `吃${move.capturedPieceName}`;
+        tagsWrap.appendChild(eatBadge);
+      }
+
+      if (move.checkmate || (isLatest && (status === "player_won" || status === "agent_won"))) {
+        const winBadge = document.createElement("span");
+        winBadge.className = "tag-badge win";
+        winBadge.textContent = "绝杀";
+        tagsWrap.appendChild(winBadge);
+      } else if (move.givesCheck) {
+        const checkBadge = document.createElement("span");
+        checkBadge.className = "tag-badge check";
+        checkBadge.textContent = "将军";
+        tagsWrap.appendChild(checkBadge);
+      }
+
+      li.appendChild(stepNum);
+      li.appendChild(avatarMini);
+      li.appendChild(actorTag);
+      li.appendChild(notation);
+      li.appendChild(tagsWrap);
+
+      moveHistoryList.appendChild(li);
+    });
+
+    if (historyListWrapper) {
+      historyListWrapper.scrollTop = historyListWrapper.scrollHeight;
+    }
+  }
+
+  function renderAvatar(el, participant, fallbackEmoji = "🤖") {
+    if (!el) return;
+    if (participant?.avatarUrl) {
+      el.innerHTML = `<img src="${participant.avatarUrl}" alt="avatar" class="agent-avatar-img" />`;
+    } else if (participant?.kind === "engine") {
+      el.textContent = "🧠";
+    } else if (participant?.kind === "player") {
+      el.textContent = "👤";
+    } else {
+      el.textContent = fallbackEmoji;
+    }
+  }
+
   function updateSideLabels() {
-    const playerIsRed = playerSide === 1;
-    if (playerBadge) playerBadge.className = `player-badge ${playerIsRed ? "red" : "black"}`;
-    if (agentBadge) agentBadge.className = `player-badge ${playerIsRed ? "black" : "red"}`;
-    if (playerPieceIndicator) {
-      playerPieceIndicator.className = `piece-indicator ${playerIsRed ? "red" : "black"}`;
-      playerPieceIndicator.textContent = playerIsRed ? "帥" : "將";
+    if (gameMode === "agent_vs_agent" || gameMode === "agent_vs_engine" || playerSide === 0) {
+      const side1Name = participants?.side1?.name || (participants?.side1?.kind === "engine" ? "极智引擎" : "红方 AI");
+      const side2Name = participants?.side2?.name || (participants?.side2?.kind === "engine" ? "极智引擎" : "黑方 AI");
+      if (playerBadge) playerBadge.className = "player-badge red";
+      if (agentBadge) agentBadge.className = "player-badge black";
+      if (playerPieceIndicator) {
+        playerPieceIndicator.className = "piece-indicator red";
+        playerPieceIndicator.textContent = "帥";
+      }
+      if (agentPieceIndicator) {
+        agentPieceIndicator.className = "piece-indicator black";
+        agentPieceIndicator.textContent = "將";
+      }
+      if (playerNameLabel) playerNameLabel.textContent = side1Name;
+      if (playerSideLabel) playerSideLabel.textContent = "(红方)";
+      renderAvatar(playerAvatarIcon, participants?.side1, "🤖");
+
+      if (agentNameLabel) agentNameLabel.textContent = side2Name;
+      if (agentSideLabel) agentSideLabel.textContent = "(黑方)";
+      renderAvatar(agentAvatarIcon, participants?.side2, "🤖");
+
+      if (playerCapturedContainer) playerCapturedContainer.title = `${side1Name}吃掉的黑子`;
+      if (agentCapturedContainer) agentCapturedContainer.title = `${side2Name}吃掉的红子`;
+    } else {
+      const playerIsRed = playerSide === 1;
+      if (playerBadge) playerBadge.className = `player-badge ${playerIsRed ? "red" : "black"}`;
+      if (agentBadge) agentBadge.className = `player-badge ${playerIsRed ? "black" : "red"}`;
+      if (playerPieceIndicator) {
+        playerPieceIndicator.className = `piece-indicator ${playerIsRed ? "red" : "black"}`;
+        playerPieceIndicator.textContent = playerIsRed ? "帥" : "將";
+      }
+      if (agentPieceIndicator) {
+        agentPieceIndicator.className = `piece-indicator ${playerIsRed ? "black" : "red"}`;
+        agentPieceIndicator.textContent = playerIsRed ? "將" : "帥";
+      }
+      if (playerNameLabel) playerNameLabel.textContent = "你";
+      if (playerSideLabel) playerSideLabel.textContent = `(${sideName(playerSide)})`;
+      renderAvatar(playerAvatarIcon, { kind: "player" }, "👤");
+
+      const agentParticipant = agentSide === 1 ? participants?.side1 : participants?.side2;
+      const agName = agentParticipant?.name || (agentNameLabel?.textContent && agentNameLabel.textContent !== "AI Agent" ? agentNameLabel.textContent : "AI Agent");
+      if (agentNameLabel) agentNameLabel.textContent = agName;
+      if (agentSideLabel) agentSideLabel.textContent = `(${sideName(agentSide)})`;
+      renderAvatar(agentAvatarIcon, agentParticipant, "🤖");
+
+      if (playerCapturedContainer) playerCapturedContainer.title = `你吃掉的${sideName(agentSide).slice(0, 1)}子`;
+      if (agentCapturedContainer) agentCapturedContainer.title = `AI 吃掉的${sideName(playerSide).slice(0, 1)}子`;
     }
-    if (agentPieceIndicator) {
-      agentPieceIndicator.className = `piece-indicator ${playerIsRed ? "black" : "red"}`;
-      agentPieceIndicator.textContent = playerIsRed ? "將" : "帥";
+  }
+
+  function updateSpeechBanner(message, speakerPlayer) {
+    if (speechText) speechText.textContent = message || "";
+    if (!speechAvatar) return;
+    let participant = null;
+    if (speakerPlayer === 1) {
+      participant = participants?.side1;
+    } else if (speakerPlayer === 2) {
+      participant = participants?.side2;
+    } else if (gameMode === "player_vs_agent") {
+      participant = agentSide === 1 ? participants?.side1 : participants?.side2;
     }
-    if (playerSideLabel) playerSideLabel.textContent = `你 (${sideName(playerSide)})`;
-    if (agentSideLabel) agentSideLabel.textContent = `(${sideName(agentSide)})`;
-    if (playerCapturedContainer) playerCapturedContainer.title = `你吃掉的${sideName(agentSide).slice(0, 1)}子`;
-    if (agentCapturedContainer) agentCapturedContainer.title = `AI 吃掉的${sideName(playerSide).slice(0, 1)}子`;
+    renderAvatar(speechAvatar, participant, "🤖");
   }
 
   function updateAgentInfo(info) {
     if (!info) return;
     const displayName = info.modelName || info.agentName || "AI Agent";
-    if (agentNameLabel) {
+    if (agentNameLabel && (!participants || gameMode === "player_vs_agent")) {
       agentNameLabel.textContent = displayName;
       agentNameLabel.title = info.agentName ? `${info.agentName} (${info.modelName || "AI"})` : displayName;
     }
     if (info.avatarUrl) {
-      if (agentAvatarIcon) {
-        agentAvatarIcon.innerHTML = `<img src="${info.avatarUrl}" alt="agent" class="agent-avatar-img" />`;
+      if (gameMode === "player_vs_agent") {
+        if (agentAvatarIcon && (!participants?.side2?.avatarUrl)) {
+          agentAvatarIcon.innerHTML = `<img src="${info.avatarUrl}" alt="agent" class="agent-avatar-img" />`;
+        }
+        if (speechAvatar && (!participants?.side2?.avatarUrl)) {
+          speechAvatar.innerHTML = `<img src="${info.avatarUrl}" alt="agent" class="speech-avatar-img" />`;
+        }
       }
-      if (speechAvatar) {
-        speechAvatar.innerHTML = `<img src="${info.avatarUrl}" alt="agent" class="speech-avatar-img" />`;
-      }
-    } else {
-      if (agentAvatarIcon) agentAvatarIcon.textContent = "🤖";
-      if (speechAvatar) speechAvatar.textContent = "🤖";
     }
   }
 
@@ -105,8 +258,12 @@
       }
     }
 
-    const playerCapturedOrder = playerSide === 1 ? BLACK_ORDER : RED_ORDER;
-    const agentCapturedOrder = playerSide === 1 ? RED_ORDER : BLACK_ORDER;
+    const isLeftRed = (gameMode === "agent_vs_agent" || gameMode === "agent_vs_engine" || playerSide === 0)
+      ? true
+      : playerSide === 1;
+
+    const playerCapturedOrder = isLeftRed ? BLACK_ORDER : RED_ORDER;
+    const agentCapturedOrder = isLeftRed ? RED_ORDER : BLACK_ORDER;
 
     // Pieces captured by the player (missing opponent pieces).
     playerCapturedContainer.innerHTML = "";
@@ -155,7 +312,10 @@
     return b;
   }
 
-  let isMuted = localStorage.getItem("freebuddy_game_muted") === "true";
+  let isMuted = false;
+  try {
+    isMuted = window.localStorage?.getItem("freebuddy_game_muted") === "true";
+  } catch {}
   let audioCtx = null;
   let gameOverSoundPlayed = false;
 
@@ -176,7 +336,9 @@
     updateMuteButtonUI();
     muteBtn.addEventListener("click", () => {
       isMuted = !isMuted;
-      localStorage.setItem("freebuddy_game_muted", String(isMuted));
+      try {
+        window.localStorage?.setItem("freebuddy_game_muted", String(isMuted));
+      } catch {}
       updateMuteButtonUI();
     });
   }
@@ -400,6 +562,14 @@
     canvas.height = Math.round(height * dpr);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
+
+    if (moveHistoryPanel) {
+      if (window.innerWidth >= 640) {
+        moveHistoryPanel.style.height = `${height}px`;
+      } else {
+        moveHistoryPanel.style.height = "";
+      }
+    }
 
     drawBoard();
   }
@@ -902,6 +1072,11 @@
       return;
     }
 
+    if (playerSide === 0 || gameMode === "agent_vs_agent" || gameMode === "agent_vs_engine") {
+      statusText.textContent = "当前为观战模式，棋子由 AI 自动走子。";
+      return;
+    }
+
     if (turn !== playerSide) {
       statusText.textContent = `当前轮到 AI Agent (${sideName(agentSide)}) 走子，请稍候...`;
       return;
@@ -948,6 +1123,7 @@
         legalTargets = [];
 
         playPieceSound(isCapture);
+        updateMoveHistory([...moveHistory, lastMove]);
         updateUI();
         drawBoard();
 
@@ -987,26 +1163,35 @@
     playerWasInCheck = playerInCheck;
     agentWasInCheck = agentInCheck;
 
-    if (status === "player_won") {
+    if (status === "player_won" || status === "agent_won") {
       if (!gameOverSoundPlayed) {
         gameOverSoundPlayed = true;
-        playVictorySound();
+        if (playerSide === 0 || winner === playerSide) {
+          playVictorySound();
+        } else {
+          playDefeatSound();
+        }
       }
-      turnBadge.className = "turn-indicator win";
-      turnBadge.textContent = "🏆 旗开得胜！你赢了";
-      statusText.textContent = "🎉 恭喜你绝杀获胜！棋局已完整保留供复盘截图。";
-      restartBtn.className = "btn primary";
-      restartBtn.textContent = "再来一局";
-      resignBtn.style.display = "none";
-      if (retryAgentBtn) retryAgentBtn.style.display = "none";
-    } else if (status === "agent_won") {
-      if (!gameOverSoundPlayed) {
-        gameOverSoundPlayed = true;
-        playDefeatSound();
+
+      if (playerSide === 0 || gameMode === "agent_vs_agent" || gameMode === "agent_vs_engine") {
+        const winSide = winner ?? (status === "player_won" ? 1 : 2);
+        const winnerName = winSide === 1
+          ? (participants?.side1?.name || "红方 AI")
+          : (participants?.side2?.name || "黑方 AI");
+        turnBadge.className = "turn-indicator win";
+        turnBadge.textContent = `🏆 ${winnerName} 获胜`;
+        statusText.textContent = `🎉 ${winnerName} 绝杀获胜！棋局已完整保留供复盘截图。`;
+      } else if (status === "player_won") {
+        turnBadge.className = "turn-indicator win";
+        turnBadge.textContent = "🏆 旗开得胜！你赢了";
+        statusText.textContent = "🎉 恭喜你绝杀获胜！棋局已完整保留供复盘截图。";
+      } else {
+        const agentName = agentNameLabel?.textContent || "AI Agent";
+        turnBadge.className = "turn-indicator lose";
+        turnBadge.textContent = "🤖 Agent 绝杀获胜";
+        statusText.textContent = `${agentName} 绝杀获胜！棋局已完整保留供复盘截图。`;
       }
-      turnBadge.className = "turn-indicator lose";
-      turnBadge.textContent = "🤖 Agent 绝杀获胜";
-      statusText.textContent = "本局对战结束，棋局已完整保留供复盘截图。";
+
       restartBtn.className = "btn primary";
       restartBtn.textContent = "再来一局";
       resignBtn.style.display = "none";
@@ -1023,8 +1208,24 @@
       gameOverSoundPlayed = false;
       restartBtn.className = "btn";
       restartBtn.textContent = "重新开局";
-      resignBtn.style.display = "inline-block";
-      if (turn === playerSide) {
+      resignBtn.style.display = playerSide === 0 ? "none" : "inline-block";
+      if (playerSide === 0) {
+        const curSideName = turn === 1
+          ? (participants?.side1?.name || "红方 AI")
+          : (participants?.side2?.name || "黑方 AI");
+        const sideInCheck = isClientKingInCheck(turn === 1);
+        if (sideInCheck) {
+          turnBadge.className = "turn-indicator in-check";
+          turnBadge.textContent = `⚠️ 将军！${curSideName} 正在应将`;
+          statusText.className = "status-text in-check";
+          statusText.textContent = `【观战中】${curSideName} 正被攻击，必须应将解除威胁。`;
+        } else {
+          turnBadge.className = "turn-indicator active-agent";
+          turnBadge.textContent = `${curSideName} 思考中... (${sideName(turn)})`;
+          statusText.textContent = `【观战中】${curSideName} 正在思考走子方案...`;
+        }
+        if (retryAgentBtn) retryAgentBtn.style.display = "none";
+      } else if (turn === playerSide) {
         if (playerInCheck) {
           turnBadge.className = "turn-indicator in-check";
           turnBadge.textContent = "⚠️ 将军！请立即应将";
@@ -1053,21 +1254,50 @@
     updateCapturedTray();
   }
 
-  function syncState(snapshot) {
-    if (!snapshot) return;
+  function syncState(rawSnapshot) {
+    if (!rawSnapshot) return;
+    const snapshot = rawSnapshot.gameState || rawSnapshot;
     const prevMove = lastMove;
     board = snapshot.board || board;
     turn = snapshot.turn ?? turn;
     playerSide = snapshot.playerSide ?? playerSide;
     agentSide = snapshot.agentSide ?? agentSide;
     status = snapshot.status || status;
+    winner = snapshot.winner ?? (snapshot.status === "player_won" ? snapshot.playerSide : snapshot.status === "agent_won" ? snapshot.agentSide : winner);
     lastMove = snapshot.lastMove || null;
+    gameMode = snapshot.gameMode || (playerSide === 0 ? "agent_vs_agent" : "player_vs_agent");
+    if (snapshot.participants) {
+      participants = {
+        side1: {
+          ...(participants?.side1 || {}),
+          ...snapshot.participants.side1,
+          avatarUrl: snapshot.participants.side1?.avatarUrl || participants?.side1?.avatarUrl
+        },
+        side2: {
+          ...(participants?.side2 || {}),
+          ...snapshot.participants.side2,
+          avatarUrl: snapshot.participants.side2?.avatarUrl || participants?.side2?.avatarUrl
+        }
+      };
+    }
 
     if (snapshot.chatHistory && snapshot.chatHistory.length > 0) {
       const latestAgentChat = [...snapshot.chatHistory].reverse().find((c) => c.sender === "agent");
       if (latestAgentChat) {
-        speechText.textContent = latestAgentChat.message;
+        const speakerPlayer = latestAgentChat.player || snapshot.lastMove?.player;
+        updateSpeechBanner(latestAgentChat.message, speakerPlayer);
       }
+    }
+
+    if (snapshot.moveHistory) {
+      updateMoveHistory(snapshot.moveHistory);
+    } else if (snapshot.lastMove) {
+      const alreadyHas = moveHistory.some(m => m.actionId === snapshot.lastMove.actionId && m.player === snapshot.lastMove.player);
+      if (!alreadyHas) {
+        updateMoveHistory([...moveHistory, snapshot.lastMove]);
+      }
+    } else if (snapshot.stepCount === 0 || snapshot.status === "waiting") {
+      updateMoveHistory([]);
     }
 
     if (initialized && lastMove && (!prevMove || prevMove.actionId !== lastMove.actionId)) {
@@ -1095,7 +1325,8 @@
     } else if (data.type === "AGENT_INFO_UPDATE") {
       updateAgentInfo(data.payload);
     } else if (data.type === "AGENT_CHAT") {
-      speechText.textContent = data.payload?.message || "";
+      const speakerPlayer = data.payload?.player || (turn === 1 ? 2 : 1);
+      updateSpeechBanner(data.payload?.message || "", speakerPlayer);
     } else if (data.type === "MOVE_REJECTED") {
       selectedCoord = null;
       legalTargets = [];

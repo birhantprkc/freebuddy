@@ -91,12 +91,67 @@ const pendingAutoMoves = new Map<string, PendingAutoMove>();
 
 export const ENGINE_AUTO_MOVE_DELAY_MS = 550;
 
-function withAsciiBoard(game: GameInstance): GameStateSnapshot {
-  const snapshot = game.getSnapshot();
+function withAsciiBoard(game: GameInstance, options?: { includeHistory?: boolean }): GameStateSnapshot {
+  const snapshot = game.getSnapshot(options);
   snapshot.asciiBoard =
     snapshot.gameType === "xiangqi"
       ? renderXiangqiBoardAscii(snapshot.board)
       : renderGomokuBoardAscii(snapshot.board);
+  return snapshot;
+}
+
+export function enrichSnapshot(game: GameInstance, conversationId?: string): GameStateSnapshot {
+  const snapshot = withAsciiBoard(game, { includeHistory: true });
+  if (!conversationId) return snapshot;
+  const conv = getConversationFn ? getConversationFn(conversationId) : undefined;
+  const meta = conv?.metadata;
+  if (meta) {
+    snapshot.gameMode = (meta.gameMode as any) || "player_vs_agent";
+    if (typeof meta.engineSide === "number") {
+      snapshot.engineSide = meta.engineSide;
+    }
+    if (meta.gameMode === "agent_vs_agent") {
+      snapshot.participants = {
+        side1: {
+          id: String(meta.agent1Id || "agent1"),
+          name: String(meta.agent1Name || "AI 1"),
+          model: meta.agent1Model ? String(meta.agent1Model) : undefined,
+          side: 1,
+          kind: "agent"
+        },
+        side2: {
+          id: String(meta.agent2Id || "agent2"),
+          name: String(meta.agent2Name || "AI 2"),
+          model: meta.agent2Model ? String(meta.agent2Model) : undefined,
+          side: 2,
+          kind: "agent"
+        }
+      };
+    } else if (meta.gameMode === "agent_vs_engine") {
+      const agentSide = meta.agentSide === 2 ? 2 : 1;
+      const engSide = meta.engineSide === 1 ? 1 : 2;
+      snapshot.participants = {
+        side1: agentSide === 1
+          ? {
+              id: String(meta.opponentAgentId || conv.agentId || "agent"),
+              name: String(conv.agentName || "AI Agent"),
+              model: meta.opponentModel ? String(meta.opponentModel) : undefined,
+              side: 1,
+              kind: "agent"
+            }
+          : { id: "engine", name: "极智引擎", side: 1, kind: "engine" },
+        side2: agentSide === 2
+          ? {
+              id: String(meta.opponentAgentId || conv.agentId || "agent"),
+              name: String(conv.agentName || "AI Agent"),
+              model: meta.opponentModel ? String(meta.opponentModel) : undefined,
+              side: 2,
+              kind: "agent"
+            }
+          : { id: "engine", name: "极智引擎", side: 2, kind: "engine" }
+      };
+    }
+  }
   return snapshot;
 }
 
@@ -125,8 +180,14 @@ export function getOrCreateGame(conversationId: string, gameType: GameType = "go
     const conv = getConversationFn ? getConversationFn(conversationId) : undefined;
     const saved = conv?.metadata?.gameState as GameStateSnapshot | undefined;
     const effectiveType = (saved?.gameType || conv?.metadata?.gameType || gameType) as GameType;
-    const configuredPlayerSide =
-      saved?.playerSide === 1 || saved?.playerSide === 2
+    const isSpectator =
+      conv?.metadata?.gameMode === "agent_vs_agent" ||
+      conv?.metadata?.gameMode === "agent_vs_engine" ||
+      conv?.metadata?.playerSide === 0;
+
+    const configuredPlayerSide = isSpectator
+      ? 0
+      : saved?.playerSide === 1 || saved?.playerSide === 2
         ? saved.playerSide
         : conv?.metadata?.hand === "agent_first"
           ? 2
@@ -215,7 +276,13 @@ export async function dispatchGameAction(
       return { ok: false, error: "Missing required 'actionId'." };
     }
 
-    const res = game.applyMove(actionId, game.agentSide, reason, {
+    const conv = getConversationFn ? getConversationFn(binding.conversationId) : undefined;
+    const mode = conv?.metadata?.gameMode;
+    const movingSide = (mode === "agent_vs_agent" || mode === "agent_vs_engine")
+      ? game.turn
+      : game.agentSide;
+
+    const res = game.applyMove(actionId, movingSide, reason, {
       rejectAvoidableMate: true
     });
     if (!res.ok) {
@@ -230,7 +297,7 @@ export async function dispatchGameAction(
         : undefined;
 
     persistGameState(binding.conversationId, game);
-    const snapshot = withAsciiBoard(game);
+    const snapshot = enrichSnapshot(game, binding.conversationId);
     broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     const moveLabel = res.chineseMove ? `${res.chineseMove} (${actionId})` : actionId;
@@ -240,6 +307,10 @@ export async function dispatchGameAction(
     else if (res.isCheck) factParts.push("将军");
     if (res.draw) factParts.push("三次重复，和棋");
     const factSuffix = factParts.length > 0 ? `；${factParts.join("，")}` : "";
+
+    // If game continues and next turn belongs to engine, schedule auto-move
+    scheduleAgentAutoMove(binding.conversationId, binding.webContents);
+
     return {
       ok: true,
       actionId,
@@ -262,7 +333,7 @@ export async function dispatchGameAction(
         ? `落子 ${moveLabel} 成功${factSuffix}，本局获胜。`
         : res.draw
           ? `落子 ${moveLabel} 成功${factSuffix}。`
-          : `落子 ${moveLabel} 成功${factSuffix}，轮到玩家行动。`
+          : `落子 ${moveLabel} 成功${factSuffix}，轮到下一方行动。`
     };
   }
 
@@ -275,7 +346,7 @@ export async function dispatchGameAction(
 
     const chat = game.addChat("agent", message, mood);
     persistGameState(binding.conversationId, game);
-    const snapshot = withAsciiBoard(game);
+    const snapshot = enrichSnapshot(game, binding.conversationId);
     broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     return {
@@ -295,7 +366,7 @@ export async function dispatchGameAction(
       return { ok: false, error: "Game is already over." };
     }
     persistGameState(binding.conversationId, game);
-    const snapshot = withAsciiBoard(game);
+    const snapshot = enrichSnapshot(game, binding.conversationId);
     broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
 
     return {
@@ -312,7 +383,7 @@ export async function dispatchGameAction(
         : new GomokuGameInstance(binding.conversationId, game.playerSide);
     activeGamesByConversation.set(binding.conversationId, newGame);
     persistGameState(binding.conversationId, newGame);
-    const snapshot = withAsciiBoard(newGame);
+    const snapshot = enrichSnapshot(newGame, binding.conversationId);
     broadcastGameUpdate(binding.webContents, snapshot, binding.conversationId);
     const autoPlayScheduled = scheduleAgentAutoMove(
       binding.conversationId,
@@ -342,6 +413,19 @@ export function cancelAgentAutoMove(conversationId: string): void {
     if (pending.worker) void pending.worker.terminate();
     pendingAutoMoves.delete(conversationId);
   }
+}
+
+function shouldScheduleEngineMove(conversationId: string, game: GameInstance): boolean {
+  if (game.status !== "playing") return false;
+  const conv = getConversationFn ? getConversationFn(conversationId) : undefined;
+  const meta = conv?.metadata;
+  if (meta?.gameMode === "agent_vs_engine") {
+    const engineSide = typeof meta.engineSide === "number"
+      ? meta.engineSide
+      : (meta.hand === "agent_first" ? 2 : 1);
+    return game.turn === engineSide;
+  }
+  return conversationDifficulty(conversationId) === "hard" && game.turn === game.agentSide;
 }
 
 function searchInWorker(
@@ -381,7 +465,7 @@ function searchInWorker(
       worker.postMessage({
         gameType: snapshot.gameType,
         board: snapshot.board,
-        player: snapshot.agentSide,
+        player: snapshot.turn,
         maxDepth: 6,
         timeBudgetMs: 700,
         positionHistory,
@@ -412,7 +496,8 @@ function applyEngineSuggestion(
 
   for (const actionId of actionIds) {
     const reason = actionId === suggestion?.actionId ? suggestion.reason : "选择安全合法着法";
-    const result = game.applyMove(actionId, game.agentSide, reason, {
+    const movingSide = game.turn;
+    const result = game.applyMove(actionId, movingSide, reason, {
       rejectAvoidableMate: true
     });
     if (!result.ok) continue;
@@ -420,7 +505,7 @@ function applyEngineSuggestion(
       game.addChat("agent", reason.trim());
     }
     persistGameState(conversationId, game);
-    broadcastGameUpdate(webContents, withAsciiBoard(game), conversationId);
+    broadcastGameUpdate(webContents, enrichSnapshot(game, conversationId), conversationId);
     return true;
   }
   return false;
@@ -430,9 +515,8 @@ function scheduleAgentAutoMove(
   conversationId: string,
   webContents?: WebContents
 ): boolean {
-  if (conversationDifficulty(conversationId) !== "hard") return false;
   const game = activeGamesByConversation.get(conversationId);
-  if (!game || game.status !== "playing" || game.turn !== game.agentSide) {
+  if (!game || !shouldScheduleEngineMove(conversationId, game)) {
     return false;
   }
 
@@ -447,7 +531,7 @@ function scheduleAgentAutoMove(
         if (
           inst.gameId !== expectedGameId ||
           inst.status !== "playing" ||
-          inst.turn !== inst.agentSide ||
+          !shouldScheduleEngineMove(conversationId, inst) ||
           inst.moveHistory.length !== expectedStepCount
         ) return;
 
@@ -463,7 +547,7 @@ function scheduleAgentAutoMove(
         if (
           current.gameId !== expectedGameId ||
           current.status !== "playing" ||
-          current.turn !== current.agentSide ||
+          !shouldScheduleEngineMove(conversationId, current) ||
           current.moveHistory.length !== expectedStepCount
         ) return;
         if (!applyEngineSuggestion(conversationId, current, suggestion, webContents)) {
@@ -489,7 +573,7 @@ export function handleGetGameState(
 ): GameStateSnapshot {
   const game = getOrCreateGame(conversationId);
   scheduleAgentAutoMove(conversationId, webContents);
-  return game.getSnapshot();
+  return enrichSnapshot(game, conversationId);
 }
 
 export function handlePlayerMove(
@@ -498,12 +582,13 @@ export function handlePlayerMove(
   webContents?: WebContents
 ): GameToolResult {
   const game = getOrCreateGame(conversationId);
-  const res = game.applyMove(actionId, game.playerSide);
+  const movingSide = game.playerSide || game.turn;
+  const res = game.applyMove(actionId, movingSide);
   if (!res.ok) {
     return { ok: false, error: res.error };
   }
   persistGameState(conversationId, game);
-  const snapshot = withAsciiBoard(game);
+  const snapshot = enrichSnapshot(game, conversationId);
   broadcastGameUpdate(webContents, snapshot, conversationId);
   const autoPlayScheduled = scheduleAgentAutoMove(conversationId, webContents);
   return {
@@ -524,7 +609,8 @@ export function handleAgentMove(
   webContents?: WebContents
 ): GameToolResult {
   const game = getOrCreateGame(conversationId);
-  const res = game.applyMove(actionId, game.agentSide, reason, {
+  const movingSide = game.turn;
+  const res = game.applyMove(actionId, movingSide, reason, {
     rejectAvoidableMate: true
   });
   if (!res.ok) {
@@ -535,8 +621,9 @@ export function handleAgentMove(
     game.addChat("agent", speech, mood);
   }
   persistGameState(conversationId, game);
-  const snapshot = withAsciiBoard(game);
+  const snapshot = enrichSnapshot(game, conversationId);
   broadcastGameUpdate(webContents, snapshot, conversationId);
+  scheduleAgentAutoMove(conversationId, webContents);
   return {
     ok: true,
     actionId,
@@ -558,7 +645,7 @@ export function handleSendChat(
   }
   const chat = game.addChat("agent", trimmed, mood);
   persistGameState(conversationId, game);
-  const snapshot = withAsciiBoard(game);
+  const snapshot = enrichSnapshot(game, conversationId);
   broadcastGameUpdate(webContents, snapshot, conversationId);
   return {
     ok: true,
@@ -579,7 +666,7 @@ export function handleResetGame(
     : new GomokuGameInstance(conversationId, existing.playerSide);
   activeGamesByConversation.set(conversationId, newGame);
   persistGameState(conversationId, newGame);
-  const snapshot = withAsciiBoard(newGame);
+  const snapshot = enrichSnapshot(newGame, conversationId);
   broadcastGameUpdate(webContents, snapshot, conversationId);
   const autoPlayScheduled = scheduleAgentAutoMove(conversationId, webContents);
   return {
@@ -601,7 +688,7 @@ export function handlePlayerResign(
     return { ok: false, error: "Game is already over." };
   }
   persistGameState(conversationId, game);
-  const snapshot = withAsciiBoard(game);
+  const snapshot = enrichSnapshot(game, conversationId);
   broadcastGameUpdate(webContents, snapshot, conversationId);
   return {
     ok: true,

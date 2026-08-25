@@ -2594,7 +2594,7 @@ function NewTaskHome({
       return;
     }
     try {
-      const path = await cliClient.selectDirectory();
+      const path = await cliClient.selectDirectory(cwd || undefined);
       if (path) onCwd(path);
     } catch (e) {
       console.error("Error picking directory:", e);

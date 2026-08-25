@@ -12,8 +12,10 @@
     <header class="game-header">
       <div class="player-col left">
         <div class="player-badge">
+          <span id="player-avatar-icon" class="agent-avatar-mini">👤</span>
+          <span id="player-name-label">你</span>
+          <span id="player-side-label" class="side-tag">(黑棋)</span>
           <span id="player-side-dot" class="stone-dot black"></span>
-          <span id="player-side-label">你 (黑棋)</span>
         </div>
       </div>
       <div id="turn-badge" class="turn-indicator active-player">
@@ -22,10 +24,10 @@
       <div class="header-right">
         <div class="player-col right">
           <div class="player-badge">
-            <span id="agent-avatar-icon" class="agent-avatar-mini">🤖</span>
-            <span id="agent-name-label">AI Agent</span>
-            <span id="agent-side-label" class="side-tag">(白棋)</span>
             <span id="agent-side-dot" class="stone-dot white"></span>
+            <span id="agent-side-label" class="side-tag">(白棋)</span>
+            <span id="agent-name-label">AI Agent</span>
+            <span id="agent-avatar-icon" class="agent-avatar-mini">🤖</span>
           </div>
         </div>
       </div>
@@ -37,10 +39,22 @@
       <div id="speech-text" class="content">准备好了吗？我已经接入了 Game MCP 工具，请赐教！</div>
     </div>
 
-    <!-- Board Area (100% Unobstructed for Screenshot & Analysis) -->
-    <div class="board-wrapper">
-      <canvas id="gomoku-canvas"></canvas>
-    </div>
+    <!-- Main Content Area: Board + Move History Panel -->
+    <main class="game-main-area">
+      <div class="board-wrapper">
+        <canvas id="gomoku-canvas"></canvas>
+      </div>
+      <aside class="move-history-panel" id="move-history-panel">
+        <div class="history-header">
+          <span class="history-title">📜 对弈谱</span>
+          <span id="history-step-count" class="history-badge">0 手</span>
+        </div>
+        <div class="history-list-wrapper" id="history-list-wrapper">
+          <div id="history-empty" class="history-empty">等待开局落子...</div>
+          <ol id="move-history-list" class="move-history-list"></ol>
+        </div>
+      </aside>
+    </main>
 
     <!-- Footer Controls -->
     <footer class="game-footer">

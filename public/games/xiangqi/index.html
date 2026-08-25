@@ -12,8 +12,10 @@
     <header class="game-header">
       <div class="player-col left">
         <div id="player-badge" class="player-badge red">
+          <span id="player-avatar-icon" class="agent-avatar-mini">👤</span>
+          <span id="player-name-label">你</span>
+          <span id="player-side-label" class="side-tag">(红方)</span>
           <span id="player-piece-indicator" class="piece-indicator red">帥</span>
-          <span id="player-side-label">你 (红方)</span>
         </div>
         <div id="player-captured" class="captured-tray" title="你吃掉的黑子"></div>
       </div>
@@ -23,10 +25,10 @@
       <div class="header-right">
         <div class="player-col right">
           <div id="agent-badge" class="player-badge black">
-            <span id="agent-avatar-icon" class="agent-avatar-mini">🤖</span>
-            <span id="agent-name-label">AI Agent</span>
-            <span id="agent-side-label" class="side-tag">(黑方)</span>
             <span id="agent-piece-indicator" class="piece-indicator black">將</span>
+            <span id="agent-side-label" class="side-tag">(黑方)</span>
+            <span id="agent-name-label">AI Agent</span>
+            <span id="agent-avatar-icon" class="agent-avatar-mini">🤖</span>
           </div>
           <div id="agent-captured" class="captured-tray right" title="AI 吃掉的红子"></div>
         </div>
@@ -39,10 +41,22 @@
       <div id="speech-text" class="content">楚河汉界，九宫争雄！请执红先行！</div>
     </div>
 
-    <!-- Board Area (100% Unobstructed for Screenshot & Analysis) -->
-    <div class="board-wrapper">
-      <canvas id="xiangqi-canvas"></canvas>
-    </div>
+    <!-- Main Content Area: Board + Move History Panel -->
+    <main class="game-main-area">
+      <div class="board-wrapper">
+        <canvas id="xiangqi-canvas"></canvas>
+      </div>
+      <aside class="move-history-panel" id="move-history-panel">
+        <div class="history-header">
+          <span class="history-title">📜 对弈谱</span>
+          <span id="history-step-count" class="history-badge">0 手</span>
+        </div>
+        <div class="history-list-wrapper" id="history-list-wrapper">
+          <div id="history-empty" class="history-empty">等待开局走子...</div>
+          <ol id="move-history-list" class="move-history-list"></ol>
+        </div>
+      </aside>
+    </main>
 
     <!-- Footer Controls -->
     <footer class="game-footer">

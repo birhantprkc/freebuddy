@@ -82,19 +82,25 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
-app.setName(APP_NAME);
-app.setAppUserModelId("dev.freebuddy.app");
+if (!app.isPackaged) {
+  app.setName("FreeBuddy Dev");
+  app.setPath("userData", path.join(app.getPath("appData"), "freebuddy-dev"));
+  app.setAppUserModelId("dev.freebuddy.app.dev");
+} else {
+  app.setName(APP_NAME);
+  app.setAppUserModelId("dev.freebuddy.app");
+}
 if (process.platform === "darwin") {
   app.setActivationPolicy("regular");
 }
 process.env.FB_APP_VERSION = APP_VERSION;
 app.setAboutPanelOptions({
-  applicationName: APP_NAME,
+  applicationName: app.isPackaged ? APP_NAME : `${APP_NAME} (Dev)`,
   applicationVersion: APP_VERSION,
   version: APP_VERSION
 });
 crashReporter.start({
-  productName: APP_NAME,
+  productName: app.isPackaged ? APP_NAME : `${APP_NAME} Dev`,
   uploadToServer: false,
   compress: false
 });
@@ -1392,7 +1398,7 @@ function createWindow() {
     height: 800,
     minWidth: 960,
     minHeight: 640,
-    title: APP_NAME,
+    title: app.isPackaged ? APP_NAME : `${APP_NAME} [DEV]`,
     ...(appIcon ? { icon: appIcon } : {}),
     ...windowChromeOptions(),
     backgroundColor: "#0b1329",

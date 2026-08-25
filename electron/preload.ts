@@ -183,7 +183,8 @@ const cli = {
   updateMessage: (input: unknown) =>
     ipcRenderer.invoke("cli:updateMessage", input),
 
-  selectDirectory: () => ipcRenderer.invoke("cli:selectDirectory"),
+  selectDirectory: (defaultPath?: string) =>
+    ipcRenderer.invoke("cli:selectDirectory", defaultPath),
   searchWorkspaceFiles: (cwd: string, query: string, limit?: number, roots?: string[]) =>
     ipcRenderer.invoke("cli:searchWorkspaceFiles", { cwd, query, limit, roots }),
   selectAttachments: () => ipcRenderer.invoke("cli:selectAttachments"),
@@ -708,7 +709,8 @@ const skills = {
     ipcRenderer.invoke("skills:setTrusted", id, trusted),
   delete: (id: string) => ipcRenderer.invoke("skills:delete", id),
   read: (id: string) => ipcRenderer.invoke("skills:read", id),
-  selectDirectory: () => ipcRenderer.invoke("skills:selectDirectory"),
+  selectDirectory: (defaultPath?: string) =>
+    ipcRenderer.invoke("skills:selectDirectory", defaultPath),
   selectArchive: () => ipcRenderer.invoke("skills:selectArchive"),
   reveal: (id: string) => ipcRenderer.invoke("skills:reveal", id),
   marketProviders: () => ipcRenderer.invoke("skills:marketProviders"),

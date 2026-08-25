@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog, shell, type IpcMainInvokeEvent } from "electron";
+import { app, ipcMain, BrowserWindow, dialog, shell, type IpcMainInvokeEvent } from "electron";
 import { registerHandler } from "../invokeRegistry.js";
 import { appendRendererLogEntries } from "../debugLog.js";
 import {
@@ -438,14 +438,145 @@ export function registerCliIpc() {
   });
   registerHandler("skills:delete", (_event, id: string) => deleteSkill(id));
   registerHandler("skills:read", (_event, id: string) => readSkillMarkdown(id));
-  registerHandler("skills:selectDirectory", async (event) => {
-    const win = senderWindow(event);
-    if (!win) return null;
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-      properties: ["openDirectory"]
-    });
-    return canceled ? null : filePaths[0] ?? null;
-  });
+
+  const LAST_SELECTED_WORKSPACE_KEY = "workspace.lastSelectedDirectory";
+
+  function getValidParentOrDir(targetPath: string): string {
+    try {
+      const resolved = path.resolve(targetPath);
+      if (!fs.existsSync(resolved)) return resolved;
+      const stat = fs.statSync(resolved);
+      const dir = stat.isDirectory() ? resolved : path.dirname(resolved);
+      const parent = path.dirname(dir);
+      if (parent && parent !== dir && fs.existsSync(parent)) {
+        const parentStat = fs.statSync(parent);
+        if (parentStat.isDirectory()) {
+          return parent;
+        }
+      }
+      return dir;
+    } catch {
+      return targetPath;
+    }
+  }
+
+  function resolveDefaultOpenDirectory(explicitPath?: string): string {
+    // 1. Explicit path passed from frontend (use its parent so user can choose among sibling projects)
+    if (explicitPath && typeof explicitPath === "string" && explicitPath.trim()) {
+      try {
+        const candidate = path.resolve(explicitPath.trim());
+        if (fs.existsSync(candidate)) {
+          return getValidParentOrDir(candidate);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // 2. Last explicitly selected workspace path's parent
+    try {
+      const lastSelected = getSetting(LAST_SELECTED_WORKSPACE_KEY);
+      if (lastSelected && fs.existsSync(lastSelected)) {
+        return getValidParentOrDir(lastSelected);
+      }
+    } catch {
+      // ignore
+    }
+
+    // 3. Most recently used workspace from conversations database's parent
+    try {
+      const db = getDb();
+      const rows = db
+        .prepare(
+          `SELECT cwd FROM conversations
+           WHERE cwd IS NOT NULL AND TRIM(cwd) <> ''
+           ORDER BY updated_at DESC LIMIT 5`
+        )
+        .all() as Array<{ cwd: string }>;
+      for (const row of rows) {
+        const candidate = row.cwd?.trim();
+        if (candidate && fs.existsSync(candidate)) {
+          return getValidParentOrDir(candidate);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 4. Projects database's parent
+    try {
+      const db = getDb();
+      const rows = db
+        .prepare(
+          `SELECT primary_path FROM projects
+           WHERE primary_path IS NOT NULL AND TRIM(primary_path) <> ''
+           ORDER BY updated_at DESC LIMIT 5`
+        )
+        .all() as Array<{ primary_path: string }>;
+      for (const row of rows) {
+        const candidate = row.primary_path?.trim();
+        if (candidate && fs.existsSync(candidate)) {
+          return getValidParentOrDir(candidate);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 5. Conventional dev folders under user home directory
+    const homeDir = app?.getPath?.("home") || process.env.USERPROFILE || process.env.HOME || "";
+    if (homeDir) {
+      const candidates = [
+        path.join(homeDir, "www"),
+        path.join(homeDir, "Projects"),
+        path.join(homeDir, "Workspace"),
+        path.join(homeDir, "source", "repos"),
+        path.join(homeDir, "Documents", "Projects"),
+        path.join(homeDir, "Desktop")
+      ];
+      for (const cand of candidates) {
+        if (fs.existsSync(cand)) {
+          try {
+            if (fs.statSync(cand).isDirectory()) return cand;
+          } catch {
+            // ignore
+          }
+        }
+      }
+      return homeDir;
+    }
+
+    return process.cwd();
+  }
+
+  registerHandler(
+    "skills:selectDirectory",
+    async (event, args?: { defaultPath?: unknown } | string) => {
+      const win = senderWindow(event);
+      if (!win) return null;
+      const rawPath =
+        typeof args === "string"
+          ? args
+          : typeof args?.defaultPath === "string"
+            ? args.defaultPath
+            : undefined;
+      const defaultPath = resolveDefaultOpenDirectory(rawPath);
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        properties: ["openDirectory"],
+        defaultPath
+      });
+      if (canceled) return null;
+      const selected = filePaths[0] ?? null;
+      if (selected) {
+        try {
+          setSetting(LAST_SELECTED_WORKSPACE_KEY, selected);
+        } catch {
+          // ignore
+        }
+      }
+      return selected;
+    }
+  );
   registerHandler("skills:selectArchive", async (event) => {
     const win = senderWindow(event);
     if (!win) return null;
@@ -546,15 +677,34 @@ export function registerCliIpc() {
     }
   );
 
-  registerHandler("cli:selectDirectory", async (event) => {
-    const win = senderWindow(event);
-    if (!win) return null;
-    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
-      properties: ["openDirectory"]
-    });
-    if (canceled) return null;
-    return filePaths[0] ?? null;
-  });
+  registerHandler(
+    "cli:selectDirectory",
+    async (event, args?: { defaultPath?: unknown } | string) => {
+      const win = senderWindow(event);
+      if (!win) return null;
+      const rawPath =
+        typeof args === "string"
+          ? args
+          : typeof args?.defaultPath === "string"
+            ? args.defaultPath
+            : undefined;
+      const defaultPath = resolveDefaultOpenDirectory(rawPath);
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        properties: ["openDirectory"],
+        defaultPath
+      });
+      if (canceled) return null;
+      const selected = filePaths[0] ?? null;
+      if (selected) {
+        try {
+          setSetting(LAST_SELECTED_WORKSPACE_KEY, selected);
+        } catch {
+          // ignore
+        }
+      }
+      return selected;
+    }
+  );
 
   registerHandler("cli:selectAttachments", async (event) => {
     const win = senderWindow(event);
