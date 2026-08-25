@@ -57,6 +57,7 @@ export interface LegalGameMove {
   allowsMate?: boolean;
   /** Piece we would hang when safety === "lose". */
   lossPiece?: string;
+  priority?: number;
 }
 
 export interface GameChatMessage {
@@ -66,16 +67,36 @@ export interface GameChatMessage {
   timestamp: number;
 }
 
+export type GameMode = "player_vs_agent" | "agent_vs_agent" | "agent_vs_engine";
+
+export interface GameParticipant {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  model?: string;
+  side: number; // 1 = Black/Red, 2 = White/Black
+  kind: "player" | "agent" | "engine";
+}
+
 export interface GameStateSnapshot {
   gameType: GameType;
   gameId: string;
+  gameMode?: GameMode;
   status: GameStatus;
   /** Board side to move: Gomoku 1=Black/2=White, Xiangqi 1=Red/2=Black. */
   turn: number;
-  /** Board side controlled by the human player. */
+  /** Board side controlled by the human player (0 if human is spectator). */
   playerSide: number;
-  /** Board side controlled by the Agent. */
+  /** Board side controlled by the primary Agent. */
   agentSide: number;
+  /** Engine side if in agent_vs_engine mode. */
+  engineSide?: number;
+  /** Participant details for dual agents / spectators. */
+  participants?: {
+    side1?: GameParticipant;
+    side2?: GameParticipant;
+  };
+  isPaused?: boolean;
   stepCount: number;
   winner?: number | null;
   board: number[][]; // 15x15 for Gomoku, 10x9 for Xiangqi

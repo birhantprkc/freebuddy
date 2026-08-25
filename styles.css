@@ -22172,7 +22172,7 @@ button.ghost:focus-visible,
    Game Setup Dialog (Consistent with Settings & Transfer Dialogs)
    ========================================================================== */
 .modal.game-setup-dialog {
-  width: 460px;
+  width: 500px;
   max-width: 95vw;
   display: flex;
   flex-direction: column;
@@ -22230,6 +22230,10 @@ button.ghost:focus-visible,
 
 .game-setup-choice-group.two-cols {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.game-setup-choice-group.three-cols {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .game-setup-choice-group button {

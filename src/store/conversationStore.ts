@@ -161,6 +161,8 @@ export interface ConversationState {
     approvalModeOverride?: "auto" | "ask";
     preserveConversationTitle?: boolean;
     internalPrompt?: boolean;
+    memberOverride?: CLIMember;
+    configOptionOverrides?: Record<string, string>;
   }): Promise<void>;
   stopActive(conversationId: string): Promise<void>;
   isRunning(conversationId: string): boolean;
@@ -1078,28 +1080,20 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     assistantMessageId,
     approvalModeOverride,
     preserveConversationTitle,
-    internalPrompt = false
+    internalPrompt = false,
+    memberOverride,
+    configOptionOverrides
   }) {
     const trimmed = prompt.trim();
     if (!trimmed && attachments.length === 0) return;
     if (get().isRunning(conversationId)) return;
-
-    const conv = get().conversations.find((c) => c.id === conversationId);
-    if (!conv) return;
-    const workflowRun = await workflowRunForConversation(conversationId);
-    const member =
-      memberForWorkflowFollowup(workflowRun, get().members) ??
-      get().members.find((m) => m.id === conv.agentId);
-    if (!member) throw new Error(`Member ${conv.agentId} not found`);
 
     const userMsgId = userMessageId ?? nanoid();
     const assistantMsgId = assistantMessageId ?? nanoid();
     const now = new Date().toISOString();
     const taskSessionId = nanoid();
 
-    // Claim the live stream before any appendMessage broadcasts. WebUI
-    // onMessagesChanged otherwise reloads the transcript while live is still
-    // empty, remounting avatar bubbles (flash/jump) on every send.
+    // Claim the live stream synchronously before any async await points.
     set((s) => ({
       live: {
         ...s.live,
@@ -1123,6 +1117,21 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return { live: next };
       });
     };
+
+    const conv = get().conversations.find((c) => c.id === conversationId);
+    if (!conv) {
+      releaseClaimedLive();
+      return;
+    }
+    const workflowRun = await workflowRunForConversation(conversationId);
+    const member =
+      memberOverride ??
+      (memberForWorkflowFollowup(workflowRun, get().members) ??
+      get().members.find((m) => m.id === conv.agentId));
+    if (!member) {
+      releaseClaimedLive();
+      throw new Error(`Member ${conv.agentId} not found`);
+    }
 
     try {
     if (!internalPrompt) {
@@ -1249,11 +1258,15 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     const fromMessages = latestConfigOptionsFromMessages(msgs);
     const fromLive = latestConfigOptionsFromItems(liveItems ?? []);
     const configOptions = fromLive.length > 0 ? fromLive : fromMessages;
-    const pickerOptions = filterSessionConfigPickerOptions(configOptions);
+    const activeOverrides = configOptionOverrides ?? conv.configOptionOverrides;
     const overridesToSend = resolveConfigOptionOverrides(
-      conv.configOptionOverrides,
-      pickerOptions.length ? pickerOptions : configOptions
+      activeOverrides,
+      configOptions
     );
+    const combinedOverrides = {
+      ...(overridesToSend ?? {}),
+      ...(configOptionOverrides ?? {})
+    };
 
     const runArgs: CliRunArgs = {
       sessionId: taskSessionId,
@@ -1277,8 +1290,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       env: { ...(resolved?.env ?? {}), ...(member.cli.env ?? {}) },
       approvalMode:
         approvalModeOverride ?? conv.approvalMode ?? member.cli.approvalMode,
-      ...(overridesToSend && Object.keys(overridesToSend).length
-        ? { configOptionOverrides: overridesToSend }
+      ...(Object.keys(combinedOverrides).length > 0
+        ? { configOptionOverrides: combinedOverrides }
         : {}),
       showStderr: member.cli.showStderr,
       resumeToolSession: !wantFresh,

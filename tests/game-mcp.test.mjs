@@ -10,9 +10,15 @@ import {
   PLAYER_WHITE
 } from "../dist-electron/games/gomokuEngine.js";
 import {
+  XiangqiGameInstance
+} from "../dist-electron/games/xiangqiEngine.js";
+import {
   dispatchGameAction,
   getOrCreateGame,
-  handlePlayerMove
+  handlePlayerMove,
+  handleAgentMove,
+  handleGetGameState,
+  initGamePersistence
 } from "../dist-electron/gameToolService.js";
 import { createGameMcpServer } from "../dist-electron/mcp/gameMcpServer.js";
 
@@ -100,7 +106,7 @@ test("Game tool service dispatches actions correctly", async () => {
   assert.equal(resignRes.gameState.winner, PLAYER_BLACK);
 });
 
-test("Frontend game scripts (Gomoku & Xiangqi) have valid JS syntax", () => {
+test("Frontend game scripts (Gomoku & Xiangqi) execute cleanly without runtime reference errors", () => {
   const gameFiles = [
     path.resolve(process.cwd(), "public/games/gomoku/game.js"),
     path.resolve(process.cwd(), "public/games/xiangqi/game.js")
@@ -109,8 +115,66 @@ test("Frontend game scripts (Gomoku & Xiangqi) have valid JS syntax", () => {
   for (const filePath of gameFiles) {
     const code = fs.readFileSync(filePath, "utf-8");
     assert.doesNotThrow(() => {
-      new vm.Script(code, { filename: path.basename(filePath) });
-    }, `Syntax error in ${filePath}`);
+      const mockElement = {
+        style: {},
+        classList: { add() {}, remove() {}, toggle() {} },
+        addEventListener() {},
+        removeEventListener() {},
+        appendChild() {},
+        removeChild() {},
+        getBoundingClientRect() { return { width: 500, height: 600, left: 0, top: 0 }; },
+        getContext() {
+          return {
+            fillRect() {}, clearRect() {}, beginPath() {}, arc() {}, fill() {}, stroke() {},
+            moveTo() {}, lineTo() {}, closePath() {}, save() {}, restore() {},
+            createRadialGradient() { return { addColorStop() {} }; },
+            createLinearGradient() { return { addColorStop() {} }; },
+            setTransform() {}, scale() {}, fillText() {}, strokeRect() {}, setLineDash() {}
+          };
+        }
+      };
+      const mockDoc = {
+        getElementById(id) {
+          return { ...mockElement, id };
+        },
+        createElement(tag) {
+          return { ...mockElement, tagName: tag };
+        },
+        body: mockElement
+      };
+      const mockWindow = {
+        addEventListener() {},
+        removeEventListener() {},
+        devicePixelRatio: 1,
+        innerWidth: 800,
+        innerHeight: 700,
+        document: mockDoc,
+        postMessage() {},
+        localStorage: {
+          getItem() { return null; },
+          setItem() {}
+        }
+      };
+      mockWindow.parent = mockWindow;
+      const sandbox = {
+        window: mockWindow,
+        document: mockDoc,
+        console,
+        Math,
+        Date,
+        Array,
+        String,
+        Number,
+        Object,
+        Boolean,
+        setTimeout,
+        clearTimeout,
+        setInterval,
+        clearInterval
+      };
+      vm.createContext(sandbox);
+      vm.runInContext(code, sandbox);
+    }, `Runtime execution error in ${filePath}`);
   }
 });
 
@@ -160,4 +224,95 @@ test("packaged and WebUI game wiring loads the board without a workspace", () =>
     "WebUI game sessions must still receive the game MCP server"
   );
   assert.match(gameService, /conversationId: conversationId \|\| snapshot\.gameId/);
+});
+
+test("Game mode architecture and spectator support in multi-agent and engine modes", () => {
+  const protocol = fs.readFileSync(
+    new URL("../electron/shared/gameToolProtocol.ts", import.meta.url),
+    "utf8"
+  );
+  const gameService = fs.readFileSync(
+    new URL("../electron/gameToolService.ts", import.meta.url),
+    "utf8"
+  );
+  const gameSetup = fs.readFileSync(
+    new URL("../src/components/Games/GameSetupModal.tsx", import.meta.url),
+    "utf8"
+  );
+  const canvas = fs.readFileSync(
+    new URL("../src/components/Browser/BrowserCanvas.tsx", import.meta.url),
+    "utf8"
+  );
+  const gomoku = fs.readFileSync(
+    new URL("../public/games/gomoku/game.js", import.meta.url),
+    "utf8"
+  );
+  const xiangqi = fs.readFileSync(
+    new URL("../public/games/xiangqi/game.js", import.meta.url),
+    "utf8"
+  );
+
+  // Protocol defines the 3 battle modes and participant structures
+  assert.match(protocol, /export type GameMode = "player_vs_agent" \| "agent_vs_agent" \| "agent_vs_engine"/);
+  assert.match(protocol, /export interface GameParticipant/);
+  assert.match(protocol, /gameMode\?: GameMode/);
+  assert.match(protocol, /participants\?:/);
+
+  // Game service enriches snapshots and handles spectator playerSide
+  assert.match(gameService, /enrichSnapshot/);
+  assert.match(gameService, /isSpectator/);
+  assert.match(gameService, /gameMode === "agent_vs_engine"/);
+
+  // GameSetupModal defaults to easy (free play) and supports 3 battle modes
+  assert.match(gameSetup, /selectedDifficulty.*"easy"/);
+  assert.match(gameSetup, /modePlayerVsAgent/);
+  assert.match(gameSetup, /modeAgentVsAgent/);
+  assert.match(gameSetup, /modeAgentVsEngine/);
+
+  // BrowserCanvas supports multi-agent and engine turn loops
+  assert.match(canvas, /mode === "agent_vs_agent"/);
+  assert.match(canvas, /mode === "agent_vs_engine"/);
+
+  // Frontend scripts handle spectator mode and participants
+  assert.match(gomoku, /playerSide === 0 \|\| gameMode === "agent_vs_agent"/);
+  assert.match(xiangqi, /playerSide === 0 \|\| gameMode === "agent_vs_agent"/);
+});
+
+test("full moveHistory is persisted and completely restored on getState and state sync", async () => {
+  const conversationId = `conv-history-test-${Date.now()}`;
+  let persistedMetadata = { gameType: "xiangqi", gameDifficulty: "easy" };
+  initGamePersistence(
+    () => ({ metadata: persistedMetadata }),
+    (id, patch) => {
+      persistedMetadata = { ...persistedMetadata, ...patch };
+    }
+  );
+
+  // Step 1: Red moves b2e2
+  const m1 = handlePlayerMove(conversationId, "b2e2");
+  assert.equal(m1.ok, true);
+  assert.equal(m1.gameState.moveHistory.length, 1);
+
+  // Step 2: Black moves b9c7
+  const m2 = handleAgentMove(conversationId, "b9c7", "跳马守中卒");
+  assert.equal(m2.ok, true);
+  assert.equal(m2.gameState.moveHistory.length, 2);
+
+  // Step 3: Red moves h0g2
+  const m3 = handlePlayerMove(conversationId, "h0g2");
+  assert.equal(m3.ok, true);
+  assert.equal(m3.gameState.moveHistory.length, 3);
+
+  // Re-fetch full state as the UI canvas does on refresh/re-mount
+  const stateSnapshot = handleGetGameState(conversationId);
+  assert.ok(Array.isArray(stateSnapshot.moveHistory));
+  assert.equal(stateSnapshot.moveHistory.length, 3, "handleGetGameState must return all 3 moves in moveHistory");
+  assert.equal(stateSnapshot.moveHistory[0].actionId, "b2e2");
+  assert.equal(stateSnapshot.moveHistory[1].actionId, "b9c7");
+  assert.equal(stateSnapshot.moveHistory[2].actionId, "h0g2");
+
+  // Verify DB rehydration from persisted metadata
+  const restoredGame = XiangqiGameInstance.fromSnapshot(persistedMetadata.gameState);
+  const restoredSnapshot = restoredGame.getSnapshot({ includeHistory: true });
+  assert.equal(restoredSnapshot.moveHistory.length, 3, "Rehydrated game from database must retain all 3 moves");
 });

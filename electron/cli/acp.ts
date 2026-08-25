@@ -345,6 +345,12 @@ export function isMissingSavedSessionError(err: unknown): boolean {
   if (e?.code === -32002 && /resource not found/i.test(haystack)) {
     return true;
   }
+  if (/failed to initialize session services/i.test(haystack)) {
+    return true;
+  }
+  if (/session (?:load|resume|initialization) failed/i.test(haystack)) {
+    return true;
+  }
   return /saved (?:agent )?session.*(?:not found|no longer available|unavailable)/i.test(
     haystack
   );

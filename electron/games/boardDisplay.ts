@@ -139,25 +139,17 @@ export function formatGameStateText(snapshot: GameStateSnapshot): string {
 
     if (snapshot.legalMoves.length > 0) {
       lines.push(
-        "候选走法（按战术价值排序；[丢X]=白丢该子；[招致绝杀!]=走完对方一步杀，绝不可选）："
+        "候选走法与风格参考（已标注战术价值与棋风意图；[丢X]=白丢该子；[招致绝杀!]=走完对方一步杀，不可选）："
       );
       const top = snapshot.legalMoves.slice(0, 8);
       top.forEach((move, index) => {
-        const parts: string[] = [];
-        if (move.allowsMate) parts.push("🚨[招致绝杀!]");
-        else if (move.safety === "lose" && move.lossPiece) parts.push(`⚠[丢${move.lossPiece}!]`);
-        else if (move.threatLevel === "winning") parts.push("[绝杀胜手]");
-        else if (move.threatLevel === "critical_block") parts.push("[关键封堵]");
-        else if (move.safety === "gain") parts.push("[得子]");
-        else if (move.threatLevel === "attack") parts.push("[进攻]");
-        const tag = isXiangqi ? "" : parts.join("");
         lines.push(
-          ` ${index + 1}. ${tag ? `${tag} ` : ""}${move.actionId}${
+          ` ${index + 1}. ${move.actionId}${
             move.description ? ` ${move.description}` : ""
           }`
         );
       });
-      lines.push("请从候选走法中选择 actionId 调用 game_make_move。优先选择无 [丢X] 标记的着法。");
+      lines.push("候选走法为你提供战术参谋与安全底线。请结合全局战略与个人棋风自主选择安全合法的 actionId 落子。");
     }
   }
 

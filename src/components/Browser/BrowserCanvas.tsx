@@ -19,11 +19,27 @@ import {
   clipFeedTitle,
   isFeedInterpretConversation
 } from "../Feeds/feedInterpretation";
-import { builtinCliMembers } from "@/config/aiMembers";
+import { builtinCliMembers, type CLIMember } from "@/config/aiMembers";
 import { getAgentIconId } from "@/config/agentIcon";
 import { lobehubAvatarUrl } from "@/utils/lobehubAvatar";
+import { useCliExecutorStore } from "@/store/cliExecutorStore";
 import { BrowserToolbar, type BrowserViewport } from "./BrowserToolbar";
 import { MarkdownText } from "../CLI/StreamItem";
+
+function resolveAgentAvatarUrl(agentId?: string, member?: CLIMember, fallbackAdapter?: string): string | undefined {
+  if (!agentId && !member && !fallbackAdapter) return undefined;
+  if (agentId === "cli-butlerbuddy") return lobehubAvatarUrl("Bilibili");
+
+  const overrideId = agentId?.startsWith("cli-") ? agentId.slice(4) : undefined;
+  const overrides = useCliExecutorStore.getState().overrides;
+  const storedIcon = (overrideId && overrides[overrideId]?.icon) ||
+                     (member?.avatar) ||
+                     (fallbackAdapter && overrides[fallbackAdapter]?.icon);
+
+  const adapter = member?.cli?.adapter || member?.runtimeKey || fallbackAdapter;
+  const iconId = getAgentIconId(adapter, storedIcon);
+  return iconId ? lobehubAvatarUrl(iconId) : undefined;
+}
 
 const EMPTY_MESSAGES: ConversationMessage[] = [];
 const FRAME_WIDTH: Record<BrowserViewport, number | null> = {
@@ -485,6 +501,8 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     conversationId: string;
     prompt: string;
     stepCount: number;
+    memberOverride?: CLIMember;
+    configOptionOverrides?: Record<string, string>;
   } | null>(null);
   const autoRemindCountRef = useRef(0);
   const lastEngineCommentedStepRef = useRef<number>(-1);
@@ -500,14 +518,94 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     activeId ? s.conversations.find((c) => c.id === activeId) : undefined
   );
 
+  const participants = useMemo(() => {
+    if (!activeConversation) return null;
+    const meta = (activeConversation.metadata || {}) as Record<string, any>;
+    const mode = meta.gameMode || "player_vs_agent";
+
+    if (mode === "agent_vs_agent") {
+      const m1 = members.find((m) => m.id === meta.agent1Id) || builtinCliMembers.find((m) => m.id === meta.agent1Id);
+      const m2 = members.find((m) => m.id === meta.agent2Id) || builtinCliMembers.find((m) => m.id === meta.agent2Id);
+
+      const avatarUrl1 = resolveAgentAvatarUrl(meta.agent1Id, m1);
+      const avatarUrl2 = resolveAgentAvatarUrl(meta.agent2Id, m2);
+
+      return {
+        side1: {
+          id: String(meta.agent1Id || "agent1"),
+          name: String(meta.agent1Name || m1?.name || "AI 1"),
+          avatarUrl: avatarUrl1,
+          model: meta.agent1Model ? String(meta.agent1Model) : undefined,
+          side: 1 as const,
+          kind: "agent" as const
+        },
+        side2: {
+          id: String(meta.agent2Id || "agent2"),
+          name: String(meta.agent2Name || m2?.name || "AI 2"),
+          avatarUrl: avatarUrl2,
+          model: meta.agent2Model ? String(meta.agent2Model) : undefined,
+          side: 2 as const,
+          kind: "agent" as const
+        }
+      };
+    } else if (mode === "agent_vs_engine") {
+      const agentSide = (meta.agentSide === 2 ? 2 : 1) as 1 | 2;
+      const engSide = (agentSide === 1 ? 2 : 1) as 1 | 2;
+      const m = members.find((mem) => mem.id === meta.opponentAgentId || mem.id === activeConversation.agentId) ||
+                builtinCliMembers.find((mem) => mem.id === meta.opponentAgentId || mem.id === activeConversation.agentId);
+      const agentAvatar = resolveAgentAvatarUrl(meta.opponentAgentId || activeConversation.agentId, m, activeConversation.adapter);
+      const agentParticipant = {
+        id: String(meta.opponentAgentId || activeConversation.agentId || "agent"),
+        name: String(activeConversation.agentName || m?.name || "AI Agent"),
+        avatarUrl: agentAvatar,
+        model: meta.opponentModel ? String(meta.opponentModel) : undefined,
+        side: agentSide,
+        kind: "agent" as const
+      };
+      const engineParticipant = {
+        id: "engine",
+        name: t("game.engine"),
+        side: engSide,
+        kind: "engine" as const
+      };
+      return {
+        side1: agentSide === 1 ? agentParticipant : engineParticipant,
+        side2: agentSide === 2 ? agentParticipant : engineParticipant
+      };
+    } else {
+      const m = members.find((mem) => mem.id === activeConversation.agentId) ||
+                builtinCliMembers.find((mem) => mem.id === activeConversation.agentId);
+      const agentAvatar = resolveAgentAvatarUrl(activeConversation.agentId, m, activeConversation.adapter);
+      const playerSide = (meta.playerSide ?? 1) as 1 | 2;
+      const agSide = (playerSide === 1 ? 2 : 1) as 1 | 2;
+      const playerParticipant = {
+        id: "player",
+        name: t("game.player"),
+        side: playerSide,
+        kind: "player" as const
+      };
+      const agentParticipant = {
+        id: activeConversation.agentId,
+        name: activeConversation.agentName || m?.name || "AI Agent",
+        avatarUrl: agentAvatar,
+        side: agSide,
+        kind: "agent" as const
+      };
+      return {
+        side1: playerSide === 1 ? playerParticipant : agentParticipant,
+        side2: playerSide === 2 ? playerParticipant : agentParticipant
+      };
+    }
+  }, [activeConversation, members, t]);
+
+  const participantsRef = useRef(participants);
+  participantsRef.current = participants;
+
   const agentInfo = useMemo(() => {
     if (!activeConversation) return null;
-    const member = builtinCliMembers.find((m) => m.id === activeConversation.agentId);
-    const iconId =
-      activeConversation.agentId === "cli-butlerbuddy"
-        ? "Bilibili"
-        : getAgentIconId(activeConversation.adapter, member?.avatar);
-    const avatarUrl = iconId ? lobehubAvatarUrl(iconId) : undefined;
+    const member = builtinCliMembers.find((m) => m.id === activeConversation.agentId) ||
+                   members.find((m) => m.id === activeConversation.agentId);
+    const avatarUrl = resolveAgentAvatarUrl(activeConversation.agentId, member, activeConversation.adapter);
     const model =
       activeConversation.configOptionOverrides?.model ||
       activeConversation.configOptionOverrides?.model_config ||
@@ -520,7 +618,10 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
       avatarUrl: avatarUrl || "",
       modelName: model ? String(model) : ""
     };
-  }, [activeConversation]);
+  }, [activeConversation, members]);
+
+  const agentInfoRef = useRef(agentInfo);
+  agentInfoRef.current = agentInfo;
 
   useEffect(() => {
     if (frameRef.current?.contentWindow && agentInfo) {
@@ -562,7 +663,14 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
                 const state = await window.freebuddy?.game?.getState(activeId);
                 if (state && frameRef.current?.contentWindow) {
                   frameRef.current.contentWindow.postMessage(
-                    { type: "FREEBUDDY_GAME_SYNC", payload: { ...state, agentInfo } },
+                    {
+                      type: "FREEBUDDY_GAME_SYNC",
+                      payload: {
+                        ...state,
+                        participants: participants || state.participants,
+                        agentInfo
+                      }
+                    },
                     "*"
                   );
                 }
@@ -609,9 +717,17 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
       } else if (data.type === "GAME_CANVAS_READY" || data.type === "REQUEST_SYNC") {
         try {
           const state = await window.freebuddy?.game?.getState(activeId);
-          if (state && frameRef.current?.contentWindow) {
+          const snapshot = (state as any)?.gameState || state;
+          if (snapshot && frameRef.current?.contentWindow) {
             frameRef.current.contentWindow.postMessage(
-              { type: "FREEBUDDY_GAME_SYNC", payload: { ...state, agentInfo } },
+              {
+                type: "FREEBUDDY_GAME_SYNC",
+                payload: {
+                  ...snapshot,
+                  participants: participants || snapshot.participants,
+                  agentInfo
+                }
+              },
               "*"
             );
           }
@@ -632,9 +748,36 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         }
       } else if (data.type === "REMIND_AGENT") {
         if (sendMessage) {
+          const conv = useConversationStore.getState().conversations.find((c) => c.id === activeId);
+          const mode = conv?.metadata?.gameMode || "player_vs_agent";
+          let memberOverride: any;
+          let configOverrides: any;
+          let promptText = t("game.promptRemindAgent");
+
+          if (mode === "agent_vs_agent") {
+            const gameStateRes = await window.freebuddy?.game?.getState?.(activeId);
+            const snapshot = (gameStateRes as any)?.snapshot;
+            if (snapshot && snapshot.status === "playing") {
+              const nextSide = snapshot.turn; // 1 or 2
+              const nextAgentId = nextSide === 1 ? conv?.metadata?.agent1Id : conv?.metadata?.agent2Id;
+              const nextModel = nextSide === 1 ? conv?.metadata?.agent1Model : conv?.metadata?.agent2Model;
+              const nextAgentName = nextSide === 1
+                ? (conv?.metadata?.agent1Name || "AI 1")
+                : (conv?.metadata?.agent2Name || "AI 2");
+
+              memberOverride =
+                useConversationStore.getState().members.find((m) => m.id === nextAgentId) ||
+                builtinCliMembers.find((m) => m.id === nextAgentId);
+              configOverrides = nextModel ? { model: String(nextModel) } : undefined;
+              promptText = t("game.promptAvARemind", { nextAgent: nextAgentName });
+            }
+          }
+
           void sendMessage({
             conversationId: activeId,
-            prompt: t("game.promptRemindAgent")
+            prompt: promptText,
+            memberOverride,
+            configOptionOverrides: configOverrides
           });
         }
       } else if (data.type === "GAME_RESIGN") {
@@ -652,36 +795,172 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     const unbindGameEvent = window.freebuddy?.game?.onGameEvent((event: any) => {
       if (!activeId || (event?.conversationId && event.conversationId !== activeId)) return;
       if (frameRef.current?.contentWindow && event?.payload) {
+        const curParts = participantsRef.current;
+        const curAgentInfo = agentInfoRef.current;
+        const mergedParts = curParts ? {
+          side1: {
+            ...(event.payload.participants?.side1 || {}),
+            ...curParts.side1,
+            avatarUrl: (curParts.side1 as any)?.avatarUrl || event.payload.participants?.side1?.avatarUrl
+          },
+          side2: {
+            ...(event.payload.participants?.side2 || {}),
+            ...curParts.side2,
+            avatarUrl: (curParts.side2 as any)?.avatarUrl || event.payload.participants?.side2?.avatarUrl
+          }
+        } : event.payload.participants;
+
         frameRef.current.contentWindow.postMessage(
-          { type: "FREEBUDDY_GAME_SYNC", payload: event.payload },
+          {
+            type: "FREEBUDDY_GAME_SYNC",
+            payload: {
+              ...event.payload,
+              participants: mergedParts,
+              agentInfo: curAgentInfo
+            }
+          },
           "*"
         );
       }
 
-      // If an engine move was performed in hard mode, prompt the AI agent to give a commentary
+      // Multi-mode turn dispatch and commentary
       const snapshot = event?.payload;
       if (
         snapshot &&
         snapshot.lastMove &&
-        snapshot.lastMove.player === snapshot.agentSide &&
         lastEngineCommentedStepRef.current !== snapshot.stepCount &&
         sendMessage
       ) {
-        lastEngineCommentedStepRef.current = snapshot.stepCount;
-        const promptText = buildHardModeCommentaryPrompt(snapshot, t);
-        if (!promptText) return;
+        const conv = useConversationStore.getState().conversations.find((c) => c.id === activeId);
+        const mode = conv?.metadata?.gameMode || "player_vs_agent";
 
-        if (useConversationStore.getState().isRunning(activeId)) {
-          pendingGameTurnPromptRef.current = {
-            conversationId: activeId,
-            prompt: promptText,
-            stepCount: Number(snapshot.stepCount ?? 0)
-          };
+        if (mode === "agent_vs_agent") {
+          lastEngineCommentedStepRef.current = snapshot.stepCount;
+          const moveLabel = snapshot.lastMove.chineseMove
+            ? `${snapshot.lastMove.chineseMove} (${snapshot.lastMove.actionId})`
+            : snapshot.lastMove.actionId;
+          const reasonText = snapshot.lastMove.reason ? `（${snapshot.lastMove.reason}）` : "";
+
+          if (snapshot.status === "playing") {
+            const nextSide = snapshot.turn; // 1 or 2
+            const nextAgentId = nextSide === 1 ? conv?.metadata?.agent1Id : conv?.metadata?.agent2Id;
+            const nextModel = nextSide === 1 ? conv?.metadata?.agent1Model : conv?.metadata?.agent2Model;
+            const moverName = nextSide === 1
+              ? (conv?.metadata?.agent2Name || t("game.opponent"))
+              : (conv?.metadata?.agent1Name || t("game.opponent"));
+            const nextAgentName = nextSide === 1
+              ? (conv?.metadata?.agent1Name || "AI 1")
+              : (conv?.metadata?.agent2Name || "AI 2");
+
+            const member =
+              useConversationStore.getState().members.find((m) => m.id === nextAgentId) ||
+              builtinCliMembers.find((m) => m.id === nextAgentId);
+
+            const promptText = t("game.promptAvATurn", {
+              mover: moverName,
+              move: moveLabel,
+              reason: reasonText,
+              nextAgent: nextAgentName,
+              step: snapshot.stepCount
+            });
+
+            const configOverrides = nextModel ? { model: String(nextModel) } : undefined;
+
+            if (useConversationStore.getState().isRunning(activeId)) {
+              pendingGameTurnPromptRef.current = {
+                conversationId: activeId,
+                prompt: promptText,
+                stepCount: Number(snapshot.stepCount ?? 0),
+                memberOverride: member,
+                configOptionOverrides: configOverrides
+              };
+            } else {
+              void sendMessage({
+                conversationId: activeId,
+                prompt: promptText,
+                memberOverride: member,
+                configOptionOverrides: configOverrides
+              });
+            }
+          } else if (snapshot.status === "player_won" || snapshot.status === "agent_won" || snapshot.winner) {
+            const winnerName = snapshot.winner === 1
+              ? (conv?.metadata?.agent1Name || "Side 1 AI")
+              : (conv?.metadata?.agent2Name || "Side 2 AI");
+            const promptText = t("game.promptAvAWon", {
+              winner: winnerName,
+              move: moveLabel
+            });
+            if (useConversationStore.getState().isRunning(activeId)) {
+              pendingGameTurnPromptRef.current = {
+                conversationId: activeId,
+                prompt: promptText,
+                stepCount: Number(snapshot.stepCount ?? 0)
+              };
+            } else {
+              void sendMessage({ conversationId: activeId, prompt: promptText });
+            }
+          }
+        } else if (mode === "agent_vs_engine") {
+          const engSide = typeof conv?.metadata?.engineSide === "number"
+            ? conv.metadata.engineSide
+            : (conv?.metadata?.hand === "agent_first" ? 2 : 1);
+
+          if (snapshot.lastMove.player === engSide) {
+            lastEngineCommentedStepRef.current = snapshot.stepCount;
+            const moveLabel = snapshot.lastMove.chineseMove
+              ? `${snapshot.lastMove.chineseMove} (${snapshot.lastMove.actionId})`
+              : snapshot.lastMove.actionId;
+
+            if (snapshot.status === "playing") {
+              const promptText = t("game.promptEngineTurn", {
+                engineMove: moveLabel,
+                step: snapshot.stepCount
+              });
+              if (useConversationStore.getState().isRunning(activeId)) {
+                pendingGameTurnPromptRef.current = {
+                  conversationId: activeId,
+                  prompt: promptText,
+                  stepCount: Number(snapshot.stepCount ?? 0)
+                };
+              } else {
+                void sendMessage({ conversationId: activeId, prompt: promptText });
+              }
+            } else if (snapshot.status === "player_won" || snapshot.status === "agent_won" || snapshot.winner) {
+              const isAgentWon = snapshot.winner === conv?.metadata?.agentSide;
+              const promptText = isAgentWon
+                ? t("game.promptAgentVsEngineAgentWon")
+                : t("game.promptAgentVsEngineEngineWon");
+              if (useConversationStore.getState().isRunning(activeId)) {
+                pendingGameTurnPromptRef.current = {
+                  conversationId: activeId,
+                  prompt: promptText,
+                  stepCount: Number(snapshot.stepCount ?? 0)
+                };
+              } else {
+                void sendMessage({ conversationId: activeId, prompt: promptText });
+              }
+            }
+          }
         } else {
-          void sendMessage({
-            conversationId: activeId,
-            prompt: promptText
-          });
+          // player_vs_agent
+          if (snapshot.lastMove.player === snapshot.agentSide) {
+            lastEngineCommentedStepRef.current = snapshot.stepCount;
+            const promptText = buildHardModeCommentaryPrompt(snapshot, t);
+            if (promptText) {
+              if (useConversationStore.getState().isRunning(activeId)) {
+                pendingGameTurnPromptRef.current = {
+                  conversationId: activeId,
+                  prompt: promptText,
+                  stepCount: Number(snapshot.stepCount ?? 0)
+                };
+              } else {
+                void sendMessage({
+                  conversationId: activeId,
+                  prompt: promptText
+                });
+              }
+            }
+          }
         }
       }
     });
@@ -690,7 +969,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
       window.removeEventListener("message", handleMessage);
       unbindGameEvent?.();
     };
-  }, [activeId, agentInfo, sendMessage, t]);
+  }, [activeId, agentInfo, participants, sendMessage, t]);
 
   // Observe assistant messages in game conversations to extract moves or commentary
   useEffect(() => {
@@ -704,6 +983,16 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         if (!processedMessageIdsRef.current.has(moveKey)) {
           processedMessageIdsRef.current.add(moveKey);
           void (async () => {
+            const state = await window.freebuddy?.game?.getState(activeId);
+            if (!state || state.status !== "playing") return;
+            // If the move was already placed on the board (e.g. via MCP game_make_move), do not replay it.
+            if (state.lastMove?.actionId === move.action) return;
+
+            const conv = useConversationStore.getState().conversations.find((c) => c.id === activeId);
+            const mode = conv?.metadata?.gameMode || "player_vs_agent";
+            if (mode === "player_vs_agent" && state.turn !== state.agentSide) return;
+            if (mode === "agent_vs_engine" && state.turn !== conv?.metadata?.agentSide) return;
+
             const moveRes = await window.freebuddy?.game?.agentMove(
               activeId,
               move.action,
@@ -713,24 +1002,34 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
             );
             if (moveRes?.ok !== false) return;
 
-            const state = await window.freebuddy?.game?.getState(activeId);
-            if (!state || state.status !== "playing" || state.turn !== state.agentSide) return;
+            const refreshed = await window.freebuddy?.game?.getState(activeId);
+            if (!refreshed || refreshed.status !== "playing" || refreshed.lastMove?.actionId === move.action) return;
+            if (mode === "player_vs_agent" && refreshed.turn !== refreshed.agentSide) return;
+            if (mode === "agent_vs_engine" && refreshed.turn !== conv?.metadata?.agentSide) return;
+
             if (frameRef.current?.contentWindow) {
               frameRef.current.contentWindow.postMessage(
-                { type: "FREEBUDDY_GAME_SYNC", payload: { ...state, agentInfo } },
+                {
+                  type: "FREEBUDDY_GAME_SYNC",
+                  payload: {
+                    ...refreshed,
+                    participants: participants || refreshed.participants,
+                    agentInfo
+                  }
+                },
                 "*"
               );
             }
             const prompt = t("game.promptAgentMoveRejected", {
               actionId: move.action,
               error: String(moveRes.error || "illegal move"),
-              step: state.stepCount
+              step: refreshed.stepCount
             });
             if (useConversationStore.getState().isRunning(activeId)) {
               pendingGameTurnPromptRef.current = {
                 conversationId: activeId,
                 prompt,
-                stepCount: state.stepCount
+                stepCount: refreshed.stepCount
               };
             } else if (sendMessage) {
               void sendMessage({ conversationId: activeId, prompt });
@@ -743,7 +1042,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     }
   }, [activeId, agentInfo, messages, sendMessage, t]);
 
-  // Monitor for abnormal stalls (Agent finished generation but turn is still White/2)
+  // Monitor for abnormal stalls (Agent finished generation but turn has not advanced)
   useEffect(() => {
     if (!activeId) return;
     let timer: NodeJS.Timeout | null = null;
@@ -751,11 +1050,18 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     const checkStall = async () => {
       try {
         const state = await window.freebuddy?.game?.getState(activeId);
-        if (
+        const conv = useConversationStore.getState().conversations.find((c) => c.id === activeId);
+        const mode = conv?.metadata?.gameMode || "player_vs_agent";
+        const isAgentTurn =
           state &&
           state.status === "playing" &&
-          state.turn === state.agentSide
-        ) {
+          (mode === "agent_vs_agent"
+            ? true
+            : mode === "agent_vs_engine"
+              ? state.turn === conv?.metadata?.agentSide
+              : state.turn === state.agentSide);
+
+        if (isAgentTurn) {
           if (frameRef.current?.contentWindow) {
             frameRef.current.contentWindow.postMessage(
               { type: "AGENT_STALLED", payload: { stalled: false } },
@@ -764,17 +1070,25 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
           }
           if (!isRunning) {
             timer = setTimeout(() => {
-              // Auto-send one remind carrying step facts so replayed history
-              // cannot convince the agent it is not its turn. The counter only
-              // resets when the turn actually leaves the agent (real
-              // progress) - resetting it during a run would loop reminders.
               if (autoRemindCountRef.current < 1 && sendMessage) {
                 autoRemindCountRef.current += 1;
+                let targetMember: CLIMember | undefined;
+                let targetModel: string | undefined;
+                if (mode === "agent_vs_agent") {
+                  const turnAgentId = state.turn === 1 ? conv?.metadata?.agent1Id : conv?.metadata?.agent2Id;
+                  const rawModel = state.turn === 1 ? conv?.metadata?.agent1Model : conv?.metadata?.agent2Model;
+                  targetModel = rawModel ? String(rawModel) : undefined;
+                  targetMember =
+                    useConversationStore.getState().members.find((m) => m.id === turnAgentId) ||
+                    builtinCliMembers.find((m) => m.id === turnAgentId);
+                }
                 void sendMessage({
                   conversationId: activeId,
                   prompt: t("game.promptRemindAgentWithTurn", {
                     step: state.stepCount
-                  })
+                  }),
+                  memberOverride: targetMember,
+                  configOptionOverrides: targetModel ? { model: targetModel } : undefined
                 });
                 return;
               }
@@ -784,7 +1098,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
                   "*"
                 );
               }
-            }, 2500);
+            }, 3500);
           }
         } else {
           autoRemindCountRef.current = 0;
@@ -808,9 +1122,8 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   }, [activeId, isRunning, messages, sendMessage, t]);
 
   // Flush a queued game-turn prompt once the agent finishes generating. This
-  // covers the race where the player moves while the agent is still streaming
-  // its reply for the previous move (sendMessage silently drops prompts while
-  // a run is active).
+  // covers the race where a move was processed while the agent was still streaming
+  // its reply for the previous move.
   useEffect(() => {
     if (!activeId || isRunning) return;
     const pending = pendingGameTurnPromptRef.current;
@@ -822,11 +1135,15 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         if (
           !state ||
           state.status !== "playing" ||
-          state.turn !== state.agentSide ||
           state.stepCount !== pending.stepCount
         ) return;
         if (!sendMessage) return;
-        void sendMessage({ conversationId: activeId, prompt: pending.prompt });
+        void sendMessage({
+          conversationId: activeId,
+          prompt: pending.prompt,
+          memberOverride: pending.memberOverride,
+          configOptionOverrides: pending.configOptionOverrides
+        });
       } catch (err) {
         console.error("[FreeBuddy] Failed to flush queued game turn prompt:", err);
       }

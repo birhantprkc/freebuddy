@@ -711,13 +711,42 @@ export function getCandidateMoves(
     }
 
     let fullDesc = `${chineseDesc} (${coordToString(move.fromX, move.fromY)}->${coordToString(move.toX, move.toY)})`;
-    if (threatLevel === "winning") fullDesc += " [绝杀将军]";
+    if (threatLevel === "winning") fullDesc += " [绝杀胜手]";
     else if (move.captured) fullDesc += ` [吃${getPieceName(move.captured)}]`;
-    else if (oppInCheck) fullDesc += " [将军]";
-    if (allowsMate) fullDesc += " [招致绝杀!]";
-    else if (safety === "lose") fullDesc += ` [丢${getPieceName(lossPiece ?? move.piece)}!]`;
-    else if (safety === "trade") fullDesc += " [兑子]";
-    else if (safety === "gain" && move.captured) fullDesc += " [得子]";
+    else if (oppInCheck) fullDesc += " [将军抽将]";
+
+    if (allowsMate) {
+      fullDesc += " 🚨[招致绝杀!]";
+    } else if (safety === "lose") {
+      fullDesc += ` ⚠[丢${getPieceName(lossPiece ?? move.piece)}!]`;
+    } else if (safety === "trade") {
+      fullDesc += " [兑子简化]";
+    } else if (safety === "gain" && move.captured) {
+      fullDesc += " [得子主动]";
+    } else if (!move.captured && !oppInCheck) {
+      const absPiece = Math.abs(move.piece);
+      if (recentMoves.length <= 4) {
+        if (absPiece === PIECE_CANNON && move.toX === 4) fullDesc += " [中炮刚猛]";
+        else if (absPiece === PIECE_CANNON && (move.toX === 2 || move.toX === 6)) fullDesc += " [过宫炮机变]";
+        else if (absPiece === PIECE_KNIGHT && (move.toX === 2 || move.toX === 6)) fullDesc += " [正马稳健]";
+        else if (absPiece === PIECE_KNIGHT && (move.toX === 0 || move.toX === 8)) fullDesc += " [边马奇兵]";
+        else if (absPiece === PIECE_PAWN && (move.toX === 2 || move.toX === 6)) fullDesc += " [仙人指路]";
+        else if (absPiece === PIECE_PAWN && move.toX === 4) fullDesc += " [进中卒争先]";
+        else if (absPiece === PIECE_BISHOP) fullDesc += " [飞相厚重]";
+        else if (absPiece === PIECE_ADVISOR) fullDesc += " [上士固守]";
+        else if (absPiece === PIECE_ROOK) fullDesc += " [巡河出车]";
+      } else {
+        if (absPiece === PIECE_ROOK || absPiece === PIECE_KNIGHT) {
+          fullDesc += (player === PLAYER_RED ? move.toY >= 5 : move.toY <= 4) ? " [抢占要道]" : " [出子占位]";
+        } else if (absPiece === PIECE_CANNON) {
+          fullDesc += " [伺机调动]";
+        } else if (absPiece === PIECE_PAWN) {
+          fullDesc += (player === PLAYER_RED ? move.toY >= 5 : move.toY <= 4) ? " [过河压迫]" : " [稳健挺卒]";
+        } else if (absPiece === PIECE_BISHOP || absPiece === PIECE_ADVISOR || absPiece === PIECE_KING) {
+          fullDesc += " [固守阵型]";
+        }
+      }
+    }
 
     return {
       actionId,
@@ -791,7 +820,7 @@ export class XiangqiGameInstance {
 
   constructor(gameId: string, playerSide: number = PLAYER_RED) {
     this.gameId = gameId;
-    this.playerSide = playerSide === PLAYER_BLACK ? PLAYER_BLACK : PLAYER_RED;
+    this.playerSide = playerSide === 0 ? 0 : playerSide === PLAYER_BLACK ? PLAYER_BLACK : PLAYER_RED;
     this.agentSide = this.playerSide === PLAYER_RED ? PLAYER_BLACK : PLAYER_RED;
     this.board = createInitialBoard();
     this.positionHistory = [xiangqiPositionKey(this.board, this.turn)];

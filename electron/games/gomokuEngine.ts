@@ -132,7 +132,6 @@ export function evaluateThreat(
 export function getCandidateMoves(board: number[][], turnPlayer: number): LegalGameMove[] {
   const hasStones = board.some((row) => row.some((cell) => cell !== 0));
   if (!hasStones) {
-    // Opening move: Center (H8)
     const center = Math.floor(BOARD_SIZE / 2);
     return [
       {
@@ -140,8 +139,36 @@ export function getCandidateMoves(board: number[][], turnPlayer: number): LegalG
         x: center,
         y: center,
         coord: coordToString(center, center),
-        description: "天元落子 (首步开局最优位)",
-        threatLevel: "normal"
+        description: "天元落子 (H8·经典天元，掌控全盘中心) [天元争锋]",
+        threatLevel: "normal",
+        priority: 100
+      },
+      {
+        actionId: coordToString(center + 1, center + 1),
+        x: center + 1,
+        y: center + 1,
+        coord: coordToString(center + 1, center + 1),
+        description: "斜指占位 (I9·斜向活络，浦月/花月意图) [斜指机变]",
+        threatLevel: "normal",
+        priority: 90
+      },
+      {
+        actionId: coordToString(center, center + 1),
+        x: center,
+        y: center + 1,
+        coord: coordToString(center, center + 1),
+        description: "直指占位 (H9·纵向试探，寒星/溪月意图) [直指攻杀]",
+        threatLevel: "normal",
+        priority: 85
+      },
+      {
+        actionId: coordToString(center - 1, center - 1),
+        x: center - 1,
+        y: center - 1,
+        coord: coordToString(center - 1, center - 1),
+        description: "侧翼星位 (G7·打破常规，灵活腾挪) [灵活求变]",
+        threatLevel: "normal",
+        priority: 80
       }
     ];
   }
@@ -191,9 +218,11 @@ export function getCandidateMoves(board: number[][], turnPlayer: number): LegalG
   return sorted.map((c) => {
     const coord = coordToString(c.x, c.y);
     let desc = `落子 ${coord}`;
-    if (c.threatLevel === "winning") desc = `绝杀胜手 ${coord} (形成五连珠)`;
-    else if (c.threatLevel === "critical_block") desc = `关键封堵 ${coord} (拦截对方活四/连五)`;
-    else if (c.threatLevel === "attack") desc = `进攻落子 ${coord} (形成活三/冲四)`;
+    if (c.threatLevel === "winning") desc = `绝杀胜手 ${coord} (形成五连珠) [绝杀胜手]`;
+    else if (c.threatLevel === "critical_block") desc = `关键封堵 ${coord} (拦截对方活四/连五) [关键封堵]`;
+    else if (c.threatLevel === "attack") desc = `主动进攻 ${coord} (形成活三/冲四) [主动进攻]`;
+    else if (c.priority >= 30) desc = `稳健扩展 ${coord} (邻近占位，蓄势待发) [稳健扩展]`;
+    else desc = `空间占位 ${coord} (外围拓展) [空间占位]`;
 
     return {
       actionId: coord,
@@ -201,7 +230,8 @@ export function getCandidateMoves(board: number[][], turnPlayer: number): LegalG
       y: c.y,
       coord,
       description: desc,
-      threatLevel: c.threatLevel
+      threatLevel: c.threatLevel,
+      priority: c.priority
     };
   });
 }
@@ -220,7 +250,7 @@ export class GomokuGameInstance {
 
   constructor(gameId: string, playerSide: number = PLAYER_BLACK) {
     this.gameId = gameId;
-    this.playerSide = playerSide === PLAYER_WHITE ? PLAYER_WHITE : PLAYER_BLACK;
+    this.playerSide = playerSide === 0 ? 0 : playerSide === PLAYER_WHITE ? PLAYER_WHITE : PLAYER_BLACK;
     this.agentSide = this.playerSide === PLAYER_BLACK ? PLAYER_WHITE : PLAYER_BLACK;
     this.board = createEmptyBoard();
   }

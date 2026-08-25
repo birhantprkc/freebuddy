@@ -1059,6 +1059,14 @@ test("isMissingSavedSessionError recognizes Cursor Invalid params Session not fo
   });
   assert.equal(isMissingSavedSessionError(authErr), false);
 
+  const cursorInitErr = Object.assign(new Error("Internal error"), {
+    code: -32603,
+    data: {
+      message: "Failed to initialize session services"
+    }
+  });
+  assert.equal(isMissingSavedSessionError(cursorInitErr), true);
+
   const invalidParamsUnrelated = Object.assign(new Error("Invalid params"), {
     code: -32602
   });
