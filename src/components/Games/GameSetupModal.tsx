@@ -320,7 +320,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
             agent2Id: agent2Member.id,
             agent2Name: agent2Member.name,
             agent2Model: agent2Model || undefined,
-            gameDifficulty: selectedDifficulty,
+            gameDifficulty: "easy",
             playerSide: 0,
             agentSide: 1
           },
@@ -366,7 +366,7 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
             hand: challengerHand,
             agentSide,
             engineSide,
-            gameDifficulty: selectedDifficulty,
+            gameDifficulty: "hard",
             playerSide: 0
           },
           configOptionOverrides: configOverrides,
@@ -729,29 +729,31 @@ export function GameSetupModal({ open, onClose }: GameSetupModalProps) {
             </>
           )}
 
-          {/* Difficulty (Default: Easy / Free play) */}
-          <div className="game-setup-field">
-            <span className="game-setup-field-label">{t("game.difficulty")}</span>
-            <div className="game-setup-choice-group two-cols">
-              <button
-                type="button"
-                className={selectedDifficulty === "easy" ? "active" : ""}
-                onClick={() => setSelectedDifficulty("easy")}
-              >
-                {t("game.difficultyEasy")}
-              </button>
-              <button
-                type="button"
-                className={selectedDifficulty === "hard" ? "active" : ""}
-                onClick={() => setSelectedDifficulty("hard")}
-              >
-                {t("game.difficultyHard")}
-              </button>
+          {/* Difficulty (Only for Player vs Agent) */}
+          {selectedMode === "player_vs_agent" && (
+            <div className="game-setup-field">
+              <span className="game-setup-field-label">{t("game.difficulty")}</span>
+              <div className="game-setup-choice-group two-cols">
+                <button
+                  type="button"
+                  className={selectedDifficulty === "easy" ? "active" : ""}
+                  onClick={() => setSelectedDifficulty("easy")}
+                >
+                  {t("game.difficultyEasy")}
+                </button>
+                <button
+                  type="button"
+                  className={selectedDifficulty === "hard" ? "active" : ""}
+                  onClick={() => setSelectedDifficulty("hard")}
+                >
+                  {t("game.difficultyHard")}
+                </button>
+              </div>
+              {selectedDifficulty === "hard" ? (
+                <p className="game-setup-dialog-desc">{t("game.difficultyHardHint")}</p>
+              ) : null}
             </div>
-            {selectedDifficulty === "hard" ? (
-              <p className="game-setup-dialog-desc">{t("game.difficultyHardHint")}</p>
-            ) : null}
-          </div>
+          )}
         </div>
 
         <div className="modal-actions">
