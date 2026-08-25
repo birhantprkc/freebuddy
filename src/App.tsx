@@ -101,6 +101,7 @@ function App() {
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
+    document.title = "FreeBuddy [DEV]";
     const preview = new URLSearchParams(window.location.search).get(
       "taskReceiptPreview"
     );
@@ -739,6 +740,9 @@ function App() {
                 <BrandMark />
                 <div className="sidebar-brand-text">
                   <h1>{t("app.brand")}</h1>
+                  {import.meta.env.DEV && (
+                    <span className="sidebar-dev-badge">DEV</span>
+                  )}
                 </div>
               </div>
               <button

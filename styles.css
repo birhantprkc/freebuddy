@@ -1770,6 +1770,27 @@ html[data-surface="butler-screen-ball"] #root {
   object-fit: cover;
 }
 
+.sidebar-brand-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-dev-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.05em;
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.15);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
 .sidebar-header h1 {
   margin: 0;
   color: var(--fb-text-primary);
