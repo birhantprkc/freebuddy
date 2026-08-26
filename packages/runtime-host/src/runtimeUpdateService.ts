@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { RuntimeChannelDescriptor } from "@freebuddy/protocol/runtime";
 import type { RuntimeHostEnvironment } from "./ports.js";
-import { readRuntimeState, writeRuntimeState } from "./runtimeStateStore.js";
+import { readRuntimeState, withInstallLock, writeRuntimeState } from "./runtimeStateStore.js";
 import { downloadRuntimeArtifact } from "./runtimeDownloader.js";
 import { inRollout, parseChannelDescriptor, verifyChannelDescriptor } from "./runtimeManifest.js";
 import { installRuntimeArchive } from "./runtimeInstaller.js";
@@ -90,35 +90,37 @@ export async function downloadAndPrepareRuntime(
   environment: RuntimeHostEnvironment,
   descriptor: RuntimeChannelDescriptor
 ): Promise<{ ok: true; version: string } | { ok: false; error: string }> {
-  try {
-    const downloaded = await downloadRuntimeArtifact({
-      url: descriptor.archiveUrl,
-      dataDir: environment.dataDir,
-      version: descriptor.version,
-      http: environment.http
-    });
-    if (downloaded.notModified) return { ok: true, version: descriptor.version };
-    const hash = createHash("sha256").update(downloaded.bytes).digest("hex");
-    if (hash !== descriptor.archiveSha256) {
-      return { ok: false, error: "archive hash mismatch" };
+  return withInstallLock(environment.dataDir, async () => {
+    try {
+      const downloaded = await downloadRuntimeArtifact({
+        url: descriptor.archiveUrl,
+        dataDir: environment.dataDir,
+        version: descriptor.version,
+        http: environment.http
+      });
+      if (downloaded.notModified) return { ok: true, version: descriptor.version };
+      const hash = createHash("sha256").update(downloaded.bytes).digest("hex");
+      if (hash !== descriptor.archiveSha256) {
+        return { ok: false, error: "archive hash mismatch" };
+      }
+      if (downloaded.bytes.byteLength !== descriptor.archiveBytes) {
+        return { ok: false, error: "archive size mismatch" };
+      }
+      const installed = installRuntimeArchive(environment.dataDir, descriptor.version, downloaded.bytes, {
+        publicKey: environment.trustedKeys.get(descriptor.keyId ?? "runtime-dev"),
+        allowUnsigned: environment.allowUnsignedDevelopmentRuntime && !descriptor.keyId?.startsWith("runtime-prod"),
+        hostApiVersion: environment.hostApiVersion,
+        hostCapabilities: environment.hostCapabilities
+      });
+      if (!installed.ok) return installed;
+      const state = readRuntimeState(environment.dataDir);
+      state.pendingVersion = descriptor.version;
+      writeRuntimeState(environment.dataDir, state);
+      return { ok: true, version: descriptor.version };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
     }
-    if (downloaded.bytes.byteLength !== descriptor.archiveBytes) {
-      return { ok: false, error: "archive size mismatch" };
-    }
-    const installed = installRuntimeArchive(environment.dataDir, descriptor.version, downloaded.bytes, {
-      publicKey: environment.trustedKeys.get(descriptor.keyId ?? "runtime-dev"),
-      allowUnsigned: environment.allowUnsignedDevelopmentRuntime && !descriptor.keyId?.startsWith("runtime-prod"),
-      hostApiVersion: environment.hostApiVersion,
-      hostCapabilities: environment.hostCapabilities
-    });
-    if (!installed.ok) return installed;
-    const state = readRuntimeState(environment.dataDir);
-    state.pendingVersion = descriptor.version;
-    writeRuntimeState(environment.dataDir, state);
-    return { ok: true, version: descriptor.version };
-  } catch (error) {
-    return { ok: false, error: (error as Error).message };
-  }
+  });
 }
 
 export function parseUnsignedChannelDescriptor(bytes: Buffer): RuntimeChannelDescriptor {

@@ -18,7 +18,15 @@ jobs:
     env:
       RUNTIME_PACK_VERSION: ${{ github.ref_name }}
       RUNTIME_SIGNING_KEY_ID: runtime-prod
+      RUNTIME_REQUIRE_PRODUCTION_VERSION: "1"
     steps:
+      - name: Require production runtime tag
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^runtime-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "invalid runtime tag: ${GITHUB_REF_NAME}"
+            echo "production releases require runtime-vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

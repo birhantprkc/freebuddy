@@ -104,6 +104,7 @@ export function recordCrash(
   environment: RuntimeHostEnvironment,
   version: string
 ): boolean {
+  cancelLastKnownGood(version);
   const state = readRuntimeState(environment.dataDir);
   const counts = { ...(state.crashCounts ?? {}) };
   const count = (counts[version] ?? 0) + 1;
@@ -139,10 +140,46 @@ export function markLastKnownGood(environment: RuntimeHostEnvironment, version: 
   writeRuntimeState(environment.dataDir, state);
 }
 
+const lastKnownGoodTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function cancelLastKnownGood(version?: string): void {
+  if (version) {
+    const timer = lastKnownGoodTimers.get(version);
+    if (timer) clearTimeout(timer);
+    lastKnownGoodTimers.delete(version);
+    return;
+  }
+  for (const timer of lastKnownGoodTimers.values()) clearTimeout(timer);
+  lastKnownGoodTimers.clear();
+}
+
+export async function confirmAndMarkLastKnownGood(
+  environment: RuntimeHostEnvironment,
+  version: string
+): Promise<boolean> {
+  const state = readRuntimeState(environment.dataDir);
+  if (state.activeVersion !== version) return false;
+  if ((state.crashCounts?.[version] ?? 0) > 0) return false;
+  const probe = await probeRuntimeVersion(environment, version);
+  if (!probe.ok) return false;
+  const latest = readRuntimeState(environment.dataDir);
+  if (latest.activeVersion !== version) return false;
+  if ((latest.crashCounts?.[version] ?? 0) > 0) return false;
+  markLastKnownGood(environment, version);
+  return true;
+}
+
 export function scheduleLastKnownGood(
   environment: RuntimeHostEnvironment,
   version: string,
   windowMs = HEALTHY_WINDOW_MS
 ): ReturnType<typeof setTimeout> {
-  return setTimeout(() => markLastKnownGood(environment, version), windowMs);
+  cancelLastKnownGood(version);
+  const timer = setTimeout(() => {
+    lastKnownGoodTimers.delete(version);
+    void confirmAndMarkLastKnownGood(environment, version);
+  }, windowMs);
+  timer.unref?.();
+  lastKnownGoodTimers.set(version, timer);
+  return timer;
 }

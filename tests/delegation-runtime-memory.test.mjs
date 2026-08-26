@@ -84,3 +84,39 @@ test("crash recovery marks active events failed via repository transitions", () 
   assert.equal(repository.getEvent(eventId)?.status, "failed");
   assert.equal(repository.setStatus(run.id, "failed"), true);
 });
+
+test("memory delegation ids are UUIDs and unique across fresh repositories", () => {
+  const first = createMemoryDelegationRepository();
+  const second = createMemoryDelegationRepository();
+  const runA = first.createRun({ goal: "a", status: "running", teamId: "t", teamSnapshotJson: "{}" });
+  const runB = second.createRun({ goal: "b", status: "running", teamId: "t", teamSnapshotJson: "{}" });
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  assert.match(runA.id, uuid);
+  assert.match(runB.id, uuid);
+  assert.notEqual(runA.id, runB.id);
+  const eventA = first.insertEvent({
+    runId: runA.id,
+    parentEventId: null,
+    agentId: "a",
+    agentName: "a",
+    roleLabel: "a",
+    taskText: "t",
+    depth: 0,
+    canWrite: false,
+    status: "running"
+  });
+  const eventB = second.insertEvent({
+    runId: runB.id,
+    parentEventId: null,
+    agentId: "b",
+    agentName: "b",
+    roleLabel: "b",
+    taskText: "t",
+    depth: 0,
+    canWrite: false,
+    status: "running"
+  });
+  assert.match(eventA, uuid);
+  assert.match(eventB, uuid);
+  assert.notEqual(eventA, eventB);
+});

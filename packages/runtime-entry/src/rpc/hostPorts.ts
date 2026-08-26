@@ -15,9 +15,6 @@ export type CachedAgent = {
   id: string;
   adapter: string;
   agentName: string;
-  binary?: string;
-  extraArgs?: string[];
-  env?: Record<string, string>;
   skillIds?: string[];
 };
 
@@ -77,9 +74,6 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
     return {
       adapter: agent.adapter,
       agentName: agent.agentName,
-      binary: agent.binary,
-      extraArgs: agent.extraArgs,
-      env: agent.env,
       skillIds: agent.skillIds
     };
   }
@@ -163,8 +157,8 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
         };
         const run = memory.createRun(stamped);
         enqueue(() =>
-          invoke("workflow.repository.v1.createRun", [stamped], {
-            idempotencyKey: `workflow.createRun:${stamped.id}`
+          invoke("workflow.repository.v1.createRun", [{ ...stamped, id: run.id }], {
+            idempotencyKey: `workflow.createRun:${run.id}`
           })
         );
         return run;
@@ -241,9 +235,6 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
                 agentId: args.agentId,
                 agentName: args.agentName,
                 adapter: args.adapter,
-                binary: args.binary,
-                extraArgs: args.extraArgs,
-                env: args.env,
                 configOptionOverrides: args.configOptionOverrides,
                 skillIds: args.skillIds,
                 prompt: args.prompt,
@@ -301,7 +292,7 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
         };
         const run = delegationMemory.createRun(stamped);
         enqueue(() =>
-          invoke("delegation.repository.v1.createRun", [stamped], {
+          invoke("delegation.repository.v1.createRun", [{ ...stamped, id: run.id }], {
             idempotencyKey: `delegation.createRun:${run.id}`
           })
         );
@@ -373,9 +364,6 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
                 agentId: request.agentId,
                 agentName: request.agentName,
                 adapter: request.adapter,
-                binary: request.binary,
-                extraArgs: request.extraArgs,
-                env: request.env,
                 skillIds: request.skillIds,
                 prompt: request.prompt,
                 cwd: request.cwd

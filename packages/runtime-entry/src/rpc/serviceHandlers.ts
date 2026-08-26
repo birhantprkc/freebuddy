@@ -31,9 +31,6 @@ export function createWorkflowServiceHandlers(
           id: agent.id,
           adapter: agent.adapter,
           agentName: agent.agentName ?? agent.name ?? agent.id,
-          binary: agent.binary,
-          extraArgs: agent.extraArgs,
-          env: agent.env,
           skillIds: agent.skillIds
         });
       }

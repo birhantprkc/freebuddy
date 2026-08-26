@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   DelegationEvent,
   DelegationEventStatus,
@@ -18,18 +19,12 @@ export function createMemoryDelegationRepository(): DelegationRunRepository & {
 } {
   const runs = new Map<string, DelegationRunRow>();
   const events = new Map<string, DelegationEvent>();
-  let seq = 0;
-
-  function id(prefix: string): string {
-    seq += 1;
-    return `${prefix}_${seq}`;
-  }
 
   return {
     createRun(input) {
       const createdAt = nowIso();
       const run: DelegationRunRow = {
-        id: input.id ?? id("delrun"),
+        id: input.id ?? randomUUID(),
         kind: "delegation",
         conversationId: input.conversationId ?? null,
         name: input.name ?? input.goal.slice(0, 80),
@@ -66,7 +61,7 @@ export function createMemoryDelegationRepository(): DelegationRunRepository & {
       return true;
     },
     insertEvent(input: InsertDelegationEventInput) {
-      const eventId = input.id ?? id("delevent");
+      const eventId = input.id ?? randomUUID();
       const created: DelegationEvent = {
         id: eventId,
         runId: input.runId,

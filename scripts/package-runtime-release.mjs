@@ -1,9 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createHash, sign, createPrivateKey } from "node:crypto";
+import { sign, createPrivateKey } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import AdmZip from "adm-zip";
-import { resolveRuntimePackVersion, runtimeReleaseRepo, runtimeReleaseTag } from "./runtime-release-lib.mjs";
+import {
+  createDeterministicZipBuffer,
+  resolveRuntimePackVersion,
+  runtimeReleaseRepo,
+  runtimeReleaseTag,
+  sha256Buffer
+} from "./runtime-release-lib.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const packDir = path.join(root, ".build", "runtime-pack");
@@ -24,28 +29,28 @@ if (!fs.existsSync(path.join(packDir, "manifest.sig"))) {
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-const zip = new AdmZip();
+const zipFiles = {};
 for (const file of ["manifest.json", "manifest.sig", "checksums.json", "LICENSES.txt", "runtime/index.mjs"]) {
   const full = path.join(packDir, file);
   if (!fs.existsSync(full)) throw new Error(`missing pack file: ${file}`);
-  zip.addFile(file, fs.readFileSync(full));
+  zipFiles[file] = fs.readFileSync(full);
 }
-const zipBytes = zip.toBuffer();
+const zipBytes = createDeterministicZipBuffer(zipFiles);
 fs.writeFileSync(path.join(outDir, zipName), zipBytes);
 
-  const manifest = JSON.parse(fs.readFileSync(path.join(packDir, "manifest.json"), "utf8"));
-  const descriptor = {
-    schemaVersion: 1,
-    channel,
-    bundleId: "dev.freebuddy.runtime",
-    version,
-    hostApi: ">=1.0.0 <2.0.0",
-    archiveUrl: `https://github.com/${repo}/releases/download/${tag}/${zipName}`,
-    archiveSha256: createHash("sha256").update(zipBytes).digest("hex"),
-    archiveBytes: zipBytes.byteLength,
-    publishedAt: manifest.publishedAt || process.env.RUNTIME_PACK_PUBLISHED_AT || "1970-01-01T00:00:00.000Z",
-    keyId: process.env.RUNTIME_SIGNING_KEY_ID || manifest.keyId || "runtime-dev"
-  };
+const manifest = JSON.parse(fs.readFileSync(path.join(packDir, "manifest.json"), "utf8"));
+const descriptor = {
+  schemaVersion: 1,
+  channel,
+  bundleId: "dev.freebuddy.runtime",
+  version,
+  hostApi: ">=1.0.0 <2.0.0",
+  archiveUrl: `https://github.com/${repo}/releases/download/${tag}/${zipName}`,
+  archiveSha256: sha256Buffer(zipBytes),
+  archiveBytes: zipBytes.byteLength,
+  publishedAt: manifest.publishedAt || process.env.RUNTIME_PACK_PUBLISHED_AT || "1970-01-01T00:00:00.000Z",
+  keyId: process.env.RUNTIME_SIGNING_KEY_ID || manifest.keyId || "runtime-dev"
+};
 const descriptorText = `${JSON.stringify(descriptor, null, 2)}\n`;
 fs.writeFileSync(path.join(outDir, `${channel}.json`), descriptorText);
 

@@ -245,35 +245,52 @@ export function recoverInterruptedWorkflowRuns(ctx: SqliteStoreContext): number 
   return rows.length;
 }
 
+export function getWorkflowStep(
+  ctx: SqliteStoreContext,
+  id: string
+): WorkflowStepRow | undefined {
+  const row = ctx.db.prepare("SELECT * FROM workflow_steps WHERE id = ?").get(id) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? rowToWorkflowStep(row) : undefined;
+}
+
 export function createWorkflowStep(
   ctx: SqliteStoreContext,
   input: CreateWorkflowStepInput
 ): void {
+  if (getWorkflowStep(ctx, input.id)) return;
   const now = nowIso(ctx);
-  ctx.db
-    .prepare(
-      `INSERT INTO workflow_steps
-         (id, workflow_run_id, phase_id, step_id, title, agent_id, agent_name,
-          adapter, mode, status, prompt, depends_on, target_paths,
-          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
-    )
-    .run(
-      input.id,
-      input.workflowRunId,
-      input.phaseId,
-      input.stepId,
-      input.title,
-      input.agentId,
-      input.agentName,
-      input.adapter,
-      input.mode,
-      input.prompt,
-      input.dependsOn ? JSON.stringify(input.dependsOn) : null,
-      input.targetPaths ? JSON.stringify(input.targetPaths) : null,
-      now,
-      now
-    );
+  try {
+    ctx.db
+      .prepare(
+        `INSERT INTO workflow_steps
+           (id, workflow_run_id, phase_id, step_id, title, agent_id, agent_name,
+            adapter, mode, status, prompt, depends_on, target_paths,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
+      )
+      .run(
+        input.id,
+        input.workflowRunId,
+        input.phaseId,
+        input.stepId,
+        input.title,
+        input.agentId,
+        input.agentName,
+        input.adapter,
+        input.mode,
+        input.prompt,
+        input.dependsOn ? JSON.stringify(input.dependsOn) : null,
+        input.targetPaths ? JSON.stringify(input.targetPaths) : null,
+        now,
+        now
+      );
+  } catch (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (code.startsWith("SQLITE_CONSTRAINT") && getWorkflowStep(ctx, input.id)) return;
+    throw error;
+  }
 }
 
 export function updateWorkflowStep(

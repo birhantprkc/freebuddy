@@ -19,6 +19,7 @@ export {
   listActiveWorkflowRuns,
   recoverInterruptedWorkflowRuns,
   createWorkflowStep,
+  getWorkflowStep,
   updateWorkflowStep,
   getWorkflowSteps,
   resetWorkflowStepsForLoop,
@@ -79,3 +80,9 @@ export type {
 
 export { createSqliteWorkflowRepository } from "./workflow-repository.js";
 export { createSqliteDelegationRepository } from "./delegation-repository.js";
+export {
+  HOST_IDEMPOTENCY_TABLE_SQL,
+  getHostIdempotencyResult,
+  putHostIdempotencyResult
+} from "./idempotency.js";
+export type { HostIdempotencyLookup } from "./idempotency.js";

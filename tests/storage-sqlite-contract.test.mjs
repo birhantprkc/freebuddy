@@ -99,5 +99,66 @@ test("memory and sqlite workflow repositories share create/get/update contracts"
     runtimeVersion: "1.0.0"
   });
   assert.equal(del.kind, "delegation");
+
+  sqlite.createStep({
+    id: "step-dup",
+    workflowRunId: "sql-1",
+    phaseId: "p",
+    stepId: "s",
+    title: "t",
+    agentId: "a",
+    agentName: "a",
+    adapter: "claude",
+    mode: "research",
+    prompt: "p"
+  });
+  sqlite.createStep({
+    id: "step-dup",
+    workflowRunId: "sql-1",
+    phaseId: "p",
+    stepId: "s",
+    title: "t",
+    agentId: "a",
+    agentName: "a",
+    adapter: "claude",
+    mode: "research",
+    prompt: "p"
+  });
+  assert.equal(sqlite.getSteps("sql-1").length, 1);
+
+  const { createMemoryDelegationRepository } = await import(
+    "../packages/delegation-runtime/dist/index.js"
+  );
+  const memA = createMemoryDelegationRepository();
+  const memB = createMemoryDelegationRepository();
+  const firstRun = memA.createRun({
+    goal: "first",
+    status: "running",
+    teamId: "t",
+    teamSnapshotJson: "{}"
+  });
+  const secondRun = memB.createRun({
+    goal: "second",
+    status: "running",
+    teamId: "t",
+    teamSnapshotJson: "{}"
+  });
+  assert.notEqual(firstRun.id, secondRun.id);
+  delegation.createRun({
+    id: firstRun.id,
+    goal: firstRun.goal,
+    status: "running",
+    teamId: "t",
+    teamSnapshotJson: "{}"
+  });
+  delegation.createRun({
+    id: secondRun.id,
+    goal: secondRun.goal,
+    status: "running",
+    teamId: "t",
+    teamSnapshotJson: "{}"
+  });
+  assert.equal(delegation.getRun(firstRun.id)?.goal, "first");
+  assert.equal(delegation.getRun(secondRun.id)?.goal, "second");
   db.close();
 });

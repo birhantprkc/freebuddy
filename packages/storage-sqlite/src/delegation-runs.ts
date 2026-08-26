@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { WorkflowRunStatus } from "@freebuddy/protocol/workflow";
 import type {
   DelegationArtifact,
@@ -64,7 +65,7 @@ export function lookupDelegationRunOwnerId(ctx: SqliteStoreContext, runId: strin
 }
 
 export function createDelegationRun(ctx: SqliteStoreContext, input: CreateDelegationRunInput): string {
-  const id = input.id ?? `delrun_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = input.id ?? randomUUID();
   const already = ctx.db.prepare("SELECT id FROM workflow_runs WHERE id = ?").get(id) as
     | { id: string }
     | undefined;
@@ -207,7 +208,7 @@ export type InsertDelegationEventInput = {
 };
 
 function createDelegationEventId(): string {
-  return `delevent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  return randomUUID();
 }
 
 const INSERT_DELEGATION_EVENT_SQL = `INSERT INTO delegation_events
@@ -225,22 +226,28 @@ export function insertDelegationEvent(
     if (existing) return existing.id;
   }
   const now = nowIso(ctx);
-  ctx.db
-    .prepare(INSERT_DELEGATION_EVENT_SQL)
-    .run(
-      id,
-      input.runId,
-      input.parentEventId,
-      input.agentId,
-      input.agentName,
-      input.roleLabel,
-      input.taskText,
-      input.depth,
-      input.status,
-      input.canWrite ? 1 : 0,
-      now,
-      input.status === "running" ? now : null
-    );
+  try {
+    ctx.db
+      .prepare(INSERT_DELEGATION_EVENT_SQL)
+      .run(
+        id,
+        input.runId,
+        input.parentEventId,
+        input.agentId,
+        input.agentName,
+        input.roleLabel,
+        input.taskText,
+        input.depth,
+        input.status,
+        input.canWrite ? 1 : 0,
+        now,
+        input.status === "running" ? now : null
+      );
+  } catch (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (code.startsWith("SQLITE_CONSTRAINT")) return id;
+    throw error;
+  }
   return id;
 }
 
@@ -252,7 +259,11 @@ export function insertDelegationEventsAtomic(
   const statement = ctx.db.prepare(INSERT_DELEGATION_EVENT_SQL);
   const tx = ctx.db.transaction(() =>
     inputs.map((input) => {
-      const id = createDelegationEventId();
+      const id = input.id ?? createDelegationEventId();
+      if (input.id) {
+        const existing = getDelegationEvent(ctx, input.id);
+        if (existing) return existing.id;
+      }
       const now = nowIso(ctx);
       statement.run(
         id,

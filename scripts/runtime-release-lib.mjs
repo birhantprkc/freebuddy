@@ -1,9 +1,16 @@
+import { createHash } from "node:crypto";
+import AdmZip from "adm-zip";
+
+export const PRODUCTION_RUNTIME_TAG = /^runtime-v\d+\.\d+\.\d+$/;
+export const PRODUCTION_RUNTIME_VERSION = /^\d+\.\d+\.\d+$/;
+export const ZIP_ENTRY_TIME = new Date(1980, 0, 1, 0, 0, 0);
+
 export function runtimeReleaseTag(version) {
   return `runtime-v${version}`;
 }
 
 export function isRuntimeTag(tag) {
-  return /^runtime-v\d+\.\d+\.\d+/.test(String(tag));
+  return PRODUCTION_RUNTIME_TAG.test(String(tag));
 }
 
 export function versionFromRuntimeTag(tag) {
@@ -11,16 +18,50 @@ export function versionFromRuntimeTag(tag) {
   return match ? match[1] : null;
 }
 
+function providedReleaseRefs(env) {
+  return [env.RUNTIME_PACK_VERSION, env.GITHUB_REF_NAME, env.RUNTIME_RELEASE_TAG]
+    .filter(Boolean)
+    .map(String);
+}
+
 export function resolveRuntimePackVersion(env = process.env) {
-  if (env.RUNTIME_PACK_VERSION && /^\d+\.\d+\.\d+/.test(env.RUNTIME_PACK_VERSION)) {
+  if (env.RUNTIME_PACK_VERSION && PRODUCTION_RUNTIME_VERSION.test(env.RUNTIME_PACK_VERSION)) {
     return env.RUNTIME_PACK_VERSION;
   }
-  return (
+  const version =
     versionFromRuntimeTag(env.RUNTIME_PACK_VERSION) ||
     versionFromRuntimeTag(env.GITHUB_REF_NAME) ||
-    versionFromRuntimeTag(env.RUNTIME_RELEASE_TAG) ||
-    "0.0.0-dev"
-  );
+    versionFromRuntimeTag(env.RUNTIME_RELEASE_TAG);
+  if (version) return version;
+
+  const provided = providedReleaseRefs(env);
+  const invalidTag = provided.find((value) => value.startsWith("runtime-v"));
+  const taggedCi =
+    env.CI === "true" && (env.GITHUB_REF_TYPE === "tag" || Boolean(invalidTag));
+  if (invalidTag || taggedCi || env.RUNTIME_REQUIRE_PRODUCTION_VERSION === "1") {
+    throw new Error(
+      `invalid runtime release tag ${invalidTag || provided[0] || "(empty)"}; expected runtime-vMAJOR.MINOR.PATCH`
+    );
+  }
+  return "0.0.0-dev";
+}
+
+export function createDeterministicZipBuffer(files) {
+  const zip = new AdmZip();
+  const names = Object.keys(files).sort((a, b) => a.localeCompare(b));
+  for (const name of names) {
+    const data = Buffer.isBuffer(files[name]) ? files[name] : Buffer.from(files[name]);
+    const entry = zip.addFile(name, data);
+    if (entry?.header) {
+      entry.header.time = ZIP_ENTRY_TIME;
+      entry.header.made = 0x0314;
+    }
+  }
+  return zip.toBuffer();
+}
+
+export function sha256Buffer(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 export function runtimeReleaseRepo(env = process.env) {

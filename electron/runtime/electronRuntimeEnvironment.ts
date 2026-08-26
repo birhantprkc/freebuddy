@@ -48,6 +48,8 @@ export function createElectronRuntimeEnvironment(): RuntimeHostEnvironment {
       now: () => new Date(),
       nowIso: () => new Date().toISOString()
     },
+    // Last-known-good is never auto-promoted until the remaining update
+    // safety gates are closed. Keep desktop hot updates off.
     update: {
       enabled: false,
       baseUrl: CHANNEL_BASE_URL

@@ -11,7 +11,9 @@ import {
   runtimeReleaseTag,
   versionFromRuntimeTag,
   decideImmutableAsset,
-  decideReleaseMutation
+  decideReleaseMutation,
+  createDeterministicZipBuffer,
+  sha256Buffer
 } from "../scripts/runtime-release-lib.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -30,8 +32,22 @@ test("runtime pack version comes from env, then runtime-v tag", () => {
   assert.equal(versionFromRuntimeTag("runtime-v1.0.1"), "1.0.1");
   assert.equal(versionFromRuntimeTag("v1.0.1"), null);
   assert.equal(isRuntimeTag("runtime-v1.0.1"), true);
+  assert.equal(isRuntimeTag("runtime-vtest"), false);
   assert.equal(isRuntimeTag("v1.0.1"), false);
   assert.equal(runtimeReleaseTag("1.0.1"), "runtime-v1.0.1");
+  assert.throws(
+    () => resolveRuntimePackVersion({ RUNTIME_PACK_VERSION: "runtime-vtest" }),
+    /invalid runtime release tag/
+  );
+  assert.throws(
+    () =>
+      resolveRuntimePackVersion({
+        CI: "true",
+        GITHUB_REF_TYPE: "tag",
+        GITHUB_REF_NAME: "runtime-vtest"
+      }),
+    /invalid runtime release tag/
+  );
 });
 
 test("runtime artifacts default to the dedicated freebuddy-runtime repository", () => {
@@ -101,4 +117,16 @@ test("sign fails closed for tagged CI without a private key", () => {
   });
   assert.notEqual(result.status, 0);
   assert.match(`${result.stderr}\n${result.stdout}`, /RUNTIME_SIGNING_PRIVATE_KEY/);
+});
+
+test("identical pack contents produce the same zip sha256 after a delay", async () => {
+  const files = {
+    "manifest.json": '{"version":"1.0.0"}',
+    "runtime/index.mjs": "export {}\n"
+  };
+  const first = sha256Buffer(createDeterministicZipBuffer(files));
+  await new Promise((resolve) => setTimeout(resolve, 2200));
+  const second = sha256Buffer(createDeterministicZipBuffer(files));
+  assert.equal(first, second);
+  assert.match(first, /^[a-f0-9]{64}$/);
 });

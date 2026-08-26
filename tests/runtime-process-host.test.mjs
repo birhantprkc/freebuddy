@@ -272,3 +272,113 @@ test("activating a new default version does not kill pinned process handles", as
   await manager.shutdown();
   assert.equal(healthy.kills.count, 1);
 });
+
+test("two fresh runtime processes sharing sqlite keep unique delegation ids", async (t) => {
+  let Database;
+  try {
+    Database = (await import("better-sqlite3")).default;
+    new Database(":memory:").close();
+  } catch {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+  assert.equal(fs.existsSync(bootstrapEntry), true, "bootstrap must be compiled");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-delid-"));
+  const db = new Database(path.join(dataDir, "shared.db"));
+  db.exec(`
+    CREATE TABLE conversations (id TEXT PRIMARY KEY, owner_id TEXT);
+    CREATE TABLE workflow_runs (
+      id TEXT PRIMARY KEY, conversation_id TEXT, name TEXT, goal TEXT, status TEXT,
+      cwd TEXT, template TEXT, loop_index INTEGER, max_loops INTEGER, plan_json TEXT,
+      team_id TEXT, team_snapshot_json TEXT, plan_version INTEGER, kind TEXT,
+      runtime_version TEXT, runtime_api_version TEXT, summary TEXT,
+      created_at TEXT, updated_at TEXT, ended_at TEXT
+    );
+    CREATE TABLE delegation_events (
+      id TEXT PRIMARY KEY, run_id TEXT, parent_event_id TEXT, agent_id TEXT, agent_name TEXT,
+      role_label TEXT, task_text TEXT, depth INTEGER, status TEXT, result_summary TEXT,
+      result_json TEXT, can_write INTEGER, accepted_at TEXT, started_at TEXT, ended_at TEXT,
+      verdict TEXT, verdict_summary TEXT
+    );
+  `);
+  const { createSqliteDelegationRepository } = await import(
+    "../packages/storage-sqlite/dist/index.js"
+  );
+  const sqlite = createSqliteDelegationRepository({
+    db,
+    owner: { ownerUserId: null, isAdmin: true }
+  });
+  const hostApi = {
+    async invoke(method, params) {
+      const args = Array.isArray(params) ? params : [params];
+      if (method === "agent.list.v1") {
+        return AGENTS.map((agent) => ({
+          id: agent.id,
+          adapter: agent.adapter,
+          agentName: agent.name
+        }));
+      }
+      if (method === "language.get.v1") return "en";
+      if (method === "events.publish.v1" || method === "telemetry.track.v1") return true;
+      if (method === "delegation.repository.v1.createRun") {
+        return sqlite.createRun({
+          ...args[0],
+          status: args[0]?.status ?? "running",
+          teamId: args[0]?.teamId ?? "t",
+          teamSnapshotJson: args[0]?.teamSnapshotJson ?? "{}"
+        });
+      }
+      if (method === "delegation.repository.v1.insertEvent") {
+        return sqlite.insertEvent(args[0]);
+      }
+      if (method === "delegation.repository.v1.getRun") return sqlite.getRun(args[0]) ?? null;
+      if (method === "delegation.repository.v1.listEvents") return sqlite.listEvents(args[0]);
+      return null;
+    }
+  };
+  const snapshot = {
+    goal: "delegate",
+    teamId: "team-1",
+    teamSnapshot: {
+      entryRoleId: "lead",
+      roster: [
+        {
+          id: "lead",
+          label: "Lead",
+          agentId: "cli-codex-acp",
+          capability: "general",
+          canWrite: false
+        }
+      ],
+      policy: {
+        allowWrites: false,
+        requireApprovalBeforeDelegateWrite: false,
+        maxDepth: 1,
+        delegateTimeoutMs: 1000,
+        maxConcurrentDelegates: 1,
+        stopOnDelegateFailure: true
+      }
+    }
+  };
+
+  async function prepareWithFreshProcess() {
+    const pool = createRuntimeProcessPool({
+      environment: testEnv(dataDir),
+      hostApi
+    });
+    const client = await pool.ensure("bundled", bootstrapEntry);
+    await client.request("runtime.hello", helloParams());
+    const prepared = await client.request("delegation.prepareRun", snapshot);
+    await pool.shutdown();
+    return prepared.runId;
+  }
+
+  const firstId = await prepareWithFreshProcess();
+  const secondId = await prepareWithFreshProcess();
+  assert.equal(typeof firstId, "string");
+  assert.equal(typeof secondId, "string");
+  assert.notEqual(firstId, secondId);
+  assert.equal(sqlite.getRun(firstId)?.goal, "delegate");
+  assert.equal(sqlite.getRun(secondId)?.goal, "delegate");
+  db.close();
+});

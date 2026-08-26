@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createRuntimeManager, recordCrash, writeRuntimeState } from "../packages/runtime-host/dist/index.js";
+import { createRuntimeManager, recordCrash, writeRuntimeState, scheduleLastKnownGood, confirmAndMarkLastKnownGood, readRuntimeState } from "../packages/runtime-host/dist/index.js";
 import {
   createHealthyRuntimeLauncher,
   writeDummyRuntimeEntry
@@ -82,4 +82,50 @@ test("a single crash rolls back to last-known-good without permanently blocking"
   assert.equal(state.activeVersion, "1.0.0");
   assert.equal(state.blockedVersions["2.0.0"], undefined);
   assert.equal(state.crashCounts["2.0.0"], 1);
+});
+
+test("health window does not promote a crashed version to last-known-good", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-lkg-crash-"));
+  const environment = env(dataDir);
+  writeRuntimeState(dataDir, {
+    schemaVersion: 1,
+    activeVersion: "2.0.0",
+    pendingVersion: null,
+    lastKnownGoodVersion: "bundled",
+    channel: "stable",
+    lastCheckedAt: null,
+    blockedVersions: {},
+    crashCounts: {}
+  });
+  scheduleLastKnownGood(environment, "2.0.0", 40);
+  recordCrash(environment, "2.0.0");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const state = readRuntimeState(dataDir);
+  assert.equal(state.lastKnownGoodVersion, "bundled");
+  assert.notEqual(state.activeVersion, "2.0.0");
+});
+
+test("health window re-probes and requires zero crashes before last-known-good", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-lkg-ok-"));
+  const environment = env(dataDir);
+  writeRuntimeState(dataDir, {
+    schemaVersion: 1,
+    activeVersion: "bundled",
+    pendingVersion: null,
+    lastKnownGoodVersion: null,
+    channel: "stable",
+    lastCheckedAt: null,
+    blockedVersions: {},
+    crashCounts: {}
+  });
+  assert.equal(await confirmAndMarkLastKnownGood(environment, "bundled"), true);
+  assert.equal(readRuntimeState(dataDir).lastKnownGoodVersion, "bundled");
+
+  writeRuntimeState(dataDir, {
+    ...readRuntimeState(dataDir),
+    lastKnownGoodVersion: null,
+    crashCounts: { bundled: 1 }
+  });
+  assert.equal(await confirmAndMarkLastKnownGood(environment, "bundled"), false);
+  assert.equal(readRuntimeState(dataDir).lastKnownGoodVersion, null);
 });

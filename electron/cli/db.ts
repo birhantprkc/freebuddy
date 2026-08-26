@@ -1007,4 +1007,12 @@ export function migrate(db: DB) {
   if (!currentScheduledTaskCols.some((c) => c.name === "config_option_overrides")) {
     db.exec("ALTER TABLE scheduled_tasks ADD COLUMN config_option_overrides TEXT");
   }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS host_idempotency_keys (
+      key TEXT PRIMARY KEY,
+      result_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
 }

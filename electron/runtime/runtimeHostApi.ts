@@ -1,6 +1,9 @@
 import { BrowserWindow, type WebContents } from "electron";
 import { randomUUID } from "node:crypto";
 import type { RuntimeHostApi, RuntimeHostInvokeMeta } from "@freebuddy/runtime-host";
+import { createHostIdempotency, publicAgentProfile, trustedAgentExecution } from "@freebuddy/runtime-host";
+import { getHostIdempotencyResult, putHostIdempotencyResult } from "@freebuddy/storage-sqlite";
+import { sqliteContext } from "../cli/sqliteContext.js";
 import { listCliMembers } from "../cli/members.js";
 import {
   appendMessage,
@@ -29,11 +32,26 @@ import { getDelegationTeam } from "../cli/delegationTeams.js";
 import { resolveSkillSnapshots } from "../cli/skills.js";
 
 let executionWebContents: WebContents | undefined;
-const idempotentHostResults = new Map<string, unknown>();
 const pendingWriteApprovals = new Map<
   string,
   { runId: string; resolve: (approved: boolean) => void }
 >();
+const hostIdempotency = createHostIdempotency({
+  get(key) {
+    try {
+      return getHostIdempotencyResult(sqliteContext(), key);
+    } catch {
+      return { found: false };
+    }
+  },
+  put(key, value) {
+    try {
+      putHostIdempotencyResult(sqliteContext(), key, value);
+    } catch {
+      /* persistence is best-effort */
+    }
+  }
+});
 
 export function setRuntimeExecutionWebContents(webContents: WebContents | undefined): void {
   executionWebContents = webContents;
@@ -111,13 +129,8 @@ export function resolveHostWriteApproval(approvalId: string, approved: boolean):
 export function createDesktopRuntimeHostApi(): RuntimeHostApi {
   return {
     async invoke(method, params, meta) {
-      if (meta?.idempotencyKey && idempotentHostResults.has(meta.idempotencyKey)) {
-        return idempotentHostResults.get(meta.idempotencyKey);
-      }
       const args = argsOf(params);
-      const result = await dispatchHostInvoke(method, args, meta);
-      if (meta?.idempotencyKey) idempotentHostResults.set(meta.idempotencyKey, result);
-      return result;
+      return hostIdempotency.run(meta?.idempotencyKey, () => dispatchHostInvoke(method, args, meta));
     }
   };
 }
@@ -135,28 +148,24 @@ async function dispatchHostInvoke(
   }
   switch (method) {
         case "agent.list.v1":
-          return listCliMembers().map((member) => ({
-            id: member.id,
-            adapter: member.cli.adapter,
-            agentName: member.name,
-            binary: member.cli.binary,
-            extraArgs: member.cli.extraArgs,
-            env: member.cli.env,
-            skillIds: member.cli.skillIds
-          }));
+          return listCliMembers().map((member) =>
+            publicAgentProfile({
+              id: member.id,
+              adapter: member.cli.adapter,
+              agentName: member.name,
+              skillIds: member.cli.skillIds
+            })
+          );
         case "agent.resolve.v1": {
           const agentId = String((args[0] as { agentId?: string })?.agentId ?? args[0]);
           const member = listCliMembers().find((item) => item.id === agentId);
           if (!member) return null;
-          return {
+          return publicAgentProfile({
             id: member.id,
             adapter: member.cli.adapter,
             agentName: member.name,
-            binary: member.cli.binary,
-            extraArgs: member.cli.extraArgs,
-            env: member.cli.env,
             skillIds: member.cli.skillIds
-          };
+          });
         }
         case "agent.execute.v1": {
           const payload = (args[0] ?? {}) as {
@@ -178,11 +187,26 @@ async function dispatchHostInvoke(
             resumeToolSession?: boolean;
             cwd?: string;
           };
+          const member = listCliMembers().find((item) => item.id === payload.agentId);
           const webContents = activeWebContents();
           const executor = createCliStepExecutor(webContents);
           try {
+            const trusted = trustedAgentExecution(
+              member
+                ? {
+                    id: member.id,
+                    adapter: member.cli.adapter,
+                    agentName: member.name,
+                    binary: member.cli.binary,
+                    extraArgs: member.cli.extraArgs,
+                    env: member.cli.env,
+                    skillIds: member.cli.skillIds
+                  }
+                : undefined,
+              payload
+            );
             await executor.run({
-              ...payload,
+              ...trusted,
               promptAttachments: payload.promptAttachments as never,
               onEvent(event) {
                 meta?.emit?.("agent.event", {

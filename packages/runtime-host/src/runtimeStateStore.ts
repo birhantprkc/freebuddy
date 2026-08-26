@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { ensureRuntimeRoot, statePath } from "./runtimePaths.js";
 
 export interface RuntimeState {
@@ -51,20 +52,47 @@ export function writeRuntimeState(dataDir: string, state: RuntimeState): void {
   fs.renameSync(tmp, file);
 }
 
-export function withInstallLock<T>(dataDir: string, fn: () => T): T {
+const installLockContext = new AsyncLocalStorage<string>();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function withInstallLock<T>(
+  dataDir: string,
+  fn: () => Promise<T> | T,
+  options?: { timeoutMs?: number; staleMs?: number }
+): Promise<T> {
   ensureRuntimeRoot(dataDir);
-  const lock = path.join(path.dirname(statePath(dataDir)), "runtime.lock");
-  const staleMs = 5 * 60 * 1000;
-  if (fs.existsSync(lock)) {
-    const stat = fs.statSync(lock);
-    if (Date.now() - stat.mtimeMs > staleMs) fs.rmSync(lock, { force: true });
+  const root = path.dirname(statePath(dataDir));
+  if (installLockContext.getStore() === root) return await fn();
+
+  const lock = path.join(root, "runtime.lock");
+  const staleMs = options?.staleMs ?? 15 * 60 * 1000;
+  const timeoutMs = options?.timeoutMs ?? 60_000;
+  const deadline = Date.now() + timeoutMs;
+  let fd: number | undefined;
+  while (fd === undefined) {
+    try {
+      if (fs.existsSync(lock)) {
+        const stat = fs.statSync(lock);
+        if (Date.now() - stat.mtimeMs > staleMs) fs.rmSync(lock, { force: true });
+      }
+      fd = fs.openSync(lock, "wx");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") throw error;
+      if (Date.now() >= deadline) throw new Error("runtime install lock timeout");
+      await sleep(25);
+    }
   }
-  const fd = fs.openSync(lock, "wx");
-  try {
-    fs.writeFileSync(fd, String(process.pid));
-    return fn();
-  } finally {
-    fs.closeSync(fd);
-    fs.rmSync(lock, { force: true });
-  }
+  return installLockContext.run(root, async () => {
+    try {
+      fs.writeFileSync(fd, String(process.pid));
+      return await fn();
+    } finally {
+      fs.closeSync(fd);
+      fs.rmSync(lock, { force: true });
+    }
+  });
 }

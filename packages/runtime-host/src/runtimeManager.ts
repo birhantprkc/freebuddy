@@ -1,7 +1,13 @@
 import type { RuntimeHostApi, RuntimeHostEnvironment, RuntimeManager } from "./ports.js";
-import { readRuntimeState, writeRuntimeState } from "./runtimeStateStore.js";
+import { readRuntimeState, writeRuntimeState, withInstallLock } from "./runtimeStateStore.js";
 import { versionDir } from "./runtimePaths.js";
-import { probeRuntimeVersion, recordCrash, isVersionBlocked, scheduleLastKnownGood } from "./runtimeHealthMonitor.js";
+import {
+  probeRuntimeVersion,
+  recordCrash,
+  isVersionBlocked,
+  scheduleLastKnownGood,
+  cancelLastKnownGood
+} from "./runtimeHealthMonitor.js";
 import { checkRuntimeUpdate, downloadAndPrepareRuntime } from "./runtimeUpdateService.js";
 import { createRuntimeVersionRouter } from "./runtimeVersionRouter.js";
 import { createRuntimeProcessPool } from "./runtimeProcessPool.js";
@@ -67,6 +73,7 @@ export function createRuntimeManager(
           ? state.lastKnownGoodVersion
           : "bundled";
       if (previous && previous !== "bundled") {
+        cancelLastKnownGood(previous);
         state.blockedVersions[previous] = {
           reason: "rollback",
           failedAt: environment.clock.nowIso()
@@ -76,6 +83,7 @@ export function createRuntimeManager(
       writeRuntimeState(environment.dataDir, state);
     },
     async shutdown() {
+      cancelLastKnownGood();
       await pool.shutdown();
       router.shutdown();
     },
@@ -92,18 +100,20 @@ export function createRuntimeManager(
       return pool.request(version, method, params, options);
     },
     async check() {
-      const result = await checkRuntimeUpdate(environment, {
-        baseUrl: environment.update?.baseUrl,
-        enabled: environment.update?.enabled ?? false,
-        channel: readRuntimeState(environment.dataDir).channel
+      return withInstallLock(environment.dataDir, async () => {
+        const result = await checkRuntimeUpdate(environment, {
+          baseUrl: environment.update?.baseUrl,
+          enabled: environment.update?.enabled ?? false,
+          channel: readRuntimeState(environment.dataDir).channel
+        });
+        if (!result.available) return { available: false, reason: result.reason };
+        const prepared = await downloadAndPrepareRuntime(environment, result.descriptor);
+        if (!prepared.ok) {
+          lastError = prepared.error;
+          return { available: false, reason: prepared.error };
+        }
+        return { available: true, version: result.descriptor.version };
       });
-      if (!result.available) return { available: false, reason: result.reason };
-      const prepared = await downloadAndPrepareRuntime(environment, result.descriptor);
-      if (!prepared.ok) {
-        lastError = prepared.error;
-        return { available: false, reason: prepared.error };
-      }
-      return { available: true, version: result.descriptor.version };
     },
     async setChannel(channel) {
       const state = readRuntimeState(environment.dataDir);
