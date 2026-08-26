@@ -20,7 +20,7 @@ test("workflow team IPC handlers are registered", () => {
 });
 
 test("workflow team IPC uses cloned cli members", () => {
-  const ipc = read("../electron/cli/workflowIpc.ts");
+  const ipc = read("../electron/cli/workflowIpc.ts") + read("../electron/runtime/workflowRuntimeClient.ts");
   const members = read("../electron/cli/members.ts");
   const runtime = read("../electron/cli/workflowRuntime.ts") + read("../electron/runtime/adapters/legacyAgentExecutor.ts") + read("../packages/workflow-runtime/src/runtime.ts");
   assert.match(ipc, /import \{ listCliMembers \}/);

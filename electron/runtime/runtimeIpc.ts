@@ -1,16 +1,16 @@
 import { registerHandler } from "../invokeRegistry.js";
 import { createRuntimeManager } from "@freebuddy/runtime-host";
 import { createElectronRuntimeEnvironment } from "./electronRuntimeEnvironment.js";
+import { createDesktopRuntimeHostApi } from "./runtimeHostApi.js";
 
 let manager: ReturnType<typeof createRuntimeManager> | null = null;
 
 export function getRuntimeManager() {
   if (!manager) {
-    manager = createRuntimeManager(createElectronRuntimeEnvironment(), {
-      async invoke() {
-        return null;
-      }
-    });
+    manager = createRuntimeManager(
+      createElectronRuntimeEnvironment(),
+      createDesktopRuntimeHostApi()
+    );
   }
   return manager;
 }

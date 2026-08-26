@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, type IpcMainInvokeEvent } from "electron";
+import { type IpcMainInvokeEvent } from "electron";
 import { registerHandler } from "../invokeRegistry.js";
 import { logMain } from "../debugLog.js";
 
@@ -7,7 +7,6 @@ import {
   buildReviewLoopPlan,
   reviewLoopCoordinatorPrompt
 } from "./workflowTemplates.js";
-import { createCliStepExecutor, WorkflowRuntime, createElectronWorkflowPorts } from "./workflowRuntime.js";
 import {
   getWorkflowRun,
   getWorkflowSteps,
@@ -33,32 +32,10 @@ import {
 import { validateWorkflowTeam } from "./workflowTeamValidate.js";
 import { expandTeamToPlan } from "./workflowTeamAdapter.js";
 import type { WorkflowTeam } from "./workflowTeamTypes.js";
+import { createWorkflowRuntimeHandle } from "../runtime/workflowRuntimeClient.js";
 
-let runtime: WorkflowRuntime | null = null;
-
-function ensureRuntime(event: IpcMainInvokeEvent): WorkflowRuntime {
-  if (runtime) return runtime;
-  const win = BrowserWindow.fromWebContents(event.sender);
-  const executor = createCliStepExecutor(win?.webContents);
-  runtime = new WorkflowRuntime(
-    createElectronWorkflowPorts({
-      executor,
-      webContents: win?.webContents,
-      resolveAgent(agentId) {
-        const member = listCliMembers().find((m) => m.id === agentId);
-        if (!member) return undefined;
-        return {
-          adapter: member.cli.adapter,
-          agentName: member.name,
-          binary: member.cli.binary,
-          extraArgs: member.cli.extraArgs,
-          env: member.cli.env,
-          skillIds: member.cli.skillIds
-        };
-      }
-    })
-  );
-  return runtime;
+function ensureRuntime(event: IpcMainInvokeEvent) {
+  return createWorkflowRuntimeHandle(event);
 }
 
 export function registerWorkflowIpc() {

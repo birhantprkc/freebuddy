@@ -4,15 +4,17 @@ import { versionDir } from "./runtimePaths.js";
 import { probeRuntimeVersion, recordCrash } from "./runtimeHealthMonitor.js";
 import { checkRuntimeUpdate, downloadAndPrepareRuntime } from "./runtimeUpdateService.js";
 import { createRuntimeVersionRouter } from "./runtimeVersionRouter.js";
+import { createRuntimeProcessPool } from "./runtimeProcessPool.js";
 import fs from "node:fs";
 
 export function createRuntimeManager(
   environment: RuntimeHostEnvironment,
-  _hostApi: RuntimeHostApi
+  hostApi: RuntimeHostApi
 ): RuntimeManager {
   const router = createRuntimeVersionRouter(
     () => readRuntimeState(environment.dataDir).activeVersion ?? "bundled"
   );
+  const pool = createRuntimeProcessPool({ environment, hostApi });
   let lastError: string | null = null;
 
   return {
@@ -68,7 +70,20 @@ export function createRuntimeManager(
       writeRuntimeState(environment.dataDir, state);
     },
     async shutdown() {
+      await pool.shutdown();
       router.shutdown();
+    },
+    route(input) {
+      return router.route(input);
+    },
+    async ensureProcess(version, entryPath) {
+      const client = await pool.ensure(version, entryPath);
+      router.attach(version, client.handle);
+      router.retain(version);
+    },
+    async request(version, method, params, options) {
+      await this.ensureProcess(version);
+      return pool.request(version, method, params, options);
     },
     async check() {
       const result = await checkRuntimeUpdate(environment, {

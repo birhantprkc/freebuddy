@@ -4,19 +4,18 @@ import {
   isRuntimeRpcFrame,
   makeFrame,
   rpcError,
-  type RuntimeMessageTransport
-} from "./transport.js";
+  type RuntimeEntryTransport
+} from "./framing.js";
 
 export type RpcHandler = (
   params: unknown,
   meta: { id: string; idempotencyKey?: string; attempt?: number }
 ) => Promise<unknown> | unknown;
 
-export interface RuntimeRpcSessionOptions {
-  transport: RuntimeMessageTransport;
+export interface RuntimeRpcPeerOptions {
+  transport: RuntimeEntryTransport;
   handlers?: Record<string, RpcHandler>;
   timeoutMs?: number;
-  onEvent?: (event: string, payload: unknown) => void;
 }
 
 type Pending = {
@@ -25,14 +24,15 @@ type Pending = {
   timer?: ReturnType<typeof setTimeout>;
 };
 
-export class RuntimeRpcSession {
+export class RuntimeRpcPeer {
   private pending = new Map<string, Pending>();
   private idempotent = new Map<string, unknown>();
+  private eventHandlers = new Map<string, Set<(payload: unknown) => void>>();
   private unsubscribe: () => void;
   private closed = false;
   private readonly timeoutMs: number;
 
-  constructor(private readonly opts: RuntimeRpcSessionOptions) {
+  constructor(private readonly opts: RuntimeRpcPeerOptions) {
     this.timeoutMs = opts.timeoutMs ?? 15_000;
     this.unsubscribe = opts.transport.onMessage((message) => {
       void this.onMessage(message);
@@ -93,9 +93,16 @@ export class RuntimeRpcSession {
   }
 
   emit(event: string, payload?: unknown): void {
-    this.opts.transport.send(
-      makeFrame({ id: randomUUID(), kind: "event", event, payload })
-    );
+    this.opts.transport.send(makeFrame({ id: randomUUID(), kind: "event", event, payload }));
+  }
+
+  onEvent(event: string, handler: (payload: unknown) => void): () => void {
+    const set = this.eventHandlers.get(event) ?? new Set();
+    set.add(handler);
+    this.eventHandlers.set(event, set);
+    return () => {
+      set.delete(handler);
+    };
   }
 
   close(): void {
@@ -111,7 +118,10 @@ export class RuntimeRpcSession {
   private async onMessage(message: unknown): Promise<void> {
     if (!isRuntimeRpcFrame(message)) return;
     if (message.kind === "event") {
-      this.opts.onEvent?.(message.event ?? "", message.payload);
+      const handlers = this.eventHandlers.get(message.event ?? "");
+      if (handlers) {
+        for (const handler of handlers) handler(message.payload);
+      }
       return;
     }
     if (message.kind === "response" || message.kind === "error") {
@@ -166,43 +176,6 @@ export class RuntimeRpcSession {
       );
     }
   }
-}
-
-export function createLoopbackPair(): {
-  host: RuntimeMessageTransport;
-  runtime: RuntimeMessageTransport;
-} {
-  const hostHandlers: Array<(message: unknown) => void> = [];
-  const runtimeHandlers: Array<(message: unknown) => void> = [];
-  const host: RuntimeMessageTransport = {
-    send(message) {
-      queueMicrotask(() => {
-        for (const handler of runtimeHandlers) handler(message);
-      });
-    },
-    onMessage(handler) {
-      hostHandlers.push(handler);
-      return () => {
-        const idx = hostHandlers.indexOf(handler);
-        if (idx >= 0) hostHandlers.splice(idx, 1);
-      };
-    }
-  };
-  const runtime: RuntimeMessageTransport = {
-    send(message) {
-      queueMicrotask(() => {
-        for (const handler of hostHandlers) handler(message);
-      });
-    },
-    onMessage(handler) {
-      runtimeHandlers.push(handler);
-      return () => {
-        const idx = runtimeHandlers.indexOf(handler);
-        if (idx >= 0) runtimeHandlers.splice(idx, 1);
-      };
-    }
-  };
-  return { host, runtime };
 }
 
 export type { RuntimeRpcFrame };

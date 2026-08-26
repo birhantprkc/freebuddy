@@ -12,7 +12,10 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-export function createMemoryDelegationRepository(): DelegationRunRepository {
+export function createMemoryDelegationRepository(): DelegationRunRepository & {
+  hydrateRun(run: DelegationRunRow): void;
+  hydrateEvent(event: DelegationEvent): void;
+} {
   const runs = new Map<string, DelegationRunRow>();
   const events = new Map<string, DelegationEvent>();
   let seq = 0;
@@ -154,6 +157,12 @@ export function createMemoryDelegationRepository(): DelegationRunRepository {
         ids.push(event.id);
       }
       return ids;
+    },
+    hydrateRun(run: DelegationRunRow) {
+      runs.set(run.id, run);
+    },
+    hydrateEvent(event: DelegationEvent) {
+      events.set(event.id, event);
     }
   };
 }

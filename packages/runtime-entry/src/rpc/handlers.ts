@@ -50,7 +50,10 @@ export function createRuntimeRpcHandlers(input?: {
     async "runtime.hello"(params) {
       const result = negotiateHello(params as RuntimeHelloRequest);
       if (!result.ok) throw new Error(result.message);
-      return result.response;
+      return {
+        ...result.response,
+        runtimeVersion: process.env.FB_RUNTIME_VERSION || result.response.runtimeVersion
+      };
     },
     async "runtime.health"() {
       return (

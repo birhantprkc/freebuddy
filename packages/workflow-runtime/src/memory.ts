@@ -9,7 +9,10 @@ import type {
   WorkflowRepository
 } from "./ports.js";
 
-export function createMemoryWorkflowRepository(): WorkflowRepository {
+export function createMemoryWorkflowRepository(): WorkflowRepository & {
+  hydrateRun(run: WorkflowRunRow): void;
+  hydrateSteps(runId: string, rows: WorkflowStepRow[]): void;
+} {
   const runs = new Map<string, WorkflowRunRow>();
   const steps = new Map<string, WorkflowStepRow[]>();
 
@@ -114,6 +117,15 @@ export function createMemoryWorkflowRepository(): WorkflowRepository {
             : step
         )
       );
+    },
+    hydrateRun(run: WorkflowRunRow) {
+      runs.set(run.id, run);
+      if (!steps.has(run.id)) steps.set(run.id, []);
+    },
+    hydrateSteps(runId: string, rows: WorkflowStepRow[]) {
+      steps.set(runId, [...rows]);
     }
   };
 }
+
+export type MemoryWorkflowRepository = ReturnType<typeof createMemoryWorkflowRepository>;

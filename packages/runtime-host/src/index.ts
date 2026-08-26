@@ -3,12 +3,14 @@ export type {
   RuntimeHostApi,
   RuntimeHostEnvironment,
   RuntimeHostId,
+  RuntimeHostInvokeMeta,
   RuntimeHttpClient,
   RuntimeManager,
   RuntimeProcessHandle,
   RuntimeProcessLauncher,
   RuntimeStatusSnapshot,
-  RuntimeTrustedKeyStore
+  RuntimeTrustedKeyStore,
+  RuntimeVersionRoute
 } from "./ports.js";
 export { readRuntimeState, writeRuntimeState } from "./runtimeStateStore.js";
 export { verifyRuntimeArtifact, sha256 } from "./runtimeVerifier.js";
@@ -21,3 +23,9 @@ export { checkRuntimeUpdate, downloadAndPrepareRuntime } from "./runtimeUpdateSe
 export { verifyChannelDescriptor, inRollout } from "./runtimeManifest.js";
 export { probeRuntimeVersion, recordCrash, markLastKnownGood } from "./runtimeHealthMonitor.js";
 export { createRuntimeVersionRouter, legacyRuntimeVersion } from "./runtimeVersionRouter.js";
+export { resolveRuntimeEntryPath } from "./runtimeEntryPath.js";
+export {
+  createRuntimeProcessPool,
+  transportFromProcessHandle
+} from "./runtimeProcessPool.js";
+export type { RuntimeProcessClient, RuntimeProcessPool } from "./runtimeProcessPool.js";

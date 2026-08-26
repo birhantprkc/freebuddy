@@ -16,13 +16,13 @@ const packTsconfig = {
 };
 void packTsconfig;
 
-const build = spawnSync("npx", ["esbuild", "packages/runtime-entry/src/index.ts", "--bundle", "--platform=node", "--format=esm", "--outfile=.build/runtime-pack/runtime/index.mjs"], {
+const build = spawnSync("npx", ["esbuild", "packages/runtime-entry/src/bootstrap.ts", "--bundle", "--platform=node", "--format=esm", "--outfile=.build/runtime-pack/runtime/index.mjs"], {
   cwd: root,
   stdio: "inherit"
 });
 if (build.status !== 0) {
-  // Fallback: copy compiled runtime-entry when esbuild cannot resolve workspace graph yet.
-  const entry = path.join(root, "packages/runtime-entry/dist/index.js");
+  // Fallback: copy compiled runtime-entry bootstrap when esbuild cannot resolve workspace graph yet.
+  const entry = path.join(root, "packages/runtime-entry/dist/bootstrap.js");
   if (!fs.existsSync(entry)) {
     process.exit(build.status ?? 1);
   }

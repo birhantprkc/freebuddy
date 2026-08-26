@@ -43,8 +43,14 @@ export interface RuntimeTrustedKeyStore {
   list(): Array<{ keyId: string; publicKey: string }>;
 }
 
+export interface RuntimeHostInvokeMeta {
+  idempotencyKey?: string;
+  runtimeVersion?: string;
+  emit?: (event: string, payload?: unknown) => void;
+}
+
 export interface RuntimeHostApi {
-  invoke(method: string, params: unknown, meta?: { idempotencyKey?: string }): Promise<unknown>;
+  invoke(method: string, params: unknown, meta?: RuntimeHostInvokeMeta): Promise<unknown>;
 }
 
 export interface RuntimeStatusSnapshot {
@@ -61,6 +67,11 @@ export interface RuntimeStatusSnapshot {
   lastError?: string | null;
 }
 
+export interface RuntimeVersionRoute {
+  version: string;
+  pinned: boolean;
+}
+
 export interface RuntimeManager {
   status(): Promise<RuntimeStatusSnapshot>;
   prepare(version?: string): Promise<void>;
@@ -69,4 +80,12 @@ export interface RuntimeManager {
   shutdown(): Promise<void>;
   check(): Promise<{ available: boolean; version?: string; reason?: string }>;
   setChannel(channel: "stable" | "beta" | "development"): Promise<void>;
+  route(input: { runtimeVersion?: string | null }): RuntimeVersionRoute;
+  ensureProcess(version: string, entryPath?: string): Promise<void>;
+  request(
+    version: string,
+    method: string,
+    params?: unknown,
+    options?: { timeoutMs?: number; idempotencyKey?: string; signal?: AbortSignal }
+  ): Promise<unknown>;
 }
