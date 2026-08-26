@@ -4,11 +4,11 @@
 
 **Goal:** Refactor FreeBuddy into private workspace packages, isolate workflow/delegation runtime logic from Electron and SQLite, and add a signed, independently updatable Runtime Pack with compatibility negotiation, safe activation, side-by-side version routing, and automatic rollback.
 
-**User-visible outcome:** Workflow, delegation, prompt/protocol, parser, and compatible Agent adapter fixes can be shipped as a Runtime Pack without releasing a new Electron installer. Electron/preload/UI/native/database-schema changes still use the existing desktop release path.
+**User-visible outcome:** Workflow, delegation, prompt/protocol, parser, and compatible Agent adapter fixes can be shipped as a Runtime Pack without releasing a new Electron installer. The exact same Runtime Pack and Host API can later be used by a standalone `freebuddy-cli`. Electron/preload/UI/native/database-schema changes still use the existing desktop release path.
 
-**Architecture:** The installed Electron application becomes the stable Host. Pure domain packages feed injectable workflow and delegation runtimes. The Host owns SQLite, native modules, credentials, filesystem/process capabilities, update policy, signature verification, and UI events. A first-party signed Runtime Pack runs in a separate Electron utility process and communicates with the Host over a versioned, validated bidirectional RPC protocol.
+**Architecture:** FreeBuddy Desktop and a future `freebuddy-cli` are Host implementations around one Host-neutral Runtime. Pure domain packages feed injectable workflow and delegation runtimes. A shared `@freebuddy/runtime-host` package owns Runtime Pack update/install/state/version policy through injected environment and launcher ports. Each product Host owns its database connection, native modules, credentials, filesystem/process capabilities, and presentation. A first-party signed Runtime Pack runs in a separate process and communicates with either Host over the same versioned, validated bidirectional RPC protocol. Desktop uses an Electron utility-process adapter; CLI uses a Node child-process adapter.
 
-**Tech stack:** npm workspaces, TypeScript ESM, Node test runner, Vite, Electron, `utilityProcess`, `node:crypto` Ed25519 verification, existing SQLite layer, GitHub Actions.
+**Tech stack:** npm workspaces, TypeScript ESM, Node test runner, Vite, Electron `utilityProcess`, Node `child_process`, `node:crypto` Ed25519 verification, existing SQLite layer, GitHub Actions.
 
 **Branch:** `codex/runtime-pack-modularization`
 
@@ -21,12 +21,14 @@
 - Internal source is modular, but the initial remote distribution unit is one `freebuddy-runtime` bundle. Do not independently update every internal package.
 - Runtime Packs are first-party and must be signed. Third-party/untrusted plugin execution is out of scope.
 - A downloaded Runtime Pack must not be imported into the Electron main process. It runs in a separate utility process for crash isolation. This is not a security sandbox; signature trust remains mandatory.
+- The Runtime Pack, Runtime RPC, and `@freebuddy/runtime-host` must not import Electron or assume a graphical UI. Host differences are expressed through explicit capabilities and injected adapters.
+- Shared Runtime management must not call `app.getPath`, `app.isPackaged`, `BrowserWindow`, or Electron updater APIs. Desktop passes those values through a Host environment adapter; a future CLI passes its own data directory and policy.
 - The Host owns database connections and migrations. Runtime code accesses persisted data only through versioned Host APIs.
 - Runtime bundles must contain no native Node addons and no platform-specific install scripts. `better-sqlite3`, `node-pty`, Electron APIs, updater code, and OS integration stay in the Host.
 - Existing IPC channel names, database behavior, and user-visible behavior remain compatible during phases 1 and 2.
 - Runtime activation must never interrupt an active task. Persisted runs are pinned to the Runtime version that created them; new runs use the active version.
 - Always retain a bundled fallback Runtime and at least one last-known-good downloaded Runtime.
-- Any Runtime requiring a new database migration, Electron capability, preload API, or UI surface must declare a newer Host API/minimum Host version and wait for a desktop release.
+- Any Runtime requiring a new database migration, Electron capability, preload API, or UI surface must declare a newer Host API/capability requirement (and an optional product-specific Host constraint when unavoidable) and wait for the affected Host product to release support.
 
 ---
 
@@ -43,19 +45,24 @@ freebuddy/
 │  ├─ workflow-runtime/
 │  ├─ delegation-runtime/
 │  ├─ storage-sqlite/
-│  └─ runtime-entry/
+│  ├─ runtime-entry/
+│  └─ runtime-host/
+│     ├─ src/ports.ts
+│     ├─ src/runtimeManager.ts
+│     ├─ src/runtimeUpdateService.ts
+│     ├─ src/runtimeDownloader.ts
+│     ├─ src/runtimeVerifier.ts
+│     ├─ src/runtimeInstaller.ts
+│     ├─ src/runtimeStateStore.ts
+│     ├─ src/runtimeVersionRouter.ts
+│     ├─ src/runtimeHealthMonitor.ts
+│     └─ src/node/nodeRuntimeProcessLauncher.ts
 ├─ electron/
 │  ├─ runtime/
-│  │  ├─ runtimeManager.ts
-│  │  ├─ runtimeProcessHost.ts
 │  │  ├─ runtimeRpcHost.ts
-│  │  ├─ runtimeUpdateService.ts
-│  │  ├─ runtimeDownloader.ts
-│  │  ├─ runtimeVerifier.ts
-│  │  ├─ runtimeInstaller.ts
-│  │  ├─ runtimeStateStore.ts
-│  │  ├─ runtimeVersionRouter.ts
-│  │  ├─ runtimeHealthMonitor.ts
+│  │  ├─ electronRuntimeEnvironment.ts
+│  │  ├─ electronRuntimeProcessLauncher.ts
+│  │  ├─ bundledRuntime.ts
 │  │  └─ runtimeIpc.ts
 │  └─ ... existing Host code
 ├─ scripts/
@@ -69,7 +76,7 @@ freebuddy/
 └─ .github/workflows/runtime-release.yml
 ```
 
-Do not move `electron/` and `src/` under a new `apps/desktop/` directory in this project. That move produces a large low-value diff and can be considered after the runtime architecture is stable.
+Do not move `electron/` and `src/` under a new `apps/desktop/` directory in this project. That move produces a large low-value diff and can be considered after the runtime architecture is stable. Do not create the actual `freebuddy-cli` product in this plan; do create the shared Host API, Node process launcher, and CLI conformance harness needed so the future CLI can consume the same Runtime Pack without another architectural refactor.
 
 ---
 
@@ -87,13 +94,23 @@ Do not move `electron/` and `src/` under a new `apps/desktop/` directory in this
 ## 3. Dependency rules
 
 ```text
-Electron / React Host
-      │
-      ├────→ workflow-runtime ─────→ workflow-core ─────→ protocol
-      ├────→ delegation-runtime ───→ delegation-core ───→ protocol
-      ├────→ agent-runtime ────────→ cli-stream ────────→ protocol
-      ├────→ storage-sqlite ────────────────────────────→ protocol
-      └────────────────────────────────────────────────→ protocol
+                         freebuddy-runtime.pack
+                           /                 \
+                          /                   \
+          FreeBuddy Desktop Host         future freebuddy-cli Host
+          Electron launcher/IPC          Node launcher/terminal
+                          \                   /
+                           \                 /
+                          @freebuddy/runtime-host
+                                      │
+      ┌───────────────────────────────┼───────────────────────────────┐
+      ▼                               ▼                               ▼
+workflow-runtime              delegation-runtime               agent-runtime
+      │                               │                               │
+workflow-core                 delegation-core                   cli-stream
+      └───────────────────────────────┴───────────────────────────────┘
+                                      │
+                                  protocol
 ```
 
 Rules to enforce in tests:
@@ -104,7 +121,8 @@ Rules to enforce in tests:
 - Runtime packages: may import their core package, `protocol`, and `agent-runtime`; no Electron, concrete SQLite, `ipcSend`, `WebContents`, `BrowserWindow`, or `getDb`.
 - `storage-sqlite`: implements repository ports and owns SQL, but never imports Electron or React.
 - `runtime-entry`: composes only runtime packages; no Electron/native/storage imports.
-- Electron Host may import all packages and is the only composition root.
+- `runtime-host`: may use portable Node standard-library APIs, but never imports Electron, React, desktop updater state, or app directories; data directory, packaged/development policy, fetch/configuration, trusted keys, clocks, and process launch are injected or provided through explicit subpath adapters.
+- Electron Desktop and a future CLI are peer composition roots. Neither product-specific Host may leak types into the Runtime Pack.
 - No package may deep-import another package's `src/` or unexported file.
 - No dependency cycles are allowed.
 
@@ -115,12 +133,13 @@ Rules to enforce in tests:
 Maintain separate versions:
 
 ```text
-Desktop Host version     package.json version, e.g. 0.9.0
+Product Host version     Desktop or CLI package version, e.g. 0.9.0
 Host API version         stable capability API, e.g. 1.0
 Runtime version          Runtime Pack SemVer, e.g. 1.0.0
 Runtime RPC version      wire framing/protocol, initially 1
 Runtime state schema     runtime-state.json schema, initially 1
 Runtime manifest schema  manifest schema, initially 1
+Runtime Node engine      common Desktop utility-process/CLI baseline
 ```
 
 Compatibility rules:
@@ -129,7 +148,9 @@ Compatibility rules:
 - They may not remove or change existing Host API methods within the same major Host API version.
 - Unknown optional fields/events must be ignored.
 - Unknown required capabilities reject activation.
-- Breaking RPC/Host API changes require a desktop release that supports both old and new versions during migration.
+- Breaking RPC/Host API changes require a release of each affected Host product that supports both old and new versions during migration.
+- Compatibility is primarily capability- and Host-API-based, not hardcoded to Electron or a particular product ID. `hostId` is informational/auditing context unless an explicit product constraint is unavoidable.
+- Runtime artifacts declare a supported Node engine range and must run on both the Electron utility process's Node version and the future CLI's supported Node baseline.
 - Runtime code may not change the SQLite schema.
 
 ---
@@ -485,21 +506,27 @@ Workflow and delegation runtimes can execute end-to-end tests using in-memory re
 
 ## Phase 3 exit condition
 
-A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, verify it, probe it in an isolated utility process, atomically activate it for new runs, route pinned runs to their original Runtime version, and automatically roll back after a failed activation or crash loop. No Electron installer update is required for compatible Runtime-only changes.
+A packaged FreeBuddy Desktop Host can download a compatible first-party Runtime Pack, verify it, probe it in an isolated utility process, atomically activate it for new runs, route pinned runs to their original Runtime version, and automatically roll back after a failed activation or crash loop. The same Runtime Pack and shared Runtime Manager pass a Node CLI Host conformance harness without Electron imports. No Electron installer update is required for compatible Runtime-only changes, and a future `freebuddy-cli` can reuse the architecture directly.
 
 ### Task 3.1: Define Runtime RPC and capability negotiation
 
 **Files:**
 - Extend: `packages/protocol/src/runtime.ts`
 - Create: `packages/runtime-entry/src/rpc/`
-- Create: `electron/runtime/runtimeRpcHost.ts`
+- Create: `packages/runtime-host/package.json`
+- Create: `packages/runtime-host/tsconfig.json`
+- Create: `packages/runtime-host/src/ports.ts`
+- Create: `packages/runtime-host/src/rpc/`
+- Create: `electron/runtime/runtimeRpcHost.ts` only for Desktop Host capability bindings
 - Create: `tests/runtime-rpc.test.mjs`
 
 - [ ] Define framed bidirectional request/response/event messages with unique IDs.
+- [ ] Define a transport-neutral `RuntimeMessageTransport`; RPC logic must not depend on Electron message ports, Node child-process IPC, or stdio directly.
+- [ ] Define the stable `RuntimeProcessLauncher` and initial `RuntimeHostEnvironment` construction ports before implementing either Desktop or Node launchers.
 - [ ] Validate all messages at both boundaries.
 - [ ] Add request timeout, cancellation, structured errors, and streaming Agent event support.
 - [ ] Define `runtime.hello`, `runtime.ready`, `runtime.health`, `runtime.shutdown`, Workflow, Delegation, and Host capability methods.
-- [ ] Handshake includes Runtime version, RPC version, required Host API range, capabilities, and bundle ID.
+- [ ] Handshake includes Runtime version, RPC version, Runtime Node version, required Host API range, required/provided capabilities, bundle ID, informational `hostId`, and Host product version.
 - [ ] Runtime-side repository, Agent executor, skill, event, and telemetry port adapters call typed Host API RPC methods; they never open SQLite or invoke Electron directly.
 - [ ] Side-effecting Host API calls carry stable idempotency keys and attempt identifiers so a Runtime crash/retry cannot duplicate an Agent turn or committed transition.
 - [ ] Reject unknown required methods/capabilities and incompatible versions before serving work.
@@ -521,6 +548,8 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 - [ ] Compose workflow/delegation/agent runtime implementations behind RPC handlers.
 - [ ] Build one self-contained Node ESM bundle with no native dependencies and no runtime package-manager lookup.
+- [ ] Runtime bootstrap supports both Electron utility-process transport and Node child-process transport through small adapters without importing Electron.
+- [ ] Target and test one documented Node engine baseline shared by Desktop utility processes and the future CLI; do not rely on Electron-only globals.
 - [ ] Declare the bundler as a direct dev dependency; do not rely on a transitive binary.
 - [ ] Produce deterministic file ordering and normalized timestamps where practical.
 - [ ] Generate `manifest.json`, `checksums.json`, `LICENSES.txt`, and an unsigned archive in `.build/runtime-pack/`.
@@ -529,7 +558,7 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 **Verify:**
 - [ ] Build the same source twice and confirm identical content hashes, excluding an explicitly documented nondeterministic signature envelope if necessary.
-- [ ] Load/probe the unsigned local development bundle only when `app.isPackaged === false` or an explicit test flag is set.
+- [ ] Load/probe an unsigned local development bundle only when the Host injects an explicit development policy; shared packages must not read `app.isPackaged`.
 
 **Commit:** `build: produce deterministic runtime pack`
 
@@ -555,13 +584,14 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 ### Task 3.4: Implement Runtime state and safe filesystem layout
 
 **Files:**
-- Create: `electron/runtime/runtimeStateStore.ts`
-- Create: `electron/runtime/runtimeInstaller.ts`
-- Create: `electron/runtime/runtimePaths.ts`
+- Create: `packages/runtime-host/src/runtimeStateStore.ts`
+- Create: `packages/runtime-host/src/runtimeInstaller.ts`
+- Create: `packages/runtime-host/src/runtimePaths.ts`
 - Create: `tests/runtime-state-store.test.mjs`
 - Create: `tests/runtime-installer.test.mjs`
 
-- [ ] Store state under `app.getPath("userData")/runtimes`, never inside `app.asar` or the install directory.
+- [ ] Define `RuntimeHostEnvironment`/ports for `hostId`, Host version/API/capabilities, data directory, bundled Runtime location, development policy, launcher, HTTP client, trusted keys, clock, and update configuration.
+- [ ] Store state under the injected `<dataDir>/runtimes`, never inside `app.asar` or an install directory. Desktop passes `app.getPath("userData")`; a future CLI passes its own platform-appropriate data directory.
 - [ ] Define schema-versioned `active`, `pending`, `lastKnownGood`, blocked versions, crash counters, and update timestamps.
 - [ ] Write state atomically using same-directory temp file, fsync where supported, and rename.
 - [ ] Use version directories and never overwrite an installed version.
@@ -578,7 +608,7 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 ### Task 3.5: Add signing and verification
 
 **Files:**
-- Create: `electron/runtime/runtimeVerifier.ts`
+- Create: `packages/runtime-host/src/runtimeVerifier.ts`
 - Create: `scripts/sign-runtime-pack.mjs`
 - Create: `tests/runtime-signature.test.mjs`
 - Create: test-only signing keys under `tests/fixtures/`; never commit a production private key
@@ -599,13 +629,13 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 ### Task 3.6: Implement manifest checks and resilient downloading
 
 **Files:**
-- Create: `electron/runtime/runtimeManifest.ts`
-- Create: `electron/runtime/runtimeDownloader.ts`
-- Create: `electron/runtime/runtimeUpdateService.ts`
-- Reuse: `electron/httpUtils.ts` where appropriate
+- Create: `packages/runtime-host/src/runtimeManifest.ts`
+- Create: `packages/runtime-host/src/runtimeDownloader.ts`
+- Create: `packages/runtime-host/src/runtimeUpdateService.ts`
+- Create: Desktop HTTP/config adapter under `electron/runtime/`; a future CLI can provide an equivalent Node adapter
 - Create: `tests/runtime-updater.test.mjs`
 
-- [ ] Read update base URL/channel from a build-time Host configuration with a safe disabled default for unsigned development builds.
+- [ ] Read update base URL/channel from injected Host configuration with a safe disabled default for unsigned development builds.
 - [ ] Do not share the desktop updater's mutable state or release metadata.
 - [ ] Use a Runtime-specific endpoint/repository so Runtime releases cannot become the desktop updater's GitHub “latest” release.
 - [ ] Support `stable`, `beta`, and development channels; default packaged builds to `stable`.
@@ -620,14 +650,15 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 **Commit:** `feat: download compatible runtime updates`
 
-### Task 3.7: Launch Runtime in a utility process
+### Task 3.7: Add the Electron Runtime Host adapter
 
 **Files:**
-- Create: `electron/runtime/runtimeProcessHost.ts`
+- Create: `electron/runtime/electronRuntimeEnvironment.ts`
+- Create: `electron/runtime/electronRuntimeProcessLauncher.ts`
 - Create: stable packaged bootstrap module if required
 - Create: `tests/runtime-process-host.test.mjs`
 
-- [ ] Use Electron `utilityProcess` for crash isolation and supported packaged execution.
+- [ ] Implement the shared `RuntimeProcessLauncher` port with Electron `utilityProcess` for crash isolation and supported packaged execution.
 - [ ] Treat utility-process isolation as crash containment, not a security sandbox.
 - [ ] Pass only required environment/configuration; strip secrets and inherited debug flags by default.
 - [ ] Establish handshake timeout, heartbeat, graceful shutdown, forced termination fallback, and exit diagnostics.
@@ -640,12 +671,34 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 **Commit:** `feat: host runtime in isolated utility process`
 
-### Task 3.8: Pin runs and route Runtime versions side-by-side
+### Task 3.8: Prove Node CLI Host compatibility
+
+**Files:**
+- Create: `packages/runtime-host/src/node/nodeRuntimeProcessLauncher.ts`
+- Create: `tests/fixtures/runtime-cli-host.mjs`
+- Create: `tests/runtime-cli-host-conformance.test.mjs`
+- Extend: `docs/runtime-pack-architecture.md`
+
+- [ ] Implement a Node `child_process` launcher behind the same `RuntimeProcessLauncher` port; do not import Electron or depend on `process.parentPort` being present.
+- [ ] Compose `createRuntimeManager` with `hostId: "freebuddy-cli"`, a temporary data directory, Node launcher, test keyring, and Host capability adapters.
+- [ ] Launch and probe the exact same Runtime Pack fixture used by the Electron Host tests.
+- [ ] Execute at least one Workflow request and one Delegation/core health request through the shared RPC protocol.
+- [ ] Run the shared Host conformance suite against both Electron/fake Desktop and Node CLI environments.
+- [ ] Export a documented, stable construction surface from `@freebuddy/runtime-host` so the future CLI does not deep-import internals.
+- [ ] Do not build CLI command parsing, terminal UX, installation, or public distribution in this task.
+
+**Verify:**
+- [ ] `node --test tests/runtime-cli-host-conformance.test.mjs`
+- [ ] Boundary tests confirm the Runtime Pack and `runtime-host` have no Electron imports.
+
+**Commit:** `test: prove runtime pack works with node cli host`
+
+### Task 3.9: Pin runs and route Runtime versions side-by-side
 
 **Files:**
 - Modify: Host-owned DB migration in `electron/cli/db.ts` or its migrated Host location
 - Modify: Workflow/Delegation repository DTOs and protocol
-- Create: `electron/runtime/runtimeVersionRouter.ts`
+- Create: `packages/runtime-host/src/runtimeVersionRouter.ts`
 - Create: `tests/runtime-version-routing.test.mjs`
 - Modify: DB tests
 
@@ -663,11 +716,11 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 **Commit:** `feat: pin persisted runs to runtime versions`
 
-### Task 3.9: Activation, health monitoring, and rollback
+### Task 3.10: Activation, health monitoring, and rollback
 
 **Files:**
-- Create: `electron/runtime/runtimeManager.ts`
-- Create: `electron/runtime/runtimeHealthMonitor.ts`
+- Create: `packages/runtime-host/src/runtimeManager.ts`
+- Create: `packages/runtime-host/src/runtimeHealthMonitor.ts`
 - Create: `tests/runtime-activation.test.mjs`
 - Create: `tests/runtime-rollback.test.mjs`
 
@@ -686,7 +739,7 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 **Commit:** `feat: activate and roll back runtime versions safely`
 
-### Task 3.10: Integrate Runtime status and controls into Electron/UI
+### Task 3.11: Integrate Runtime status and controls into Electron/UI
 
 **Files:**
 - Create: `electron/runtime/runtimeIpc.ts`
@@ -711,7 +764,7 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 **Commit:** `feat: expose independent runtime updates`
 
-### Task 3.11: Add Runtime release CI
+### Task 3.12: Add Runtime release CI
 
 **Files:**
 - Create: `.github/workflows/runtime-release.yml`
@@ -721,6 +774,7 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 - [ ] Trigger on tags that cannot match the desktop `v*` workflow, e.g. `runtime-v*`.
 - [ ] Run package typecheck, full relevant tests, deterministic build, forbidden-import/native-dependency scan, signature verification, and probe tests.
+- [ ] Run the Node CLI Host conformance suite on the minimum supported Node engine before signing/publishing.
 - [ ] Sign with protected CI secret/KMS material; never echo or persist the private key.
 - [ ] Publish immutable versioned artifacts plus detached signatures.
 - [ ] Publish/update a separately signed channel descriptor only after artifact upload and verification.
@@ -736,7 +790,7 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 
 **Commit:** `ci: publish signed runtime packs`
 
-### Task 3.12: Full upgrade, recovery, and packaging matrix
+### Task 3.13: Full upgrade, recovery, CLI conformance, and packaging matrix
 
 **Files:**
 - Add integration fixtures/tests and update operational docs
@@ -752,6 +806,8 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 - [ ] Test concurrent Runtime update checks and multiple app-instance handling.
 - [ ] Test revocation of active and inactive versions.
 - [ ] Test pinned paused/resumable runs during Runtime cleanup.
+- [ ] Run Node CLI Host conformance against every release candidate Runtime artifact.
+- [ ] Test Desktop and Node CLI Hosts rejecting the same incompatible Runtime and accepting the same compatible Runtime.
 - [ ] Measure startup, update, disk, and process overhead; document accepted limits.
 - [ ] Perform a security review of signature verification, archive extraction, URL handling, RPC validation, and privileged Host APIs.
 
@@ -763,6 +819,7 @@ A packaged FreeBuddy Host can download a compatible first-party Runtime Pack, ve
 - [ ] Platform CI builds for macOS and Linux
 - [ ] Runtime Pack release dry run with test keys
 - [ ] Manual packaged-app Runtime update and rollback
+- [ ] Node CLI Host conformance using the published Runtime Pack fixture
 
 **Commit:** `test: verify runtime update lifecycle end to end`
 
@@ -790,16 +847,22 @@ Required manifest fields:
   "bundleId": "dev.freebuddy.runtime",
   "version": "1.0.0",
   "rpcVersion": 1,
+  "engine": { "node": ">=22.0.0" },
   "hostApi": ">=1.0.0 <2.0.0",
-  "minHostVersion": "0.9.0",
   "entry": "runtime/index.mjs",
   "keyId": "runtime-prod-2026-01",
   "publishedAt": "2026-08-26T00:00:00.000Z",
-  "capabilities": ["workflow", "delegation", "cli-stream"]
+  "providesCapabilities": ["workflow", "delegation", "cli-stream"],
+  "requiresHostCapabilities": [
+    "agent.execute.v1",
+    "workflow.repository.v1",
+    "delegation.repository.v1",
+    "events.publish.v1"
+  ]
 }
 ```
 
-Do not sign an ambiguous re-serialized object. Define whether the detached signature covers the exact UTF-8 manifest bytes or a rigorously specified canonical representation, and test it across platforms. Prefer exact immutable bytes plus a separately signed channel descriptor binding the archive URL, byte size, and digest. The inner manifest cannot contain the hash of the archive that contains it.
+Do not sign an ambiguous re-serialized object. Define whether the detached signature covers the exact UTF-8 manifest bytes or a rigorously specified canonical representation, and test it across platforms. Prefer exact immutable bytes plus a separately signed channel descriptor binding the archive URL, byte size, and digest. The inner manifest cannot contain the hash of the archive that contains it. Compatibility should normally be decided by `hostApi` and `requiresHostCapabilities`; signed channel metadata may add optional per-product version constraints only for a known Host defect or rollout requirement.
 
 ---
 
@@ -847,12 +910,90 @@ The Host API should expose capabilities, not raw privileged objects:
 
 ---
 
+## 7.1 Shared Runtime Host construction contract
+
+`@freebuddy/runtime-host` must expose a product-neutral construction surface similar to:
+
+```ts
+export interface RuntimeHostEnvironment {
+  hostId: "freebuddy-desktop" | "freebuddy-cli" | (string & {});
+  hostVersion: string;
+  hostApiVersion: string;
+  hostCapabilities: readonly string[];
+  dataDir: string;
+  bundledRuntimePath?: string;
+  allowUnsignedDevelopmentRuntime: boolean;
+  launcher: RuntimeProcessLauncher;
+  http: RuntimeHttpClient;
+  trustedKeys: RuntimeTrustedKeyStore;
+  clock: RuntimeClock;
+}
+
+export function createRuntimeManager(
+  environment: RuntimeHostEnvironment,
+  hostApi: RuntimeHostApi
+): RuntimeManager;
+```
+
+Desktop composition:
+
+```ts
+createRuntimeManager(
+  {
+    hostId: "freebuddy-desktop",
+    hostVersion: APP_VERSION,
+    hostApiVersion: HOST_API_VERSION,
+    hostCapabilities: desktopCapabilities,
+    dataDir: app.getPath("userData"),
+    bundledRuntimePath,
+    allowUnsignedDevelopmentRuntime: !app.isPackaged,
+    launcher: createElectronRuntimeProcessLauncher(),
+    http: desktopRuntimeHttpClient,
+    trustedKeys,
+    clock: systemClock
+  },
+  desktopHostApi
+);
+```
+
+Future standalone CLI composition:
+
+```ts
+createRuntimeManager(
+  {
+    hostId: "freebuddy-cli",
+    hostVersion: CLI_VERSION,
+    hostApiVersion: HOST_API_VERSION,
+    hostCapabilities: cliCapabilities,
+    dataDir: resolveCliDataDir(),
+    bundledRuntimePath,
+    allowUnsignedDevelopmentRuntime: isCliDevelopmentMode,
+    launcher: createNodeRuntimeProcessLauncher(),
+    http: nodeRuntimeHttpClient,
+    trustedKeys,
+    clock: systemClock
+  },
+  cliHostApi
+);
+```
+
+The future CLI may operate in two modes:
+
+- **Standalone:** loads the same Runtime Pack and uses its own Host adapters and default data directory. It may reuse `@freebuddy/storage-sqlite`, but must not default to opening the Desktop application's live database file.
+- **Desktop controller:** connects to a running Desktop Host over an authenticated local transport and does not load a second Runtime or directly open the Desktop database.
+
+Sharing one SQLite file concurrently between independent Desktop and CLI Hosts is not part of this plan. Use separate stores for standalone mode or route commands through the Desktop Host for shared tasks.
+
+The Runtime Pack artifact itself is identical for both products. If `freebuddy-cli` later lives in this monorepo, it consumes the private workspace Host packages directly. If it lives in another repository, `runtime-host` may later be published or vendored as a separate SDK without changing the Runtime Pack or RPC contract.
+
+---
+
 ## 8. Rollout strategy
 
 1. Land Phase 1 with no user-visible changes.
 2. Land Phase 2 still using in-process Host adapters; keep behavior identical.
 3. Add utility-process execution behind a disabled feature flag.
-4. Dogfood the bundled Runtime only.
+4. Dogfood the bundled Runtime and run the Node CLI Host conformance harness against the same artifact.
 5. Enable signed remote update checks on the beta channel.
 6. Enable automatic preparation but manual activation.
 7. Enable automatic activation for new runs after rollback telemetry is healthy.
@@ -872,6 +1013,7 @@ At every rollout stage, the bundled Runtime fallback must remain functional.
 - Dynamic Electron preload/UI replacement.
 - Updating native addons outside the desktop installer.
 - Removing the existing desktop updater.
+- Building the actual `freebuddy-cli` command tree, terminal UX, installer, or release pipeline; only its reusable Host foundation and conformance harness are included.
 - Refactoring unrelated Browser, games, remote access, telemetry, or ButlerBuddy features merely because they are large.
 
 ---
@@ -891,5 +1033,8 @@ The project is complete only when all statements are true:
 - [ ] Incompatible Runtime versions are rejected before execution.
 - [ ] Runtime code cannot perform database migrations or receive raw Electron/SQLite objects.
 - [ ] Desktop and Runtime release channels cannot interfere with each other.
+- [ ] `@freebuddy/runtime-host` has no Electron dependency and exposes a stable public construction API.
+- [ ] The same Runtime Pack passes both Desktop Host and Node CLI Host conformance tests.
+- [ ] A future standalone CLI can provide its own data directory/Host adapters, while a Desktop-controller CLI can avoid direct shared-database access.
 - [ ] Security, recovery, and platform packaging tests pass.
 - [ ] Operational documentation covers release, promotion, revocation, rollback, key rotation, and support diagnostics.
