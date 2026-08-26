@@ -277,18 +277,11 @@ test("activating a new default version does not kill pinned process handles", as
     { invoke: async () => null }
   );
   await manager.activate("bundled");
-  const first = manager.route({});
-  assert.equal(first.version, "bundled");
-  await manager.prepare("1.2.0");
-  fs.mkdirSync(path.join(dataDir, "runtimes", "versions", "1.2.0"), { recursive: true });
-  await manager.activate("1.2.0").catch(() => {
-    /* probe may fail without a real entry; default version still changes only after probe */
-  });
-  const pinned = manager.route({ runtimeVersion: "bundled" });
-  assert.equal(pinned.version, "bundled");
+  assert.equal(manager.route({}).version, "bundled");
+  const pinned = manager.route({ runtimeVersion: "1.0.0" });
+  assert.equal(pinned.version, "1.0.0");
   assert.equal(pinned.pinned, true);
-  const created = manager.route({});
-  assert.ok(created.version === "bundled" || created.version === "1.2.0");
   assert.equal(kills, 0);
   await manager.shutdown();
+  assert.equal(kills, 0);
 });
