@@ -3,9 +3,13 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { resolveRuntimePackVersion } from "./runtime-release-lib.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outDir = path.join(root, ".build", "runtime-pack");
+const packVersion = resolveRuntimePackVersion();
+const keyId = process.env.RUNTIME_SIGNING_KEY_ID || "runtime-dev";
+const publishedAt = process.env.RUNTIME_PACK_PUBLISHED_AT || new Date().toISOString();
 
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(path.join(outDir, "runtime"), { recursive: true });
@@ -37,13 +41,13 @@ if (bundle.includes('from "electron"') || bundle.includes("better-sqlite3")) {
 const manifest = {
   schemaVersion: 1,
   bundleId: "dev.freebuddy.runtime",
-  version: "1.0.0",
+  version: packVersion,
   rpcVersion: 1,
   engine: { node: ">=22.0.0" },
   hostApi: ">=1.0.0 <2.0.0",
   entry: "runtime/index.mjs",
-  keyId: "runtime-dev",
-  publishedAt: "2026-08-26T00:00:00.000Z",
+  keyId,
+  publishedAt,
   providesCapabilities: ["workflow", "delegation", "cli-stream"],
   requiresHostCapabilities: [
     "agent.execute.v1",

@@ -1,13 +1,23 @@
 name: Runtime Pack
 
+# Secrets on maojindao55/freebuddy:
+#   RUNTIME_SIGNING_PRIVATE_KEY
+#   FREEBUDDY_RUNTIME_RELEASE_TOKEN (contents:write on maojindao55/freebuddy-runtime)
+
 on:
   push:
     tags:
       - "runtime-v*"
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      RUNTIME_PACK_VERSION: ${{ github.ref_name }}
+      RUNTIME_SIGNING_KEY_ID: runtime-prod
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,7 +26,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck:packages
-      - run: node --test tests/package-boundaries.test.mjs tests/protocol-fixtures.test.mjs tests/runtime-state-store.test.mjs tests/runtime-cli-host-conformance.test.mjs
+      - run: node --test tests/package-boundaries.test.mjs tests/protocol-fixtures.test.mjs tests/runtime-state-store.test.mjs tests/runtime-cli-host-conformance.test.mjs tests/runtime-release.test.mjs tests/runtime-updater.test.mjs
       - run: npm run runtime:build
+        env:
+          RUNTIME_SIGNING_PRIVATE_KEY: ${{ secrets.RUNTIME_SIGNING_PRIVATE_KEY }}
       - run: npm run runtime:sign
+        env:
+          RUNTIME_SIGNING_PRIVATE_KEY: ${{ secrets.RUNTIME_SIGNING_PRIVATE_KEY }}
       - run: npm run runtime:verify
+      - run: npm run runtime:package
+        env:
+          RUNTIME_SIGNING_PRIVATE_KEY: ${{ secrets.RUNTIME_SIGNING_PRIVATE_KEY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-pack
+          path: .build/runtime-release/
+      - name: Publish to maojindao55/freebuddy-runtime
+        env:
+          FREEBUDDY_RUNTIME_RELEASE_TOKEN: ${{ secrets.FREEBUDDY_RUNTIME_RELEASE_TOKEN }}
+          RUNTIME_RELEASE_REPO: maojindao55/freebuddy-runtime
+          RUNTIME_SIGNING_PRIVATE_KEY: ${{ secrets.RUNTIME_SIGNING_PRIVATE_KEY }}
+        run: npm run runtime:publish

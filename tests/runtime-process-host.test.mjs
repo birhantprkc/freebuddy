@@ -123,7 +123,7 @@ function testEnv(dataDir, launcher) {
     hostApiVersion: "1.0.0",
     hostCapabilities: [...DEFAULT_HOST_CAPABILITIES],
     dataDir,
-    bundledRuntimePath: path.join(root, ".build", "runtime-pack"),
+    bundledRuntimePath: dataDir,
     allowUnsignedDevelopmentRuntime: true,
     launcher: launcher ?? createNodeRuntimeProcessLauncher(),
     http: { fetch },

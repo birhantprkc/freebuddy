@@ -89,6 +89,7 @@ export interface RuntimeChannelDescriptor {
   archiveSha256: string;
   archiveBytes: number;
   publishedAt: string;
+  keyId?: string;
   revokedVersions?: readonly string[];
   killSwitch?: boolean;
   rollout?: { percent: number };

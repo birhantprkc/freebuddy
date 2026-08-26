@@ -45,13 +45,26 @@ export async function checkRuntimeUpdate(
   if (!response.ok) return { available: false, reason: `channel fetch ${response.status}` };
   const bytes = Buffer.from(await response.arrayBuffer());
   const signatureHeader = response.headers.get("x-runtime-signature");
-  const keyId = response.headers.get("x-runtime-key-id") ?? "runtime-dev";
+  const keyIdHeader = response.headers.get("x-runtime-key-id");
+  let signature: Buffer | null = signatureHeader ? Buffer.from(signatureHeader, "base64") : null;
+  if (!signature) {
+    const sigResponse = await environment.http.fetch(`${url}.sig`, { redirect: "manual" });
+    if (!sigResponse.ok) return { available: false, reason: "missing channel signature" };
+    signature = Buffer.from(await sigResponse.arrayBuffer());
+  }
+  const parsedUnsigned = (() => {
+    try {
+      return JSON.parse(bytes.toString("utf8")) as { keyId?: string };
+    } catch {
+      return {};
+    }
+  })();
+  const keyId = keyIdHeader ?? parsedUnsigned.keyId ?? "runtime-dev";
   const publicKey = environment.trustedKeys.get(keyId);
   if (!publicKey) return { available: false, reason: "unknown channel key" };
-  if (!signatureHeader) return { available: false, reason: "missing channel signature" };
   const verified = verifyChannelDescriptor({
     descriptorBytes: bytes,
-    signature: Buffer.from(signatureHeader, "base64"),
+    signature,
     publicKey
   });
   if (!verified.ok) return { available: false, reason: verified.error };

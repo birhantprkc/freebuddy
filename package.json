@@ -33,6 +33,8 @@
     "runtime:build": "npm run build:packages && node scripts/build-runtime-pack.mjs",
     "runtime:sign": "node scripts/sign-runtime-pack.mjs",
     "runtime:verify": "node scripts/verify-runtime-pack.mjs",
+    "runtime:package": "node scripts/package-runtime-release.mjs",
+    "runtime:publish": "node scripts/publish-runtime-release.mjs",
     "runtime:probe": "node scripts/verify-runtime-pack.mjs",
     "star-history:generate": "node scripts/generate-star-history.mjs",
     "start": "npm run build && node scripts/start-electron.mjs",

@@ -56,6 +56,7 @@ Compatibility is capability- and Host-API-based. `hostId` is informational unles
 - The client never runs `npm install`, lifecycle scripts, or arbitrary package-manager commands to update Runtime Packs.
 - Workspace packages remain `private: true`. Public npm publication is not required for Runtime Pack delivery.
 - The initial remote distribution unit is one `freebuddy-runtime` bundle, not independently updated internal packages.
+- Signed packs are published to `maojindao55/freebuddy-runtime` (`runtime-v*` tags / GitHub Releases). Desktop installers stay on `maojindao55/freebuddy` (`v*` tags) so Runtime never becomes that repository's Latest release.
 - Packs are first-party and must be signed with Ed25519. Third-party/untrusted plugin execution is out of scope.
 - HTTPS is required for downloads; TLS is not a substitute for signatures.
 - A downloaded Pack must not be imported into the Electron main process.

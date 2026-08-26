@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const packDir = path.join(root, ".build", "runtime-pack");
-const pubPath = path.join(root, ".build", "runtime-keys", "runtime-dev.pub");
+const currentPub = path.join(root, ".build", "runtime-keys", "current.pub");
+const legacyPub = path.join(root, ".build", "runtime-keys", "runtime-dev.pub");
+const pubPath = fs.existsSync(currentPub) ? currentPub : legacyPub;
 const manifest = fs.readFileSync(path.join(packDir, "manifest.json"));
 const signature = fs.readFileSync(path.join(packDir, "manifest.sig"));
 const publicKey = fs.readFileSync(pubPath);

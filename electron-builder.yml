@@ -32,6 +32,8 @@ extraResources:
     to: tokscale
   - from: .build/runtime-pack
     to: runtime-bundled
+  - from: electron/runtime/keys
+    to: runtime-keys
 
 asarUnpack:
   - node_modules/better-sqlite3/**/*

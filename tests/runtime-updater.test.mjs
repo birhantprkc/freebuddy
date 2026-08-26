@@ -106,6 +106,119 @@ test("update check respects kill switch and missing signature", async () => {
   assert.match(killed.reason, /kill switch/);
 });
 
+test("update check accepts a sibling channel signature file", async () => {
+  const dir = dataDir();
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const descriptor = {
+    schemaVersion: 1,
+    channel: "stable",
+    bundleId: "dev.freebuddy.runtime",
+    version: "1.2.3",
+    hostApi: "1.0.0",
+    archiveUrl: "https://example.invalid/runtime.zip",
+    archiveSha256: "abc",
+    archiveBytes: 1,
+    publishedAt: new Date().toISOString(),
+    keyId: "runtime-dev"
+  };
+  const bytes = Buffer.from(`${JSON.stringify(descriptor)}\n`);
+  const signature = sign(null, bytes, privateKey);
+  const environment = {
+    hostId: "freebuddy-cli",
+    hostVersion: "0.0.0",
+    hostApiVersion: "1.0.0",
+    hostCapabilities: [],
+    dataDir: dir,
+    allowUnsignedDevelopmentRuntime: true,
+    launcher: { launch: () => ({ send() {}, onMessage() { return () => {}; }, onExit() { return () => {}; }, kill() {} }) },
+    http: {
+      async fetch(url) {
+        const target = String(url);
+        if (target.endsWith("/stable.json.sig")) {
+          return new Response(signature, { status: 200 });
+        }
+        if (target.endsWith("/stable.json")) {
+          return new Response(bytes, { status: 200 });
+        }
+        return new Response("missing", { status: 404 });
+      }
+    },
+    trustedKeys: {
+      get: (keyId) => (keyId === "runtime-dev" ? publicKey.export({ type: "spki", format: "pem" }).toString() : undefined),
+      list: () => []
+    },
+    clock: { now: () => new Date(), nowIso: () => new Date().toISOString() }
+  };
+  writeRuntimeState(dir, {
+    schemaVersion: 1,
+    activeVersion: "1.0.0",
+    pendingVersion: null,
+    lastKnownGoodVersion: "1.0.0",
+    channel: "stable",
+    lastCheckedAt: null,
+    blockedVersions: {}
+  });
+  const checked = await checkRuntimeUpdate(environment, {
+    enabled: true,
+    baseUrl: "https://example.invalid/runtime"
+  });
+  assert.equal(checked.available, true);
+  assert.equal(checked.descriptor.version, "1.2.3");
+});
+
+test("update check fails when the channel signature is missing", async () => {
+  const dir = dataDir();
+  const descriptor = {
+    schemaVersion: 1,
+    channel: "stable",
+    bundleId: "dev.freebuddy.runtime",
+    version: "1.2.3",
+    hostApi: "1.0.0",
+    archiveUrl: "https://example.invalid/runtime.zip",
+    archiveSha256: "abc",
+    archiveBytes: 1,
+    publishedAt: new Date().toISOString()
+  };
+  const bytes = Buffer.from(`${JSON.stringify(descriptor)}\n`);
+  const environment = {
+    hostId: "freebuddy-cli",
+    hostVersion: "0.0.0",
+    hostApiVersion: "1.0.0",
+    hostCapabilities: [],
+    dataDir: dir,
+    allowUnsignedDevelopmentRuntime: true,
+    launcher: { launch: () => ({ send() {}, onMessage() { return () => {}; }, onExit() { return () => {}; }, kill() {} }) },
+    http: {
+      async fetch(url) {
+        if (String(url).endsWith(".sig")) {
+          return new Response("missing", { status: 404 });
+        }
+        return new Response(bytes, { status: 200 });
+      }
+    },
+    trustedKeys: {
+      get: () => "unused",
+      list: () => []
+    },
+    clock: { now: () => new Date(), nowIso: () => new Date().toISOString() }
+  };
+  writeRuntimeState(dir, {
+    schemaVersion: 1,
+    activeVersion: "1.0.0",
+    pendingVersion: null,
+    lastKnownGoodVersion: "1.0.0",
+    channel: "stable",
+    lastCheckedAt: null,
+    blockedVersions: {}
+  });
+  const checked = await checkRuntimeUpdate(environment, {
+    enabled: true,
+    baseUrl: "https://example.invalid/runtime"
+  });
+  assert.equal(checked.available, false);
+  assert.match(checked.reason, /missing channel signature/);
+});
+
 test("probe fails for a missing downloaded version", async () => {
   const dir = dataDir();
   const result = await probeRuntimeVersion(
