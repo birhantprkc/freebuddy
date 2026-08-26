@@ -12,6 +12,7 @@ import {
   type DelegateToolBinding
 } from "./cli/delegationDispatch.js";
 import { runAsCaller } from "./cli/callerContext.js";
+import { getUserById } from "./cli/users.js";
 
 const DELEGATE_TOOL_PATH = "/freebuddy/delegate-tool";
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -117,9 +118,14 @@ export async function handleDelegateToolHttpRequest(
       body?.params && typeof body.params === "object" && !Array.isArray(body.params)
         ? body.params
         : {};
+    const isOwner = binding.ownerId
+      ? getUserById(binding.ownerId)?.isOwner ?? false
+      : false;
     const result = binding.ownerId
-      ? await runAsCaller(binding.ownerId, () =>
-          dispatchDelegateAction(binding, action, params)
+      ? await runAsCaller(
+          binding.ownerId,
+          () => dispatchDelegateAction(binding, action, params),
+          isOwner
         )
       : await dispatchDelegateAction(binding, action, params);
     sendJson(res, 200, result);
