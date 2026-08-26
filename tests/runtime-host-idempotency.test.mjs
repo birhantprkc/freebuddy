@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHostIdempotency } from "../packages/runtime-host/dist/index.js";
 import {
-  HOST_IDEMPOTENCY_TABLE_SQL,
   HOST_IDEMPOTENCY_TTL_MS,
+  HOST_IDEMPOTENCY_PRUNE_INTERVAL_MS,
+  installHostIdempotencySchema,
   getHostIdempotencyResult,
   putHostIdempotencyResult,
   pruneHostIdempotencyResults
@@ -39,7 +40,7 @@ test("host idempotency store survives a new guard instance", async (t) => {
     return;
   }
   const db = new Database(":memory:");
-  db.exec(HOST_IDEMPOTENCY_TABLE_SQL);
+  installHostIdempotencySchema(db);
   const ctx = { db, owner: { ownerUserId: null, isAdmin: true } };
   const store = {
     get(key) {
@@ -105,7 +106,12 @@ test("sqlite host idempotency results expire by created_at", async (t) => {
     return;
   }
   const db = new Database(":memory:");
-  db.exec(HOST_IDEMPOTENCY_TABLE_SQL);
+  installHostIdempotencySchema(db);
+  const indexes = db.prepare("PRAGMA index_list('host_idempotency_keys')").all().map((row) => row.name);
+  assert.ok(
+    indexes.includes("idx_host_idempotency_keys_created_at"),
+    "created_at index missing"
+  );
   let now = "2020-01-01T00:00:00.000Z";
   const ctx = { db, owner: { ownerUserId: null, isAdmin: true }, nowIso: () => now };
   putHostIdempotencyResult(ctx, "old-key", { ok: true });
@@ -115,6 +121,45 @@ test("sqlite host idempotency results expire by created_at", async (t) => {
   assert.equal(getHostIdempotencyResult(ctx, "old-key").found, false);
   assert.deepEqual(getHostIdempotencyResult(ctx, "fresh-key"), { found: true, value: { ok: "fresh" } });
   assert.equal(pruneHostIdempotencyResults(ctx), 0);
+  db.close();
+});
+
+test("sqlite host idempotency prune is rate-limited across puts", async (t) => {
+  let Database;
+  try {
+    Database = (await import("better-sqlite3")).default;
+    new Database(":memory:").close();
+  } catch {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+  const db = new Database(":memory:");
+  installHostIdempotencySchema(db);
+  let rangeDeletes = 0;
+  const originalPrepare = db.prepare.bind(db);
+  db.prepare = (sql) => {
+    const statement = originalPrepare(sql);
+    if (typeof sql === "string" && sql.includes("DELETE FROM host_idempotency_keys WHERE created_at")) {
+      return {
+        get: (...args) => statement.get(...args),
+        all: (...args) => statement.all(...args),
+        run: (...args) => {
+          rangeDeletes += 1;
+          return statement.run(...args);
+        }
+      };
+    }
+    return statement;
+  };
+  let now = "2020-01-01T00:00:00.000Z";
+  const ctx = { db, owner: { ownerUserId: null, isAdmin: true }, nowIso: () => now };
+  for (let i = 0; i < 20; i += 1) {
+    putHostIdempotencyResult(ctx, `k-${i}`, i);
+  }
+  assert.equal(rangeDeletes, 1);
+  now = new Date(Date.parse("2020-01-01T00:00:00.000Z") + HOST_IDEMPOTENCY_PRUNE_INTERVAL_MS + 1).toISOString();
+  putHostIdempotencyResult(ctx, "k-later", 21);
+  assert.equal(rangeDeletes, 2);
   db.close();
 });
 

@@ -58,6 +58,17 @@ test("migration creates delegation_events table with expected columns", async (t
   });
 });
 
+test("migration creates host_idempotency_keys created_at index", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb((db) => {
+    const indexes = db.prepare("PRAGMA index_list('host_idempotency_keys')").all().map((i) => i.name);
+    assert.ok(
+      indexes.includes("idx_host_idempotency_keys_created_at"),
+      "idx_host_idempotency_keys_created_at missing"
+    );
+  });
+});
+
 test("delegation event terminal states reject late executor writes", async (t) => {
   if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
   await withDb(async () => {

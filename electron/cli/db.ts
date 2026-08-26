@@ -2,6 +2,10 @@ import Database, { type Database as DB } from "better-sqlite3";
 import { app } from "electron";
 import path from "node:path";
 import fs from "node:fs";
+import {
+  installHostIdempotencySchema,
+  pruneHostIdempotencyResults
+} from "@freebuddy/storage-sqlite";
 import { cleanupOrphanHandoffTranscriptSnapshots } from "../shared/handoffTranscript.js";
 import { pruneOldLogs, LOG_RETENTION_DAYS } from "../shared/debugLogCore.js";
 
@@ -1008,11 +1012,9 @@ export function migrate(db: DB) {
     db.exec("ALTER TABLE scheduled_tasks ADD COLUMN config_option_overrides TEXT");
   }
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS host_idempotency_keys (
-      key TEXT PRIMARY KEY,
-      result_json TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-  `);
+  installHostIdempotencySchema(db);
+  pruneHostIdempotencyResults({
+    db,
+    owner: { ownerUserId: null, isAdmin: true }
+  });
 }
