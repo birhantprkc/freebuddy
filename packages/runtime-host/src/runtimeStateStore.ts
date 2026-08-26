@@ -53,10 +53,18 @@ export function writeRuntimeState(dataDir: string, state: RuntimeState): void {
   fs.renameSync(tmp, file);
 }
 
-const installLockContext = new AsyncLocalStorage<string>();
+type InstallLockStore = { root: string; signal: AbortSignal };
+
+const installLockContext = new AsyncLocalStorage<InstallLockStore>();
+const STEAL_MUTEX_STALE_MS = 5_000;
+const OWNERSHIP_WATCH_MS = 100;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isErrno(error: unknown, code: string): boolean {
+  return (error as NodeJS.ErrnoException).code === code;
 }
 
 function readLockToken(file: string): string | null {
@@ -68,14 +76,73 @@ function readLockToken(file: string): string | null {
   }
 }
 
+function lockAgeMs(file: string): number | null {
+  try {
+    return Date.now() - fs.statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function discardPath(file: string): void {
+  const discarded = `${file}.${randomUUID()}`;
+  try {
+    fs.renameSync(file, discarded);
+  } catch (error) {
+    if (isErrno(error, "ENOENT")) return;
+    throw error;
+  }
+  try {
+    fs.rmSync(discarded, { force: true });
+  } catch {
+    /* leftover discarded file is harmless */
+  }
+}
+
+function tryStealStaleLock(lock: string, staleMs: number): void {
+  const steal = `${lock}.steal`;
+  let stealFd: number | undefined;
+  try {
+    stealFd = fs.openSync(steal, "wx");
+  } catch (error) {
+    if (!isErrno(error, "EEXIST")) throw error;
+    const stealAge = lockAgeMs(steal);
+    if (stealAge !== null && stealAge > STEAL_MUTEX_STALE_MS) {
+      try {
+        discardPath(steal);
+      } catch {
+        /* another recoverer won the rename */
+      }
+    }
+    return;
+  }
+  try {
+    const age = lockAgeMs(lock);
+    if (age === null || age <= staleMs) return;
+    discardPath(lock);
+  } finally {
+    try {
+      fs.closeSync(stealFd);
+    } catch {
+      /* already closed */
+    }
+    try {
+      fs.rmSync(steal, { force: true });
+    } catch {
+      /* steal mutex already recovered or released */
+    }
+  }
+}
+
 export async function withInstallLock<T>(
   dataDir: string,
-  fn: () => Promise<T> | T,
+  fn: (signal: AbortSignal) => Promise<T> | T,
   options?: { timeoutMs?: number; staleMs?: number; heartbeatMs?: number }
 ): Promise<T> {
   ensureRuntimeRoot(dataDir);
   const root = path.dirname(statePath(dataDir));
-  if (installLockContext.getStore() === root) return await fn();
+  const existing = installLockContext.getStore();
+  if (existing?.root === root) return await fn(existing.signal);
 
   const lock = lockPath(dataDir);
   const staleMs = options?.staleMs ?? 15 * 60 * 1000;
@@ -85,24 +152,8 @@ export async function withInstallLock<T>(
   let fd: number | undefined;
   const token = randomUUID();
 
-  while (fd === undefined) {
-    try {
-      if (fs.existsSync(lock)) {
-        const stat = fs.statSync(lock);
-        if (Date.now() - stat.mtimeMs > staleMs) {
-          fs.rmSync(lock, { force: true });
-        }
-      }
-      fd = fs.openSync(lock, "wx");
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST") throw error;
-      if (Date.now() >= deadline) throw new Error("runtime install lock timeout");
-      await sleep(25);
-    }
-  }
-
   const stillOwns = (): boolean => {
+    if (fd === undefined) return false;
     try {
       if (fs.fstatSync(fd).ino !== fs.statSync(lock).ino) return false;
       return readLockToken(lock) === token;
@@ -112,6 +163,7 @@ export async function withInstallLock<T>(
   };
 
   const writePayload = (): void => {
+    if (fd === undefined) return;
     const body = Buffer.from(
       `${JSON.stringify({ token, pid: process.pid, heartbeatAt: Date.now() })}\n`
     );
@@ -119,13 +171,37 @@ export async function withInstallLock<T>(
     fs.writeSync(fd, body, 0, body.length, 0);
   };
 
-  writePayload();
+  while (fd === undefined) {
+    try {
+      fd = fs.openSync(lock, "wx");
+      writePayload();
+      if (stillOwns()) break;
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* replaced before we could close */
+      }
+      fd = undefined;
+    } catch (error) {
+      if (!isErrno(error, "EEXIST")) throw error;
+      const age = lockAgeMs(lock);
+      if (age !== null && age > staleMs) tryStealStaleLock(lock, staleMs);
+    }
+    if (Date.now() >= deadline) throw new Error("runtime install lock timeout");
+    await sleep(25);
+  }
 
-  return installLockContext.run(root, async () => {
+  const lost = new AbortController();
+  const markLost = (): void => {
+    if (!stillOwns() && !lost.signal.aborted) lost.abort();
+  };
+
+  return installLockContext.run({ root, signal: lost.signal }, async () => {
     const heartbeat =
       heartbeatMs > 0
         ? setInterval(() => {
             try {
+              markLost();
               if (!stillOwns()) return;
               writePayload();
               fs.utimesSync(lock, new Date(), new Date());
@@ -134,15 +210,21 @@ export async function withInstallLock<T>(
             }
           }, heartbeatMs)
         : undefined;
+    const watch = setInterval(markLost, OWNERSHIP_WATCH_MS);
     heartbeat?.unref?.();
+    watch.unref?.();
     try {
-      return await fn();
+      if (!stillOwns()) throw new Error("runtime install lock lost");
+      const result = await fn(lost.signal);
+      if (lost.signal.aborted || !stillOwns()) throw new Error("runtime install lock lost");
+      return result;
     } finally {
       if (heartbeat) clearInterval(heartbeat);
+      clearInterval(watch);
       try {
         if (stillOwns()) fs.rmSync(lock, { force: true });
       } finally {
-        fs.closeSync(fd);
+        if (fd !== undefined) fs.closeSync(fd);
       }
     }
   });

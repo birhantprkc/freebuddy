@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { BoundedIdempotencyCache } from "@freebuddy/protocol";
 import { RUNTIME_RPC_VERSION, type RuntimeRpcFrame } from "@freebuddy/protocol/runtime";
 import { createRuntimeRpcHandlers } from "./handlers.js";
 
@@ -17,7 +18,7 @@ export function attachRuntimeRpcServer(
   transport: RuntimeEntryTransport,
   handlers = createRuntimeRpcHandlers()
 ): () => void {
-  const idempotent = new Map<string, unknown>();
+  const idempotent = new BoundedIdempotencyCache();
   return transport.onMessage((message) => {
     void (async () => {
       if (!isFrame(message) || message.kind !== "request" || !message.method) return;
@@ -32,14 +33,17 @@ export function attachRuntimeRpcServer(
         return;
       }
       try {
-        if (message.idempotencyKey && idempotent.has(message.idempotencyKey)) {
-          transport.send({
-            rpcVersion: RUNTIME_RPC_VERSION,
-            id: message.id,
-            kind: "response",
-            result: idempotent.get(message.idempotencyKey)
-          } satisfies RuntimeRpcFrame);
-          return;
+        if (message.idempotencyKey) {
+          const cached = idempotent.get(message.idempotencyKey);
+          if (cached.found) {
+            transport.send({
+              rpcVersion: RUNTIME_RPC_VERSION,
+              id: message.id,
+              kind: "response",
+              result: cached.value
+            } satisfies RuntimeRpcFrame);
+            return;
+          }
         }
         const result = await handler(message.params, { idempotencyKey: message.idempotencyKey ?? "" });
         if (message.idempotencyKey) idempotent.set(message.idempotencyKey, result);

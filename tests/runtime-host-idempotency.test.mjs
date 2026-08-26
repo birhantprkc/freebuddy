@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { createHostIdempotency } from "../packages/runtime-host/dist/index.js";
 import {
   HOST_IDEMPOTENCY_TABLE_SQL,
+  HOST_IDEMPOTENCY_TTL_MS,
   getHostIdempotencyResult,
-  putHostIdempotencyResult
+  putHostIdempotencyResult,
+  pruneHostIdempotencyResults
 } from "../packages/storage-sqlite/dist/index.js";
 
 test("host idempotency coalesces in-flight work for the same key", async () => {
@@ -65,6 +67,54 @@ test("host idempotency store survives a new guard instance", async (t) => {
     { ok: true, id: "step-1" }
   );
   assert.equal(runs, 1);
+  db.close();
+});
+
+test("host idempotency memory cache evicts oldest keys", async () => {
+  const idem = createHostIdempotency(undefined, { maxEntries: 2, ttlMs: 60_000 });
+  let runs = 0;
+  await idem.run("k1", () => {
+    runs += 1;
+    return 1;
+  });
+  await idem.run("k2", () => {
+    runs += 1;
+    return 2;
+  });
+  await idem.run("k3", () => {
+    runs += 1;
+    return 3;
+  });
+  assert.equal(
+    await idem.run("k1", () => {
+      runs += 1;
+      return 99;
+    }),
+    99
+  );
+  assert.equal(runs, 4);
+});
+
+test("sqlite host idempotency results expire by created_at", async (t) => {
+  let Database;
+  try {
+    Database = (await import("better-sqlite3")).default;
+    new Database(":memory:").close();
+  } catch {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+  const db = new Database(":memory:");
+  db.exec(HOST_IDEMPOTENCY_TABLE_SQL);
+  let now = "2020-01-01T00:00:00.000Z";
+  const ctx = { db, owner: { ownerUserId: null, isAdmin: true }, nowIso: () => now };
+  putHostIdempotencyResult(ctx, "old-key", { ok: true });
+  putHostIdempotencyResult(ctx, "fresh-key", { ok: "fresh" });
+  now = new Date(Date.parse("2020-01-01T00:00:00.000Z") + HOST_IDEMPOTENCY_TTL_MS + 1000).toISOString();
+  putHostIdempotencyResult(ctx, "fresh-key", { ok: "fresh" });
+  assert.equal(getHostIdempotencyResult(ctx, "old-key").found, false);
+  assert.deepEqual(getHostIdempotencyResult(ctx, "fresh-key"), { found: true, value: { ok: "fresh" } });
+  assert.equal(pruneHostIdempotencyResults(ctx), 0);
   db.close();
 });
 

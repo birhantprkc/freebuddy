@@ -431,3 +431,51 @@ test("delegation events cascade-delete with their run", async (t) => {
     assert.equal(listDelegationEvents(runId).length, 0);
   });
 });
+
+test("insertDelegationEvent rethrows foreign key failures and is idempotent on primary key", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, insertDelegationEvent, getDelegationEvent } =
+      await import("../dist-electron/cli/delegationRuns.js");
+    const missingId = "missing-fk-event";
+    assert.throws(
+      () =>
+        insertDelegationEvent({
+          id: missingId,
+          runId: "no-such-run",
+          parentEventId: null,
+          agentId: "a",
+          agentName: "A",
+          roleLabel: "x",
+          taskText: "t",
+          depth: 0,
+          canWrite: false,
+          status: "pending"
+        }),
+      (error) => {
+        const code = error?.code ?? "";
+        return String(code).startsWith("SQLITE_CONSTRAINT") || /constraint/i.test(String(error));
+      }
+    );
+    assert.equal(getDelegationEvent(missingId), undefined);
+
+    const runId = createDelegationRun({ goal: "g", teamId: "t", teamSnapshotJson: "{}" });
+    const event = {
+      id: "dup-event",
+      runId,
+      parentEventId: null,
+      agentId: "a",
+      agentName: "A",
+      roleLabel: "x",
+      taskText: "t",
+      depth: 0,
+      canWrite: false,
+      status: "pending"
+    };
+    const first = insertDelegationEvent(event);
+    const second = insertDelegationEvent(event);
+    assert.equal(first, "dup-event");
+    assert.equal(second, "dup-event");
+    assert.equal(getDelegationEvent("dup-event")?.runId, runId);
+  });
+});

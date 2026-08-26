@@ -90,14 +90,16 @@ export async function downloadAndPrepareRuntime(
   environment: RuntimeHostEnvironment,
   descriptor: RuntimeChannelDescriptor
 ): Promise<{ ok: true; version: string } | { ok: false; error: string }> {
-  return withInstallLock(environment.dataDir, async () => {
+  return withInstallLock(environment.dataDir, async (signal) => {
     try {
       const downloaded = await downloadRuntimeArtifact({
         url: descriptor.archiveUrl,
         dataDir: environment.dataDir,
         version: descriptor.version,
-        http: environment.http
+        http: environment.http,
+        signal
       });
+      if (signal.aborted) throw new Error("runtime install lock lost");
       if (downloaded.notModified) return { ok: true, version: descriptor.version };
       const hash = createHash("sha256").update(downloaded.bytes).digest("hex");
       if (hash !== descriptor.archiveSha256) {

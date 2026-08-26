@@ -82,7 +82,9 @@ export { createSqliteWorkflowRepository } from "./workflow-repository.js";
 export { createSqliteDelegationRepository } from "./delegation-repository.js";
 export {
   HOST_IDEMPOTENCY_TABLE_SQL,
+  HOST_IDEMPOTENCY_TTL_MS,
   getHostIdempotencyResult,
-  putHostIdempotencyResult
+  putHostIdempotencyResult,
+  pruneHostIdempotencyResults
 } from "./idempotency.js";
 export type { HostIdempotencyLookup } from "./idempotency.js";

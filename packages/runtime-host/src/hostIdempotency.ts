@@ -1,3 +1,8 @@
+import {
+  BoundedIdempotencyCache,
+  type BoundedIdempotencyCacheOptions
+} from "@freebuddy/protocol";
+
 export type HostIdempotencyLookup = { found: true; value: unknown } | { found: false };
 
 export type HostIdempotencyStore = {
@@ -5,14 +10,18 @@ export type HostIdempotencyStore = {
   put(key: string, value: unknown): void;
 };
 
-export function createHostIdempotency(store?: HostIdempotencyStore) {
-  const memory = new Map<string, unknown>();
+export function createHostIdempotency(
+  store?: HostIdempotencyStore,
+  cacheOptions?: BoundedIdempotencyCacheOptions
+) {
+  const memory = new BoundedIdempotencyCache(cacheOptions);
   const inflight = new Map<string, Promise<unknown>>();
 
   return {
     run<T>(key: string | undefined, fn: () => Promise<T> | T): Promise<T> {
       if (!key) return Promise.resolve().then(fn);
-      if (memory.has(key)) return Promise.resolve(memory.get(key) as T);
+      const cached = memory.get(key);
+      if (cached.found) return Promise.resolve(cached.value as T);
       const persisted = store?.get(key);
       if (persisted?.found) {
         memory.set(key, persisted.value);

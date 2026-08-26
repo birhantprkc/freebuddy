@@ -73,3 +73,13 @@ export type {
   RuntimeRpcFrame,
   RuntimeRpcKind
 } from "./runtime.js";
+
+export {
+  BoundedIdempotencyCache,
+  IDEMPOTENCY_CACHE_MAX_ENTRIES,
+  IDEMPOTENCY_CACHE_TTL_MS
+} from "./idempotencyCache.js";
+export type {
+  BoundedIdempotencyCacheOptions,
+  BoundedIdempotencyLookup
+} from "./idempotencyCache.js";

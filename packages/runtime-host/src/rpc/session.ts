@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { BoundedIdempotencyCache } from "@freebuddy/protocol";
 import type { RuntimeRpcFrame } from "@freebuddy/protocol/runtime";
 import {
   isRuntimeRpcFrame,
@@ -27,7 +28,7 @@ type Pending = {
 
 export class RuntimeRpcSession {
   private pending = new Map<string, Pending>();
-  private idempotent = new Map<string, unknown>();
+  private idempotent = new BoundedIdempotencyCache();
   private unsubscribe: () => void;
   private closed = false;
   private readonly timeoutMs: number;
@@ -45,8 +46,9 @@ export class RuntimeRpcSession {
     options?: { timeoutMs?: number; idempotencyKey?: string; signal?: AbortSignal }
   ): Promise<unknown> {
     if (this.closed) throw new Error("rpc session closed");
-    if (options?.idempotencyKey && this.idempotent.has(options.idempotencyKey)) {
-      return this.idempotent.get(options.idempotencyKey);
+    if (options?.idempotencyKey) {
+      const cached = this.idempotent.get(options.idempotencyKey);
+      if (cached.found) return cached.value;
     }
     const id = randomUUID();
     const frame = makeFrame({
@@ -139,15 +141,18 @@ export class RuntimeRpcSession {
       return;
     }
     try {
-      if (message.idempotencyKey && this.idempotent.has(message.idempotencyKey)) {
-        this.opts.transport.send(
-          makeFrame({
-            id: message.id,
-            kind: "response",
-            result: this.idempotent.get(message.idempotencyKey)
-          })
-        );
-        return;
+      if (message.idempotencyKey) {
+        const cached = this.idempotent.get(message.idempotencyKey);
+        if (cached.found) {
+          this.opts.transport.send(
+            makeFrame({
+              id: message.id,
+              kind: "response",
+              result: cached.value
+            })
+          );
+          return;
+        }
       }
       const result = await handler(message.params, {
         id: message.id,

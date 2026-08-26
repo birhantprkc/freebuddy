@@ -37,6 +37,25 @@ function nowIso(ctx: SqliteStoreContext): string {
   return ctx.nowIso?.() ?? new Date().toISOString();
 }
 
+function isSqliteConstraint(error: unknown): boolean {
+  const code = (error as { code?: string }).code ?? "";
+  return code.startsWith("SQLITE_CONSTRAINT");
+}
+
+function workflowRunIdExists(ctx: SqliteStoreContext, id: string): boolean {
+  return Boolean(
+    ctx.db.prepare("SELECT id FROM workflow_runs WHERE id = ?").get(id) as { id: string } | undefined
+  );
+}
+
+function delegationEventIdExists(ctx: SqliteStoreContext, id: string): boolean {
+  return Boolean(
+    ctx.db.prepare("SELECT id FROM delegation_events WHERE id = ?").get(id) as
+      | { id: string }
+      | undefined
+  );
+}
+
 export function mapDelegationRunRow(r: Record<string, unknown>): DelegationRunRow {
   return {
     id: String(r.id),
@@ -95,8 +114,7 @@ export function createDelegationRun(ctx: SqliteStoreContext, input: CreateDelega
         now
       );
   } catch (error) {
-    const code = (error as { code?: string }).code ?? "";
-    if (code.startsWith("SQLITE_CONSTRAINT")) return id;
+    if (isSqliteConstraint(error) && workflowRunIdExists(ctx, id)) return id;
     throw error;
   }
   return id;
@@ -244,8 +262,7 @@ export function insertDelegationEvent(
         input.status === "running" ? now : null
       );
   } catch (error) {
-    const code = (error as { code?: string }).code ?? "";
-    if (code.startsWith("SQLITE_CONSTRAINT")) return id;
+    if (isSqliteConstraint(error) && delegationEventIdExists(ctx, id)) return id;
     throw error;
   }
   return id;
@@ -265,20 +282,25 @@ export function insertDelegationEventsAtomic(
         if (existing) return existing.id;
       }
       const now = nowIso(ctx);
-      statement.run(
-        id,
-        input.runId,
-        input.parentEventId,
-        input.agentId,
-        input.agentName,
-        input.roleLabel,
-        input.taskText,
-        input.depth,
-        input.status,
-        input.canWrite ? 1 : 0,
-        now,
-        input.status === "running" ? now : null
-      );
+      try {
+        statement.run(
+          id,
+          input.runId,
+          input.parentEventId,
+          input.agentId,
+          input.agentName,
+          input.roleLabel,
+          input.taskText,
+          input.depth,
+          input.status,
+          input.canWrite ? 1 : 0,
+          now,
+          input.status === "running" ? now : null
+        );
+      } catch (error) {
+        if (isSqliteConstraint(error) && delegationEventIdExists(ctx, id)) return id;
+        throw error;
+      }
       return id;
     })
   );
