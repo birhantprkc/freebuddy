@@ -68,6 +68,14 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
     return (await peer.request("host.invoke", { method, args }, options)) as T;
   }
 
+  function insertKey(scope: string, entityId: string): string {
+    return `${scope}:${entityId}`;
+  }
+
+  function operationKey(scope: string): string {
+    return `${scope}:${randomUUID()}`;
+  }
+
   function resolveCachedAgent(agentId: string) {
     const agent = agents.get(agentId);
     if (!agent) return undefined;
@@ -158,7 +166,7 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
         const run = memory.createRun(stamped);
         enqueue(() =>
           invoke("workflow.repository.v1.createRun", [{ ...stamped, id: run.id }], {
-            idempotencyKey: `workflow.createRun:${run.id}`
+            idempotencyKey: insertKey("workflow.createRun", run.id)
           })
         );
         return run;
@@ -167,14 +175,14 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
       updateRun(id, patch) {
         memory.updateRun(id, patch);
         enqueue(() => invoke("workflow.repository.v1.updateRun", [id, patch], {
-          idempotencyKey: `workflow.updateRun:${id}:${JSON.stringify(patch)}`
+          idempotencyKey: operationKey(`workflow.updateRun:${id}`)
         }));
       },
       createStep(input) {
         memory.createStep(input);
         enqueue(() =>
           invoke("workflow.repository.v1.createStep", [input], {
-            idempotencyKey: `workflow.createStep:${input.id}`
+            idempotencyKey: insertKey("workflow.createStep", input.id)
           })
         );
       },
@@ -182,12 +190,16 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
       updateStep(id, patch) {
         memory.updateStep(id, patch);
         enqueue(() => invoke("workflow.repository.v1.updateStep", [id, patch], {
-          idempotencyKey: `workflow.updateStep:${id}:${JSON.stringify(patch)}`
+          idempotencyKey: operationKey(`workflow.updateStep:${id}`)
         }));
       },
       resetStepsForLoop(runId, phaseIds) {
         memory.resetStepsForLoop(runId, phaseIds);
-        enqueue(() => invoke("workflow.repository.v1.resetStepsForLoop", [runId, phaseIds]));
+        enqueue(() =>
+          invoke("workflow.repository.v1.resetStepsForLoop", [runId, phaseIds], {
+            idempotencyKey: operationKey(`workflow.resetStepsForLoop:${runId}`)
+          })
+        );
       }
     },
     conversations: {
@@ -209,7 +221,7 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
           messages.set(conversationId, list);
         }
         enqueue(() => invoke("workflow.conversations.v1.appendMessage", [payload], {
-          idempotencyKey: `workflow.appendMessage:${String(payload.id ?? "")}`
+          idempotencyKey: insertKey("workflow.appendMessage", String(payload.id ?? ""))
         }));
         return payload;
       },
@@ -293,7 +305,7 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
         const run = delegationMemory.createRun(stamped);
         enqueue(() =>
           invoke("delegation.repository.v1.createRun", [{ ...stamped, id: run.id }], {
-            idempotencyKey: `delegation.createRun:${run.id}`
+            idempotencyKey: insertKey("delegation.createRun", run.id)
           })
         );
         return run;
@@ -302,7 +314,7 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
       setStatus(id, status, options) {
         const ok = delegationMemory.setStatus(id, status, options);
         enqueue(() => invoke("delegation.repository.v1.setStatus", [id, status, options], {
-          idempotencyKey: `delegation.setStatus:${id}:${status}`
+          idempotencyKey: operationKey(`delegation.setStatus:${id}`)
         }));
         return ok;
       },
@@ -310,7 +322,7 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
         const id = delegationMemory.insertEvent(input);
         enqueue(() =>
           invoke("delegation.repository.v1.insertEvent", [{ ...input, id }], {
-            idempotencyKey: `delegation.insertEvent:${id}`
+            idempotencyKey: insertKey("delegation.insertEvent", id)
           })
         );
         return id;
@@ -318,14 +330,14 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
       updateEvent(id, patch) {
         delegationMemory.updateEvent(id, patch);
         enqueue(() => invoke("delegation.repository.v1.updateEvent", [id, patch], {
-          idempotencyKey: `delegation.updateEvent:${id}:${JSON.stringify(patch)}`
+          idempotencyKey: operationKey(`delegation.updateEvent:${id}`)
         }));
       },
       transitionEvent(id, to, resultSummary, options) {
         const ok = delegationMemory.transitionEvent(id, to, resultSummary, options);
         enqueue(() =>
           invoke("delegation.repository.v1.transitionEvent", [id, to, resultSummary, options], {
-            idempotencyKey: `delegation.transitionEvent:${id}:${to}`
+            idempotencyKey: operationKey(`delegation.transitionEvent:${id}`)
           })
         );
         return ok;
@@ -339,7 +351,7 @@ export function createHostBackedPorts(peer: RuntimeRpcPeer): {
         const ids = delegationMemory.cancelActiveEvents(runId, reason);
         enqueue(() =>
           invoke("delegation.repository.v1.cancelActiveEvents", [runId, reason], {
-            idempotencyKey: `delegation.cancelActiveEvents:${runId}:${reason ?? ""}`
+            idempotencyKey: operationKey(`delegation.cancelActiveEvents:${runId}`)
           })
         );
         return ids;

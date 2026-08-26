@@ -54,3 +54,41 @@ test("install lock serializes overlapping download and install work", async () =
   assert.deepEqual(await Promise.all([first, second]), [1, 2]);
   assert.deepEqual(order, ["a-start", "a-end", "b"]);
 });
+
+test("stale install lock steal does not let the old holder delete the new lock", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-lock-stale-"));
+  const lockFile = path.join(dataDir, "runtimes", "runtime.lock");
+  let releaseFirst;
+  const firstHold = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+  let secondSawLock = false;
+  const first = withInstallLock(
+    dataDir,
+    async () => {
+      await firstHold;
+      return "a";
+    },
+    { staleMs: 40, heartbeatMs: 0, timeoutMs: 1_000 }
+  );
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(fs.existsSync(lockFile), true);
+  const firstToken = JSON.parse(fs.readFileSync(lockFile, "utf8")).token;
+  await new Promise((resolve) => setTimeout(resolve, 45));
+  const second = withInstallLock(
+    dataDir,
+    async () => {
+      const held = JSON.parse(fs.readFileSync(lockFile, "utf8"));
+      assert.notEqual(held.token, firstToken);
+      releaseFirst();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      secondSawLock = fs.existsSync(lockFile);
+      const afterOldRelease = JSON.parse(fs.readFileSync(lockFile, "utf8"));
+      assert.equal(afterOldRelease.token, held.token);
+      return "b";
+    },
+    { staleMs: 40, heartbeatMs: 0, timeoutMs: 1_000 }
+  );
+  assert.deepEqual(await Promise.all([first, second]), ["a", "b"]);
+  assert.equal(secondSawLock, true);
+});

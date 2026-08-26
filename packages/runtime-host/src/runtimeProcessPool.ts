@@ -96,12 +96,19 @@ export function createRuntimeProcessPool(input: {
     });
     box.session = session;
 
-    const onExit = handle.onExit((code) => {
+    let intentionalShutdown = false;
+    let settled = false;
+    const settleExit = () => {
+      if (settled) return;
+      settled = true;
       clients.delete(version);
       session.close();
-      if (code && code !== 0) {
+      if (!intentionalShutdown) {
         recordCrash(input.environment, version);
       }
+    };
+    const stopListening = handle.onExit(() => {
+      settleExit();
     });
 
     try {
@@ -110,10 +117,10 @@ export function createRuntimeProcessPool(input: {
         timeoutMs: Number.isFinite(helloTimeoutMs) && helloTimeoutMs > 0 ? helloTimeoutMs : 8_000
       });
     } catch (error) {
-      onExit();
+      stopListening();
       session.close();
       handle.kill();
-      recordCrash(input.environment, version);
+      settleExit();
       throw error;
     }
 
@@ -125,6 +132,7 @@ export function createRuntimeProcessPool(input: {
         return session.request(method, params, options);
       },
       async shutdown() {
+        intentionalShutdown = true;
         try {
           await session.request("runtime.shutdown", {}, { timeoutMs: 2_000 });
         } catch {
@@ -132,8 +140,8 @@ export function createRuntimeProcessPool(input: {
         }
         session.close();
         handle.kill();
-        onExit();
-        clients.delete(version);
+        stopListening();
+        settleExit();
       }
     };
   }

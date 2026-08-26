@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { ensureRuntimeRoot, statePath } from "./runtimePaths.js";
+import { randomUUID } from "node:crypto";
+import { ensureRuntimeRoot, lockPath, statePath } from "./runtimePaths.js";
 
 export interface RuntimeState {
   schemaVersion: 1;
@@ -58,25 +59,39 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function readLockToken(file: string): string | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { token?: string };
+    return typeof parsed.token === "string" ? parsed.token : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function withInstallLock<T>(
   dataDir: string,
   fn: () => Promise<T> | T,
-  options?: { timeoutMs?: number; staleMs?: number }
+  options?: { timeoutMs?: number; staleMs?: number; heartbeatMs?: number }
 ): Promise<T> {
   ensureRuntimeRoot(dataDir);
   const root = path.dirname(statePath(dataDir));
   if (installLockContext.getStore() === root) return await fn();
 
-  const lock = path.join(root, "runtime.lock");
+  const lock = lockPath(dataDir);
   const staleMs = options?.staleMs ?? 15 * 60 * 1000;
   const timeoutMs = options?.timeoutMs ?? 60_000;
+  const heartbeatMs = options?.heartbeatMs ?? 5_000;
   const deadline = Date.now() + timeoutMs;
   let fd: number | undefined;
+  const token = randomUUID();
+
   while (fd === undefined) {
     try {
       if (fs.existsSync(lock)) {
         const stat = fs.statSync(lock);
-        if (Date.now() - stat.mtimeMs > staleMs) fs.rmSync(lock, { force: true });
+        if (Date.now() - stat.mtimeMs > staleMs) {
+          fs.rmSync(lock, { force: true });
+        }
       }
       fd = fs.openSync(lock, "wx");
     } catch (error) {
@@ -86,13 +101,49 @@ export async function withInstallLock<T>(
       await sleep(25);
     }
   }
-  return installLockContext.run(root, async () => {
+
+  const stillOwns = (): boolean => {
     try {
-      fs.writeFileSync(fd, String(process.pid));
+      if (fs.fstatSync(fd).ino !== fs.statSync(lock).ino) return false;
+      return readLockToken(lock) === token;
+    } catch {
+      return false;
+    }
+  };
+
+  const writePayload = (): void => {
+    const body = Buffer.from(
+      `${JSON.stringify({ token, pid: process.pid, heartbeatAt: Date.now() })}\n`
+    );
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, body, 0, body.length, 0);
+  };
+
+  writePayload();
+
+  return installLockContext.run(root, async () => {
+    const heartbeat =
+      heartbeatMs > 0
+        ? setInterval(() => {
+            try {
+              if (!stillOwns()) return;
+              writePayload();
+              fs.utimesSync(lock, new Date(), new Date());
+            } catch {
+              /* lock stolen or already released */
+            }
+          }, heartbeatMs)
+        : undefined;
+    heartbeat?.unref?.();
+    try {
       return await fn();
     } finally {
-      fs.closeSync(fd);
-      fs.rmSync(lock, { force: true });
+      if (heartbeat) clearInterval(heartbeat);
+      try {
+        if (stillOwns()) fs.rmSync(lock, { force: true });
+      } finally {
+        fs.closeSync(fd);
+      }
     }
   });
 }

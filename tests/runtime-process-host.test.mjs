@@ -14,9 +14,12 @@ import {
   createNodeRuntimeProcessLauncher,
   createRuntimeManager,
   createRuntimeProcessPool,
+  readRuntimeState,
   resolveRuntimeEntryPath,
-  RuntimeRpcSession
+  RuntimeRpcSession,
+  writeRuntimeState
 } from "../packages/runtime-host/dist/index.js";
+import { makeFrame } from "../packages/runtime-host/dist/rpc/transport.js";
 import { createHealthyRuntimeLauncher, writeDummyRuntimeEntry } from "./fixtures/runtime-healthy-launcher.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -381,4 +384,128 @@ test("two fresh runtime processes sharing sqlite keep unique delegation ids", as
   assert.equal(sqlite.getRun(firstId)?.goal, "delegate");
   assert.equal(sqlite.getRun(secondId)?.goal, "delegate");
   db.close();
+});
+
+function createScriptedRuntimeLauncher({ afterHelloExit, exitOnKill = true } = {}) {
+  const kills = { count: 0 };
+  return {
+    kills,
+    launch() {
+      const messages = [];
+      const exits = [];
+      let exited = false;
+      const fireExit = (code) => {
+        if (exited) return;
+        exited = true;
+        for (const handler of [...exits]) handler(code);
+      };
+      return {
+        send(message) {
+          if (!message || typeof message !== "object") return;
+          const frame = message;
+          if (frame.kind !== "request") return;
+          queueMicrotask(() => {
+            const result =
+              frame.method === "runtime.hello"
+                ? {
+                    runtimeVersion: "bundled",
+                    rpcVersion: RUNTIME_RPC_VERSION,
+                    nodeVersion: process.versions.node,
+                    bundleId: "dev.freebuddy.runtime",
+                    hostApiRange: "1.0.0",
+                    requiredHostCapabilities: [],
+                    providedCapabilities: ["workflow", "delegation"]
+                  }
+                : { ok: true };
+            for (const listener of messages) {
+              listener(makeFrame({ id: frame.id, kind: "response", result }));
+            }
+            if (frame.method === "runtime.hello" && afterHelloExit !== undefined) {
+              queueMicrotask(() => fireExit(afterHelloExit));
+            }
+          });
+        },
+        onMessage(handler) {
+          messages.push(handler);
+          return () => {
+            const index = messages.indexOf(handler);
+            if (index >= 0) messages.splice(index, 1);
+          };
+        },
+        onExit(handler) {
+          exits.push(handler);
+          return () => {
+            const index = exits.indexOf(handler);
+            if (index >= 0) exits.splice(index, 1);
+          };
+        },
+        kill() {
+          kills.count += 1;
+          if (exitOnKill) fireExit(0);
+        }
+      };
+    }
+  };
+}
+
+async function waitForCrashCount(dataDir, version, expected) {
+  const deadline = Date.now() + 500;
+  while (Date.now() < deadline) {
+    const state = readRuntimeState(dataDir);
+    if ((state.crashCounts?.[version] ?? 0) === expected) return state;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return readRuntimeState(dataDir);
+}
+
+test("unexpected runtime exit 0 and signal null record a crash and roll back", async () => {
+  for (const exitCode of [0, null]) {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-exit-"));
+    writeDummyRuntimeEntry(dataDir);
+    writeRuntimeState(dataDir, {
+      schemaVersion: 1,
+      activeVersion: "2.0.0",
+      pendingVersion: null,
+      lastKnownGoodVersion: "bundled",
+      channel: "stable",
+      lastCheckedAt: null,
+      blockedVersions: {},
+      crashCounts: {}
+    });
+    const launcher = createScriptedRuntimeLauncher({ afterHelloExit: exitCode, exitOnKill: false });
+    const pool = createRuntimeProcessPool({
+      environment: testEnv(dataDir, launcher),
+      hostApi: { invoke: async () => null }
+    });
+    await pool.ensure("2.0.0", path.join(dataDir, "runtime", "index.mjs"));
+    const state = await waitForCrashCount(dataDir, "2.0.0", 1);
+    assert.equal(state.crashCounts["2.0.0"], 1, `exit ${exitCode} should record a crash`);
+    assert.equal(state.activeVersion, "bundled");
+    await pool.shutdown();
+  }
+});
+
+test("host shutdown does not record a crash for a zero exit", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-stop-"));
+  writeDummyRuntimeEntry(dataDir);
+  writeRuntimeState(dataDir, {
+    schemaVersion: 1,
+    activeVersion: "2.0.0",
+    pendingVersion: null,
+    lastKnownGoodVersion: "bundled",
+    channel: "stable",
+    lastCheckedAt: null,
+    blockedVersions: {},
+    crashCounts: {}
+  });
+  const launcher = createScriptedRuntimeLauncher({ exitOnKill: true });
+  const pool = createRuntimeProcessPool({
+    environment: testEnv(dataDir, launcher),
+    hostApi: { invoke: async () => null }
+  });
+  await pool.ensure("2.0.0", path.join(dataDir, "runtime", "index.mjs"));
+  await pool.shutdown();
+  const state = readRuntimeState(dataDir);
+  assert.equal(state.crashCounts?.["2.0.0"] ?? 0, 0);
+  assert.equal(state.activeVersion, "2.0.0");
 });

@@ -67,3 +67,74 @@ test("host idempotency store survives a new guard instance", async (t) => {
   assert.equal(runs, 1);
   db.close();
 });
+
+test("delegation follow-up can complete again after a persisted completed status", async () => {
+  const { createHostBackedPorts } = await import(
+    "../packages/runtime-entry/dist/rpc/hostPorts.js"
+  );
+  const { createHostIdempotency } = await import("../packages/runtime-host/dist/index.js");
+  const idem = createHostIdempotency();
+  const writes = [];
+  const peer = {
+    async request(method, params, options) {
+      if (method !== "host.invoke") return null;
+      const body = params ?? {};
+      return idem.run(options?.idempotencyKey, async () => {
+        writes.push({
+          method: body.method,
+          args: body.args,
+          key: options?.idempotencyKey
+        });
+        return true;
+      });
+    },
+    onEvent() {
+      return () => {};
+    }
+  };
+  const { delegation, controller } = createHostBackedPorts(peer);
+  const run = delegation.repository.createRun({
+    goal: "g",
+    status: "running",
+    teamId: "t",
+    teamSnapshotJson: "{}"
+  });
+  const eventId = delegation.repository.insertEvent({
+    runId: run.id,
+    parentEventId: null,
+    agentId: "a",
+    agentName: "a",
+    roleLabel: "a",
+    taskText: "t",
+    depth: 0,
+    canWrite: false,
+    status: "running"
+  });
+  delegation.repository.transitionEvent(eventId, "done", "first");
+  delegation.repository.setStatus(run.id, "completed");
+  await controller.flush();
+
+  delegation.repository.transitionEvent(eventId, "running", null, { allowReopen: true });
+  delegation.repository.setStatus(run.id, "running", { allowReopen: true });
+  delegation.repository.transitionEvent(eventId, "done", "follow-up");
+  delegation.repository.setStatus(run.id, "completed");
+  await controller.flush();
+
+  const setStatus = writes.filter((row) => row.method === "delegation.repository.v1.setStatus");
+  const transitions = writes.filter(
+    (row) => row.method === "delegation.repository.v1.transitionEvent"
+  );
+  assert.equal(setStatus.length, 3);
+  assert.equal(transitions.length, 3);
+  assert.equal(new Set(setStatus.map((row) => row.key)).size, 3);
+  assert.equal(new Set(transitions.map((row) => row.key)).size, 3);
+  assert.deepEqual(
+    setStatus.map((row) => row.args[1]),
+    ["completed", "running", "completed"]
+  );
+  assert.deepEqual(
+    transitions.map((row) => row.args[1]),
+    ["done", "running", "done"]
+  );
+  assert.equal(delegation.repository.getRun(run.id)?.status, "completed");
+});
