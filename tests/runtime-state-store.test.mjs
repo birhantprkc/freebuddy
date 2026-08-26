@@ -127,7 +127,7 @@ test("two processes cannot overlap after racing a stale install lock", async () 
         path.join(dataDir, "go"),
         resultFile,
         path.join(dataDir, "busy"),
-        "50"
+        "2000"
       ],
       { stdio: "inherit" }
     );
