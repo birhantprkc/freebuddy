@@ -14,6 +14,7 @@
   let winner = null;
   let lastMove = null;
   let hoverCoord = null;
+  let initialized = false;
 
   // DOM Elements
   const canvas = document.getElementById("gomoku-canvas");
@@ -38,6 +39,8 @@
   const historyStepCount = document.getElementById("history-step-count");
   const historyEmpty = document.getElementById("history-empty");
   const historyListWrapper = document.getElementById("history-list-wrapper");
+  const toggleHistoryBtn = document.getElementById("toggle-history-btn");
+  const closeHistoryBtn = document.getElementById("close-history-btn");
 
   let participants = null;
   let gameMode = "player_vs_agent";
@@ -47,8 +50,29 @@
     return side === 1 ? "黑子" : "白子";
   }
 
+  function setHistoryPanelVisible(visible) {
+    if (!moveHistoryPanel) return;
+    if (visible) {
+      moveHistoryPanel.classList.remove("collapsed");
+      if (toggleHistoryBtn) {
+        toggleHistoryBtn.classList.add("active-toggle");
+      }
+    } else {
+      moveHistoryPanel.classList.add("collapsed");
+      if (toggleHistoryBtn) {
+        toggleHistoryBtn.classList.remove("active-toggle");
+      }
+    }
+    resizeCanvas();
+  }
+
   function updateMoveHistory(history) {
     moveHistory = history || [];
+    if (toggleHistoryBtn) {
+      toggleHistoryBtn.textContent = moveHistory.length > 0
+        ? `📜 对弈谱 (${moveHistory.length}手)`
+        : "📜 对弈谱";
+    }
     if (!moveHistoryList) return;
 
     if (historyStepCount) {
@@ -117,13 +141,20 @@
 
   function renderAvatar(el, participant, fallbackEmoji = "🤖") {
     if (!el) return;
+    const isHistoryMini = el.classList.contains("history-avatar-mini");
+    const baseClass = isHistoryMini ? "history-avatar-mini" : "agent-avatar-mini";
     if (participant?.avatarUrl) {
+      el.className = baseClass;
       el.innerHTML = `<img src="${participant.avatarUrl}" alt="avatar" class="agent-avatar-img" />`;
     } else if (participant?.kind === "engine") {
+      el.className = baseClass;
       el.textContent = "🧠";
     } else if (participant?.kind === "player") {
-      el.textContent = "👤";
+      const initial = (participant?.initial || (participant?.name && participant.name !== "你" ? participant.name[0] : "你") || "你").toUpperCase();
+      el.className = `${baseClass} user-avatar`;
+      el.innerHTML = `<span class="user-avatar-initial">${initial}</span>`;
     } else {
+      el.className = baseClass;
       el.textContent = fallbackEmoji;
     }
   }
@@ -143,10 +174,12 @@
       renderAvatar(agentAvatarIcon, participants?.side2, "🤖");
     } else {
       const isPlayerBlack = playerSide === 1;
-      if (playerNameLabel) playerNameLabel.textContent = "你";
+      const playerParticipant = playerSide === 1 ? participants?.side1 : participants?.side2;
+      const playerName = playerParticipant?.name || "你";
+      if (playerNameLabel) playerNameLabel.textContent = playerName;
       if (playerSideLabel) playerSideLabel.textContent = isPlayerBlack ? "(黑棋)" : "(白棋)";
       if (playerSideDot) playerSideDot.className = `stone-dot ${isPlayerBlack ? "black" : "white"}`;
-      renderAvatar(playerAvatarIcon, { kind: "player" }, "👤");
+      renderAvatar(playerAvatarIcon, playerParticipant || { kind: "player" }, "👤");
 
       const agentParticipant = agentSide === 1 ? participants?.side1 : participants?.side2;
       const agName = agentParticipant?.name || (agentNameLabel?.textContent && agentNameLabel.textContent !== "AI Agent" ? agentNameLabel.textContent : "AI Agent");
@@ -161,12 +194,14 @@
     if (speechText) speechText.textContent = message || "";
     if (!speechAvatar) return;
     let participant = null;
-    if (speakerPlayer === 1) {
+    if (gameMode === "player_vs_agent") {
+      participant = agentSide === 1 ? participants?.side1 : participants?.side2;
+    } else if (speakerPlayer === 1) {
       participant = participants?.side1;
     } else if (speakerPlayer === 2) {
       participant = participants?.side2;
-    } else if (gameMode === "player_vs_agent") {
-      participant = agentSide === 1 ? participants?.side1 : participants?.side2;
+    } else {
+      participant = turn === 1 ? participants?.side1 : participants?.side2;
     }
     renderAvatar(speechAvatar, participant, "🤖");
   }
@@ -339,12 +374,21 @@
 
   function resizeCanvas() {
     const parent = canvas.parentElement || document.body;
-    const parentRect = parent.getBoundingClientRect();
+    const parentRect = parent ? parent.getBoundingClientRect() : null;
     const dpr = window.devicePixelRatio || 1;
-    const availWidth = Math.max(0, parentRect.width - 12);
-    const availHeight = Math.max(0, parentRect.height - 12);
-    const size = Math.floor(Math.min(availWidth, availHeight));
-    if (size <= 0) return;
+    const availWidth = parentRect && parentRect.width > 12
+      ? parentRect.width - 12
+      : Math.max(0, (window.innerWidth || 600) - 280);
+    const availHeight = parentRect && parentRect.height > 12
+      ? parentRect.height - 12
+      : Math.max(0, (window.innerHeight || 600) - 140);
+    let size = Math.floor(Math.min(availWidth, availHeight));
+    if (size <= 0) {
+      size = 460;
+      if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(resizeCanvas);
+      }
+    }
 
     currentGridSize = size;
     currentPadding = Math.max(22, Math.round(size * 0.08));
@@ -656,8 +700,6 @@
     }
   }
 
-  let initialized = false;
-
   function syncState(rawSnapshot) {
     if (!rawSnapshot) return;
     const snapshot = rawSnapshot.gameState || rawSnapshot;
@@ -688,7 +730,7 @@
     if (snapshot.chatHistory && snapshot.chatHistory.length > 0) {
       const latestAgentChat = [...snapshot.chatHistory].reverse().find(c => c.sender === "agent");
       if (latestAgentChat) {
-        const speakerPlayer = latestAgentChat.player || snapshot.lastMove?.player;
+        const speakerPlayer = latestAgentChat.player || (gameMode === "player_vs_agent" ? agentSide : snapshot.lastMove?.player);
         updateSpeechBanner(latestAgentChat.message, speakerPlayer);
       }
     }
@@ -728,7 +770,7 @@
     } else if (data.type === "AGENT_INFO_UPDATE") {
       updateAgentInfo(data.payload);
     } else if (data.type === "AGENT_CHAT") {
-      const speakerPlayer = data.payload?.player || (turn === 1 ? 2 : 1);
+      const speakerPlayer = data.payload?.player || (gameMode === "player_vs_agent" ? agentSide : turn);
       updateSpeechBanner(data.payload?.message || "", speakerPlayer);
     } else if (data.type === "MOVE_REJECTED") {
       statusText.textContent =
@@ -763,6 +805,19 @@
       window.parent.postMessage({ type: "REMIND_AGENT" }, "*");
       retryAgentBtn.style.display = "none";
       statusText.textContent = "已向 AI 重新发送落子请求...";
+    });
+  }
+
+  if (toggleHistoryBtn) {
+    toggleHistoryBtn.addEventListener("click", () => {
+      const isCollapsed = moveHistoryPanel?.classList.contains("collapsed");
+      setHistoryPanelVisible(isCollapsed);
+    });
+  }
+
+  if (closeHistoryBtn) {
+    closeHistoryBtn.addEventListener("click", () => {
+      setHistoryPanelVisible(false);
     });
   }
 

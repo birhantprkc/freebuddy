@@ -42,12 +42,15 @@
     <!-- Main Content Area: Board + Move History Panel -->
     <main class="game-main-area">
       <div class="board-wrapper">
-        <canvas id="gomoku-canvas"></canvas>
+        <canvas id="gomoku-canvas" width="600" height="600"></canvas>
       </div>
-      <aside class="move-history-panel" id="move-history-panel">
+      <aside class="move-history-panel collapsed" id="move-history-panel">
         <div class="history-header">
-          <span class="history-title">📜 对弈谱</span>
-          <span id="history-step-count" class="history-badge">0 手</span>
+          <div class="history-title-wrap">
+            <span class="history-title">📜 对弈谱</span>
+            <span id="history-step-count" class="history-badge">0 手</span>
+          </div>
+          <button id="close-history-btn" class="icon-toggle-btn" title="收起对弈谱">✕</button>
         </div>
         <div class="history-list-wrapper" id="history-list-wrapper">
           <div id="history-empty" class="history-empty">等待开局落子...</div>
@@ -61,6 +64,7 @@
       <div id="status-text" class="status-text">请在棋盘上点击落子</div>
       <div class="btn-group">
         <button id="retry-agent-btn" class="btn warning" style="display: none;">⚠️ AI 遗漏落子，点击重试</button>
+        <button id="toggle-history-btn" class="btn" title="展开/收起对弈谱">📜 对弈谱</button>
         <button id="mute-btn" class="btn" title="开启/关闭音效" aria-label="音效开关">🔊 音效</button>
         <button id="share-btn" class="btn" title="生成并分享战报长图">📸 分享</button>
         <button id="resign-btn" class="btn danger">认输</button>

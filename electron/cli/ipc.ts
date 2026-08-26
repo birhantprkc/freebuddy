@@ -7,6 +7,7 @@ import {
   prepareAgentSelfCheckLogs
 } from "../debugLogExport.js";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -116,6 +117,7 @@ import type {
   UpdateInfoCardInput
 } from "../shared/infoCardProtocol.js";
 import {
+  isWithinRoot,
   parseBrowserUrl,
   readBrowserMarkdown,
   resolveBrowserEntry
@@ -1068,7 +1070,36 @@ export function registerCliIpc() {
     if (url.startsWith("freebuddy-browser://")) {
       const { root, rel } = parseBrowserUrl(url);
       const filePath = path.resolve(root, rel);
-      if (!filePath.startsWith(root + path.sep) && filePath !== root) return false;
+      if (!isWithinRoot(filePath, root)) return false;
+
+      // When the file is packaged inside app.asar, external browsers cannot read it
+      // via file://. Extract the enclosing directory to a temporary folder so the
+      // external browser can load all resources (HTML, CSS, JS) normally.
+      if (filePath.includes("app.asar") || filePath.includes("app.asar.unpacked")) {
+        try {
+          const tempBase = path.join(os.tmpdir(), "freebuddy-games");
+          const relFromDist = filePath.split(/[\\/]app\.asar[\\/]dist[\\/]/i)[1] || rel;
+          const targetTempFile = path.join(tempBase, relFromDist);
+          const targetTempDir = path.dirname(targetTempFile);
+          await fs.promises.mkdir(targetTempDir, { recursive: true });
+
+          const srcDir = path.dirname(filePath);
+          const entries = await fs.promises.readdir(srcDir);
+          for (const entry of entries) {
+            const srcPath = path.join(srcDir, entry);
+            const dstPath = path.join(targetTempDir, entry);
+            try {
+              const data = await fs.promises.readFile(srcPath);
+              await fs.promises.writeFile(dstPath, data);
+            } catch {}
+          }
+          await shell.openExternal(pathToFileURL(targetTempFile).toString());
+          return true;
+        } catch {
+          // Fall back to opening directly
+        }
+      }
+
       await shell.openExternal(pathToFileURL(filePath).toString());
       return true;
     }

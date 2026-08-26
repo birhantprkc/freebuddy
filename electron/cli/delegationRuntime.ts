@@ -15,6 +15,7 @@ import {
 import { recoverInterruptedDelegationRuns as recoverDelegationRunsSqlite } from "@freebuddy/storage-sqlite";
 import { sqliteContext } from "./sqliteContext.js";
 import { getCallerUserId, runAsCaller } from "./callerContext.js";
+import { getUserById } from "./users.js";
 import { cliKill, cliYield } from "./runtime.js";
 import type {
   DelegationRosterEntry,
@@ -503,9 +504,12 @@ export class DelegationRuntime {
             selfLabel: agent.label
           }
         });
+      const isOwner = opts.ctx.ownerId
+        ? getUserById(opts.ctx.ownerId)?.isOwner ?? false
+        : false;
       const races: Array<Promise<Awaited<ReturnType<DelegateAgentRunner>>>> = [
         opts.ctx.ownerId
-          ? runAsCaller(opts.ctx.ownerId, runAgent)
+          ? runAsCaller(opts.ctx.ownerId, runAgent, isOwner)
           : runAgent(),
         this.waitForAbort(opts.ctx.runId)
       ];

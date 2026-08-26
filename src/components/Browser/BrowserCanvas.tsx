@@ -399,6 +399,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
     s.activeId ? s.messages[s.activeId] ?? EMPTY_MESSAGES : EMPTY_MESSAGES
   );
   const members = useConversationStore((s) => s.members);
+  const currentUser = useConversationStore((s) => s.currentUser);
   const newConversation = useConversationStore((s) => s.newConversation);
   const sendMessage = useConversationStore((s) => s.sendMessage);
   const isRunning = useConversationStore((s) => (s.activeId ? s.isRunning(s.activeId) : false));
@@ -578,9 +579,13 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
       const agentAvatar = resolveAgentAvatarUrl(activeConversation.agentId, m, activeConversation.adapter);
       const playerSide = (meta.playerSide ?? 1) as 1 | 2;
       const agSide = (playerSide === 1 ? 2 : 1) as 1 | 2;
+      const platform = window.freebuddy?.platform;
+      const userAuthor = currentUser?.username?.trim() || (platform !== "web" ? t("sidebar.hostAccount") : "");
+      const userInitial = (userAuthor[0] ?? (platform !== "web" ? "H" : "?")).toUpperCase();
       const playerParticipant = {
         id: "player",
-        name: t("game.player"),
+        name: userAuthor || t("game.player"),
+        initial: userInitial,
         side: playerSide,
         kind: "player" as const
       };
@@ -596,7 +601,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         side2: playerSide === 2 ? playerParticipant : agentParticipant
       };
     }
-  }, [activeConversation, members, t]);
+  }, [activeConversation, members, currentUser, t]);
 
   const participantsRef = useRef(participants);
   participantsRef.current = participants;
