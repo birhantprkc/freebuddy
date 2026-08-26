@@ -1,11 +1,20 @@
 import type { RuntimeHostApi, RuntimeHostEnvironment, RuntimeManager } from "./ports.js";
 import { readRuntimeState, writeRuntimeState } from "./runtimeStateStore.js";
 import { versionDir } from "./runtimePaths.js";
+import { probeRuntimeVersion, recordCrash } from "./runtimeHealthMonitor.js";
+import { checkRuntimeUpdate, downloadAndPrepareRuntime } from "./runtimeUpdateService.js";
+import { createRuntimeVersionRouter } from "./runtimeVersionRouter.js";
+import fs from "node:fs";
 
 export function createRuntimeManager(
   environment: RuntimeHostEnvironment,
   _hostApi: RuntimeHostApi
 ): RuntimeManager {
+  const router = createRuntimeVersionRouter(
+    () => readRuntimeState(environment.dataDir).activeVersion ?? "bundled"
+  );
+  let lastError: string | null = null;
+
   return {
     async status() {
       const state = readRuntimeState(environment.dataDir);
@@ -14,6 +23,7 @@ export function createRuntimeManager(
         hostVersion: environment.hostVersion,
         hostApiVersion: environment.hostApiVersion,
         bundledRuntimePath: environment.bundledRuntimePath ?? null,
+        lastError,
         ...state
       };
     },
@@ -27,13 +37,23 @@ export function createRuntimeManager(
       if (state.blockedVersions[version]) {
         throw new Error(`runtime ${version} is blocked`);
       }
-      if (version !== "bundled" && environment.bundledRuntimePath !== version) {
+      if (version !== "bundled") {
         const dir = versionDir(environment.dataDir, version);
-        if (!dir) throw new Error("runtime version missing");
+        if (!fs.existsSync(dir) && environment.bundledRuntimePath !== version) {
+          throw new Error("runtime version missing");
+        }
       }
-      state.activeVersion = version;
-      state.pendingVersion = null;
-      writeRuntimeState(environment.dataDir, state);
+      const probe = await probeRuntimeVersion(environment, version);
+      if (!probe.ok) {
+        lastError = probe.reason ?? "probe failed";
+        recordCrash(environment, version);
+        throw new Error(lastError);
+      }
+      const next = readRuntimeState(environment.dataDir);
+      next.activeVersion = version;
+      next.pendingVersion = null;
+      writeRuntimeState(environment.dataDir, next);
+      lastError = null;
     },
     async rollback() {
       const state = readRuntimeState(environment.dataDir);
@@ -48,7 +68,26 @@ export function createRuntimeManager(
       writeRuntimeState(environment.dataDir, state);
     },
     async shutdown() {
-      // Process cleanup is owned by the launcher adapter.
+      router.shutdown();
+    },
+    async check() {
+      const result = await checkRuntimeUpdate(environment, {
+        baseUrl: environment.update?.baseUrl,
+        enabled: environment.update?.enabled ?? false,
+        channel: readRuntimeState(environment.dataDir).channel
+      });
+      if (!result.available) return { available: false, reason: result.reason };
+      const prepared = await downloadAndPrepareRuntime(environment, result.descriptor);
+      if (!prepared.ok) {
+        lastError = prepared.error;
+        return { available: false, reason: prepared.error };
+      }
+      return { available: true, version: result.descriptor.version };
+    },
+    async setChannel(channel) {
+      const state = readRuntimeState(environment.dataDir);
+      state.channel = channel;
+      writeRuntimeState(environment.dataDir, state);
     }
   };
 }

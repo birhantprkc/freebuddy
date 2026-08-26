@@ -12,6 +12,10 @@ export interface RuntimeHostEnvironment {
   http: RuntimeHttpClient;
   trustedKeys: RuntimeTrustedKeyStore;
   clock: { now(): Date; nowIso(): string };
+  update?: {
+    baseUrl?: string;
+    enabled?: boolean;
+  };
 }
 
 export interface RuntimeProcessHandle {
@@ -43,10 +47,26 @@ export interface RuntimeHostApi {
   invoke(method: string, params: unknown, meta?: { idempotencyKey?: string }): Promise<unknown>;
 }
 
+export interface RuntimeStatusSnapshot {
+  hostId: string;
+  hostVersion: string;
+  hostApiVersion: string;
+  bundledRuntimePath: string | null;
+  activeVersion: string | null;
+  pendingVersion: string | null;
+  lastKnownGoodVersion: string | null;
+  channel: string;
+  lastCheckedAt: string | null;
+  blockedVersions: Record<string, { reason: string; failedAt: string }>;
+  lastError?: string | null;
+}
+
 export interface RuntimeManager {
-  status(): Promise<unknown>;
+  status(): Promise<RuntimeStatusSnapshot>;
   prepare(version?: string): Promise<void>;
   activate(version: string): Promise<void>;
   rollback(): Promise<void>;
   shutdown(): Promise<void>;
+  check(): Promise<{ available: boolean; version?: string; reason?: string }>;
+  setChannel(channel: "stable" | "beta" | "development"): Promise<void>;
 }

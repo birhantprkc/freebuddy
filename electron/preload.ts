@@ -762,7 +762,9 @@ const runtimePack = {
   status: () => ipcRenderer.invoke("runtime:status"),
   prepare: (version?: string) => ipcRenderer.invoke("runtime:prepare", version),
   activate: (version: string) => ipcRenderer.invoke("runtime:activate", version),
-  rollback: () => ipcRenderer.invoke("runtime:rollback")
+  rollback: () => ipcRenderer.invoke("runtime:rollback"),
+  check: () => ipcRenderer.invoke("runtime:check"),
+  setChannel: (channel: string) => ipcRenderer.invoke("runtime:setChannel", channel)
 };
 
 const updater = {

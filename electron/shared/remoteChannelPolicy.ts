@@ -262,6 +262,8 @@ const DENY = [
   "runtime:prepare",
   "runtime:activate",
   "runtime:rollback",
+  "runtime:check",
+  "runtime:setChannel",
 
   // Remote account administration stays on the desktop.
   "remote:setEnabled",

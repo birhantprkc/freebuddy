@@ -17,7 +17,15 @@ export function lockPath(dataDir: string): string {
   return path.join(runtimeRoot(dataDir), "runtime.lock");
 }
 
+export function downloadsDir(dataDir: string): string {
+  return path.join(runtimeRoot(dataDir), "downloads");
+}
+
+export function cohortPath(dataDir: string): string {
+  return path.join(runtimeRoot(dataDir), "cohort-id");
+}
+
 export function ensureRuntimeRoot(dataDir: string): void {
   fs.mkdirSync(path.join(runtimeRoot(dataDir), "versions"), { recursive: true });
-  fs.mkdirSync(path.join(runtimeRoot(dataDir), "downloads"), { recursive: true });
+  fs.mkdirSync(downloadsDir(dataDir), { recursive: true });
 }

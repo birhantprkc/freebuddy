@@ -6,5 +6,17 @@ export type SqliteStatement = {
 
 export type SqliteDatabase = {
   prepare(sql: string): SqliteStatement;
-  transaction<T>(fn: () => T): () => T;
+  transaction: (fn: (...args: any[]) => any) => any;
+  exec?(sql: string): void;
+};
+
+export type OwnerContext = {
+  ownerUserId: string | null;
+  isAdmin: boolean;
+};
+
+export type SqliteStoreContext = {
+  db: SqliteDatabase;
+  owner: OwnerContext;
+  nowIso?: () => string;
 };

@@ -4,6 +4,7 @@ import fs from "node:fs";
 
 const runtimeSource =
   fs.readFileSync(new URL("../electron/cli/workflowRuntime.ts", import.meta.url), "utf8") +
+  fs.readFileSync(new URL("../electron/runtime/adapters/legacyAgentExecutor.ts", import.meta.url), "utf8") +
   fs.readFileSync(new URL("../packages/workflow-runtime/src/runtime.ts", import.meta.url), "utf8");
 const preloadSource = fs.readFileSync(
   new URL("../electron/preload.ts", import.meta.url),

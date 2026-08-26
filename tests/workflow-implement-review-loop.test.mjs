@@ -414,6 +414,9 @@ test("workflow steps persist reusable tool session ids separately from task ids"
   const workflows = fs.readFileSync(
     new URL("../electron/cli/workflows.ts", import.meta.url),
     "utf8"
+  ) + fs.readFileSync(
+    new URL("../packages/storage-sqlite/src/workflows.ts", import.meta.url),
+    "utf8"
   );
   const electronTypes = fs.readFileSync(
     new URL("../electron/cli/workflowTypes.ts", import.meta.url),

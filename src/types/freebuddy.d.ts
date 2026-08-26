@@ -756,10 +756,15 @@ declare global {
       lastKnownGoodVersion: string | null;
       channel: string;
       bundledRuntimePath: string | null;
+      lastCheckedAt?: string | null;
+      lastError?: string | null;
+      blockedVersions?: Record<string, { reason: string; failedAt: string }>;
     }>;
     prepare(version?: string): Promise<void>;
     activate(version: string): Promise<void>;
     rollback(): Promise<void>;
+    check(): Promise<{ available: boolean; version?: string; reason?: string }>;
+    setChannel(channel: "stable" | "beta" | "development"): Promise<void>;
   }
 
   interface FreebuddyShell {

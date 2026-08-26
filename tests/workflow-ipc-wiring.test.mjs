@@ -32,7 +32,7 @@ test("workflow IPC handlers are registered", () => {
 
 test("workflow IPC registration recovers interrupted running workflows", () => {
   const ipc = read("../electron/cli/workflowIpc.ts");
-  const workflows = read("../electron/cli/workflows.ts");
+  const workflows = read("../electron/cli/workflows.ts") + read("../packages/storage-sqlite/src/workflows.ts");
   assert.match(ipc, /recoverInterruptedWorkflowRuns/);
   assert.match(ipc, /recoverInterruptedWorkflowRuns\(\)/);
   assert.match(workflows, /WHERE status = 'running'/);

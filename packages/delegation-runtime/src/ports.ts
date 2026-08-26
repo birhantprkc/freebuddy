@@ -16,9 +16,21 @@ import type {
   SkillResolver
 } from "@freebuddy/agent-runtime";
 
+export interface InsertDelegationEventInput {
+  runId: string;
+  parentEventId: string | null;
+  agentId: string;
+  agentName: string;
+  roleLabel: string;
+  taskText: string;
+  depth: number;
+  canWrite: boolean;
+  status: DelegationEventStatus;
+}
+
 export interface DelegationRunRepository {
   createRun(input: {
-    id: string;
+    id?: string;
     conversationId?: string | null;
     name?: string;
     goal: string;
@@ -30,17 +42,24 @@ export interface DelegationRunRepository {
     runtimeApiVersion?: string | null;
   }): DelegationRunRow;
   getRun(id: string): DelegationRunRow | undefined;
-  setStatus(id: string, status: string, endedAt?: string | null): void;
-  insertEvent(event: DelegationEvent): void;
+  setStatus(
+    id: string,
+    status: string,
+    options?: { allowReopen?: boolean; endedAt?: string | null }
+  ): boolean;
+  insertEvent(input: InsertDelegationEventInput): string;
   updateEvent(id: string, patch: Partial<DelegationEvent>): void;
   transitionEvent(
     id: string,
-    from: DelegationEventStatus[] | DelegationEventStatus,
     to: DelegationEventStatus,
-    patch?: Partial<DelegationEvent>
+    resultSummary?: string | null,
+    options?: { allowReopen?: boolean }
   ): boolean;
+  getEvent(id: string): DelegationEvent | undefined;
   listEvents(runId: string): DelegationEvent[];
-  cancelActiveEvents(runId: string): void;
+  listPendingChildEvents(runId: string, parentEventId: string): DelegationEvent[];
+  countActiveDelegateLeaves(runId: string): number;
+  cancelActiveEvents(runId: string, reason?: string): string[];
   getOwnerId?(runId: string): string | undefined;
 }
 
@@ -72,6 +91,9 @@ export interface DelegationRuntimePorts {
     | undefined;
   getTeam: (id: string) => DelegationTeam | undefined;
   abort?: AbortSignal;
+  yieldSession?: (sessionId: string) => void;
+  killSession?: (sessionId: string) => void;
+  runAsOwner?: <T>(ownerId: string, fn: () => Promise<T> | T) => Promise<T> | T;
 }
 
 export type {

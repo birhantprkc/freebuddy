@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { WebContents } from "electron";
 import { safeSendToWebContents } from "./ipcSend.js";
-import { getDb } from "./db.js";
 import {
   createDelegationRun,
   getDelegationRun,
@@ -13,6 +12,8 @@ import {
   cancelActiveDelegationEvents,
   getDelegationRunOwnerId
 } from "./delegationRuns.js";
+import { recoverInterruptedDelegationRuns as recoverDelegationRunsSqlite } from "@freebuddy/storage-sqlite";
+import { sqliteContext } from "./sqliteContext.js";
 import { getCallerUserId, runAsCaller } from "./callerContext.js";
 import { cliKill, cliYield } from "./runtime.js";
 import type {
@@ -33,6 +34,17 @@ import {
 import { buildDelegateTaskPrompt } from "./delegation/protocol/text.js";
 import type { DelegateAgentRunner } from "./delegationRunner.js";
 import { DelegationOrchestrator } from "./delegation/bus/orchestrator.js";
+import { electronDelegationRepository } from "../runtime/adapters/delegationRepository.js";
+import { currentRuntimePin } from "../runtime/runtimePin.js";
+import { app } from "electron";
+
+function currentRuntimePinSafe() {
+  try {
+    return currentRuntimePin(app.getPath("userData"));
+  } catch {
+    return currentRuntimePin();
+  }
+}
 
 export const DELEGATION_SKILL_ID = "delegation";
 
@@ -205,6 +217,7 @@ export class DelegationRuntime {
       roster: ctx.roster,
       policy: ctx.policy,
       entryRoleId: ctx.entryRoleId,
+      repository: electronDelegationRepository(),
       spawnTurn: async (args) => {
         this.refreshTeamFromDb(ctx);
         const agent =
@@ -260,7 +273,8 @@ export class DelegationRuntime {
       cwd: input.cwd,
       teamId: input.teamId,
       teamSnapshotJson: JSON.stringify(input.teamSnapshot),
-      conversationId: input.conversationId
+      conversationId: input.conversationId,
+      ...currentRuntimePinSafe()
     });
     this.contexts.set(runId, {
       runId,
@@ -887,25 +901,5 @@ export class DelegationRuntime {
 }
 
 export function recoverInterruptedDelegationRuns(): number {
-  const now = new Date().toISOString();
-  const rows = getDb()
-    .prepare(
-      "SELECT id FROM workflow_runs WHERE kind = 'delegation' AND status IN ('running','blocked')"
-    )
-    .all() as Array<{ id: string }>;
-  const update = getDb().prepare(
-    "UPDATE workflow_runs SET status = 'failed', summary = COALESCE(summary, 'Interrupted by app restart.'), updated_at = ? WHERE id = ? AND status IN ('running','blocked')"
-  );
-  const interruptedEvents = getDb()
-    .prepare("SELECT id FROM delegation_events WHERE status IN ('pending','running')")
-    .all() as Array<{ id: string }>;
-  for (const row of rows) update.run(now, row.id);
-  for (const event of interruptedEvents) {
-    transitionDelegationEvent(
-      event.id,
-      "failed",
-      "Interrupted by app restart."
-    );
-  }
-  return rows.length;
+  return recoverDelegationRunsSqlite(sqliteContext());
 }

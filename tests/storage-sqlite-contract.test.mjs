@@ -1,0 +1,103 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createMemoryWorkflowRepository } from "../packages/workflow-runtime/dist/index.js";
+import {
+  createSqliteWorkflowRepository,
+  createSqliteDelegationRepository
+} from "../packages/storage-sqlite/dist/index.js";
+
+test("memory and sqlite workflow repositories share create/get/update contracts", async (t) => {
+  const memory = createMemoryWorkflowRepository();
+  const created = memory.createRun({
+    id: "run-1",
+    name: "n",
+    goal: "g",
+    maxLoops: 1,
+    planJson: "{}",
+    runtimeVersion: "1.0.0",
+    runtimeApiVersion: "1.0.0"
+  });
+  assert.equal(memory.getRun("run-1")?.name, "n");
+  memory.updateRun("run-1", { status: "running" });
+  assert.equal(memory.getRun("run-1")?.status, "running");
+  memory.createStep({
+    id: "step-1",
+    workflowRunId: "run-1",
+    phaseId: "p",
+    stepId: "s",
+    title: "t",
+    agentId: "a",
+    agentName: "a",
+    adapter: "claude",
+    mode: "research",
+    prompt: "p"
+  });
+  assert.equal(memory.getSteps("run-1").length, 1);
+  memory.resetStepsForLoop("run-1", ["p"]);
+  assert.equal(memory.getSteps("run-1")[0]?.status, "pending");
+  assert.equal(created.runtimeVersion, "1.0.0");
+
+  let Database;
+  try {
+    Database = (await import("better-sqlite3")).default;
+    new Database(":memory:").close();
+  } catch {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+  const db = new Database(":memory:");
+  db.exec(`
+    CREATE TABLE conversations (id TEXT PRIMARY KEY, owner_id TEXT);
+    CREATE TABLE workflow_runs (
+      id TEXT PRIMARY KEY, conversation_id TEXT, name TEXT, goal TEXT, status TEXT,
+      cwd TEXT, template TEXT, loop_index INTEGER, max_loops INTEGER, plan_json TEXT,
+      team_id TEXT, team_snapshot_json TEXT, plan_version INTEGER, kind TEXT,
+      runtime_version TEXT, runtime_api_version TEXT, summary TEXT,
+      created_at TEXT, updated_at TEXT, ended_at TEXT
+    );
+    CREATE TABLE workflow_steps (
+      id TEXT PRIMARY KEY, workflow_run_id TEXT, phase_id TEXT, step_id TEXT, title TEXT,
+      agent_id TEXT, agent_name TEXT, adapter TEXT, mode TEXT, status TEXT, prompt TEXT,
+      depends_on TEXT, target_paths TEXT, summary TEXT, result_json TEXT, cli_task_id TEXT,
+      tool_session_id TEXT, started_at TEXT, ended_at TEXT, created_at TEXT, updated_at TEXT
+    );
+    CREATE TABLE workflow_teams (
+      id TEXT PRIMARY KEY, name TEXT, description TEXT, icon TEXT, enabled INTEGER,
+      source TEXT, kind TEXT, roles_json TEXT, template_json TEXT, policy_json TEXT,
+      delegation_meta_json TEXT, created_at TEXT, updated_at TEXT
+    );
+    CREATE TABLE delegation_events (
+      id TEXT PRIMARY KEY, run_id TEXT, parent_event_id TEXT, agent_id TEXT, agent_name TEXT,
+      role_label TEXT, task_text TEXT, depth INTEGER, status TEXT, result_summary TEXT,
+      result_json TEXT, can_write INTEGER, accepted_at TEXT, started_at TEXT, ended_at TEXT,
+      verdict TEXT, verdict_summary TEXT
+    );
+  `);
+  const sqlite = createSqliteWorkflowRepository({
+    db,
+    owner: { ownerUserId: null, isAdmin: true }
+  });
+  sqlite.createRun({
+    id: "sql-1",
+    name: "n",
+    goal: "g",
+    maxLoops: 1,
+    planJson: "{}",
+    runtimeVersion: "bundled",
+    runtimeApiVersion: "1.0.0"
+  });
+  assert.equal(sqlite.getRun("sql-1")?.runtimeVersion, "bundled");
+  const delegation = createSqliteDelegationRepository({
+    db,
+    owner: { ownerUserId: null, isAdmin: true }
+  });
+  const del = delegation.createRun({
+    goal: "delegate",
+    status: "running",
+    teamId: "t",
+    teamSnapshotJson: "{}",
+    runtimeVersion: "1.0.0"
+  });
+  assert.equal(del.kind, "delegation");
+  db.close();
+});
