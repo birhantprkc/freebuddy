@@ -16,6 +16,17 @@ try {
   bindingAvailable = false;
 }
 
+test("Windows ACP inner runner spawns .cmd shims through cmd.exe", () => {
+  const source = fs.readFileSync(new URL("../electron/cli/sandboxRuntime.ts", import.meta.url), "utf8");
+  assert.match(source, /shell:win/);
+  assert.match(source, /windowsHide:win/);
+  assert.match(
+    source,
+    /filter\(\(\[,v\]\)=>typeof v==='string'\)/,
+    "spawn env must drop undefined values that cause Windows EINVAL"
+  );
+});
+
 function connectToProxy(host, port) {
   return new Promise((resolve, reject) => {
     const socket = net.connect({ host, port });
