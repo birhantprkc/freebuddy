@@ -746,6 +746,22 @@ declare global {
     onEvent(cb: (event: UpdaterEvent) => void): () => void;
   }
 
+  interface FreebuddyRuntimePack {
+    status(): Promise<{
+      hostId: string;
+      hostVersion: string;
+      hostApiVersion: string;
+      activeVersion: string | null;
+      pendingVersion: string | null;
+      lastKnownGoodVersion: string | null;
+      channel: string;
+      bundledRuntimePath: string | null;
+    }>;
+    prepare(version?: string): Promise<void>;
+    activate(version: string): Promise<void>;
+    rollback(): Promise<void>;
+  }
+
   interface FreebuddyShell {
     showItemInFolder(targetPath: string): Promise<boolean>;
   }
@@ -900,6 +916,7 @@ declare global {
     window: FreebuddyWindow;
     session?: FreebuddySession;
     updater: FreebuddyUpdater;
+    runtimePack?: FreebuddyRuntimePack;
     debugLogs: FreebuddyDebugLogs;
     shell: FreebuddyShell;
     remote: FreebuddyRemote;

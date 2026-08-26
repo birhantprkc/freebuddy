@@ -1,119 +1,39 @@
 import type { TFunction } from "i18next";
-import type { WorkflowPlan } from "@/services/workflows/types";
+import type {
+  WorkflowTeam,
+  WorkflowTeamPreview,
+  WorkflowTeamRole,
+  WorkflowTeamRoleKind,
+  WorkflowTemplateNode,
+  WorkflowTemplateNodeMode
+} from "@freebuddy/protocol/workflow";
+import type { DelegationTeam } from "@freebuddy/protocol/delegation";
 
-export type WorkflowTeamRoleKind =
-  | "planner"
-  | "researcher"
-  | "reviewer"
-  | "implementer"
-  | "verifier"
-  | "summarizer"
-  | "custom";
+export type {
+  WorkflowEdgeCondition,
+  WorkflowNodeContract,
+  WorkflowTeam,
+  WorkflowTeamPolicy,
+  WorkflowTeamPreview,
+  WorkflowTeamRole,
+  WorkflowTeamRoleKind,
+  WorkflowTemplate2,
+  WorkflowTemplateEdge,
+  WorkflowTemplateNode,
+  WorkflowTemplateNodeGate,
+  WorkflowTemplateNodeMode
+} from "@freebuddy/protocol/workflow";
 
-export interface WorkflowTeamRole {
-  id: string;
-  label: string;
-  kind: WorkflowTeamRoleKind;
-  agentId: string;
-  model?: string;
-  modelOptionId?: string;
-  required: boolean;
-  canWrite: boolean;
-  description?: string;
-  skillIds?: string[];
-}
+export type {
+  DelegationPolicy,
+  DelegationRosterEntry,
+  DelegationTeam
+} from "@freebuddy/protocol/delegation";
 
-export interface WorkflowTeamPolicy {
-  allowWrites: boolean;
-  requireApprovalBeforeWrite: boolean;
-  requireApprovalAfterReview: boolean;
-  maxParallelReadSteps: number;
-  maxParallelWriteSteps: 1;
-  maxLoops: number;
-  stopOnVerifyFailure: boolean;
-}
+export type AnyTeam = WorkflowTeam | DelegationTeam;
 
-export type WorkflowTemplateNodeMode =
-  | "research"
-  | "review"
-  | "write"
-  | "verify"
-  | "summarize"
-  | "approval";
-
-export type WorkflowNodeContract =
-  | "plan"
-  | "approval"
-  | "implement"
-  | "review"
-  | "verify"
-  | "summarize"
-  | "research"
-  | "report"
-  | "custom";
-
-export interface WorkflowTemplateNodeGate {
-  id: string;
-  type: "manual_approval";
-  placement: "before" | "after";
-  label?: string;
-  reason?: string;
-  blocks?: string;
-}
-
-export interface WorkflowTemplateNode {
-  id: string;
-  title: string;
-  roleId?: string;
-  mode: WorkflowTemplateNodeMode;
-  contract?: WorkflowNodeContract;
-  gates?: WorkflowTemplateNodeGate[];
-  promptTemplate?: string;
-  targetPathTemplates?: string[];
-  retry?: {
-    maxAttempts: number;
-    onFailure: "block" | "skip" | "continue";
-  };
-}
-
-export type WorkflowEdgeCondition =
-  | { type: "always" }
-  | { type: "status"; nodeId: string; equals: "done" | "failed" | "skipped" }
-  | { type: "summary_contains"; nodeId: string; text: string }
-  | { type: "summary_regex"; nodeId: string; pattern: string }
-  | { type: "approval"; approvalId: string; equals: "approved" | "rejected" };
-
-export interface WorkflowTemplateEdge {
-  id: string;
-  from: string;
-  to: string;
-  activation?: "all" | "any";
-  condition?: WorkflowEdgeCondition;
-}
-
-export interface WorkflowTemplate2 {
-  id: string;
-  name: string;
-  description?: string;
-  version: 1;
-  nodes: WorkflowTemplateNode[];
-  edges: WorkflowTemplateEdge[];
-  startNodeIds: string[];
-  finalNodeIds: string[];
-}
-
-export interface WorkflowTeam {
-  id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  enabled: boolean;
-  source: "builtin" | "user";
-  roles: WorkflowTeamRole[];
-  template: WorkflowTemplate2;
-  policy: WorkflowTeamPolicy;
-  createdAt: string;
-  updatedAt: string;
+export function isDelegationTeam(t: AnyTeam): t is DelegationTeam {
+  return (t as DelegationTeam).kind === "delegation";
 }
 
 export function workflowTeamName(team: WorkflowTeam, t: TFunction): string {
@@ -177,66 +97,4 @@ export function workflowTeamPreviewName(
   return t(`workflow.builtinTeams.${preview.teamId}.name`, {
     defaultValue: preview.teamName
   });
-}
-
-export interface WorkflowTeamPreview {
-  teamId: string;
-  teamName: string;
-  goal: string;
-  cwd?: string;
-  roleSummary: Array<{
-    roleId: string;
-    roleLabel: string;
-    kind: WorkflowTeamRoleKind;
-    agentId: string;
-    agentName: string;
-  }>;
-  routeSummary: Array<{
-    nodeId: string;
-    title: string;
-    mode: WorkflowTemplateNodeMode;
-    roleLabel?: string;
-    agentName?: string;
-  }>;
-  writeNodeCount: number;
-  approvalNodeCount: number;
-  maxLoops: number;
-  plan: WorkflowPlan;
-}
-
-export interface DelegationRosterEntry {
-  id: string;
-  label: string;
-  agentId: string;
-  model?: string;
-  modelOptionId?: string;
-  capability: string;
-  canWrite: boolean;
-  skillIds?: string[];
-}
-export interface DelegationPolicy {
-  allowWrites: boolean;
-  requireApprovalBeforeDelegateWrite: boolean;
-  maxDepth: number;
-  delegateTimeoutMs: number;
-  maxConcurrentDelegates: number;
-  stopOnDelegateFailure: boolean;
-}
-export interface DelegationTeam {
-  id: string;
-  name: string;
-  description?: string;
-  icon?: string;
-  enabled: boolean;
-  source: "builtin" | "user";
-  kind: "delegation";
-  entryRoleId: string;
-  roster: DelegationRosterEntry[];
-  policy: DelegationPolicy;
-  createdAt: string;
-  updatedAt: string;
-}
-export type AnyTeam = WorkflowTeam | DelegationTeam;
-export function isDelegationTeam(t: AnyTeam): t is DelegationTeam {
-  return (t as DelegationTeam).kind === "delegation";
 }

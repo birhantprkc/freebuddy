@@ -1590,6 +1590,10 @@
       "error": "Update check failed."
     }
   },
+  "runtimePack": {
+    "label": "Runtime",
+    "bundled": "bundled"
+  },
   "debugLogs": {
     "title": "Export debug logs",
     "aboutSectionTitle": "Diagnostics",

@@ -22,7 +22,7 @@ test("workflow team IPC handlers are registered", () => {
 test("workflow team IPC uses cloned cli members", () => {
   const ipc = read("../electron/cli/workflowIpc.ts");
   const members = read("../electron/cli/members.ts");
-  const runtime = read("../electron/cli/workflowRuntime.ts");
+  const runtime = read("../electron/cli/workflowRuntime.ts") + read("../packages/workflow-runtime/src/runtime.ts");
   assert.match(ipc, /import \{ listCliMembers \}/);
   assert.match(ipc, /listCliMembers\(\)\.find/);
   assert.match(ipc, /return listCliMembers\(\)\.map/);
@@ -354,7 +354,7 @@ test("workflow team editor loads cached models and saves a model per role", () =
 });
 
 test("workflow runtime forwards step model overrides to cliRun", () => {
-  const src = read("../electron/cli/workflowRuntime.ts");
+  const src = read("../electron/cli/workflowRuntime.ts") + read("../packages/workflow-runtime/src/runtime.ts");
   assert.match(src, /configOptionOverrides: planStep\?\.configOptionOverrides/);
   assert.match(src, /configOptionOverrides: args\.configOptionOverrides/);
 });
@@ -493,7 +493,7 @@ test("conversation_messages schema carries agent and workflow columns", () => {
 });
 
 test("workflow runtime appends per-step messages and broadcasts", () => {
-  const rt = read("../electron/cli/workflowRuntime.ts");
+  const rt = read("../electron/cli/workflowRuntime.ts") + read("../packages/workflow-runtime/src/runtime.ts");
   assert.match(rt, /appendMessage\(\{/);
   assert.match(rt, /roleLabel/);
   assert.match(rt, /broadcastMessageEvent/);
@@ -501,9 +501,9 @@ test("workflow runtime appends per-step messages and broadcasts", () => {
 });
 
 test("workflow runtime passes conversation attachments to executor", () => {
-  const rt = read("../electron/cli/workflowRuntime.ts");
+  const rt = read("../electron/cli/workflowRuntime.ts") + read("../packages/workflow-runtime/src/runtime.ts");
   assert.match(rt, /promptAttachmentsFromConversation/);
-  assert.match(rt, /promptAttachments:\s*promptAttachmentsFromConversation\(run\.conversationId\)/);
+  assert.match(rt, /promptAttachments:\s*promptAttachmentsFromConversation\(this\.deps, run\.conversationId\)/);
   assert.match(rt, /listMessages\(conversationId\)/);
   assert.match(rt, /promptAttachments:\s*args\.promptAttachments/);
 });
@@ -513,13 +513,15 @@ test("team runs persist team metadata for later audit", () => {
   const workflows = read("../electron/cli/workflows.ts");
   const electronTypes = read("../electron/cli/workflowTypes.ts");
   const rendererTypes = read("../src/services/workflows/types.ts");
+  const protocolTypes = read("../packages/protocol/src/workflow.ts");
   assert.match(ipc, /teamId:\s*team\.id/);
   assert.match(ipc, /teamSnapshotJson:\s*JSON\.stringify\(team\)/);
   assert.match(ipc, /planVersion:\s*team\.template\.version/);
   assert.match(workflows, /team_id/);
   assert.match(workflows, /teamSnapshotJson/);
-  assert.match(electronTypes, /teamId\?: string/);
-  assert.match(rendererTypes, /teamId\?: string/);
+  assert.match(electronTypes, /WorkflowRunRow/);
+  assert.match(rendererTypes, /WorkflowRunRow/);
+  assert.match(protocolTypes, /teamId\?: string/);
 });
 
 test("workflow step queries are stable when created_at timestamps tie", () => {

@@ -3,6 +3,19 @@ import type {
   DelegationRosterEntry,
   DelegationPolicy
 } from "@/services/workflowTeams/types";
+import type {
+  DelegationEvent as DelegationEventRow,
+  DelegationRunFinishedEvent,
+  DelegationRunRow
+} from "@freebuddy/protocol/delegation";
+
+export type {
+  DelegationEvent as DelegationEventRow,
+  DelegationEventStatus,
+  DelegationResult,
+  DelegationRunFinishedEvent,
+  DelegationRunRow
+} from "@freebuddy/protocol/delegation";
 
 export interface UpsertDelegationTeamInput {
   id: string;
@@ -25,71 +38,6 @@ export interface UpdateDelegationTeamPatch {
   roster?: DelegationRosterEntry[];
   policy?: DelegationPolicy;
 }
-
-export interface DelegationRunRow {
-  id: string;
-  kind: "delegation";
-  conversationId: string | null;
-  name?: string;
-  goal: string;
-  status: string;
-  cwd: string | null;
-  teamId: string | null;
-  teamSnapshotJson: string | null;
-  createdAt: string;
-  updatedAt: string;
-  endedAt: string | null;
-}
-
-export type DelegationEventStatus =
-  | "pending"
-  | "running"
-  | "done"
-  | "failed"
-  | "timeout"
-  | "cancelled";
-
-export interface DelegationResult {
-  schemaVersion: 1;
-  status: Exclude<DelegationEventStatus, "pending" | "running">;
-  summary: string;
-  exitCode: number | null;
-  error: {
-    code: "delegate_failed" | "delegate_timeout" | "delegate_cancelled";
-    message: string;
-    retryable: boolean;
-  } | null;
-  artifacts: Array<{ kind: "file" | "url" | "text"; label: string; uri?: string }>;
-  verdict: "pass" | "needs_changes" | "fail" | null;
-  verdictSummary: string | null;
-}
-
-export interface DelegationEventRow {
-  id: string;
-  runId: string;
-  parentEventId: string | null;
-  agentId: string;
-  agentName: string;
-  roleLabel: string;
-  taskText: string;
-  depth: number;
-  status: DelegationEventStatus;
-  resultSummary: string | null;
-  result: DelegationResult | null;
-  canWrite: boolean;
-  acceptedAt: string | null;
-  startedAt: string | null;
-  endedAt: string | null;
-  verdict: "pass" | "needs_changes" | "fail" | null;
-  verdictSummary: string | null;
-}
-
-export type DelegationRunFinishedEvent = {
-  runId: string;
-  conversationId?: string;
-  status: string;
-  name: string;
-};
 
 function api() {
   const delegation = window.freebuddy?.delegation;

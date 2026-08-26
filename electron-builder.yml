@@ -10,6 +10,8 @@ directories:
 files:
   - dist/**/*
   - dist-electron/**/*
+  - packages/*/package.json
+  - packages/*/dist/**/*
   - assets/app-icon.png
   - package.json
   # Native tokscale packages are staged per target by beforePack below.
@@ -28,6 +30,8 @@ extraResources:
     to: tray-icon.png
   - from: .build/tokscale
     to: tokscale
+  - from: .build/runtime-pack
+    to: runtime-bundled
 
 asarUnpack:
   - node_modules/better-sqlite3/**/*

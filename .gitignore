@@ -2,6 +2,7 @@ build/
 .build/
 dist/
 dist-electron/
+packages/*/dist/
 release/
 node_modules/
 .DS_Store

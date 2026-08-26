@@ -1575,6 +1575,10 @@
       "error": "检查更新失败。"
     }
   },
+  "runtimePack": {
+    "label": "运行时",
+    "bundled": "内置"
+  },
   "debugLogs": {
     "title": "导出调试日志",
     "aboutSectionTitle": "诊断",

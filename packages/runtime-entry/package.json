@@ -1,0 +1,25 @@
+{
+  "name": "@freebuddy/runtime-entry",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@freebuddy/protocol": "0.0.0",
+    "@freebuddy/workflow-runtime": "0.0.0",
+    "@freebuddy/delegation-runtime": "0.0.0",
+    "@freebuddy/agent-runtime": "0.0.0",
+    "@freebuddy/cli-stream": "0.0.0"
+  }
+}

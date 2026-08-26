@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useUpdaterStore, type UpdateStatus } from "@/store/updaterStore";
 import { useDebugLogsDialogStore } from "@/store/debugLogsDialogStore";
@@ -17,6 +17,24 @@ function formatReleaseNotes(notes: unknown): string | null {
     return text.trim() || null;
   }
   return null;
+}
+
+function RuntimePackStatus() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<string>("");
+  useEffect(() => {
+    const api = window.freebuddy?.runtimePack;
+    if (!api) return;
+    void api.status().then((snapshot) => {
+      setStatus(snapshot.activeVersion || t("runtimePack.bundled"));
+    });
+  }, [t]);
+  if (!window.freebuddy?.runtimePack) return null;
+  return (
+    <div className="about-card-platform">
+      {t("runtimePack.label")}: {status || t("runtimePack.bundled")}
+    </div>
+  );
 }
 
 export function AboutTab() {
@@ -77,6 +95,7 @@ export function AboutTab() {
         <div className="about-card-meta">
           <div className="about-card-name">FreeBuddy</div>
           <div className="about-card-version">v{appVersion || "—"}</div>
+          <RuntimePackStatus />
           {platformLabel && (
             <div className="about-card-platform">{platformLabel}</div>
           )}

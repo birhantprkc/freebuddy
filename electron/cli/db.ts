@@ -851,6 +851,12 @@ export function migrate(db: DB) {
       "ALTER TABLE workflow_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'workflow'"
     );
   }
+  if (!workflowRunCols.some((c) => c.name === "runtime_version")) {
+    db.exec("ALTER TABLE workflow_runs ADD COLUMN runtime_version TEXT");
+  }
+  if (!workflowRunCols.some((c) => c.name === "runtime_api_version")) {
+    db.exec("ALTER TABLE workflow_runs ADD COLUMN runtime_api_version TEXT");
+  }
 
   const workflowStepCols = db
     .prepare("PRAGMA table_info(workflow_steps)")

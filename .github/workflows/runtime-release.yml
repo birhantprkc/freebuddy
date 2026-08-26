@@ -1,0 +1,22 @@
+name: Runtime Pack
+
+on:
+  push:
+    tags:
+      - "runtime-v*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck:packages
+      - run: node --test tests/package-boundaries.test.mjs tests/protocol-fixtures.test.mjs tests/runtime-state-store.test.mjs tests/runtime-cli-host-conformance.test.mjs
+      - run: npm run runtime:build
+      - run: npm run runtime:sign
+      - run: npm run runtime:verify

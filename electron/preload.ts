@@ -758,6 +758,13 @@ const scheduledTasks = {
   }
 };
 
+const runtimePack = {
+  status: () => ipcRenderer.invoke("runtime:status"),
+  prepare: (version?: string) => ipcRenderer.invoke("runtime:prepare", version),
+  activate: (version: string) => ipcRenderer.invoke("runtime:activate", version),
+  rollback: () => ipcRenderer.invoke("runtime:rollback")
+};
+
 const updater = {
   getVersion: () => ipcRenderer.invoke("app:getVersion") as Promise<string>,
   check: () =>
@@ -895,6 +902,7 @@ contextBridge.exposeInMainWorld("freebuddy", {
   infoCards,
   window,
   updater,
+  runtimePack,
   debugLogs,
   shell: shellApi,
   remote,

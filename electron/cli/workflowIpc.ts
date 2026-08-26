@@ -7,7 +7,7 @@ import {
   buildReviewLoopPlan,
   reviewLoopCoordinatorPrompt
 } from "./workflowTemplates.js";
-import { createCliStepExecutor, WorkflowRuntime } from "./workflowRuntime.js";
+import { createCliStepExecutor, WorkflowRuntime, createElectronWorkflowPorts } from "./workflowRuntime.js";
 import {
   getWorkflowRun,
   getWorkflowSteps,
@@ -40,22 +40,24 @@ function ensureRuntime(event: IpcMainInvokeEvent): WorkflowRuntime {
   if (runtime) return runtime;
   const win = BrowserWindow.fromWebContents(event.sender);
   const executor = createCliStepExecutor(win?.webContents);
-  runtime = new WorkflowRuntime({
-    executor,
-    webContents: win?.webContents,
-    resolveAgent(agentId) {
-      const member = listCliMembers().find((m) => m.id === agentId);
-      if (!member) return undefined;
-      return {
-        adapter: member.cli.adapter,
-        agentName: member.name,
-        binary: member.cli.binary,
-        extraArgs: member.cli.extraArgs,
-        env: member.cli.env,
-        skillIds: member.cli.skillIds
-      };
-    }
-  });
+  runtime = new WorkflowRuntime(
+    createElectronWorkflowPorts({
+      executor,
+      webContents: win?.webContents,
+      resolveAgent(agentId) {
+        const member = listCliMembers().find((m) => m.id === agentId);
+        if (!member) return undefined;
+        return {
+          adapter: member.cli.adapter,
+          agentName: member.name,
+          binary: member.cli.binary,
+          extraArgs: member.cli.extraArgs,
+          env: member.cli.env,
+          skillIds: member.cli.skillIds
+        };
+      }
+    })
+  );
   return runtime;
 }
 

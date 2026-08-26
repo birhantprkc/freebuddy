@@ -1,3 +1,5 @@
+import type { CLIStreamMode } from "@freebuddy/protocol/cli";
+
 export type CLIAdapterId =
   | "codex"
   | "codex-acp"
@@ -14,11 +16,7 @@ export type CLIAdapterId =
   | "dsh-acp"
   | (string & {});
 
-export type CLIStreamMode =
-  | "codex-json"
-  | "claude-json"
-  | "opencode-json"
-  | "raw";
+export type { CLIStreamMode } from "@freebuddy/protocol/cli";
 
 export interface CLIAdapterDefinition {
   id: CLIAdapterId;
