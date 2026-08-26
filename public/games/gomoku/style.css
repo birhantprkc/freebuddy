@@ -101,6 +101,25 @@ body {
   flex-shrink: 0;
 }
 
+.agent-avatar-mini.user-avatar,
+.history-avatar-mini.user-avatar {
+  background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.user-avatar-initial {
+  font-size: 10px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1;
+  text-transform: uppercase;
+  display: inline-block;
+}
+
 .agent-avatar-img {
   width: 18px;
   height: 18px;
@@ -262,7 +281,11 @@ body {
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   flex-shrink: 0;
-  transition: height 0.1s ease-out;
+  transition: all 0.2s ease-out;
+}
+
+.move-history-panel.collapsed {
+  display: none !important;
 }
 
 .history-header {
@@ -277,10 +300,42 @@ body {
   color: var(--text-main);
 }
 
+.history-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .history-title {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.icon-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.icon-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
+}
+
+.btn.active-toggle {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #3b82f6;
+  color: #93c5fd;
 }
 
 .history-badge {

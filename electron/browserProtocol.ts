@@ -68,8 +68,16 @@ function mimeForPath(filePath: string): string {
 }
 
 export function isWithinRoot(target: string, root: string): boolean {
-  if (target === root) return true;
-  return target.startsWith(root + path.sep);
+  const normTarget = path.normalize(target);
+  const normRoot = path.normalize(root);
+  if (process.platform === "win32" || process.platform === "darwin") {
+    const tLower = normTarget.toLowerCase();
+    const rLower = normRoot.toLowerCase();
+    if (tLower === rLower) return true;
+    return tLower.startsWith(rLower.endsWith(path.sep) ? rLower : rLower + path.sep);
+  }
+  if (normTarget === normRoot) return true;
+  return normTarget.startsWith(normRoot.endsWith(path.sep) ? normRoot : normRoot + path.sep);
 }
 
 export interface BrowserRequestParams {
