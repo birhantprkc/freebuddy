@@ -17,6 +17,7 @@ import {
   resolveRuntimeEntryPath,
   RuntimeRpcSession
 } from "../packages/runtime-host/dist/index.js";
+import { createHealthyRuntimeLauncher, writeDummyRuntimeEntry } from "./fixtures/runtime-healthy-launcher.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const bootstrapEntry = path.join(root, "packages/runtime-entry/dist/bootstrap.js");
@@ -256,24 +257,10 @@ test("handshake timeout kills a silent process", async () => {
 
 test("activating a new default version does not kill pinned process handles", async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-pinlive-"));
-  let kills = 0;
+  writeDummyRuntimeEntry(dataDir);
+  const healthy = createHealthyRuntimeLauncher();
   const manager = createRuntimeManager(
-    testEnv(dataDir, {
-      launch() {
-        return {
-          send() {},
-          onMessage() {
-            return () => {};
-          },
-          onExit() {
-            return () => {};
-          },
-          kill() {
-            kills += 1;
-          }
-        };
-      }
-    }),
+    testEnv(dataDir, healthy),
     { invoke: async () => null }
   );
   await manager.activate("bundled");
@@ -281,7 +268,7 @@ test("activating a new default version does not kill pinned process handles", as
   const pinned = manager.route({ runtimeVersion: "1.0.0" });
   assert.equal(pinned.version, "1.0.0");
   assert.equal(pinned.pinned, true);
-  assert.equal(kills, 0);
+  assert.equal(healthy.kills.count, 1);
   await manager.shutdown();
-  assert.equal(kills, 0);
+  assert.equal(healthy.kills.count, 1);
 });

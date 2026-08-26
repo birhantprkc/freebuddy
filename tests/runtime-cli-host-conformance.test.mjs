@@ -17,7 +17,15 @@ const { createRuntimeManager, createNodeRuntimeProcessLauncher } = await import(
 
 test("node cli host can construct a runtime manager without electron", async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-cli-host-"));
-  const manager = createCliRuntimeHost({ dataDir });
+  const { createHealthyRuntimeLauncher, writeDummyRuntimeEntry } = await import(
+    "./fixtures/runtime-healthy-launcher.mjs"
+  );
+  writeDummyRuntimeEntry(dataDir);
+  const manager = createCliRuntimeHost({
+    dataDir,
+    bundledRuntimePath: dataDir,
+    launcher: createHealthyRuntimeLauncher()
+  });
   await manager.activate("bundled");
   const status = await manager.status();
   assert.equal(status.hostId, "freebuddy-cli");

@@ -1,7 +1,7 @@
 import type { RuntimeHostApi, RuntimeHostEnvironment, RuntimeManager } from "./ports.js";
 import { readRuntimeState, writeRuntimeState } from "./runtimeStateStore.js";
 import { versionDir } from "./runtimePaths.js";
-import { probeRuntimeVersion, recordCrash } from "./runtimeHealthMonitor.js";
+import { probeRuntimeVersion, recordCrash, isVersionBlocked, scheduleLastKnownGood } from "./runtimeHealthMonitor.js";
 import { checkRuntimeUpdate, downloadAndPrepareRuntime } from "./runtimeUpdateService.js";
 import { createRuntimeVersionRouter } from "./runtimeVersionRouter.js";
 import { createRuntimeProcessPool } from "./runtimeProcessPool.js";
@@ -36,7 +36,7 @@ export function createRuntimeManager(
     },
     async activate(version: string) {
       const state = readRuntimeState(environment.dataDir);
-      if (state.blockedVersions[version]) {
+      if (isVersionBlocked(state.blockedVersions, version)) {
         throw new Error(`runtime ${version} is blocked`);
       }
       if (version !== "bundled") {
@@ -54,14 +54,20 @@ export function createRuntimeManager(
       const next = readRuntimeState(environment.dataDir);
       next.activeVersion = version;
       next.pendingVersion = null;
+      if (version !== "bundled") next.crashCounts = { ...(next.crashCounts ?? {}), [version]: 0 };
       writeRuntimeState(environment.dataDir, next);
+      scheduleLastKnownGood(environment, version);
       lastError = null;
     },
     async rollback() {
       const state = readRuntimeState(environment.dataDir);
-      const fallback = state.lastKnownGoodVersion ?? "bundled";
-      if (state.activeVersion) {
-        state.blockedVersions[state.activeVersion] = {
+      const previous = state.activeVersion;
+      const fallback =
+        state.lastKnownGoodVersion && state.lastKnownGoodVersion !== previous
+          ? state.lastKnownGoodVersion
+          : "bundled";
+      if (previous && previous !== "bundled") {
+        state.blockedVersions[previous] = {
           reason: "rollback",
           failedAt: environment.clock.nowIso()
         };

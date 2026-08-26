@@ -85,34 +85,45 @@ export function createWorkflowRun(
   ctx: SqliteStoreContext,
   input: CreateWorkflowRunInput
 ): WorkflowRunRow {
+  const existing = getWorkflowRun(ctx, input.id);
+  if (existing) return existing;
   const now = nowIso(ctx);
-  ctx.db
-    .prepare(
-      `INSERT INTO workflow_runs
+  try {
+    ctx.db
+      .prepare(
+        `INSERT INTO workflow_runs
          (id, conversation_id, name, goal, status, cwd, template,
           loop_index, max_loops, plan_json, team_id, team_snapshot_json,
           plan_version, runtime_version, runtime_api_version,
           created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      input.id,
-      input.conversationId ?? null,
-      input.name,
-      input.goal,
-      input.status ?? "pending_approval",
-      input.cwd ?? null,
-      input.template ?? null,
-      input.maxLoops,
-      input.planJson,
-      input.teamId ?? null,
-      input.teamSnapshotJson ?? null,
-      input.planVersion ?? 1,
-      input.runtimeVersion ?? null,
-      input.runtimeApiVersion ?? null,
-      now,
-      now
-    );
+      )
+      .run(
+        input.id,
+        input.conversationId ?? null,
+        input.name,
+        input.goal,
+        input.status ?? "pending_approval",
+        input.cwd ?? null,
+        input.template ?? null,
+        input.maxLoops,
+        input.planJson,
+        input.teamId ?? null,
+        input.teamSnapshotJson ?? null,
+        input.planVersion ?? 1,
+        input.runtimeVersion ?? null,
+        input.runtimeApiVersion ?? null,
+        now,
+        now
+      );
+  } catch (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (code.startsWith("SQLITE_CONSTRAINT")) {
+      const raced = getWorkflowRun(ctx, input.id);
+      if (raced) return raced;
+    }
+    throw error;
+  }
   return getWorkflowRun(ctx, input.id) as WorkflowRunRow;
 }
 

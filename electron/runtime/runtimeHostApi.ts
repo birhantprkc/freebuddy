@@ -1,4 +1,5 @@
 import { BrowserWindow, type WebContents } from "electron";
+import { randomUUID } from "node:crypto";
 import type { RuntimeHostApi, RuntimeHostInvokeMeta } from "@freebuddy/runtime-host";
 import { listCliMembers } from "../cli/members.js";
 import {
@@ -28,6 +29,11 @@ import { getDelegationTeam } from "../cli/delegationTeams.js";
 import { resolveSkillSnapshots } from "../cli/skills.js";
 
 let executionWebContents: WebContents | undefined;
+const idempotentHostResults = new Map<string, unknown>();
+const pendingWriteApprovals = new Map<
+  string,
+  { runId: string; resolve: (approved: boolean) => void }
+>();
 
 export function setRuntimeExecutionWebContents(webContents: WebContents | undefined): void {
   executionWebContents = webContents;
@@ -88,17 +94,46 @@ function delegationRepository(op: string, args: unknown[]) {
   return fn(...args);
 }
 
+export function listHostPendingApprovals(runId: string): Array<{ approvalId: string; runId: string }> {
+  return [...pendingWriteApprovals.entries()]
+    .filter(([, pending]) => pending.runId === runId)
+    .map(([approvalId, pending]) => ({ approvalId, runId: pending.runId }));
+}
+
+export function resolveHostWriteApproval(approvalId: string, approved: boolean): boolean {
+  const pending = pendingWriteApprovals.get(approvalId);
+  if (!pending) return false;
+  pendingWriteApprovals.delete(approvalId);
+  pending.resolve(approved);
+  return true;
+}
+
 export function createDesktopRuntimeHostApi(): RuntimeHostApi {
   return {
     async invoke(method, params, meta) {
+      if (meta?.idempotencyKey && idempotentHostResults.has(meta.idempotencyKey)) {
+        return idempotentHostResults.get(meta.idempotencyKey);
+      }
       const args = argsOf(params);
-      if (method.startsWith("workflow.repository.v1.")) {
-        return workflowRepository(method.slice("workflow.repository.v1.".length), args, meta);
-      }
-      if (method.startsWith("delegation.repository.v1.")) {
-        return delegationRepository(method.slice("delegation.repository.v1.".length), args);
-      }
-      switch (method) {
+      const result = await dispatchHostInvoke(method, args, meta);
+      if (meta?.idempotencyKey) idempotentHostResults.set(meta.idempotencyKey, result);
+      return result;
+    }
+  };
+}
+
+async function dispatchHostInvoke(
+  method: string,
+  args: unknown[],
+  meta?: RuntimeHostInvokeMeta
+): Promise<unknown> {
+  if (method.startsWith("workflow.repository.v1.")) {
+    return workflowRepository(method.slice("workflow.repository.v1.".length), args, meta);
+  }
+  if (method.startsWith("delegation.repository.v1.")) {
+    return delegationRepository(method.slice("delegation.repository.v1.".length), args);
+  }
+  switch (method) {
         case "agent.list.v1":
           return listCliMembers().map((member) => ({
             id: member.id,
@@ -201,13 +236,22 @@ export function createDesktopRuntimeHostApi(): RuntimeHostApi {
         }
         case "delegation.team.v1.get":
           return getDelegationTeam(String((args[0] as { id?: string })?.id ?? args[0])) ?? null;
-        case "delegation.approval.v1.request":
-          return true;
+        case "delegation.approval.v1.request": {
+          const input = (args[0] ?? {}) as { runId?: string; teammate?: unknown };
+          const runId = String(input.runId ?? "");
+          const approvalId = randomUUID();
+          safeSendToWebContents(activeWebContents(), `delegation://approval/${runId}`, {
+            runId,
+            approvalId,
+            teammate: input.teammate
+          });
+          return await new Promise<boolean>((resolve) => {
+            pendingWriteApprovals.set(approvalId, { runId, resolve });
+          });
+        }
         case "skills.resolve.v1":
           return resolveSkillSnapshots(((args[0] as { skillIds?: string[] })?.skillIds ?? args[0] ?? []) as string[]);
         default:
           throw new Error(`unknown host api: ${method}`);
       }
-    }
-  };
 }

@@ -9,7 +9,9 @@ import {
   runtimeChannelBaseUrl,
   runtimeReleaseRepo,
   runtimeReleaseTag,
-  versionFromRuntimeTag
+  versionFromRuntimeTag,
+  decideImmutableAsset,
+  decideReleaseMutation
 } from "../scripts/runtime-release-lib.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -38,6 +40,52 @@ test("runtime artifacts default to the dedicated freebuddy-runtime repository", 
   assert.equal(
     runtimeChannelBaseUrl({}),
     "https://raw.githubusercontent.com/maojindao55/freebuddy-runtime/main/channels"
+  );
+});
+
+test("published runtime assets are immutable", () => {
+  const localSha256 = "a".repeat(64);
+  assert.deepEqual(decideImmutableAsset({ existingAsset: null, localSha256 }), {
+    action: "upload",
+    localSha256
+  });
+  assert.equal(
+    decideImmutableAsset({
+      existingAsset: { name: "pack.zip", digest: `sha256:${localSha256}` },
+      localSha256
+    }).action,
+    "reuse"
+  );
+  assert.equal(
+    decideImmutableAsset({
+      existingAsset: { name: "pack.zip", digest: `sha256:${"b".repeat(64)}` },
+      localSha256
+    }).action,
+    "fail"
+  );
+  assert.equal(
+    decideReleaseMutation({ release: null, zipName: "pack.zip", localSha256 }).action,
+    "create-draft"
+  );
+  assert.equal(
+    decideReleaseMutation({
+      release: { draft: false, tag_name: "runtime-v1.0.0", assets: [] },
+      zipName: "pack.zip",
+      localSha256
+    }).action,
+    "fail"
+  );
+  assert.equal(
+    decideReleaseMutation({
+      release: {
+        id: 9,
+        draft: true,
+        assets: [{ name: "pack.zip", digest: `sha256:${localSha256}` }]
+      },
+      zipName: "pack.zip",
+      localSha256
+    }).action,
+    "continue-draft"
   );
 });
 

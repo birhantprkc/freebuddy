@@ -19,6 +19,12 @@ import {
   conversationHasDelegationRun,
   handleDelegationFollowUp
 } from "./delegation/adapter/ipcFollowUp.js";
+import { createDelegationRuntimeHandle } from "../runtime/delegationRuntimeClient.js";
+import {
+  listHostPendingApprovals,
+  resolveHostWriteApproval
+} from "../runtime/runtimeHostApi.js";
+import { shouldUseRuntimeProcess } from "../runtime/workflowRuntimeClient.js";
 
 let runtime: DelegationRuntime | null = null;
 
@@ -91,8 +97,8 @@ export function registerDelegationIpc(): void {
       });
       notifyConversationsChanged();
 
-      const rt = ensureDelegationRuntime(event);
-      const runId = rt.prepareRun({
+      const rt = createDelegationRuntimeHandle(event, () => ensureDelegationRuntime(event));
+      const runId = await rt.prepareRun({
         goal: input.goal,
         teamId: input.teamId,
         teamSnapshot: {
@@ -112,6 +118,9 @@ export function registerDelegationIpc(): void {
     "workflow:approveDelegateWrite",
     (event, args: { runId: string; approvalId: string; approved: boolean }) => {
       if (!callerCanAccessDelegationRun(args.runId)) return false;
+      if (shouldUseRuntimeProcess()) {
+        return resolveHostWriteApproval(args.approvalId, args.approved);
+      }
       const rt = ensureDelegationRuntime(event);
       const ownsApproval = rt
         .listPendingApprovals()
@@ -131,6 +140,9 @@ export function registerDelegationIpc(): void {
     "delegation:listPendingApprovals",
     (event, runId: string) => {
       if (!callerCanAccessDelegationRun(runId)) return [];
+      if (shouldUseRuntimeProcess()) {
+        return listHostPendingApprovals(runId);
+      }
       return ensureDelegationRuntime(event)
         .listPendingApprovals()
         .filter((p) => p.runId === runId);
@@ -141,23 +153,28 @@ export function registerDelegationIpc(): void {
     "delegation:stopRun",
     (event, runId: string) => {
       if (!callerCanAccessDelegationRun(runId)) return false;
-      ensureDelegationRuntime(event).stopRun(runId);
+      createDelegationRuntimeHandle(event, () => ensureDelegationRuntime(event)).stopRun(runId);
       return true;
     }
   );
 
   registerHandler(
     "delegation:pauseRun",
-    (event, runId: string) =>
-      callerCanAccessDelegationRun(runId) &&
-      ensureDelegationRuntime(event).pauseRun(runId)
+    async (event, runId: string) => {
+      if (!callerCanAccessDelegationRun(runId)) return false;
+      return createDelegationRuntimeHandle(event, () => ensureDelegationRuntime(event)).pauseRun(
+        runId
+      );
+    }
   );
 
   registerHandler(
     "delegation:resumeRun",
     async (event, runId: string) => {
       if (!callerCanAccessDelegationRun(runId)) return false;
-      const ok = await ensureDelegationRuntime(event).resumeRun(runId);
+      const ok = await createDelegationRuntimeHandle(event, () =>
+        ensureDelegationRuntime(event)
+      ).resumeRun(runId);
       return ok;
     }
   );
@@ -178,7 +195,7 @@ export function registerDelegationIpc(): void {
       if (!requireOwnedConversation(input.conversationId)) {
         return { ok: false as const, error: "conversation_not_found" };
       }
-      const rt = ensureDelegationRuntime(event);
+      const rt = createDelegationRuntimeHandle(event, () => ensureDelegationRuntime(event));
       return handleDelegationFollowUp(rt, input);
     }
   );

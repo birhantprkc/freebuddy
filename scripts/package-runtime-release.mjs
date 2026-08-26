@@ -33,18 +33,19 @@ for (const file of ["manifest.json", "manifest.sig", "checksums.json", "LICENSES
 const zipBytes = zip.toBuffer();
 fs.writeFileSync(path.join(outDir, zipName), zipBytes);
 
-const descriptor = {
-  schemaVersion: 1,
-  channel,
-  bundleId: "dev.freebuddy.runtime",
-  version,
-  hostApi: ">=1.0.0 <2.0.0",
-  archiveUrl: `https://github.com/${repo}/releases/download/${tag}/${zipName}`,
-  archiveSha256: createHash("sha256").update(zipBytes).digest("hex"),
-  archiveBytes: zipBytes.byteLength,
-  publishedAt: new Date().toISOString(),
-  keyId: process.env.RUNTIME_SIGNING_KEY_ID || "runtime-dev"
-};
+  const manifest = JSON.parse(fs.readFileSync(path.join(packDir, "manifest.json"), "utf8"));
+  const descriptor = {
+    schemaVersion: 1,
+    channel,
+    bundleId: "dev.freebuddy.runtime",
+    version,
+    hostApi: ">=1.0.0 <2.0.0",
+    archiveUrl: `https://github.com/${repo}/releases/download/${tag}/${zipName}`,
+    archiveSha256: createHash("sha256").update(zipBytes).digest("hex"),
+    archiveBytes: zipBytes.byteLength,
+    publishedAt: manifest.publishedAt || process.env.RUNTIME_PACK_PUBLISHED_AT || "1970-01-01T00:00:00.000Z",
+    keyId: process.env.RUNTIME_SIGNING_KEY_ID || manifest.keyId || "runtime-dev"
+  };
 const descriptorText = `${JSON.stringify(descriptor, null, 2)}\n`;
 fs.writeFileSync(path.join(outDir, `${channel}.json`), descriptorText);
 

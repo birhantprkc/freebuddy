@@ -15,6 +15,7 @@ const ACTIVE_DELEGATION_STATUSES = ["running", "pending"] as const;
 const TERMINAL_DELEGATION_STATUSES = ["done", "failed", "timeout", "cancelled"] as const;
 
 export type CreateDelegationRunInput = {
+  id?: string;
   goal: string;
   cwd?: string;
   teamId: string;
@@ -63,30 +64,40 @@ export function lookupDelegationRunOwnerId(ctx: SqliteStoreContext, runId: strin
 }
 
 export function createDelegationRun(ctx: SqliteStoreContext, input: CreateDelegationRunInput): string {
-  const id = `delrun_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = input.id ?? `delrun_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const already = ctx.db.prepare("SELECT id FROM workflow_runs WHERE id = ?").get(id) as
+    | { id: string }
+    | undefined;
+  if (already) return already.id;
   const now = nowIso(ctx);
-  ctx.db
-    .prepare(
-      `INSERT INTO workflow_runs
+  try {
+    ctx.db
+      .prepare(
+        `INSERT INTO workflow_runs
          (id, conversation_id, name, goal, status, cwd, template,
           loop_index, max_loops, plan_json, team_id, team_snapshot_json, kind,
           runtime_version, runtime_api_version,
           created_at, updated_at)
        VALUES (?, ?, ?, ?, 'running', ?, 'delegation', 0, 1, '{}', ?, ?, 'delegation', ?, ?, ?, ?)`
-    )
-    .run(
-      id,
-      input.conversationId ?? null,
-      input.goal.slice(0, 80) || "Delegation run",
-      input.goal,
-      input.cwd ?? null,
-      input.teamId,
-      input.teamSnapshotJson,
-      input.runtimeVersion ?? null,
-      input.runtimeApiVersion ?? null,
-      now,
-      now
-    );
+      )
+      .run(
+        id,
+        input.conversationId ?? null,
+        input.goal.slice(0, 80) || "Delegation run",
+        input.goal,
+        input.cwd ?? null,
+        input.teamId,
+        input.teamSnapshotJson,
+        input.runtimeVersion ?? null,
+        input.runtimeApiVersion ?? null,
+        now,
+        now
+      );
+  } catch (error) {
+    const code = (error as { code?: string }).code ?? "";
+    if (code.startsWith("SQLITE_CONSTRAINT")) return id;
+    throw error;
+  }
   return id;
 }
 
@@ -183,6 +194,7 @@ export function rowToDelegationEvent(r: Record<string, unknown>): DelegationEven
 }
 
 export type InsertDelegationEventInput = {
+  id?: string;
   runId: string;
   parentEventId: string | null;
   agentId: string;
@@ -207,7 +219,11 @@ export function insertDelegationEvent(
   ctx: SqliteStoreContext,
   input: InsertDelegationEventInput
 ): string {
-  const id = createDelegationEventId();
+  const id = input.id ?? createDelegationEventId();
+  if (input.id) {
+    const existing = getDelegationEvent(ctx, input.id);
+    if (existing) return existing.id;
+  }
   const now = nowIso(ctx);
   ctx.db
     .prepare(INSERT_DELEGATION_EVENT_SQL)

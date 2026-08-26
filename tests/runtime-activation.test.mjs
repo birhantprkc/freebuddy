@@ -3,38 +3,30 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createRuntimeManager } from "../packages/runtime-host/dist/index.js";
+import { createRuntimeManager, recordCrash, writeRuntimeState } from "../packages/runtime-host/dist/index.js";
+import {
+  createHealthyRuntimeLauncher,
+  writeDummyRuntimeEntry
+} from "./fixtures/runtime-healthy-launcher.mjs";
 
-function env(dataDir) {
+function env(dataDir, launcher) {
+  writeDummyRuntimeEntry(dataDir);
   return {
     hostId: "freebuddy-cli",
     hostVersion: "0.0.0-test",
     hostApiVersion: "1.0.0",
-    hostCapabilities: ["agent.execute.v1"],
+    hostCapabilities: ["agent.execute.v1", "workflow.repository.v1", "delegation.repository.v1", "events.publish.v1"],
     dataDir,
     bundledRuntimePath: dataDir,
     allowUnsignedDevelopmentRuntime: true,
-    launcher: {
-      launch() {
-        return {
-          send() {},
-          onMessage() {
-            return () => {};
-          },
-          onExit() {
-            return () => {};
-          },
-          kill() {}
-        };
-      }
-    },
+    launcher: launcher ?? createHealthyRuntimeLauncher(),
     http: { fetch },
     trustedKeys: { get: () => undefined, list: () => [] },
     clock: { now: () => new Date(), nowIso: () => new Date().toISOString() }
   };
 }
 
-test("activation of bundled runtime succeeds and rollback restores last known good", async () => {
+test("activation of bundled runtime succeeds and rollback does not block bundled", async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-act-"));
   const manager = createRuntimeManager(env(dataDir), { invoke: async () => null });
   await manager.activate("bundled");
@@ -45,13 +37,49 @@ test("activation of bundled runtime succeeds and rollback restores last known go
   await manager.rollback();
   const after = await manager.status();
   assert.equal(after.activeVersion, "bundled");
-  assert.ok(after.blockedVersions.bundled);
+  assert.equal(after.blockedVersions.bundled, undefined);
+  await manager.activate("bundled");
 });
 
-test("blocked versions cannot be activated", async () => {
+test("explicit rollback blocks a downloaded version but not bundled", async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-block-"));
   const manager = createRuntimeManager(env(dataDir), { invoke: async () => null });
-  await manager.activate("bundled");
+  writeRuntimeState(dataDir, {
+    schemaVersion: 1,
+    activeVersion: "1.2.3",
+    pendingVersion: null,
+    lastKnownGoodVersion: "bundled",
+    channel: "stable",
+    lastCheckedAt: null,
+    blockedVersions: {},
+    crashCounts: {}
+  });
   await manager.rollback();
-  await assert.rejects(() => manager.activate("bundled"), /blocked/);
+  await assert.rejects(() => manager.activate("1.2.3"), /blocked/);
+  await manager.activate("bundled");
+});
+
+test("a single crash rolls back to last-known-good without permanently blocking", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-crash-"));
+  writeRuntimeState(dataDir, {
+    schemaVersion: 1,
+    activeVersion: "2.0.0",
+    pendingVersion: null,
+    lastKnownGoodVersion: "1.0.0",
+    channel: "stable",
+    lastCheckedAt: null,
+    blockedVersions: {},
+    crashCounts: {}
+  });
+  const environment = {
+    dataDir,
+    clock: { now: () => new Date(), nowIso: () => new Date().toISOString() }
+  };
+  assert.equal(recordCrash(environment, "2.0.0"), false);
+  const state = JSON.parse(
+    fs.readFileSync(path.join(dataDir, "runtimes", "runtime-state.json"), "utf8")
+  );
+  assert.equal(state.activeVersion, "1.0.0");
+  assert.equal(state.blockedVersions["2.0.0"], undefined);
+  assert.equal(state.crashCounts["2.0.0"], 1);
 });

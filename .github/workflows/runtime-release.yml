@@ -26,7 +26,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck:packages
-      - run: node --test tests/package-boundaries.test.mjs tests/protocol-fixtures.test.mjs tests/runtime-state-store.test.mjs tests/runtime-cli-host-conformance.test.mjs tests/runtime-release.test.mjs tests/runtime-updater.test.mjs
+      - run: node --test tests/package-boundaries.test.mjs tests/protocol-fixtures.test.mjs tests/runtime-state-store.test.mjs tests/runtime-cli-host-conformance.test.mjs tests/runtime-release.test.mjs tests/runtime-updater.test.mjs tests/runtime-signature.test.mjs tests/delegation-runtime-process-wiring.test.mjs
+      - run: echo "RUNTIME_PACK_PUBLISHED_AT=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
       - run: npm run runtime:build
         env:
           RUNTIME_SIGNING_PRIVATE_KEY: ${{ secrets.RUNTIME_SIGNING_PRIVATE_KEY }}

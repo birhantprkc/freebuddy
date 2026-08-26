@@ -21,6 +21,7 @@ export function createSqliteDelegationRepository(
   return {
     createRun(input) {
       const id = createDelegationRun(ctx, {
+        id: input.id,
         goal: input.goal,
         cwd: input.cwd ?? undefined,
         teamId: input.teamId ?? "",

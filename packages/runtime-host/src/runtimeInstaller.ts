@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { RUNTIME_BUNDLE_ID } from "@freebuddy/protocol/runtime";
 import { ensureRuntimeRoot, versionDir } from "./runtimePaths.js";
+import { readRuntimePackDirectory, verifyRuntimePackFiles } from "./runtimeVerifier.js";
 
 const require = createRequire(import.meta.url);
 const AdmZip = require("adm-zip") as typeof import("adm-zip");
@@ -9,14 +11,45 @@ const AdmZip = require("adm-zip") as typeof import("adm-zip");
 const MAX_FILES = 4000;
 const MAX_TOTAL = 80 * 1024 * 1024;
 
+export interface InstallRuntimeOptions {
+  publicKey?: Buffer | string;
+  allowUnsigned?: boolean;
+  hostApiVersion?: string;
+  hostCapabilities?: readonly string[];
+}
+
+function verifyDir(
+  dir: string,
+  options: InstallRuntimeOptions
+): { ok: true } | { ok: false; error: string } {
+  return verifyRuntimePackFiles({
+    files: readRuntimePackDirectory(dir),
+    publicKey: options.publicKey,
+    allowUnsigned: options.allowUnsigned,
+    expectedBundleId: RUNTIME_BUNDLE_ID,
+    hostApiVersion: options.hostApiVersion ?? "1.0.0",
+    hostCapabilities: options.hostCapabilities ?? []
+  });
+}
+
 export function installRuntimeArchive(
   dataDir: string,
   version: string,
-  archiveBytes: Buffer
+  archiveBytes: Buffer,
+  options: InstallRuntimeOptions = {}
 ): { ok: true; dir: string } | { ok: false; error: string } {
   ensureRuntimeRoot(dataDir);
   const dest = versionDir(dataDir, version);
-  if (fs.existsSync(dest)) return { ok: true, dir: dest };
+  if (fs.existsSync(dest)) {
+    const existing = verifyDir(dest, options);
+    if (!existing.ok) {
+      return {
+        ok: false,
+        error: `installed ${version} does not match signed pack (${existing.error}); refusing to overwrite`
+      };
+    }
+    return { ok: true, dir: dest };
+  }
 
   let zip: import("adm-zip");
   try {
@@ -50,6 +83,11 @@ export function installRuntimeArchive(
     const target = path.join(tmp, name);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, entry.getData());
+  }
+  const verified = verifyDir(tmp, options);
+  if (!verified.ok) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    return verified;
   }
   fs.renameSync(tmp, dest);
   return { ok: true, dir: dest };

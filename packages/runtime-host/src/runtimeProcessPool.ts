@@ -12,6 +12,7 @@ import { RuntimeRpcSession } from "./rpc/session.js";
 import type { RuntimeMessageTransport } from "./rpc/transport.js";
 import { resolveRuntimeEntryPath } from "./runtimeEntryPath.js";
 import { recordCrash } from "./runtimeHealthMonitor.js";
+import { sanitizedRuntimeProcessEnv } from "./runtimeProcessEnv.js";
 
 export function transportFromProcessHandle(handle: RuntimeProcessHandle): RuntimeMessageTransport {
   return {
@@ -62,18 +63,6 @@ function helloPayload(environment: RuntimeHostEnvironment) {
   };
 }
 
-function sanitizedEnv(version: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value !== "string") continue;
-    if (/token|secret|password|authorization/i.test(key) && !key.startsWith("FB_")) continue;
-    out[key] = value;
-  }
-  out.FB_RUNTIME_PROCESS = "1";
-  out.FB_RUNTIME_VERSION = version;
-  return out;
-}
-
 export function createRuntimeProcessPool(input: {
   environment: RuntimeHostEnvironment;
   hostApi: RuntimeHostApi;
@@ -87,7 +76,7 @@ export function createRuntimeProcessPool(input: {
     }
     const handle = input.environment.launcher.launch({
       entryPath: resolved,
-      env: sanitizedEnv(version)
+      env: sanitizedRuntimeProcessEnv(version)
     });
     const box: { session?: RuntimeRpcSession } = {};
     const session = new RuntimeRpcSession({

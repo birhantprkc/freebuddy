@@ -233,6 +233,101 @@ test("probe fails for a missing downloaded version", async () => {
   assert.equal(result.ok, false);
 });
 
+test("probe does not succeed without a hello/health handshake", async () => {
+  const dir = dataDir();
+  fs.mkdirSync(path.join(dir, "runtime"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "runtime", "index.mjs"), "export {}\n");
+  const started = Date.now();
+  process.env.FB_RUNTIME_PROBE_TIMEOUT_MS = "250";
+  try {
+  const result = await probeRuntimeVersion(
+    {
+      dataDir: dir,
+      hostId: "freebuddy-cli",
+      hostVersion: "0.0.0",
+      hostApiVersion: "1.0.0",
+      hostCapabilities: ["agent.execute.v1", "workflow.repository.v1", "delegation.repository.v1", "events.publish.v1"],
+      launcher: {
+        launch() {
+          return {
+            send() {},
+            onMessage() {
+              return () => {};
+            },
+            onExit() {
+              return () => {};
+            },
+            kill() {}
+          };
+        }
+      },
+      bundledRuntimePath: dir,
+      clock: { nowIso: () => new Date().toISOString() }
+    },
+    "bundled"
+  );
+  assert.equal(result.ok, false);
+  assert.ok(Date.now() - started > 100, "probe must wait for handshake, not a 50ms success");
+  } finally {
+    delete process.env.FB_RUNTIME_PROBE_TIMEOUT_MS;
+  }
+});
+
+test("installer verifies inner manifest signature, checksums, and compatibility", async () => {
+  const dir = dataDir();
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const { default: AdmZip } = await import("adm-zip");
+  const { sha256 } = await import("../packages/runtime-host/dist/runtimeVerifier.js");
+  const entry = Buffer.from("export {}\n");
+  const manifest = Buffer.from(
+    `${JSON.stringify({
+      schemaVersion: 1,
+      bundleId: "dev.freebuddy.runtime",
+      version: "1.2.3",
+      rpcVersion: 1,
+      engine: { node: ">=22.0.0" },
+      hostApi: ">=1.0.0 <2.0.0",
+      entry: "runtime/index.mjs",
+      keyId: "runtime-dev",
+      publishedAt: "2026-08-26T00:00:00.000Z",
+      providesCapabilities: ["workflow"],
+      requiresHostCapabilities: ["agent.execute.v1"]
+    })}\n`
+  );
+  const checksums = Buffer.from(
+    `${JSON.stringify({
+      files: {
+        "manifest.json": sha256(manifest),
+        "runtime/index.mjs": sha256(entry)
+      }
+    })}\n`
+  );
+  const zip = new AdmZip();
+  zip.addFile("manifest.json", manifest);
+  zip.addFile("manifest.sig", sign(null, manifest, privateKey));
+  zip.addFile("checksums.json", checksums);
+  zip.addFile("runtime/index.mjs", entry);
+  const installed = installRuntimeArchive(dir, "1.2.3", zip.toBuffer(), {
+    publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    hostApiVersion: "1.0.0",
+    hostCapabilities: ["agent.execute.v1"]
+  });
+  assert.equal(installed.ok, true);
+
+  const tampered = new AdmZip();
+  tampered.addFile("manifest.json", manifest);
+  tampered.addFile("manifest.sig", sign(null, manifest, privateKey));
+  tampered.addFile("checksums.json", checksums);
+  tampered.addFile("runtime/index.mjs", Buffer.from("export const x = 1\n"));
+  const bad = installRuntimeArchive(dir, "1.2.4", tampered.toBuffer(), {
+    publicKey: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    hostApiVersion: "1.0.0",
+    hostCapabilities: ["agent.execute.v1"]
+  });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /checksum mismatch/);
+});
+
 test("installer rejects path escape", async () => {
   const dir = dataDir();
   const { default: AdmZip } = await import("adm-zip");

@@ -191,6 +191,36 @@ export function createDelegationServiceHandlers(
         void controller.flush();
       });
       return { runId };
+    },
+    async "delegation.stopRun"(params) {
+      const { runId } = body<{ runId: string }>(params);
+      await controller.hydrateDelegation(runId);
+      runtime.stopRun(runId);
+      await controller.flush();
+      return true;
+    },
+    async "delegation.pauseRun"(params) {
+      const { runId } = body<{ runId: string }>(params);
+      await controller.hydrateDelegation(runId);
+      const ok = runtime.pauseRun(runId);
+      await controller.flush();
+      return ok;
+    },
+    async "delegation.resumeRun"(params) {
+      const { runId } = body<{ runId: string }>(params);
+      await controller.hydrateDelegation(runId);
+      const ok = await runtime.resumeRun(runId);
+      await controller.flush();
+      return ok;
+    },
+    async "delegation.followUp"(params) {
+      const { runId, prompt } = body<{ runId: string; prompt: string }>(params);
+      await controller.hydrateDelegation(runId);
+      void runtime.followUp(runId, prompt).finally(() => {
+        void controller.flush();
+      });
+      await controller.flush();
+      return true;
     }
   };
 }

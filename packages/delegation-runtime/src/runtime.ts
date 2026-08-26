@@ -26,6 +26,7 @@ type RunContext = {
 export class DelegationRuntime {
   private contexts = new Map<string, RunContext>();
   private killedRunIds = new Set<string>();
+  private pausedRunIds = new Set<string>();
 
   constructor(private readonly ports: DelegationRuntimePorts) {}
 
@@ -225,6 +226,72 @@ export class DelegationRuntime {
   }
 
   listActiveRunIds(): string[] {
-    return [...this.contexts.keys()].filter((id) => !this.killedRunIds.has(id));
+    return [...this.contexts.keys()].filter((id) => !this.killedRunIds.has(id) && !this.pausedRunIds.has(id));
+  }
+
+  async followUp(runId: string, userPrompt: string): Promise<void> {
+    let ctx = this.contexts.get(runId) ?? this.loadContextFromRepo(runId);
+    if (!ctx) throw new Error("delegation run not found");
+    this.killedRunIds.delete(runId);
+    this.pausedRunIds.delete(runId);
+    const entry = ctx.roster.find((r) => r.id === ctx.entryRoleId) ?? ctx.roster[0];
+    if (!entry) throw new Error("team has no entry role");
+    const events = this.ports.repository.listEvents(runId);
+    let root = events.find((event) => event.depth === 0);
+    if (!root) {
+      const rootEventId = this.ports.repository.insertEvent({
+        runId,
+        parentEventId: null,
+        agentId: entry.agentId,
+        agentName: entry.label,
+        roleLabel: entry.label,
+        taskText: userPrompt,
+        depth: 0,
+        canWrite: entry.canWrite,
+        status: "running"
+      });
+      root = this.ports.repository.getEvent(rootEventId);
+    }
+    if (!root) throw new Error("delegation root event missing");
+    ctx.rootEventId = root.id;
+    const orch = this.ensureOrchestrator(ctx);
+    this.ports.repository.transitionEvent(root.id, "running", null, { allowReopen: true });
+    const result = await orch.followUp({
+      entryNodeId: root.id,
+      entry,
+      prompt: userPrompt
+    });
+    if (this.killedRunIds.has(runId)) return;
+    const status: DelegationEventStatus = result.error ? "failed" : "done";
+    this.ports.repository.updateEvent(root.id, {
+      status,
+      resultSummary: result.error ?? result.summary
+    });
+    const run = this.ports.repository.getRun(runId);
+    if (run && (run.status === "running" || run.status === "blocked")) {
+      this.ports.repository.setStatus(runId, status === "done" ? "completed" : "failed");
+    }
+  }
+
+  pauseRun(runId: string): boolean {
+    const run = this.ports.repository.getRun(runId);
+    if (!run || (run.status !== "running" && run.status !== "blocked")) return false;
+    this.pausedRunIds.add(runId);
+    this.contexts.get(runId)?.orchestrator?.interruptLoops();
+    this.ports.repository.cancelActiveEvents(runId, "paused");
+    return this.ports.repository.setStatus(runId, "paused");
+  }
+
+  async resumeRun(runId: string): Promise<boolean> {
+    const run = this.ports.repository.getRun(runId);
+    if (!run || run.status !== "paused") return false;
+    this.pausedRunIds.delete(runId);
+    this.killedRunIds.delete(runId);
+    this.ports.repository.setStatus(runId, "running", { allowReopen: true });
+    await this.followUp(
+      runId,
+      "继续先前因用户暂停而中断的任务。请根据当前工作区状态继续推进并收尾。"
+    );
+    return true;
   }
 }

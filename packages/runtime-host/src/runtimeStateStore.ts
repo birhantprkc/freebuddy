@@ -10,6 +10,7 @@ export interface RuntimeState {
   channel: "stable" | "beta" | "development";
   lastCheckedAt: string | null;
   blockedVersions: Record<string, { reason: string; failedAt: string }>;
+  crashCounts?: Record<string, number>;
 }
 
 const EMPTY: RuntimeState = {
@@ -19,7 +20,8 @@ const EMPTY: RuntimeState = {
   lastKnownGoodVersion: null,
   channel: "stable",
   lastCheckedAt: null,
-  blockedVersions: {}
+  blockedVersions: {},
+  crashCounts: {}
 };
 
 export function readRuntimeState(dataDir: string): RuntimeState {
@@ -29,7 +31,7 @@ export function readRuntimeState(dataDir: string): RuntimeState {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as RuntimeState;
     if (parsed.schemaVersion !== 1) return { ...EMPTY, blockedVersions: {} };
-    return { ...EMPTY, ...parsed, blockedVersions: parsed.blockedVersions ?? {} };
+    return { ...EMPTY, ...parsed, blockedVersions: parsed.blockedVersions ?? {}, crashCounts: parsed.crashCounts ?? {} };
   } catch {
     return { ...EMPTY, blockedVersions: {} };
   }

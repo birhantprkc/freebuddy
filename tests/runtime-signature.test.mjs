@@ -60,3 +60,30 @@ test("modified archive is rejected", () => {
   });
   assert.equal(result.ok, false);
 });
+
+test("sanitized runtime env drops secrets and debug flags", async () => {
+  const { sanitizedRuntimeProcessEnv } = await import(
+    "../packages/runtime-host/dist/runtimeProcessEnv.js"
+  );
+  const env = sanitizedRuntimeProcessEnv("1.0.0", {
+    PATH: "/bin",
+    HOME: "/home/user",
+    GITHUB_TOKEN: "secret",
+    NPM_TOKEN: "secret",
+    AWS_SECRET_ACCESS_KEY: "secret",
+    API_KEY: "secret",
+    NODE_OPTIONS: "--require ./evil.js",
+    DEBUG: "1",
+    FB_RUNTIME_DEBUG: "1"
+  });
+  assert.equal(env.PATH, "/bin");
+  assert.equal(env.FB_RUNTIME_VERSION, "1.0.0");
+  assert.equal(env.FB_RUNTIME_PROCESS, "1");
+  assert.equal(env.FB_RUNTIME_DEBUG, "1");
+  assert.equal(env.GITHUB_TOKEN, undefined);
+  assert.equal(env.NPM_TOKEN, undefined);
+  assert.equal(env.AWS_SECRET_ACCESS_KEY, undefined);
+  assert.equal(env.API_KEY, undefined);
+  assert.equal(env.NODE_OPTIONS, undefined);
+  assert.equal(env.DEBUG, undefined);
+});

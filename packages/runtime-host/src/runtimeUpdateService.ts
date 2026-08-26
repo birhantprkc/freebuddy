@@ -8,6 +8,7 @@ import { downloadRuntimeArtifact } from "./runtimeDownloader.js";
 import { inRollout, parseChannelDescriptor, verifyChannelDescriptor } from "./runtimeManifest.js";
 import { installRuntimeArchive } from "./runtimeInstaller.js";
 import { cohortPath } from "./runtimePaths.js";
+import { isVersionBlocked } from "./runtimeHealthMonitor.js";
 
 export interface RuntimeUpdateConfig {
   baseUrl?: string;
@@ -73,7 +74,7 @@ export async function checkRuntimeUpdate(
   if (descriptor.revokedVersions?.includes(descriptor.version)) {
     return { available: false, reason: "version revoked" };
   }
-  if (state.blockedVersions[descriptor.version]) {
+  if (state.blockedVersions[descriptor.version] && isVersionBlocked(state.blockedVersions, descriptor.version)) {
     return { available: false, reason: "version blocked locally" };
   }
   if (descriptor.rollout && !inRollout(cohortId(environment.dataDir), descriptor.rollout.percent)) {
@@ -104,7 +105,12 @@ export async function downloadAndPrepareRuntime(
     if (downloaded.bytes.byteLength !== descriptor.archiveBytes) {
       return { ok: false, error: "archive size mismatch" };
     }
-    const installed = installRuntimeArchive(environment.dataDir, descriptor.version, downloaded.bytes);
+    const installed = installRuntimeArchive(environment.dataDir, descriptor.version, downloaded.bytes, {
+      publicKey: environment.trustedKeys.get(descriptor.keyId ?? "runtime-dev"),
+      allowUnsigned: environment.allowUnsignedDevelopmentRuntime && !descriptor.keyId?.startsWith("runtime-prod"),
+      hostApiVersion: environment.hostApiVersion,
+      hostCapabilities: environment.hostCapabilities
+    });
     if (!installed.ok) return installed;
     const state = readRuntimeState(environment.dataDir);
     state.pendingVersion = descriptor.version;

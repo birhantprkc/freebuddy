@@ -66,7 +66,7 @@ export function createMemoryDelegationRepository(): DelegationRunRepository & {
       return true;
     },
     insertEvent(input: InsertDelegationEventInput) {
-      const eventId = id("delevent");
+      const eventId = input.id ?? id("delevent");
       const created: DelegationEvent = {
         id: eventId,
         runId: input.runId,

@@ -13,12 +13,16 @@ Desktop clients never `npm install` Runtime packages. Workspace packages stay `p
 
 Pushing a `runtime-vX.Y.Z` tag on `maojindao55/freebuddy` runs `.github/workflows/runtime-release.yml`. That workflow:
 
-1. Builds and Ed25519-signs the pack.
+1. Builds and Ed25519-signs the pack with a deterministic `publishedAt` from the git commit time.
 2. Stages `freebuddy-runtime-X.Y.Z.zip`, `stable.json`, and `stable.json.sig`.
-3. Commits `channels/stable.json` and `channels/stable.json.sig` to `maojindao55/freebuddy-runtime` (raw GitHub URLs return HTTP 200; `releases/download` 302s, which channel fetches reject).
-4. Creates a GitHub Release on `maojindao55/freebuddy-runtime` named `Runtime X.Y.Z` and uploads the zip.
+3. Creates a **draft** GitHub Release on `maojindao55/freebuddy-runtime` and uploads the zip.
+4. Re-downloads the zip, verifies the outer SHA-256 and inner `manifest.sig` / `checksums.json` / Host API compatibility.
+5. Publishes the Release.
+6. Atomically commits `channels/stable.json` and `channels/stable.json.sig` in **one** git commit.
 
-The desktop repository's Latest release is not changed.
+If a `runtime-vX.Y.Z` zip already exists, the publisher compares SHA-256. Identical bytes succeed idempotently. Different bytes fail; the publisher never deletes or overwrites a published asset.
+
+Channel JSON is not updated until the zip is on a published Release, so clients never see a descriptor that 404s.
 
 Channel JSON is fetched from:
 

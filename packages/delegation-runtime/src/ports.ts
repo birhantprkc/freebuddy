@@ -17,6 +17,7 @@ import type {
 } from "@freebuddy/agent-runtime";
 
 export interface InsertDelegationEventInput {
+  id?: string;
   runId: string;
   parentEventId: string | null;
   agentId: string;
