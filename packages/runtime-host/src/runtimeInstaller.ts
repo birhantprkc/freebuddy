@@ -33,6 +33,10 @@ export function installRuntimeArchive(
     if (name.startsWith("/") || name.includes("..") || path.isAbsolute(name)) {
       return { ok: false, error: "illegal path" };
     }
+    const resolved = path.resolve(dest, name);
+    if (resolved !== dest && !resolved.startsWith(`${path.resolve(dest)}${path.sep}`)) {
+      return { ok: false, error: "illegal path" };
+    }
     total += entry.header?.size ?? entry.getData().byteLength;
     if (total > MAX_TOTAL) return { ok: false, error: "zip bomb" };
   }

@@ -21,7 +21,7 @@ test("safe IPC send checks the main frame before sending", () => {
 test("long-running main-process streams use safe IPC send", () => {
   for (const path of [
     "../electron/cli/runtime.ts",
-    "../electron/runtime/adapters.ts",
+    "../electron/runtime/adapters/workflowPorts.ts",
     "../electron/cli/check.ts"
   ]) {
     const src = read(path);

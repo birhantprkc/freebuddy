@@ -216,7 +216,7 @@ test("research report team expands to a read-only plan", async () => {
 });
 
 test("seeding removes retired builtin workflow teams", () => {
-  const src = read("../electron/cli/workflowTeams.ts");
+  const src = read("../electron/cli/workflowTeams.ts") + read("../packages/storage-sqlite/src/workflow-teams.ts");
   assert.match(src, /removedBuiltinWorkflowTeamIds/);
   assert.match(src, /team-code-review/);
   assert.match(src, /team-readonly-analysis/);

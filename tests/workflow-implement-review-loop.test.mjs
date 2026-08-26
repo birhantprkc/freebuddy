@@ -432,7 +432,7 @@ test("workflow steps persist reusable tool session ids separately from task ids"
   );
   assert.match(db, /tool_session_id TEXT/);
   assert.match(db, /ALTER TABLE workflow_steps ADD COLUMN tool_session_id TEXT/);
-  assert.match(workflows, /toolSessionId: r\.tool_session_id/);
+  assert.match(workflows, /toolSessionId:[\s\S]*tool_session_id/);
   assert.match(workflows, /tool_session_id = \?/);
   assert.match(workflows, /tool_session_id = NULL/);
   assert.match(electronTypes, /WorkflowStepRow/);

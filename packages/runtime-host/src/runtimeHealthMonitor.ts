@@ -58,8 +58,15 @@ export async function probeRuntimeVersion(
 
 export function recordCrash(environment: RuntimeHostEnvironment, version: string): boolean {
   const state = readRuntimeState(environment.dataDir);
-  const current = state.blockedVersions[version];
-  const count = Number((current as { count?: number } | undefined)?.count ?? 0) + 1;
+  const current = state.blockedVersions[version] as
+    | { reason: string; failedAt: string; count?: number }
+    | undefined;
+  const previousCount =
+    current?.count ??
+    (typeof current?.reason === "string" && /^crash:\d+$/.test(current.reason)
+      ? Number(current.reason.slice("crash:".length))
+      : 0);
+  const count = previousCount + 1;
   if (count >= CRASH_LOOP_LIMIT) {
     state.blockedVersions[version] = {
       reason: "crash-loop",
@@ -72,6 +79,7 @@ export function recordCrash(environment: RuntimeHostEnvironment, version: string
     reason: `crash:${count}`,
     failedAt: environment.clock.nowIso()
   };
+  (state.blockedVersions[version] as { count?: number }).count = count;
   writeRuntimeState(environment.dataDir, state);
   return false;
 }

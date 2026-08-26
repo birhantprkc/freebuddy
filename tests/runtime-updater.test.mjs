@@ -84,7 +84,7 @@ test("update check respects kill switch and missing signature", async () => {
       }
     },
     trustedKeys: {
-      get: () => publicKey.export({ type: "spki", format: "der" }),
+      get: () => publicKey.export({ type: "spki", format: "pem" }).toString(),
       list: () => []
     },
     clock: { now: () => new Date(), nowIso: () => new Date().toISOString() }
@@ -124,7 +124,8 @@ test("installer rejects path escape", async () => {
   const dir = dataDir();
   const { default: AdmZip } = await import("adm-zip");
   const zip = new AdmZip();
-  zip.addFile("../escape.txt", Buffer.from("nope"));
+  zip.addFile("escape.txt", Buffer.from("nope"));
+  zip.getEntries()[0].entryName = "../escape.txt";
   const result = installRuntimeArchive(dir, "evil", zip.toBuffer());
   assert.equal(result.ok, false);
 });
