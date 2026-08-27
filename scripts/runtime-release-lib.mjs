@@ -36,9 +36,9 @@ export function resolveRuntimePackVersion(env = process.env) {
 
   const provided = providedReleaseRefs(env);
   const invalidTag = provided.find((value) => value.startsWith("runtime-v"));
-  const taggedCi =
-    env.CI === "true" && (env.GITHUB_REF_TYPE === "tag" || Boolean(invalidTag));
-  if (invalidTag || taggedCi || env.RUNTIME_REQUIRE_PRODUCTION_VERSION === "1") {
+  // Desktop tags (vMAJOR.MINOR.PATCH) bundle a local 0.0.0-dev runtime pack.
+  // Fail closed only for runtime-v* refs or an explicit production requirement.
+  if (invalidTag || env.RUNTIME_REQUIRE_PRODUCTION_VERSION === "1") {
     throw new Error(
       `invalid runtime release tag ${invalidTag || provided[0] || "(empty)"}; expected runtime-vMAJOR.MINOR.PATCH`
     );
