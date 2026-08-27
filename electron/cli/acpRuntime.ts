@@ -218,7 +218,10 @@ export async function runAcpAgent({
     : undefined;
   const remoteIsolated = isRemoteIsolatedCaller();
   const readOnlyWorkspace = args.workspaceAccess === "read-only";
-  const processSandboxed = shouldSandboxCurrentCaller() || readOnlyWorkspace;
+  // OS process sandbox follows the shared remote strictIsolation flag only.
+  // Local read-only reviewers must not enter srt-win / seatbelt just because
+  // roster.canWrite is false — that blocks CLIs installed under AppData.
+  const processSandboxed = shouldSandboxCurrentCaller();
   const replayMessageIds = new Set(args.knownStreamMessageIds ?? []);
   const replayContentSignatures = new Set(
     args.knownStreamContentSignatures ?? []

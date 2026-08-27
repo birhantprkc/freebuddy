@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.package-base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../workflow-runtime"
+    },
+    {
+      "path": "../delegation-runtime"
+    },
+    {
+      "path": "../agent-runtime"
+    },
+    {
+      "path": "../cli-stream"
+    }
+  ]
+}

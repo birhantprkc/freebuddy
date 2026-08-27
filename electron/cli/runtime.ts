@@ -187,9 +187,11 @@ export async function cliRun(
 
   const remoteIsolated = isRemoteIsolatedCaller();
   const readOnlyWorkspace = args.workspaceAccess === "read-only";
-  // Read-only delegation roles fail closed inside the OS sandbox even for a
-  // desktop caller; this is the enforcement layer behind roster.canWrite.
-  const processSandboxed = shouldSandboxCurrentCaller() || readOnlyWorkspace;
+  // OS process sandbox is only for remote callers who enabled strictIsolation.
+  // Local read-only reviewers stay unsandboxed so CLIs installed under AppData
+  // can start; workspaceAccess still gates native skill mounts and, when the
+  // process is already sandboxed, extra denyWrite on the workspace.
+  const processSandboxed = shouldSandboxCurrentCaller();
   let toolSessionId: string | undefined;
   const toolSessionScope = args.toolSessionScope || args.cwd;
   const definition = getAdapterDefinition(args.adapter);

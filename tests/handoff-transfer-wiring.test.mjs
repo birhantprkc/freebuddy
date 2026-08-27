@@ -62,7 +62,7 @@ test("IPC exposes preview/transfer and resolves handoff briefs inside the main p
   const ipc = read("electron/cli/ipc.ts");
   const preload = read("electron/preload.ts");
   const dts = read("src/types/freebuddy.d.ts");
-  const workflow = read("electron/cli/workflowRuntime.ts");
+  const workflow = read("electron/cli/workflowRuntime.ts") + read("electron/runtime/adapters/legacyAgentExecutor.ts");
   assert.match(ipc, /cli:previewHandoffBrief/);
   assert.match(ipc, /cli:transferConversation/);
   assert.match(ipc, /extractHandoffBrief/);

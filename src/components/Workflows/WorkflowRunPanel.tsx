@@ -111,12 +111,14 @@ export function WorkflowRunPanel() {
     (activeRun?.status === "running" ||
       activeRun?.status === "paused" ||
       activeRun?.status === "blocked");
+  const shouldPollTree =
+    isLive || (!replayingWorkflow && activeRun?.status === "pending_approval");
 
   useEffect(() => {
-    if (replayingWorkflow || !activeRun || !isLive) return;
+    if (!activeRun || !shouldPollTree) return;
     const id = window.setInterval(() => void refresh(activeRun.id), 1500);
     return () => window.clearInterval(id);
-  }, [activeRun?.id, isLive, refresh, replayingWorkflow]);
+  }, [activeRun?.id, refresh, shouldPollTree]);
 
   useEffect(() => {
     setSelectedId(undefined);

@@ -1590,6 +1590,27 @@
       "error": "Update check failed."
     }
   },
+  "runtimePack": {
+    "label": "Runtime",
+    "bundled": "bundled",
+    "desktopVersion": "Desktop",
+    "sectionTitle": "Runtime Pack",
+    "active": "Active",
+    "pending": "Pending",
+    "lastKnownGood": "Last known good",
+    "channel": "Channel",
+    "check": "Check for runtime updates",
+    "activatePending": "Activate pending",
+    "rollback": "Roll back",
+    "checking": "Checking…",
+    "upToDate": "No compatible runtime update.",
+    "available": "Runtime {{version}} is ready to activate for new work.",
+    "error": "Runtime update failed: {{message}}",
+    "channelStable": "Stable",
+    "channelBeta": "Beta",
+    "channelDevelopment": "Development",
+    "advanced": "Advanced runtime controls"
+  },
   "debugLogs": {
     "title": "Export debug logs",
     "aboutSectionTitle": "Diagnostics",

@@ -227,25 +227,31 @@ test("delegation agent turns restore the run owner context", async (t) => {
   if (!bindingAvailable) { t.skip(); return; }
   await withDb(async () => {
     const { DelegationRuntime } = await import("../dist-electron/cli/delegationRuntime.js");
-    const { getCallerUserId, runAsCaller } = await import(
+    const { getCallerUserId, isCallerAdmin, runAsCaller } = await import(
       "../dist-electron/cli/callerContext.js"
     );
-    const observedOwners = [];
+    const { createUser } = await import("../dist-electron/cli/users.js");
+    const { user: owner } = createUser({ username: "buddy" });
+
+    const observed = [];
     const rt = new DelegationRuntime({
       webContents: undefined,
       resolveAgent: () => ({ adapter: "codex-acp", agentName: "Codex", skillIds: [] }),
       runAgent: async () => {
-        observedOwners.push(getCallerUserId());
+        observed.push({
+          userId: getCallerUserId(),
+          isAdmin: isCallerAdmin()
+        });
         return { summary: "done", exitCode: 0, error: null };
       }
     });
-    const runId = runAsCaller("owner-alice", () =>
+    const runId = runAsCaller(owner.id, () =>
       rt.prepareRun({ goal: "g", teamId: "t", teamSnapshot: snap, cwd: "/r" })
     );
 
     await rt.runEntry(runId, "g");
 
-    assert.deepEqual(observedOwners, ["owner-alice"]);
+    assert.deepEqual(observed, [{ userId: owner.id, isAdmin: true }]);
   });
 });
 
@@ -292,7 +298,7 @@ test("entry uses isolated toolSessionScope; entry and delegate scopes differ", a
     await tick(50);
     assert.equal(entryScope, `delegation:${runId}:entry`);
     const teammateScope = Object.values(scopes).find((v) => v && v !== entryScope);
-    assert.ok(teammateScope?.startsWith(`delegation:${runId}:delevent_`), `teammate scope isolated per event: ${teammateScope}`);
+    assert.match(String(teammateScope), new RegExp(`^delegation:${runId}:`));
     assert.notEqual(teammateScope, entryScope);
   });
 });

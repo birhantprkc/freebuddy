@@ -491,24 +491,26 @@ function workflowAgents(): WorkflowAgentRef[] {
 async function createRuntime(webContents: WebContents): Promise<WorkflowRuntime> {
   // Dynamic import breaks the static cycle:
   // workflowRuntime -> runtime -> acpRuntime -> butlerToolService -> scheduledTasks
-  const { createCliStepExecutor, WorkflowRuntime } = await import(
+  const { createCliStepExecutor, WorkflowRuntime, createElectronWorkflowPorts } = await import(
     "./workflowRuntime.js"
   );
-  return new WorkflowRuntime({
-    executor: createCliStepExecutor(webContents),
-    webContents,
-    resolveAgent(agentId) {
-      const member = listCliMembers().find((candidate) => candidate.id === agentId);
-      if (!member || member.enabled === false) return undefined;
-      return {
-        adapter: member.cli.adapter,
-        agentName: member.name,
-        binary: member.cli.binary,
-        extraArgs: member.cli.extraArgs,
-        env: member.cli.env
-      };
-    }
-  });
+  return new WorkflowRuntime(
+    createElectronWorkflowPorts({
+      executor: createCliStepExecutor(webContents),
+      webContents,
+      resolveAgent(agentId) {
+        const member = listCliMembers().find((candidate) => candidate.id === agentId);
+        if (!member || member.enabled === false) return undefined;
+        return {
+          adapter: member.cli.adapter,
+          agentName: member.name,
+          binary: member.cli.binary,
+          extraArgs: member.cli.extraArgs,
+          env: member.cli.env
+        };
+      }
+    })
+  );
 }
 
 export async function runScheduledTask(

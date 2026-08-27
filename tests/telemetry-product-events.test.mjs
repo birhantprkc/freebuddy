@@ -7,7 +7,10 @@ const read = (path) => fs.readFileSync(new URL(path, import.meta.url), "utf8");
 const telemetry = read("../electron/telemetry.ts");
 const ipc = read("../electron/cli/ipc.ts");
 const runtime = read("../electron/cli/runtimeShared.ts");
-const workflowRuntime = read("../electron/cli/workflowRuntime.ts");
+const workflowRuntime =
+  read("../electron/cli/workflowRuntime.ts") +
+  read("../electron/runtime/adapters/legacyAgentExecutor.ts") +
+  read("../packages/workflow-runtime/src/runtime.ts");
 const check = read("../electron/cli/check.ts");
 const preload = read("../electron/preload.ts");
 const client = read("../src/services/cli/client.ts");

@@ -1691,6 +1691,12 @@ app.whenReady().then(async () => {
         telemetryShutdownStarted = true;
         await shutdownTelemetry().catch(() => {});
       }
+      try {
+        const { shutdownRuntimeProcesses } = await import("./runtime/runtimeIpc.js");
+        await shutdownRuntimeProcesses();
+      } catch {
+        /* runtime manager may not have started */
+      }
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
           win.removeAllListeners("close");

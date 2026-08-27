@@ -247,6 +247,9 @@ function ensureWorkflowMessageSubscription(
       status: string;
       name: string;
     }) => {
+      if (event.conversationId) {
+        refreshWorkflowTree(event.conversationId, event.runId);
+      }
       if (
         event.conversationId &&
         terminalWorkflowStatuses.has(event.status)
@@ -292,11 +295,22 @@ function ensureWorkflowMessageSubscription(
             const ids = [...(workflowPendingMessageIds.get(conversationId) ?? [])];
             workflowPendingMessageIds.get(conversationId)?.clear();
             void refresh(conversationId, ids.length ? ids : undefined);
+            refreshWorkflowTree(conversationId);
           }, 300)
         );
       })
     );
   }
+}
+
+function refreshWorkflowTree(conversationId: string, runId?: string) {
+  void import("@/store/workflowStore").then(({ useWorkflowStore }) => {
+    const { activeRun, refresh } = useWorkflowStore.getState();
+    const id =
+      runId ??
+      (activeRun?.conversationId === conversationId ? activeRun.id : undefined);
+    if (id) void refresh(id);
+  });
 }
 
 function pruneIdleWorkflowMessageSubscriptions(

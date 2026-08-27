@@ -1,374 +1,56 @@
-import { getDb } from "./db.js";
-import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
 import type {
   WorkflowRunRow,
   WorkflowRunStatus,
   WorkflowStepRow,
   WorkflowStepStatus
 } from "./workflowTypes.js";
+import type { CreateWorkflowRunInput as PackageCreateRun, CreateWorkflowStepInput as PackageCreateStep } from "@freebuddy/workflow-runtime";
+import * as sqlite from "@freebuddy/storage-sqlite";
+import { sqliteContext } from "./sqliteContext.js";
 
-function rowToRun(r: any): WorkflowRunRow {
-  return {
-    id: r.id,
-    conversationId: r.conversation_id ?? undefined,
-    teamId: r.team_id ?? undefined,
-    teamSnapshotJson: r.team_snapshot_json ?? undefined,
-    planVersion: r.plan_version ?? undefined,
-    name: r.name,
-    goal: r.goal,
-    status: r.status as WorkflowRunStatus,
-    cwd: r.cwd ?? undefined,
-    template: r.template ?? undefined,
-    loopIndex: r.loop_index,
-    maxLoops: r.max_loops,
-    planJson: r.plan_json,
-    summary: r.summary ?? undefined,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    endedAt: r.ended_at ?? undefined
-  };
-}
-
-function rowToStep(r: any): WorkflowStepRow {
-  let dependsOn: string[] | undefined;
-  if (r.depends_on) {
-    try {
-      const parsed = JSON.parse(r.depends_on);
-      if (Array.isArray(parsed)) dependsOn = parsed;
-    } catch {
-      dependsOn = undefined;
-    }
-  }
-  let targetPaths: string[] | undefined;
-  if (r.target_paths) {
-    try {
-      const parsed = JSON.parse(r.target_paths);
-      if (Array.isArray(parsed)) targetPaths = parsed;
-    } catch {
-      targetPaths = undefined;
-    }
-  }
-
-  return {
-    id: r.id,
-    workflowRunId: r.workflow_run_id,
-    phaseId: r.phase_id,
-    stepId: r.step_id,
-    title: r.title,
-    agentId: r.agent_id,
-    agentName: r.agent_name,
-    adapter: r.adapter,
-    mode: r.mode,
-    status: r.status as WorkflowStepStatus,
-    prompt: r.prompt,
-    dependsOn,
-    targetPaths,
-    summary: r.summary ?? undefined,
-    resultJson: r.result_json ?? undefined,
-    cliTaskId: r.cli_task_id ?? undefined,
-    toolSessionId: r.tool_session_id ?? undefined,
-    startedAt: r.started_at ?? undefined,
-    endedAt: r.ended_at ?? undefined,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at
-  };
-}
-
-export interface CreateWorkflowRunInput {
-  id: string;
-  conversationId?: string;
-  teamId?: string;
-  teamSnapshotJson?: string;
-  planVersion?: number;
-  name: string;
-  goal: string;
-  cwd?: string;
-  template?: string;
-  maxLoops: number;
-  planJson: string;
-  status?: WorkflowRunStatus;
-}
+export type CreateWorkflowRunInput = PackageCreateRun;
+export type CreateWorkflowStepInput = PackageCreateStep;
+export type UpdateWorkflowRunPatch = Parameters<typeof sqlite.updateWorkflowRun>[2];
+export type UpdateWorkflowStepPatch = Parameters<typeof sqlite.updateWorkflowStep>[2];
 
 export function createWorkflowRun(input: CreateWorkflowRunInput): WorkflowRunRow {
-  const now = new Date().toISOString();
-  getDb()
-    .prepare(
-      `INSERT INTO workflow_runs
-         (id, conversation_id, name, goal, status, cwd, template,
-          loop_index, max_loops, plan_json, team_id, team_snapshot_json,
-          plan_version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      input.id,
-      input.conversationId ?? null,
-      input.name,
-      input.goal,
-      input.status ?? "pending_approval",
-      input.cwd ?? null,
-      input.template ?? null,
-      input.maxLoops,
-      input.planJson,
-      input.teamId ?? null,
-      input.teamSnapshotJson ?? null,
-      input.planVersion ?? 1,
-      now,
-      now
-    );
-  return getWorkflowRun(input.id) as WorkflowRunRow;
+  return sqlite.createWorkflowRun(sqliteContext(), input);
 }
 
-export interface UpdateWorkflowRunPatch {
-  status?: WorkflowRunStatus;
-  loopIndex?: number;
-  maxLoops?: number;
-  planJson?: string;
-  summary?: string | null;
-  endedAt?: string | null;
-}
-
-export function updateWorkflowRun(
-  id: string,
-  patch: UpdateWorkflowRunPatch
-): void {
-  const fields: string[] = ["updated_at = ?"];
-  const params: any[] = [new Date().toISOString()];
-  if (patch.status !== undefined) {
-    fields.push("status = ?");
-    params.push(patch.status);
-  }
-  if (patch.loopIndex !== undefined) {
-    fields.push("loop_index = ?");
-    params.push(patch.loopIndex);
-  }
-  if (patch.maxLoops !== undefined) {
-    fields.push("max_loops = ?");
-    params.push(patch.maxLoops);
-  }
-  if (patch.planJson !== undefined) {
-    fields.push("plan_json = ?");
-    params.push(patch.planJson);
-  }
-  if (patch.summary !== undefined) {
-    fields.push("summary = ?");
-    params.push(patch.summary);
-  }
-  if (patch.endedAt !== undefined) {
-    fields.push("ended_at = ?");
-    params.push(patch.endedAt);
-  }
-  params.push(id);
-  getDb()
-    .prepare(`UPDATE workflow_runs SET ${fields.join(", ")} WHERE id = ?`)
-    .run(...params);
-}
-
-function callerOwnsConversation(conversationId: string | null | undefined): boolean {
-  if (isCallerAdmin() || getCallerUserId() === null) return true;
-  if (!conversationId) return false;
-  const row = getDb()
-    .prepare("SELECT owner_id FROM conversations WHERE id = ?")
-    .get(conversationId) as { owner_id: string | null } | undefined;
-  return row?.owner_id === getCallerUserId();
+export function updateWorkflowRun(id: string, patch: UpdateWorkflowRunPatch): void {
+  sqlite.updateWorkflowRun(sqliteContext(), id, patch);
 }
 
 export function getWorkflowRun(id: string): WorkflowRunRow | undefined {
-  const row = getDb()
-    .prepare(`SELECT * FROM workflow_runs WHERE id = ?`)
-    .get(id) as any;
-  if (!row) return undefined;
-  const run = rowToRun(row);
-  return callerOwnsConversation(run.conversationId) ? run : undefined;
+  return sqlite.getWorkflowRun(sqliteContext(), id);
 }
 
-export function listWorkflowRunsByConversation(
-  conversationId: string
-): WorkflowRunRow[] {
-  if (!callerOwnsConversation(conversationId)) return [];
-  const rows = getDb()
-    .prepare(
-      `SELECT * FROM workflow_runs
-        WHERE conversation_id = ? AND (kind = 'workflow' OR kind IS NULL)
-       ORDER BY created_at DESC`
-    )
-    .all(conversationId) as any[];
-  return rows.map(rowToRun);
+export function listWorkflowRunsByConversation(conversationId: string): WorkflowRunRow[] {
+  return sqlite.listWorkflowRunsByConversation(sqliteContext(), conversationId);
 }
 
 export function listActiveWorkflowRuns(): WorkflowRunRow[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT * FROM workflow_runs
-       WHERE status IN ('running','paused','blocked','pending_approval')
-         AND (kind = 'workflow' OR kind IS NULL)
-       ORDER BY created_at DESC`
-    )
-    .all() as any[];
-  return rows
-    .map(rowToRun)
-    .filter((run) => callerOwnsConversation(run.conversationId));
+  return sqlite.listActiveWorkflowRuns(sqliteContext());
 }
 
 export function recoverInterruptedWorkflowRuns(): number {
-  const now = new Date().toISOString();
-  const rows = getDb()
-    .prepare(
-      `SELECT id FROM workflow_runs
-        WHERE status = 'running' AND (kind = 'workflow' OR kind IS NULL)`
-    )
-    .all() as Array<{ id: string }>;
-
-  const updateRunningSteps = getDb().prepare(
-    `UPDATE workflow_steps
-     SET status = 'blocked',
-         summary = COALESCE(summary, 'Interrupted by app restart. Resume the workflow to continue.'),
-         ended_at = COALESCE(ended_at, ?),
-         updated_at = ?
-     WHERE workflow_run_id = ? AND status = 'running'`
-  );
-  const updateRun = getDb().prepare(
-    `UPDATE workflow_runs
-     SET status = 'blocked',
-         summary = COALESCE(summary, 'Interrupted by app restart. Resume the workflow to continue.'),
-         updated_at = ?
-     WHERE id = ? AND status = 'running'`
-  );
-
-  const tx = getDb().transaction(() => {
-    for (const row of rows) {
-      updateRunningSteps.run(now, now, row.id);
-      updateRun.run(now, row.id);
-    }
-  });
-  tx();
-  return rows.length;
-}
-
-export interface CreateWorkflowStepInput {
-  id: string;
-  workflowRunId: string;
-  phaseId: string;
-  stepId: string;
-  title: string;
-  agentId: string;
-  agentName: string;
-  adapter: string;
-  mode: string;
-  prompt: string;
-  dependsOn?: string[];
-  targetPaths?: string[];
+  return sqlite.recoverInterruptedWorkflowRuns(sqliteContext());
 }
 
 export function createWorkflowStep(input: CreateWorkflowStepInput): void {
-  const now = new Date().toISOString();
-  getDb()
-    .prepare(
-      `INSERT INTO workflow_steps
-         (id, workflow_run_id, phase_id, step_id, title, agent_id, agent_name,
-          adapter, mode, status, prompt, depends_on, target_paths,
-          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
-    )
-    .run(
-      input.id,
-      input.workflowRunId,
-      input.phaseId,
-      input.stepId,
-      input.title,
-      input.agentId,
-      input.agentName,
-      input.adapter,
-      input.mode,
-      input.prompt,
-      input.dependsOn ? JSON.stringify(input.dependsOn) : null,
-      input.targetPaths ? JSON.stringify(input.targetPaths) : null,
-      now,
-      now
-    );
+  sqlite.createWorkflowStep(sqliteContext(), input);
 }
 
-export interface UpdateWorkflowStepPatch {
-  status?: WorkflowStepStatus;
-  prompt?: string;
-  summary?: string | null;
-  resultJson?: string | null;
-  cliTaskId?: string | null;
-  toolSessionId?: string | null;
-  startedAt?: string | null;
-  endedAt?: string | null;
-}
-
-export function updateWorkflowStep(
-  id: string,
-  patch: UpdateWorkflowStepPatch
-): void {
-  const fields: string[] = ["updated_at = ?"];
-  const params: any[] = [new Date().toISOString()];
-  if (patch.status !== undefined) {
-    fields.push("status = ?");
-    params.push(patch.status);
-  }
-  if (patch.prompt !== undefined) {
-    fields.push("prompt = ?");
-    params.push(patch.prompt);
-  }
-  if (patch.summary !== undefined) {
-    fields.push("summary = ?");
-    params.push(patch.summary);
-  }
-  if (patch.resultJson !== undefined) {
-    fields.push("result_json = ?");
-    params.push(patch.resultJson);
-  }
-  if (patch.cliTaskId !== undefined) {
-    fields.push("cli_task_id = ?");
-    params.push(patch.cliTaskId);
-  }
-  if (patch.toolSessionId !== undefined) {
-    fields.push("tool_session_id = ?");
-    params.push(patch.toolSessionId);
-  }
-  if (patch.startedAt !== undefined) {
-    fields.push("started_at = ?");
-    params.push(patch.startedAt);
-  }
-  if (patch.endedAt !== undefined) {
-    fields.push("ended_at = ?");
-    params.push(patch.endedAt);
-  }
-  params.push(id);
-  getDb()
-    .prepare(`UPDATE workflow_steps SET ${fields.join(", ")} WHERE id = ?`)
-    .run(...params);
+export function updateWorkflowStep(id: string, patch: UpdateWorkflowStepPatch): void {
+  sqlite.updateWorkflowStep(sqliteContext(), id, patch);
 }
 
 export function getWorkflowSteps(runId: string): WorkflowStepRow[] {
-  const run = getWorkflowRun(runId);
-  if (!run) return [];
-  const rows = getDb()
-    .prepare(
-      `SELECT * FROM workflow_steps WHERE workflow_run_id = ?
-       ORDER BY created_at ASC, rowid ASC`
-    )
-    .all(runId) as any[];
-  return rows.map(rowToStep);
+  return sqlite.getWorkflowSteps(sqliteContext(), runId);
 }
 
-/** Reset a set of phase steps back to pending for Review Loop re-execution. */
-export function resetWorkflowStepsForLoop(
-  runId: string,
-  phaseIds: string[]
-): void {
-  if (phaseIds.length === 0) return;
-  const placeholders = phaseIds.map(() => "?").join(",");
-  getDb()
-    .prepare(
-      `UPDATE workflow_steps
-         SET status = 'pending', summary = NULL, result_json = NULL,
-             cli_task_id = NULL, tool_session_id = NULL,
-             started_at = NULL, ended_at = NULL,
-             updated_at = ?
-       WHERE workflow_run_id = ? AND phase_id IN (${placeholders})`
-    )
-    .run(new Date().toISOString(), runId, ...phaseIds);
+export function resetWorkflowStepsForLoop(runId: string, phaseIds: string[]): void {
+  sqlite.resetWorkflowStepsForLoop(sqliteContext(), runId, phaseIds);
 }
+
+export type { WorkflowRunRow, WorkflowRunStatus, WorkflowStepRow, WorkflowStepStatus };

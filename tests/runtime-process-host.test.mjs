@@ -1,0 +1,511 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createMemoryWorkflowRepository } from "../packages/workflow-runtime/dist/index.js";
+import {
+  DEFAULT_HOST_CAPABILITIES,
+  HOST_API_VERSION,
+  RUNTIME_RPC_VERSION
+} from "../packages/protocol/dist/runtime.js";
+import {
+  createNodeRuntimeProcessLauncher,
+  createRuntimeManager,
+  createRuntimeProcessPool,
+  readRuntimeState,
+  resolveRuntimeEntryPath,
+  RuntimeRpcSession,
+  writeRuntimeState
+} from "../packages/runtime-host/dist/index.js";
+import { makeFrame } from "../packages/runtime-host/dist/rpc/transport.js";
+import { createHealthyRuntimeLauncher, writeDummyRuntimeEntry } from "./fixtures/runtime-healthy-launcher.mjs";
+
+const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const bootstrapEntry = path.join(root, "packages/runtime-entry/dist/bootstrap.js");
+
+const PLAN = {
+  name: "One",
+  goal: "Ship",
+  phases: [
+    {
+      id: "p1",
+      title: "Do",
+      parallelism: 1,
+      steps: [
+        {
+          id: "s1",
+          title: "Work",
+          agentId: "cli-codex-acp",
+          mode: "research",
+          prompt: "Do the work"
+        }
+      ]
+    }
+  ]
+};
+const AGENTS = [{ id: "cli-codex-acp", name: "Codex", adapter: "codex-acp", enabled: true }];
+
+function helloParams() {
+  return {
+    hostId: "freebuddy-cli",
+    hostVersion: "0.0.0-test",
+    hostApiVersion: HOST_API_VERSION,
+    hostCapabilities: [...DEFAULT_HOST_CAPABILITIES],
+    rpcVersion: RUNTIME_RPC_VERSION
+  };
+}
+
+function createHostApi(repo) {
+  return {
+    async invoke(method, params, meta) {
+      const args = Array.isArray(params) ? params : [params];
+      if (method === "agent.list.v1") {
+        return AGENTS.map((agent) => ({
+          id: agent.id,
+          adapter: agent.adapter,
+          agentName: agent.name
+        }));
+      }
+      if (method === "language.get.v1") return "en";
+      if (method === "events.publish.v1" || method === "telemetry.track.v1") return true;
+      if (method === "delegation.repository.v1.createRun") {
+        return { id: "del-1", goal: args[0]?.goal, status: "running", runtimeVersion: meta?.runtimeVersion };
+      }
+      if (method === "delegation.repository.v1.insertEvent") return "evt-1";
+      if (method === "delegation.repository.v1.getRun") return null;
+      if (method === "delegation.repository.v1.listEvents") return [];
+      if (method === "agent.execute.v1") {
+        const payload = args[0] ?? {};
+        meta?.emit?.("agent.event", {
+          requestId: payload.requestId,
+          event: { type: "items", items: [{ kind: "text", content: "ok" }] }
+        });
+        meta?.emit?.("agent.event", {
+          requestId: payload.requestId,
+          event: { type: "done", exitCode: 0 }
+        });
+        return { ok: true };
+      }
+      if (!method.startsWith("workflow.repository.v1.")) return null;
+      const op = method.slice("workflow.repository.v1.".length);
+      if (op === "createRun") {
+        const input = {
+          ...args[0],
+          runtimeVersion: args[0].runtimeVersion ?? meta?.runtimeVersion ?? "bundled"
+        };
+        return repo.createRun(input);
+      }
+      if (op === "getRun") return repo.getRun(args[0]) ?? null;
+      if (op === "updateRun") {
+        repo.updateRun(args[0], args[1]);
+        return true;
+      }
+      if (op === "createStep") {
+        repo.createStep(args[0]);
+        return true;
+      }
+      if (op === "getSteps") return repo.getSteps(args[0]);
+      if (op === "updateStep") {
+        repo.updateStep(args[0], args[1]);
+        return true;
+      }
+      if (op === "resetStepsForLoop") {
+        repo.resetStepsForLoop(args[0], args[1]);
+        return true;
+      }
+      throw new Error(`unknown host method ${method}`);
+    }
+  };
+}
+
+function testEnv(dataDir, launcher) {
+  return {
+    hostId: "freebuddy-cli",
+    hostVersion: "0.0.0-test",
+    hostApiVersion: "1.0.0",
+    hostCapabilities: [...DEFAULT_HOST_CAPABILITIES],
+    dataDir,
+    bundledRuntimePath: dataDir,
+    allowUnsignedDevelopmentRuntime: true,
+    launcher: launcher ?? createNodeRuntimeProcessLauncher(),
+    http: { fetch },
+    trustedKeys: { get: () => undefined, list: () => [] },
+    clock: { now: () => new Date(), nowIso: () => new Date().toISOString() }
+  };
+}
+
+test("resolveRuntimeEntryPath prefers bundled runtime/index.mjs", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-entry-"));
+  const bundled = path.join(dataDir, "bundled");
+  fs.mkdirSync(path.join(bundled, "runtime"), { recursive: true });
+  const entry = path.join(bundled, "runtime", "index.mjs");
+  fs.writeFileSync(entry, "export {}\n");
+  const resolved = resolveRuntimeEntryPath(
+    {
+      ...testEnv(dataDir),
+      bundledRuntimePath: bundled
+    },
+    "bundled"
+  );
+  assert.equal(resolved, entry);
+});
+
+test("node runtime process handshake, workflow RPC, shutdown, and forced kill", async () => {
+  assert.equal(fs.existsSync(bootstrapEntry), true, "bootstrap must be compiled");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-proc-"));
+  const repo = createMemoryWorkflowRepository();
+  const hostApi = createHostApi(repo);
+  const pool = createRuntimeProcessPool({
+    environment: testEnv(dataDir),
+    hostApi
+  });
+  const client = await pool.ensure("bundled", bootstrapEntry);
+  const hello = await client.request("runtime.hello", helloParams());
+  assert.equal(hello.rpcVersion, RUNTIME_RPC_VERSION);
+  assert.equal(hello.bundleId, "dev.freebuddy.runtime");
+
+  const health = await client.request("runtime.health", {});
+  assert.equal(health.ok, true);
+
+  const created = await client.request("workflow.createPendingRun", {
+    plan: PLAN,
+    agents: AGENTS
+  });
+  assert.equal(created.ok, true);
+  assert.ok(created.run.id);
+  assert.equal(created.run.runtimeVersion, "bundled");
+  assert.equal(repo.getRun(created.run.id)?.runtimeVersion, "bundled");
+
+  await client.request("workflow.start", { runId: created.run.id });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const run = repo.getRun(created.run.id);
+  assert.ok(run);
+  assert.notEqual(run.status, "pending_approval");
+
+  const prepared = await client.request("delegation.prepareRun", {
+    goal: "delegate",
+    teamId: "team-1",
+    teamSnapshot: {
+      entryRoleId: "lead",
+      roster: [
+        {
+          id: "lead",
+          label: "Lead",
+          agentId: "cli-codex-acp",
+          capability: "general",
+          canWrite: false
+        }
+      ],
+      policy: {
+        allowWrites: false,
+        requireApprovalBeforeDelegateWrite: false,
+        maxDepth: 1,
+        delegateTimeoutMs: 1000,
+        maxConcurrentDelegates: 1,
+        stopOnDelegateFailure: true
+      }
+    }
+  });
+  assert.equal(typeof prepared.runId, "string");
+  assert.ok(prepared.runId.length > 0);
+
+  await client.shutdown();
+
+  const crashed = createNodeRuntimeProcessLauncher().launch({
+    entryPath: bootstrapEntry,
+    env: { ...process.env, FB_RUNTIME_PROCESS: "1" }
+  });
+  const exitCode = await new Promise((resolve) => {
+    crashed.onExit((code) => resolve(code));
+    setTimeout(() => crashed.kill(), 100);
+  });
+  assert.notEqual(exitCode, undefined);
+});
+
+test("incompatible handshake is rejected before serving work", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-badhello-"));
+  const pool = createRuntimeProcessPool({
+    environment: testEnv(dataDir),
+    hostApi: { invoke: async () => null }
+  });
+  const client = await pool.ensure("bundled", bootstrapEntry);
+  await assert.rejects(
+    () =>
+      client.request("runtime.hello", {
+        ...helloParams(),
+        hostApiVersion: "9.0.0"
+      }),
+    /unsupported host api|handler_failed|rpc error/
+  );
+  await client.shutdown();
+});
+
+test("handshake timeout kills a silent process", async () => {
+  const silent = path.join(os.tmpdir(), `fb-silent-${Date.now()}.mjs`);
+  fs.writeFileSync(silent, "setInterval(() => {}, 1000);\n");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-to-"));
+  process.env.FB_RUNTIME_HELLO_TIMEOUT_MS = "400";
+  const pool = createRuntimeProcessPool({
+    environment: testEnv(dataDir),
+    hostApi: { invoke: async () => null }
+  });
+  try {
+    await assert.rejects(() => pool.ensure("bundled", silent), /rpc timeout|runtime entry/);
+  } finally {
+    delete process.env.FB_RUNTIME_HELLO_TIMEOUT_MS;
+  }
+});
+
+test("activating a new default version does not kill pinned process handles", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-pinlive-"));
+  writeDummyRuntimeEntry(dataDir);
+  const healthy = createHealthyRuntimeLauncher();
+  const manager = createRuntimeManager(
+    testEnv(dataDir, healthy),
+    { invoke: async () => null }
+  );
+  await manager.activate("bundled");
+  assert.equal(manager.route({}).version, "bundled");
+  const pinned = manager.route({ runtimeVersion: "1.0.0" });
+  assert.equal(pinned.version, "1.0.0");
+  assert.equal(pinned.pinned, true);
+  assert.equal(healthy.kills.count, 1);
+  await manager.shutdown();
+  assert.equal(healthy.kills.count, 1);
+});
+
+test("two fresh runtime processes sharing sqlite keep unique delegation ids", async (t) => {
+  let Database;
+  try {
+    Database = (await import("better-sqlite3")).default;
+    new Database(":memory:").close();
+  } catch {
+    t.skip("better-sqlite3 native binding unavailable");
+    return;
+  }
+  assert.equal(fs.existsSync(bootstrapEntry), true, "bootstrap must be compiled");
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-delid-"));
+  const db = new Database(path.join(dataDir, "shared.db"));
+  db.exec(`
+    CREATE TABLE conversations (id TEXT PRIMARY KEY, owner_id TEXT);
+    CREATE TABLE workflow_runs (
+      id TEXT PRIMARY KEY, conversation_id TEXT, name TEXT, goal TEXT, status TEXT,
+      cwd TEXT, template TEXT, loop_index INTEGER, max_loops INTEGER, plan_json TEXT,
+      team_id TEXT, team_snapshot_json TEXT, plan_version INTEGER, kind TEXT,
+      runtime_version TEXT, runtime_api_version TEXT, summary TEXT,
+      created_at TEXT, updated_at TEXT, ended_at TEXT
+    );
+    CREATE TABLE delegation_events (
+      id TEXT PRIMARY KEY, run_id TEXT, parent_event_id TEXT, agent_id TEXT, agent_name TEXT,
+      role_label TEXT, task_text TEXT, depth INTEGER, status TEXT, result_summary TEXT,
+      result_json TEXT, can_write INTEGER, accepted_at TEXT, started_at TEXT, ended_at TEXT,
+      verdict TEXT, verdict_summary TEXT
+    );
+  `);
+  const { createSqliteDelegationRepository } = await import(
+    "../packages/storage-sqlite/dist/index.js"
+  );
+  const sqlite = createSqliteDelegationRepository({
+    db,
+    owner: { ownerUserId: null, isAdmin: true }
+  });
+  const hostApi = {
+    async invoke(method, params) {
+      const args = Array.isArray(params) ? params : [params];
+      if (method === "agent.list.v1") {
+        return AGENTS.map((agent) => ({
+          id: agent.id,
+          adapter: agent.adapter,
+          agentName: agent.name
+        }));
+      }
+      if (method === "language.get.v1") return "en";
+      if (method === "events.publish.v1" || method === "telemetry.track.v1") return true;
+      if (method === "delegation.repository.v1.createRun") {
+        return sqlite.createRun({
+          ...args[0],
+          status: args[0]?.status ?? "running",
+          teamId: args[0]?.teamId ?? "t",
+          teamSnapshotJson: args[0]?.teamSnapshotJson ?? "{}"
+        });
+      }
+      if (method === "delegation.repository.v1.insertEvent") {
+        return sqlite.insertEvent(args[0]);
+      }
+      if (method === "delegation.repository.v1.getRun") return sqlite.getRun(args[0]) ?? null;
+      if (method === "delegation.repository.v1.listEvents") return sqlite.listEvents(args[0]);
+      return null;
+    }
+  };
+  const snapshot = {
+    goal: "delegate",
+    teamId: "team-1",
+    teamSnapshot: {
+      entryRoleId: "lead",
+      roster: [
+        {
+          id: "lead",
+          label: "Lead",
+          agentId: "cli-codex-acp",
+          capability: "general",
+          canWrite: false
+        }
+      ],
+      policy: {
+        allowWrites: false,
+        requireApprovalBeforeDelegateWrite: false,
+        maxDepth: 1,
+        delegateTimeoutMs: 1000,
+        maxConcurrentDelegates: 1,
+        stopOnDelegateFailure: true
+      }
+    }
+  };
+
+  async function prepareWithFreshProcess() {
+    const pool = createRuntimeProcessPool({
+      environment: testEnv(dataDir),
+      hostApi
+    });
+    const client = await pool.ensure("bundled", bootstrapEntry);
+    await client.request("runtime.hello", helloParams());
+    const prepared = await client.request("delegation.prepareRun", snapshot);
+    await pool.shutdown();
+    return prepared.runId;
+  }
+
+  const firstId = await prepareWithFreshProcess();
+  const secondId = await prepareWithFreshProcess();
+  assert.equal(typeof firstId, "string");
+  assert.equal(typeof secondId, "string");
+  assert.notEqual(firstId, secondId);
+  assert.equal(sqlite.getRun(firstId)?.goal, "delegate");
+  assert.equal(sqlite.getRun(secondId)?.goal, "delegate");
+  db.close();
+});
+
+function createScriptedRuntimeLauncher({ afterHelloExit, exitOnKill = true } = {}) {
+  const kills = { count: 0 };
+  return {
+    kills,
+    launch() {
+      const messages = [];
+      const exits = [];
+      let exited = false;
+      const fireExit = (code) => {
+        if (exited) return;
+        exited = true;
+        for (const handler of [...exits]) handler(code);
+      };
+      return {
+        send(message) {
+          if (!message || typeof message !== "object") return;
+          const frame = message;
+          if (frame.kind !== "request") return;
+          queueMicrotask(() => {
+            const result =
+              frame.method === "runtime.hello"
+                ? {
+                    runtimeVersion: "bundled",
+                    rpcVersion: RUNTIME_RPC_VERSION,
+                    nodeVersion: process.versions.node,
+                    bundleId: "dev.freebuddy.runtime",
+                    hostApiRange: "1.0.0",
+                    requiredHostCapabilities: [],
+                    providedCapabilities: ["workflow", "delegation"]
+                  }
+                : { ok: true };
+            for (const listener of messages) {
+              listener(makeFrame({ id: frame.id, kind: "response", result }));
+            }
+            if (frame.method === "runtime.hello" && afterHelloExit !== undefined) {
+              queueMicrotask(() => fireExit(afterHelloExit));
+            }
+          });
+        },
+        onMessage(handler) {
+          messages.push(handler);
+          return () => {
+            const index = messages.indexOf(handler);
+            if (index >= 0) messages.splice(index, 1);
+          };
+        },
+        onExit(handler) {
+          exits.push(handler);
+          return () => {
+            const index = exits.indexOf(handler);
+            if (index >= 0) exits.splice(index, 1);
+          };
+        },
+        kill() {
+          kills.count += 1;
+          if (exitOnKill) fireExit(0);
+        }
+      };
+    }
+  };
+}
+
+async function waitForCrashCount(dataDir, version, expected) {
+  const deadline = Date.now() + 500;
+  while (Date.now() < deadline) {
+    const state = readRuntimeState(dataDir);
+    if ((state.crashCounts?.[version] ?? 0) === expected) return state;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return readRuntimeState(dataDir);
+}
+
+test("unexpected runtime exit 0 and signal null record a crash and roll back", async () => {
+  for (const exitCode of [0, null]) {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-exit-"));
+    writeDummyRuntimeEntry(dataDir);
+    writeRuntimeState(dataDir, {
+      schemaVersion: 1,
+      activeVersion: "2.0.0",
+      pendingVersion: null,
+      lastKnownGoodVersion: "bundled",
+      channel: "stable",
+      lastCheckedAt: null,
+      blockedVersions: {},
+      crashCounts: {}
+    });
+    const launcher = createScriptedRuntimeLauncher({ afterHelloExit: exitCode, exitOnKill: false });
+    const pool = createRuntimeProcessPool({
+      environment: testEnv(dataDir, launcher),
+      hostApi: { invoke: async () => null }
+    });
+    await pool.ensure("2.0.0", path.join(dataDir, "runtime", "index.mjs"));
+    const state = await waitForCrashCount(dataDir, "2.0.0", 1);
+    assert.equal(state.crashCounts["2.0.0"], 1, `exit ${exitCode} should record a crash`);
+    assert.equal(state.activeVersion, "bundled");
+    await pool.shutdown();
+  }
+});
+
+test("host shutdown does not record a crash for a zero exit", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-stop-"));
+  writeDummyRuntimeEntry(dataDir);
+  writeRuntimeState(dataDir, {
+    schemaVersion: 1,
+    activeVersion: "2.0.0",
+    pendingVersion: null,
+    lastKnownGoodVersion: "bundled",
+    channel: "stable",
+    lastCheckedAt: null,
+    blockedVersions: {},
+    crashCounts: {}
+  });
+  const launcher = createScriptedRuntimeLauncher({ exitOnKill: true });
+  const pool = createRuntimeProcessPool({
+    environment: testEnv(dataDir, launcher),
+    hostApi: { invoke: async () => null }
+  });
+  await pool.ensure("2.0.0", path.join(dataDir, "runtime", "index.mjs"));
+  await pool.shutdown();
+  const state = readRuntimeState(dataDir);
+  assert.equal(state.crashCounts?.["2.0.0"] ?? 0, 0);
+  assert.equal(state.activeVersion, "2.0.0");
+});
