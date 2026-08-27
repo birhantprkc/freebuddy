@@ -546,6 +546,8 @@ test("conversationStore subscribes to workflow message events", () => {
   const src = read("../src/store/conversationStore.ts");
   assert.match(src, /ensureWorkflowMessageSubscription/);
   assert.match(src, /onStepMessage/);
+  assert.match(src, /refreshWorkflowTree/);
+  assert.match(src, /import\("@\/store\/workflowStore"\)/);
 });
 
 test("conversationStore keeps background streaming subscriptions and refreshes on reactivation", () => {

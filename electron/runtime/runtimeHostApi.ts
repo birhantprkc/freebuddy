@@ -4,6 +4,8 @@ import type { RuntimeHostApi, RuntimeHostInvokeMeta } from "@freebuddy/runtime-h
 import { createHostIdempotency, publicAgentProfile, trustedAgentExecution } from "@freebuddy/runtime-host";
 import { getHostIdempotencyResult, putHostIdempotencyResult } from "@freebuddy/storage-sqlite";
 import { sqliteContext } from "../cli/sqliteContext.js";
+import { runAsCaller } from "../cli/callerContext.js";
+import { getOwnerUser } from "../cli/users.js";
 import { listCliMembers } from "../cli/members.js";
 import {
   appendMessage,
@@ -130,7 +132,10 @@ export function createDesktopRuntimeHostApi(): RuntimeHostApi {
   return {
     async invoke(method, params, meta) {
       const args = argsOf(params);
-      return hostIdempotency.run(meta?.idempotencyKey, () => dispatchHostInvoke(method, args, meta));
+      const run = () =>
+        hostIdempotency.run(meta?.idempotencyKey, () => dispatchHostInvoke(method, args, meta));
+      const owner = getOwnerUser()?.id ?? null;
+      return owner ? runAsCaller(owner, run, true) : run();
     }
   };
 }

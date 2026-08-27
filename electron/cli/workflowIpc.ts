@@ -92,20 +92,20 @@ export function registerWorkflowIpc() {
     }
   );
 
-  registerHandler("workflow:start", (event, runId: string) => {
-    void ensureRuntime(event).start(runId);
+  registerHandler("workflow:start", async (event, runId: string) => {
+    await ensureRuntime(event).start(runId);
     return true;
   });
-  registerHandler("workflow:pause", (event, runId: string) => {
-    ensureRuntime(event).pause(runId);
+  registerHandler("workflow:pause", async (event, runId: string) => {
+    await ensureRuntime(event).pause(runId);
     return true;
   });
-  registerHandler("workflow:resume", (event, runId: string) => {
-    void ensureRuntime(event).resume(runId);
+  registerHandler("workflow:resume", async (event, runId: string) => {
+    await ensureRuntime(event).resume(runId);
     return true;
   });
-  registerHandler("workflow:stop", (event, runId: string) => {
-    ensureRuntime(event).stop(runId);
+  registerHandler("workflow:stop", async (event, runId: string) => {
+    await ensureRuntime(event).stop(runId);
     return true;
   });
   registerHandler(

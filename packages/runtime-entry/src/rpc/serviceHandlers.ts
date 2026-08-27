@@ -64,10 +64,16 @@ export function createWorkflowServiceHandlers(
     async "workflow.start"(params) {
       const { runId } = body<{ runId: string }>(params);
       await controller.hydrateWorkflow(runId);
+      if (!runtime.getRun(runId)) {
+        throw new Error(`workflow run ${runId} not found`);
+      }
       void runtime.start(runId).finally(() => {
         void controller.flush();
       });
       await controller.flush();
+      if (runtime.getRun(runId)?.status === "pending_approval") {
+        throw new Error(`workflow run ${runId} failed to leave pending_approval`);
+      }
       return true;
     },
     async "workflow.approveGate"(params) {

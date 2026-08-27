@@ -101,23 +101,41 @@ export function createWorkflowRuntimeHandle(event: IpcMainInvokeEvent) {
     }) as Promise<T>;
   }
 
+  function kickDrive(
+    runId: string,
+    method: string,
+    params: unknown,
+    fallback: () => Promise<void> | void
+  ): Promise<void> {
+    setRuntimeExecutionWebContents(event.sender);
+    if (!useProcess) {
+      void fallback();
+      return Promise.resolve();
+    }
+    return invokeWorkflowRpc(event, runId, method, params).then(() => undefined).catch((error) => {
+      const pinned = getWorkflowRun(runId)?.runtimeVersion;
+      if (pinned && pinned !== "bundled") throw error;
+      logMain().warn("runtime-process", "falling back in-process", {
+        method,
+        error: (error as Error).message
+      });
+      void fallback();
+    });
+  }
+
   return {
     createPendingRun: ((input) =>
       call(undefined, "workflow.createPendingRun", input, () => local().createPendingRun(input))) as WorkflowRuntime["createPendingRun"],
-    start: ((runId: string) => {
-      void call(runId, "workflow.start", { runId }, () => local().start(runId));
-    }) as WorkflowRuntime["start"],
-    pause: ((runId: string) => {
-      void call(runId, "workflow.pause", { runId }, () => local().pause(runId));
-    }) as WorkflowRuntime["pause"],
-    resume: ((runId: string) => {
-      void call(runId, "workflow.resume", { runId }, () => local().resume(runId));
-    }) as WorkflowRuntime["resume"],
-    stop: ((runId: string) => {
-      void call(runId, "workflow.stop", { runId }, () => local().stop(runId));
-    }) as WorkflowRuntime["stop"],
+    start: ((runId: string) =>
+      kickDrive(runId, "workflow.start", { runId }, () => local().start(runId))) as WorkflowRuntime["start"],
+    pause: ((runId: string) =>
+      call(runId, "workflow.pause", { runId }, () => local().pause(runId))) as WorkflowRuntime["pause"],
+    resume: ((runId: string) =>
+      kickDrive(runId, "workflow.resume", { runId }, () => local().resume(runId))) as WorkflowRuntime["resume"],
+    stop: ((runId: string) =>
+      call(runId, "workflow.stop", { runId }, () => local().stop(runId))) as WorkflowRuntime["stop"],
     retryStep: ((runId: string, stepRowId: string) =>
-      call(runId, "workflow.retryStep", { runId, stepRowId }, () =>
+      kickDrive(runId, "workflow.retryStep", { runId, stepRowId }, () =>
         local().retryStep(runId, stepRowId)
       )) as WorkflowRuntime["retryStep"],
     approveGate: ((runId: string, phaseId: string) =>
