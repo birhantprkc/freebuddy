@@ -29,6 +29,14 @@ test("runtime pack version comes from env, then runtime-v tag", () => {
     "2.0.1"
   );
   assert.equal(resolveRuntimePackVersion({}), "0.0.0-dev");
+  assert.equal(
+    resolveRuntimePackVersion({
+      CI: "true",
+      GITHUB_REF_TYPE: "tag",
+      GITHUB_REF_NAME: "v0.9.0"
+    }),
+    "0.0.0-dev"
+  );
   assert.equal(versionFromRuntimeTag("runtime-v1.0.1"), "1.0.1");
   assert.equal(versionFromRuntimeTag("v1.0.1"), null);
   assert.equal(isRuntimeTag("runtime-v1.0.1"), true);
@@ -45,6 +53,16 @@ test("runtime pack version comes from env, then runtime-v tag", () => {
         CI: "true",
         GITHUB_REF_TYPE: "tag",
         GITHUB_REF_NAME: "runtime-vtest"
+      }),
+    /invalid runtime release tag/
+  );
+  assert.throws(
+    () =>
+      resolveRuntimePackVersion({
+        CI: "true",
+        RUNTIME_REQUIRE_PRODUCTION_VERSION: "1",
+        GITHUB_REF_TYPE: "tag",
+        GITHUB_REF_NAME: "v0.9.0"
       }),
     /invalid runtime release tag/
   );
