@@ -1,12 +1,14 @@
 {
   "name": "freebuddy",
   "productName": "FreeBuddy",
-  "version": "0.8.18",
+  "version": "0.9.0",
   "private": true,
   "description": "A WorkBuddy-style desktop AI workspace built with Electron, React, Vite, and TypeScript.",
   "main": "dist-electron/main.js",
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "node scripts/dev-electron.mjs",
     "postinstall": "node scripts/patch-node-pty-spectre.mjs && electron-rebuild -f -w better-sqlite3 -w node-pty && node scripts/fix-node-pty-permissions.mjs",

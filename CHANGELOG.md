@@ -2,6 +2,25 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.9.0] - 2026-08-27
+
+### 新功能
+
+- host workflow runtime in an isolated process
+- complete remaining runtime pack phases
+- implement modular runtime pack architecture
+
+### 问题修复
+
+- refresh workflow tree after runtime-process start
+- do not OS-sandbox local read-only delegated reviewers
+- spawn Windows sandbox agent .cmd shims through the shell
+- rate-limit host idempotency prune and index created_at
+- steal stale install locks atomically and bound idempotency caches
+- keep follow-up writes, crash on any unexpected exit, and own install locks
+- close remaining runtime pack safety gaps before tagging
+- make runtime publishes immutable and close remaining pack gaps
+
 ## [0.8.18] - 2026-08-26
 
 ### 问题修复
