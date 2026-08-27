@@ -26,7 +26,7 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
   );
   assert.match(
     runtime,
-    /const processSandboxed = shouldSandboxCurrentCaller\(\)/,
+    /const processSandboxed = shouldSandboxCurrentCaller\(\);/,
     "OS process sandbox must be gated separately from workspace isolation"
   );
   assert.match(
@@ -40,7 +40,7 @@ test("remote runs and ACP terminal commands use the lightweight sandbox", () => 
     "prepareSandboxedSpawn runs only when the shared user enabled strict isolation"
   );
   assert.match(acpRuntime, /const remoteIsolated = isRemoteIsolatedCaller\(\)/);
-  assert.match(acpRuntime, /const processSandboxed = shouldSandboxCurrentCaller\(\)/);
+  assert.match(acpRuntime, /const processSandboxed = shouldSandboxCurrentCaller\(\);/);
   assert.match(acpRuntime, /prepareSpawn:\s*processSandboxed/);
   assert.match(acpRuntime, /forbidden_path: terminal cwd/);
   assert.match(

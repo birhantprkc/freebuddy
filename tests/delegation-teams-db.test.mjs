@@ -263,7 +263,7 @@ test("delegation run and event reads are scoped to the conversation owner", asyn
   });
 });
 
-test("read-only delegation roles are enforced by workspace sandbox policy", () => {
+test("read-only delegation roles are enforced by workspace policy, not OS sandbox", () => {
   const runtime = fs.readFileSync(
     new URL("../electron/cli/runtime.ts", import.meta.url),
     "utf8"
@@ -276,11 +276,16 @@ test("read-only delegation roles are enforced by workspace sandbox policy", () =
     new URL("../electron/cli/acpRuntime.ts", import.meta.url),
     "utf8"
   );
-  assert.match(runtime, /shouldSandboxCurrentCaller\(\) \|\| readOnlyWorkspace/);
+  assert.match(runtime, /const processSandboxed = shouldSandboxCurrentCaller\(\);/);
+  assert.doesNotMatch(runtime, /shouldSandboxCurrentCaller\(\)\s*\|\|\s*readOnlyWorkspace/);
   assert.match(runtime, /!readOnlyWorkspace[\s\S]*reconcileNativeSkillLinks/);
   assert.match(sandbox, /readOnlyWorkspace \? \[workspaceRoot\] : \[\]/);
   assert.match(sandbox, /denyWrite/);
-  assert.match(acpRuntime, /shouldSandboxCurrentCaller\(\) \|\| readOnlyWorkspace/);
+  assert.match(acpRuntime, /const processSandboxed = shouldSandboxCurrentCaller\(\);/);
+  assert.doesNotMatch(
+    acpRuntime,
+    /shouldSandboxCurrentCaller\(\)\s*\|\|\s*readOnlyWorkspace/
+  );
   assert.match(acpRuntime, /readOnlyWorkspace/);
 });
 
