@@ -8,6 +8,7 @@ import {
   transitionDelegationEvent
 } from "./delegationRuns.js";
 import { DelegateConcurrencyQueue } from "./delegation/bus/concurrency.js";
+import { electronDelegationRepository } from "../runtime/adapters/delegationRepository.js";
 import {
   checkDelegateResultAction,
   decideDelegate,
@@ -95,6 +96,7 @@ function queueFor(deps: DelegateActionDeps): DelegateConcurrencyQueue<
   let q = queuesByDeps.get(deps);
   if (!q) {
     q = new DelegateConcurrencyQueue<DelegateExecArgs, DelegateExecResult>({
+      repository: electronDelegationRepository(),
       getPolicy: (runId) => deps.contextProvider(runId)?.policy,
       executor: async (args) => deps.executor(args),
       onResult: (childEventId, result) => {

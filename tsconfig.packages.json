@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/workflow-core" },
+    { "path": "./packages/delegation-core" },
+    { "path": "./packages/cli-stream" },
+    { "path": "./packages/agent-runtime" },
+    { "path": "./packages/workflow-runtime" },
+    { "path": "./packages/delegation-runtime" },
+    { "path": "./packages/storage-sqlite" },
+    { "path": "./packages/runtime-entry" },
+    { "path": "./packages/runtime-host" }
+  ]
+}

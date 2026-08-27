@@ -73,6 +73,8 @@ process.on("SIGTERM", () => {
 // Vite is ready in ~100ms; tsc for electron takes multiple seconds. Launching
 // Electron before build:electron finishes loads half-written dist-electron
 // modules and surfaces confusing ESM named-export SyntaxErrors.
+const buildPackages = run("npm", ["run", "build:packages"]);
+await waitForExit(buildPackages, "build:packages");
 const buildElectron = run("npm", ["run", "build:electron"]);
 const vite = run("npm", ["exec", "vite", "--", "--host", "127.0.0.1", "--port", "5173", "--strictPort"]);
 

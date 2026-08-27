@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useUpdaterStore, type UpdateStatus } from "@/store/updaterStore";
 import { useDebugLogsDialogStore } from "@/store/debugLogsDialogStore";
@@ -17,6 +17,124 @@ function formatReleaseNotes(notes: unknown): string | null {
     return text.trim() || null;
   }
   return null;
+}
+
+type RuntimeSnapshot = {
+  activeVersion: string | null;
+  pendingVersion: string | null;
+  lastKnownGoodVersion: string | null;
+  channel: string;
+  lastError?: string | null;
+};
+
+function RuntimePackPanel() {
+  const { t } = useTranslation();
+  const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const api = window.freebuddy?.runtimePack;
+
+  const reload = async () => {
+    if (!api) return;
+    setSnapshot(await api.status());
+  };
+
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  if (!api) return null;
+  const active = snapshot?.activeVersion || t("runtimePack.bundled");
+
+  return (
+    <section className="settings-section runtime-pack-section">
+      <h3>{t("runtimePack.sectionTitle")}</h3>
+      <dl className="runtime-pack-status">
+        <div>
+          <dt>{t("runtimePack.active")}</dt>
+          <dd>{active}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimePack.pending")}</dt>
+          <dd>{snapshot?.pendingVersion || "—"}</dd>
+        </div>
+        <div>
+          <dt>{t("runtimePack.lastKnownGood")}</dt>
+          <dd>{snapshot?.lastKnownGoodVersion || t("runtimePack.bundled")}</dd>
+        </div>
+      </dl>
+      <div className="about-update-actions">
+        <button
+          type="button"
+          className="primary-btn"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void api
+              .check()
+              .then((result) => {
+                setMessage(
+                  result.available
+                    ? t("runtimePack.available", { version: result.version ?? "" })
+                    : t("runtimePack.upToDate")
+                );
+                return reload();
+              })
+              .catch((err: Error) => {
+                setMessage(t("runtimePack.error", { message: err.message }));
+              })
+              .finally(() => setBusy(false));
+          }}
+        >
+          {busy ? t("runtimePack.checking") : t("runtimePack.check")}
+        </button>
+      </div>
+      {message && <p className="about-status">{message}</p>}
+      {snapshot?.lastError && <p className="about-error">{snapshot.lastError}</p>}
+      <details className="runtime-pack-advanced">
+        <summary>{t("runtimePack.advanced")}</summary>
+        <label className="runtime-pack-channel">
+          {t("runtimePack.channel")}
+          <select
+            value={snapshot?.channel ?? "stable"}
+            onChange={(event) => {
+              const channel = event.target.value as "stable" | "beta" | "development";
+              void api.setChannel(channel).then(() => reload());
+            }}
+          >
+            <option value="stable">{t("runtimePack.channelStable")}</option>
+            <option value="beta">{t("runtimePack.channelBeta")}</option>
+            <option value="development">{t("runtimePack.channelDevelopment")}</option>
+          </select>
+        </label>
+        <div className="about-update-actions">
+          <button
+            type="button"
+            className="link-btn"
+            disabled={!snapshot?.pendingVersion || busy}
+            onClick={() => {
+              if (!snapshot?.pendingVersion) return;
+              setBusy(true);
+              void api.activate(snapshot.pendingVersion).then(() => reload()).finally(() => setBusy(false));
+            }}
+          >
+            {t("runtimePack.activatePending")}
+          </button>
+          <button
+            type="button"
+            className="link-btn"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void api.rollback().then(() => reload()).finally(() => setBusy(false));
+            }}
+          >
+            {t("runtimePack.rollback")}
+          </button>
+        </div>
+      </details>
+    </section>
+  );
 }
 
 export function AboutTab() {
@@ -77,11 +195,16 @@ export function AboutTab() {
         <div className="about-card-meta">
           <div className="about-card-name">FreeBuddy</div>
           <div className="about-card-version">v{appVersion || "—"}</div>
+          <div className="about-card-platform">
+            {t("runtimePack.label")}: {t("runtimePack.bundled")}
+          </div>
           {platformLabel && (
             <div className="about-card-platform">{platformLabel}</div>
           )}
         </div>
       </section>
+
+      <RuntimePackPanel />
 
       <section className="settings-section">
         <h3>{t("updater.updateTitle")}</h3>

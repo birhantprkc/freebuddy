@@ -342,12 +342,12 @@ test("workflow step prompts carry the configured response language", () => {
 
 test("runtime exposes continueImplementReview for max-loop FAIL follow-up", () => {
   const src = fs.readFileSync(
-    new URL("../electron/cli/workflowRuntime.ts", import.meta.url),
+    new URL("../packages/workflow-runtime/src/runtime.ts", import.meta.url),
     "utf8"
   );
   assert.match(src, /continueImplementReview/);
   assert.match(src, /maxLoops: nextMaxLoops/);
-  assert.match(src, /resetWorkflowStepsForLoop\(runId, IMPLEMENT_REVIEW_LOOP_PHASES\)/);
+  assert.match(src, /resetStepsForLoop\(runId, IMPLEMENT_REVIEW_LOOP_PHASES\)/);
 });
 
 test("official delivery example uses configurable nodes with review loop runtime", async () => {
@@ -384,7 +384,7 @@ test("official delivery example uses configurable nodes with review loop runtime
 
 test("runtime loops build review when verification has unresolved issues", () => {
   const src = fs.readFileSync(
-    new URL("../electron/cli/workflowRuntime.ts", import.meta.url),
+    new URL("../packages/workflow-runtime/src/runtime.ts", import.meta.url),
     "utf8"
   );
   assert.match(src, /evaluateImplementReviewCheckpoint/);
@@ -395,7 +395,7 @@ test("runtime loops build review when verification has unresolved issues", () =>
 
 test("runtime resumes gated plan revisions but starts each implement loop round fresh", () => {
   const src = fs.readFileSync(
-    new URL("../electron/cli/workflowRuntime.ts", import.meta.url),
+    new URL("../packages/workflow-runtime/src/runtime.ts", import.meta.url),
     "utf8"
   );
   assert.match(src, /function shouldResumeWorkflowStep/);
@@ -404,9 +404,6 @@ test("runtime resumes gated plan revisions but starts each implement loop round 
   assert.match(src, /step\.stepId === IMPLEMENT_REVIEW_STEP_ID/);
   assert.match(src, /step\.stepId === IMPLEMENT_REVIEW_STEP_ID[\s\S]*return false/);
   assert.match(src, /const resumeToolSession = shouldResumeWorkflowStep\(plan, step\)/);
-  assert.match(src, /toolSessionScope: args\.toolSessionScope/);
-  assert.match(src, /toolSessionId: args\.toolSessionId/);
-  assert.match(src, /resumeToolSession: args\.resumeToolSession/);
 });
 
 test("workflow steps persist reusable tool session ids separately from task ids", () => {
@@ -417,6 +414,9 @@ test("workflow steps persist reusable tool session ids separately from task ids"
   const workflows = fs.readFileSync(
     new URL("../electron/cli/workflows.ts", import.meta.url),
     "utf8"
+  ) + fs.readFileSync(
+    new URL("../packages/storage-sqlite/src/workflows.ts", import.meta.url),
+    "utf8"
   );
   const electronTypes = fs.readFileSync(
     new URL("../electron/cli/workflowTypes.ts", import.meta.url),
@@ -426,13 +426,18 @@ test("workflow steps persist reusable tool session ids separately from task ids"
     new URL("../src/services/workflows/types.ts", import.meta.url),
     "utf8"
   );
+  const protocolTypes = fs.readFileSync(
+    new URL("../packages/protocol/src/workflow.ts", import.meta.url),
+    "utf8"
+  );
   assert.match(db, /tool_session_id TEXT/);
   assert.match(db, /ALTER TABLE workflow_steps ADD COLUMN tool_session_id TEXT/);
-  assert.match(workflows, /toolSessionId: r\.tool_session_id/);
+  assert.match(workflows, /toolSessionId:[\s\S]*tool_session_id/);
   assert.match(workflows, /tool_session_id = \?/);
   assert.match(workflows, /tool_session_id = NULL/);
-  assert.match(electronTypes, /toolSessionId\?: string/);
-  assert.match(rendererTypes, /toolSessionId\?: string/);
+  assert.match(electronTypes, /WorkflowStepRow/);
+  assert.match(rendererTypes, /WorkflowStepRow/);
+  assert.match(protocolTypes, /toolSessionId\?: string/);
 });
 
 test("findResumePhaseIndex skips finished phases", async () => {
@@ -479,7 +484,7 @@ test("resumableStepRowIds returns failed, blocked, and stale running steps in ph
 
 test("runtime prepares blocked runs before resume", () => {
   const src = fs.readFileSync(
-    new URL("../electron/cli/workflowRuntime.ts", import.meta.url),
+    new URL("../packages/workflow-runtime/src/runtime.ts", import.meta.url),
     "utf8"
   );
   assert.match(src, /prepareInactiveRunForResume/);

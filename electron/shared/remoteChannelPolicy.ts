@@ -61,6 +61,7 @@ const ALLOW = [
   "cli:listProjects",
   "cli:getProject",
   "cli:listRuntimes",
+  "runtime:status",
 
   // Attachments and browser.
   "browser-tool:resolve",
@@ -258,6 +259,11 @@ const DENY = [
   "updater:check",
   "updater:download",
   "updater:quitAndInstall",
+  "runtime:prepare",
+  "runtime:activate",
+  "runtime:rollback",
+  "runtime:check",
+  "runtime:setChannel",
 
   // Remote account administration stays on the desktop.
   "remote:setEnabled",

@@ -25,6 +25,14 @@ test("WorkflowRunPanel renders running actions and pause/resume/stop", () => {
   assert.match(src, /setInterval/);
 });
 
+test("WorkflowRunPanel polls pending approval and live runs for tree updates", () => {
+  const src = read("../src/components/Workflows/WorkflowRunPanel.tsx");
+  assert.match(src, /shouldPollTree/);
+  assert.match(src, /pending_approval/);
+  assert.match(src, /if \(!activeRun \|\| !shouldPollTree\) return/);
+  assert.match(src, /setInterval\(\(\) => void refresh\(activeRun\.id\), 1500\)/);
+});
+
 test("WorkflowRunPanel uses replay workflow snapshots as read-only state", () => {
   const src = read("../src/components/Workflows/WorkflowRunPanel.tsx");
   assert.match(src, /useReplayStore/);

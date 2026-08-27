@@ -32,12 +32,23 @@ test("workflow IPC handlers are registered", () => {
 
 test("workflow IPC registration recovers interrupted running workflows", () => {
   const ipc = read("../electron/cli/workflowIpc.ts");
-  const workflows = read("../electron/cli/workflows.ts");
+  const workflows = read("../electron/cli/workflows.ts") + read("../packages/storage-sqlite/src/workflows.ts");
   assert.match(ipc, /recoverInterruptedWorkflowRuns/);
   assert.match(ipc, /recoverInterruptedWorkflowRuns\(\)/);
   assert.match(workflows, /WHERE status = 'running'/);
   assert.match(workflows, /status = 'blocked'/);
   assert.match(workflows, /Interrupted by app restart/);
+});
+
+test("workflow start IPC waits until the runtime has begun the run", () => {
+  const ipc = read("../electron/cli/workflowIpc.ts");
+  const client = read("../electron/runtime/workflowRuntimeClient.ts");
+  const handlers = read("../packages/runtime-entry/src/rpc/serviceHandlers.ts");
+  assert.match(ipc, /await ensureRuntime\(event\)\.start\(runId\)/);
+  assert.doesNotMatch(ipc, /void ensureRuntime\(event\)\.start\(runId\)/);
+  assert.match(client, /kickDrive\(runId, "workflow.start"/);
+  assert.doesNotMatch(client, /void call\(runId, "workflow.start"/);
+  assert.match(handlers, /failed to leave pending_approval/);
 });
 
 test("workflow approveGate returns the runtime approval result", () => {

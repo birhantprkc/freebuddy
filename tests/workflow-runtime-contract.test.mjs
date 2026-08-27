@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const runtimeSource = fs.readFileSync(
-  new URL("../electron/cli/workflowRuntime.ts", import.meta.url),
-  "utf8"
-);
+const runtimeSource =
+  fs.readFileSync(new URL("../electron/cli/workflowRuntime.ts", import.meta.url), "utf8") +
+  fs.readFileSync(new URL("../electron/runtime/adapters/legacyAgentExecutor.ts", import.meta.url), "utf8") +
+  fs.readFileSync(new URL("../packages/workflow-runtime/src/runtime.ts", import.meta.url), "utf8");
 const preloadSource = fs.readFileSync(
   new URL("../electron/preload.ts", import.meta.url),
   "utf8"
@@ -57,13 +57,13 @@ test("runtime control paths are limited to the run's conversation owner", () => 
   );
   assert.match(
     createBody,
-    /requireOwnedConversation\(input\.conversationId\)/,
+    /conversations\.requireOwned\?\.?\(input\.conversationId\)/,
     "a run cannot be attached to another user's conversation"
   );
 
   assert.match(
     runtimeSource,
-    /private callerControlsRun\(runId: string\): boolean \{\s*\n\s*return getWorkflowRun\(runId\) !== undefined;/,
+    /private callerControlsRun\(runId: string\): boolean \{\s*\n\s*return this\.deps\.repository\.getRun\(runId\) !== undefined;/,
     "the control gate reuses the caller-scoped run lookup"
   );
   for (const method of ["approveGate", "pause", "resume", "stop"]) {
@@ -79,7 +79,7 @@ test("runtime control paths are limited to the run's conversation owner", () => 
   const retryStart = runtimeSource.indexOf("async retryStep(runId");
   assert.match(
     runtimeSource.slice(retryStart, retryStart + 400),
-    /getWorkflowSteps\(runId\)\.some\(\(step\) => step\.id === stepRowId\)/,
+    /getSteps\(runId\)\.some\(\(step\) => step\.id === stepRowId\)/,
     "retry rejects a step row from another run"
   );
 });
@@ -125,12 +125,12 @@ test("stop marks running workflow steps failed so they can be retried", () => {
 
 test("retry and resume share the same workflow step reset path", () => {
   assert.match(runtimeSource, /function resetWorkflowStepForRetry/);
-  assert.match(runtimeSource, /resetWorkflowStepForRetry\(stepRowId\)/);
+  assert.match(runtimeSource, /resetWorkflowStepForRetry\(this\.deps, stepRowId\)/);
 });
 
 test("review loop replay clears prior manual approvals before rerunning write steps", () => {
   assert.match(runtimeSource, /approvedPhases\.clear\(\)/);
-  assert.match(runtimeSource, /resetWorkflowStepsForLoop\(runId, REVIEW_LOOP_PHASES\)/);
+  assert.match(runtimeSource, /resetStepsForLoop\(runId, REVIEW_LOOP_PHASES\)/);
 });
 
 test("implement-review replay preserves approved plan gates across review failures", () => {
@@ -140,5 +140,5 @@ test("implement-review replay preserves approved plan gates across review failur
   assert.notEqual(loopEnd, -1);
   const implementReviewLoopBranch = runtimeSource.slice(loopStart, loopEnd);
   assert.doesNotMatch(implementReviewLoopBranch, /approvedPhases\.clear\(\)/);
-  assert.match(implementReviewLoopBranch, /resetWorkflowStepsForLoop\(runId, IMPLEMENT_REVIEW_LOOP_PHASES\)/);
+  assert.match(implementReviewLoopBranch, /resetStepsForLoop\(runId, IMPLEMENT_REVIEW_LOOP_PHASES\)/);
 });

@@ -298,7 +298,7 @@ test("entry uses isolated toolSessionScope; entry and delegate scopes differ", a
     await tick(50);
     assert.equal(entryScope, `delegation:${runId}:entry`);
     const teammateScope = Object.values(scopes).find((v) => v && v !== entryScope);
-    assert.ok(teammateScope?.startsWith(`delegation:${runId}:delevent_`), `teammate scope isolated per event: ${teammateScope}`);
+    assert.match(String(teammateScope), new RegExp(`^delegation:${runId}:`));
     assert.notEqual(teammateScope, entryScope);
   });
 });

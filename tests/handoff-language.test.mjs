@@ -76,7 +76,7 @@ test("transfer seed and context prefix localize with language preference", async
 
 test("cli run and workflow runtime apply agent language for context refs", () => {
   const ipc = read("electron/cli/ipc.ts");
-  const workflow = read("electron/cli/workflowRuntime.ts");
+  const workflow = read("electron/cli/workflowRuntime.ts") + read("electron/runtime/adapters/legacyAgentExecutor.ts");
   const context = read("electron/cli/conversationContext.ts");
 
   assert.match(ipc, /applyAgentLanguagePreference/);

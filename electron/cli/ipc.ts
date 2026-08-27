@@ -180,6 +180,7 @@ import {
   writeAuthenticationTerminal
 } from "./acpAuthTerminal.js";
 import { registerScheduledTaskIpc } from "./scheduledTasks.js";
+import { registerRuntimeIpc } from "../runtime/runtimeIpc.js";
 import { searchWorkspaceFiles } from "./workspaceFiles.js";
 import { getDataDir, getDb } from "./db.js";
 import { nanoid } from "nanoid";
@@ -1547,4 +1548,5 @@ export function registerCliIpc() {
   registerDelegationIpc();
   registerDelegationTeamIpc();
   registerScheduledTaskIpc();
+  registerRuntimeIpc();
 }

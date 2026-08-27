@@ -58,6 +58,17 @@ test("migration creates delegation_events table with expected columns", async (t
   });
 });
 
+test("migration creates host_idempotency_keys created_at index", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb((db) => {
+    const indexes = db.prepare("PRAGMA index_list('host_idempotency_keys')").all().map((i) => i.name);
+    assert.ok(
+      indexes.includes("idx_host_idempotency_keys_created_at"),
+      "idx_host_idempotency_keys_created_at missing"
+    );
+  });
+});
+
 test("delegation event terminal states reject late executor writes", async (t) => {
   if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
   await withDb(async () => {
@@ -252,7 +263,7 @@ test("delegation run and event reads are scoped to the conversation owner", asyn
   });
 });
 
-test("read-only delegation roles are enforced by workspace sandbox policy", () => {
+test("read-only delegation roles are enforced by workspace policy, not OS sandbox", () => {
   const runtime = fs.readFileSync(
     new URL("../electron/cli/runtime.ts", import.meta.url),
     "utf8"
@@ -265,11 +276,16 @@ test("read-only delegation roles are enforced by workspace sandbox policy", () =
     new URL("../electron/cli/acpRuntime.ts", import.meta.url),
     "utf8"
   );
-  assert.match(runtime, /shouldSandboxCurrentCaller\(\) \|\| readOnlyWorkspace/);
+  assert.match(runtime, /const processSandboxed = shouldSandboxCurrentCaller\(\);/);
+  assert.doesNotMatch(runtime, /shouldSandboxCurrentCaller\(\)\s*\|\|\s*readOnlyWorkspace/);
   assert.match(runtime, /!readOnlyWorkspace[\s\S]*reconcileNativeSkillLinks/);
   assert.match(sandbox, /readOnlyWorkspace \? \[workspaceRoot\] : \[\]/);
   assert.match(sandbox, /denyWrite/);
-  assert.match(acpRuntime, /shouldSandboxCurrentCaller\(\) \|\| readOnlyWorkspace/);
+  assert.match(acpRuntime, /const processSandboxed = shouldSandboxCurrentCaller\(\);/);
+  assert.doesNotMatch(
+    acpRuntime,
+    /shouldSandboxCurrentCaller\(\)\s*\|\|\s*readOnlyWorkspace/
+  );
   assert.match(acpRuntime, /readOnlyWorkspace/);
 });
 
@@ -429,5 +445,53 @@ test("delegation events cascade-delete with their run", async (t) => {
     });
     getDb().prepare("DELETE FROM workflow_runs WHERE id = ?").run(runId);
     assert.equal(listDelegationEvents(runId).length, 0);
+  });
+});
+
+test("insertDelegationEvent rethrows foreign key failures and is idempotent on primary key", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  await withDb(async () => {
+    const { createDelegationRun, insertDelegationEvent, getDelegationEvent } =
+      await import("../dist-electron/cli/delegationRuns.js");
+    const missingId = "missing-fk-event";
+    assert.throws(
+      () =>
+        insertDelegationEvent({
+          id: missingId,
+          runId: "no-such-run",
+          parentEventId: null,
+          agentId: "a",
+          agentName: "A",
+          roleLabel: "x",
+          taskText: "t",
+          depth: 0,
+          canWrite: false,
+          status: "pending"
+        }),
+      (error) => {
+        const code = error?.code ?? "";
+        return String(code).startsWith("SQLITE_CONSTRAINT") || /constraint/i.test(String(error));
+      }
+    );
+    assert.equal(getDelegationEvent(missingId), undefined);
+
+    const runId = createDelegationRun({ goal: "g", teamId: "t", teamSnapshotJson: "{}" });
+    const event = {
+      id: "dup-event",
+      runId,
+      parentEventId: null,
+      agentId: "a",
+      agentName: "A",
+      roleLabel: "x",
+      taskText: "t",
+      depth: 0,
+      canWrite: false,
+      status: "pending"
+    };
+    const first = insertDelegationEvent(event);
+    const second = insertDelegationEvent(event);
+    assert.equal(first, "dup-event");
+    assert.equal(second, "dup-event");
+    assert.equal(getDelegationEvent("dup-event")?.runId, runId);
   });
 });

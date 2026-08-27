@@ -6,7 +6,7 @@ import {
 import { getDelegationRunByConversation } from "../../delegationRuns.js";
 import { getDelegationTeam } from "../../delegationTeams.js";
 import { listCliMembers } from "../../members.js";
-import type { DelegationRuntime } from "../../delegationRuntime.js";
+import type { DelegationRuntimeHandle } from "../../../runtime/delegationRuntimeClient.js";
 
 export interface DelegationFollowUpInput {
   conversationId: string;
@@ -22,7 +22,7 @@ export type DelegationFollowUpResult =
  * instead of the bare cli:run MCP-injection bypass.
  */
 export async function handleDelegationFollowUp(
-  runtime: DelegationRuntime,
+  runtime: Pick<DelegationRuntimeHandle, "followUp">,
   input: DelegationFollowUpInput
 ): Promise<DelegationFollowUpResult> {
   const run = getDelegationRunByConversation(input.conversationId);

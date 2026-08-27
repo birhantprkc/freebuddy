@@ -2,6 +2,10 @@ import Database, { type Database as DB } from "better-sqlite3";
 import { app } from "electron";
 import path from "node:path";
 import fs from "node:fs";
+import {
+  installHostIdempotencySchema,
+  pruneHostIdempotencyResults
+} from "@freebuddy/storage-sqlite";
 import { cleanupOrphanHandoffTranscriptSnapshots } from "../shared/handoffTranscript.js";
 import { pruneOldLogs, LOG_RETENTION_DAYS } from "../shared/debugLogCore.js";
 
@@ -851,6 +855,12 @@ export function migrate(db: DB) {
       "ALTER TABLE workflow_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'workflow'"
     );
   }
+  if (!workflowRunCols.some((c) => c.name === "runtime_version")) {
+    db.exec("ALTER TABLE workflow_runs ADD COLUMN runtime_version TEXT");
+  }
+  if (!workflowRunCols.some((c) => c.name === "runtime_api_version")) {
+    db.exec("ALTER TABLE workflow_runs ADD COLUMN runtime_api_version TEXT");
+  }
 
   const workflowStepCols = db
     .prepare("PRAGMA table_info(workflow_steps)")
@@ -1001,4 +1011,10 @@ export function migrate(db: DB) {
   if (!currentScheduledTaskCols.some((c) => c.name === "config_option_overrides")) {
     db.exec("ALTER TABLE scheduled_tasks ADD COLUMN config_option_overrides TEXT");
   }
+
+  installHostIdempotencySchema(db);
+  pruneHostIdempotencyResults({
+    db,
+    owner: { ownerUserId: null, isAdmin: true }
+  });
 }
