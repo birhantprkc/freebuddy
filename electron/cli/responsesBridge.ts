@@ -181,6 +181,36 @@ export function responsesInputToChatMessages(
       });
       continue;
     }
+    if (item.type === "local_shell_call") {
+      const action = asObject(item.action);
+      const command = action ? extractLocalShellCommand(action.command) : "";
+      pendingToolCalls.push({
+        id: typeof item.call_id === "string" && item.call_id
+          ? item.call_id
+          : genId("call"),
+        type: "function",
+        function: {
+          name:
+            typeof item.name === "string" && item.name ? item.name : "shell",
+          arguments: JSON.stringify({ command })
+        }
+      });
+      continue;
+    }
+    if (item.type === "local_shell_call_output") {
+      flushToolCalls();
+      const output =
+        typeof item.output === "string"
+          ? item.output
+          : JSON.stringify(item.output ?? "");
+      messages.push({
+        role: "tool",
+        tool_call_id:
+          typeof item.call_id === "string" ? item.call_id : "",
+        content: output
+      });
+      continue;
+    }
     if (item.type === "reasoning") {
       continue;
     }
@@ -215,11 +245,80 @@ export interface ChatTool {
   };
 }
 
+/**
+ * Coerce a `local_shell` action command (argv array or string) into a command
+ * line string for the chat message history. Codex wraps commands as
+ * `["bash", "-lc", "<line>"]` / `["sh", "-c", "<line>"]`; unwrap those so the
+ * model sees the actual command it ran instead of the shell wrapper joined
+ * with spaces (which would mangle multi-word arguments).
+ */
+function extractLocalShellCommand(command: unknown): string {
+  if (typeof command === "string") return command;
+  if (Array.isArray(command)) {
+    const parts = command
+      .map((part) => (typeof part === "string" ? part : String(part)))
+      .filter((part) => part.length > 0);
+    if (parts.length >= 3) {
+      const shell = parts[0];
+      const flag = parts[1];
+      if (
+        (shell === "bash" || shell === "sh" || shell === "zsh") &&
+        (flag === "-c" || flag === "-lc")
+      ) {
+        return parts.slice(2).join(" ");
+      }
+    }
+    return parts.join(" ");
+  }
+  return "";
+}
+
+/** Parse a shell function call's arguments back into a command string. */
+function parseShellCommandArguments(args: string): string {
+  try {
+    const parsed = JSON.parse(args);
+    const obj = asObject(parsed);
+    if (obj && typeof obj.command === "string") return obj.command;
+  } catch {
+    /* fall through */
+  }
+  return args;
+}
+
+/**
+ * Build a Responses `local_shell_call` output item from a chat function call
+ * named "shell". The command runs through `bash -lc` (codex's own convention)
+ * so the model-provided command line is executed in a login shell.
+ */
+function buildLocalShellCallItem(call: {
+  id: string;
+  name: string;
+  arguments: string;
+}): JsonObject {
+  const itemId = genId("fc");
+  const callId = call.id || genId("call");
+  const command = parseShellCommandArguments(call.arguments);
+  return {
+    id: itemId,
+    type: "local_shell_call",
+    status: "completed",
+    call_id: callId,
+    action: { type: "exec", command: ["bash", "-lc", command] }
+  };
+}
+
 export function responsesToolsToChatTools(
   tools: unknown
-): { tools: ChatTool[]; customToolNames: string[] } {
+): {
+  tools: ChatTool[];
+  customToolNames: string[];
+  localShellToolNames: string[];
+  droppedToolTypes: string[];
+} {
   const out: ChatTool[] = [];
   const customToolNames: string[] = [];
+  const localShellToolNames: string[] = [];
+  const droppedToolTypes: string[] = [];
   for (const raw of asArray(tools)) {
     const tool = asObject(raw);
     if (!tool) continue;
@@ -253,9 +352,42 @@ export function responsesToolsToChatTools(
           }
         }
       });
+      continue;
     }
+    // Codex exposes the shell tool as the Responses API `local_shell` tool type.
+    // Chat/completions providers only understand `function` tools, so map it to
+    // a `shell` function taking a `command` string and translate the call back
+    // into a `local_shell_call` item on the return path. Without this the shell
+    // tool is silently dropped and the model can no longer execute commands.
+    if (tool.type === "local_shell") {
+      const name =
+        typeof tool.name === "string" && tool.name ? tool.name : "shell";
+      localShellToolNames.push(name);
+      out.push({
+        type: "function",
+        function: {
+          name,
+          description:
+            typeof tool.description === "string" && tool.description
+              ? tool.description
+              : "Runs a shell command on the user's machine.",
+          parameters: {
+            type: "object",
+            properties: {
+              command: {
+                type: "string",
+                description: "The shell command to execute."
+              }
+            },
+            required: ["command"]
+          }
+        }
+      });
+      continue;
+    }
+    droppedToolTypes.push(String(tool.type ?? "unknown"));
   }
-  return { tools: out, customToolNames };
+  return { tools: out, customToolNames, localShellToolNames, droppedToolTypes };
 }
 
 export function mapToolChoice(
@@ -272,6 +404,8 @@ export function mapToolChoice(
 export interface ResponsesToChatResult {
   chat: JsonObject;
   customToolNames: string[];
+  localShellToolNames: string[];
+  droppedToolTypes: string[];
   stream: boolean;
 }
 
@@ -282,7 +416,8 @@ export function translateResponsesRequestToChat(
   if (!obj || typeof obj.model !== "string" || !obj.model) return undefined;
 
   const messages = responsesInputToChatMessages(obj);
-  const { tools, customToolNames } = responsesToolsToChatTools(obj.tools);
+  const { tools, customToolNames, localShellToolNames, droppedToolTypes } =
+    responsesToolsToChatTools(obj.tools);
 
   const chat: JsonObject = {
     model: obj.model,
@@ -309,7 +444,13 @@ export function translateResponsesRequestToChat(
   if (chat.stream === true) {
     chat.stream_options = { include_usage: true };
   }
-  return { chat, customToolNames, stream: chat.stream === true };
+  return {
+    chat,
+    customToolNames,
+    localShellToolNames,
+    droppedToolTypes,
+    stream: chat.stream === true
+  };
 }
 
 /** Best-effort fallback when a provider rejects optional chat extensions. */
@@ -358,6 +499,7 @@ export class ChatToResponsesStream {
   readonly responseId = genId("resp");
   private readonly model: string;
   private readonly customToolNames: Set<string>;
+  private readonly localShellToolNames: Set<string>;
   private outputIndex = 0;
   private usage: JsonObject | undefined;
   private finished = false;
@@ -370,9 +512,14 @@ export class ChatToResponsesStream {
     { id?: string; name?: string; arguments: string }
   >();
 
-  constructor(model: string, customToolNames: string[] = []) {
+  constructor(
+    model: string,
+    customToolNames: string[] = [],
+    localShellToolNames: string[] = []
+  ) {
     this.model = model;
     this.customToolNames = new Set(customToolNames);
+    this.localShellToolNames = new Set(localShellToolNames);
   }
 
   hasUpstreamError(): boolean {
@@ -469,8 +616,31 @@ export class ChatToResponsesStream {
     const sorted = [...this.toolCalls.entries()].sort((a, b) => a[0] - b[0]);
     for (const [, call] of sorted) {
       if (!call.name) continue;
-      const itemId = genId("fc");
       const callId = call.id ?? genId("call");
+      if (this.localShellToolNames.has(call.name)) {
+        const item = buildLocalShellCallItem({
+          id: callId,
+          name: call.name,
+          arguments: call.arguments
+        });
+        events.push(
+          serializeSse({
+            type: "response.output_item.added",
+            output_index: this.outputIndex,
+            item: { ...item, status: "in_progress" }
+          })
+        );
+        events.push(
+          serializeSse({
+            type: "response.output_item.done",
+            output_index: this.outputIndex,
+            item
+          })
+        );
+        this.outputIndex += 1;
+        continue;
+      }
+      const itemId = genId("fc");
       const args = this.unwrapCustomArguments(call.name, call.arguments);
       const item = {
         id: itemId,
@@ -673,13 +843,15 @@ export class ChatToResponsesStream {
 /** Non-stream chat JSON → Responses response object. */
 export function translateChatResponseToResponses(
   chat: unknown,
-  fallbackModel?: string
+  fallbackModel?: string,
+  localShellToolNames: string[] = []
 ): JsonObject | undefined {
   const obj = asObject(chat);
   const choice = asObject(asArray(obj?.choices)[0]);
   const message = asObject(choice?.message);
   if (!obj || !message) return undefined;
 
+  const localShellNames = new Set(localShellToolNames);
   const output: JsonObject[] = [];
   const reasoning = message.reasoning_content ?? message.reasoning;
   if (typeof reasoning === "string" && reasoning) {
@@ -706,6 +878,16 @@ export function translateChatResponseToResponses(
     const call = asObject(raw);
     const fn = asObject(call?.function);
     if (!call || !fn || typeof fn.name !== "string") continue;
+    if (localShellNames.has(fn.name)) {
+      output.push(
+        buildLocalShellCallItem({
+          id: typeof call.id === "string" ? call.id : "",
+          name: fn.name,
+          arguments: typeof fn.arguments === "string" ? fn.arguments : ""
+        })
+      );
+      continue;
+    }
     output.push({
       id: genId("fc"),
       type: "function_call",
@@ -818,6 +1000,33 @@ export interface BridgeRoute {
   base: string;
   /** Chat endpoint path under base; auto-upgraded to /v1/… for gateways. */
   chatPath: string;
+}
+
+export interface BridgeRequestLog {
+  model: string;
+  stream: boolean;
+  toolNames: string[];
+  customToolNames: string[];
+  localShellToolNames: string[];
+  droppedToolTypes: string[];
+}
+
+/** Injected from the Electron main process so this module stays Electron-free. */
+let bridgeLogger: ((log: BridgeRequestLog) => void) | undefined;
+
+/** Wire a logger to surface tool-translation summaries in the debug log. */
+export function setResponsesBridgeLogger(
+  logger: ((log: BridgeRequestLog) => void) | undefined
+): void {
+  bridgeLogger = logger;
+}
+
+function logBridgeRequest(log: BridgeRequestLog): void {
+  try {
+    bridgeLogger?.(log);
+  } catch {
+    /* never let logging break a request */
+  }
 }
 
 export function registerCodexChatBridgeRoute(
@@ -988,6 +1197,17 @@ async function handleBridgeRequest(
     return;
   }
 
+  logBridgeRequest({
+    model: String(translated.chat.model ?? ""),
+    stream: translated.stream,
+    toolNames: (asArray(translated.chat.tools) as JsonObject[])
+      .map((tool) => asObject(tool?.function)?.name)
+      .filter((name): name is string => typeof name === "string"),
+    customToolNames: translated.customToolNames,
+    localShellToolNames: translated.localShellToolNames,
+    droppedToolTypes: translated.droppedToolTypes
+  });
+
   const authorization = req.headers.authorization;
   const controller = new AbortController();
   res.on("close", () => {
@@ -1098,7 +1318,8 @@ async function handleBridgeRequest(
     for (const event of synthesizeSseFromChatText(
       bodyText,
       requestModel ?? translated.chat.model as string,
-      translated.customToolNames
+      translated.customToolNames,
+      translated.localShellToolNames
     )) {
       res.write(event);
     }
@@ -1117,7 +1338,11 @@ async function handleBridgeRequest(
     sendJson(res, 502, { error: { message } });
     return;
   }
-  const responseObj = translateChatResponseToResponses(chatJson, requestModel);
+  const responseObj = translateChatResponseToResponses(
+    chatJson,
+    requestModel,
+    translated.localShellToolNames
+  );
   if (!responseObj) {
     sendJson(res, 502, {
       error: {
@@ -1150,9 +1375,10 @@ function basePathHasVersionSegment(base: string): boolean {
 function synthesizeSseFromChatText(
   text: string,
   model: string,
-  customToolNames: string[]
+  customToolNames: string[],
+  localShellToolNames: string[] = []
 ): string[] {
-  const stream = new ChatToResponsesStream(model, customToolNames);
+  const stream = new ChatToResponsesStream(model, customToolNames, localShellToolNames);
   const parser = new SseParser();
   const events = [...stream.begin()];
   const feed = (frames: SseFrame[]) => {
@@ -1231,7 +1457,8 @@ async function pipeUpstreamSse(
   writeSseHead(res);
   const stream = new ChatToResponsesStream(
     requestModel ?? translated.chat.model as string,
-    translated.customToolNames
+    translated.customToolNames,
+    translated.localShellToolNames
   );
   for (const event of stream.begin()) res.write(event);
 

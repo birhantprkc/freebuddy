@@ -129,3 +129,50 @@ test(
     manager.release(terminalId);
   }
 );
+
+test(
+  "terminal manager auto-routes whitespace command lines through the shell",
+  { skip: process.platform === "win32" },
+  async () => {
+    // CodeBuddy-style request: a full command line in `command` with no
+    // `args` and no commandIsShellLine flag. Without the heuristic this would
+    // spawn the literal string "printf codebuddy-shell-line" (ENOENT).
+    const manager = createAcpTerminalManager({});
+    const { terminalId } = await manager.create({
+      sessionId: "sess-codebuddy-shell-line",
+      command: `printf '%s' "codebuddy-shell-line"`
+    });
+
+    const exit = await manager.waitForExit(terminalId);
+    const snap = manager.output(terminalId);
+
+    assert.equal(exit.exitCode, 0);
+    assert.equal(snap.output, "codebuddy-shell-line");
+
+    manager.release(terminalId);
+  }
+);
+
+test("terminal manager surfaces spawn failures instead of silent exit 1", async () => {
+  const errors = [];
+  const manager = createAcpTerminalManager({
+    onSpawnError: (info) => errors.push(info)
+  });
+  // A single nonexistent binary (no whitespace) so the heuristic does not kick
+  // in; cross-spawn emits "error" (ENOENT) which must be captured.
+  const { terminalId } = await manager.create({
+    sessionId: "sess-spawn-error",
+    command: "/definitely/not/a/real/binary-freebuddy-0xCAFEBABE",
+    args: []
+  });
+
+  const exit = await manager.waitForExit(terminalId);
+  const snap = manager.output(terminalId);
+
+  assert.equal(exit.exitCode, 1);
+  assert.match(snap.output, /terminal spawn failed/i);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].error.message, /ENOENT|not found|spawn/i);
+
+  manager.release(terminalId);
+});

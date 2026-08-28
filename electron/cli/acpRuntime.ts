@@ -235,9 +235,13 @@ export async function runAcpAgent({
     (args.knownAgentStreamMessageIds ?? []).length === 0;
   const terminalManager = createAcpTerminalManager({
     defaultCwd: args.cwd,
-    // Grok ACP currently sends a complete command line in `command` (for
-    // example `/bin/bash -lc pwd`) without a separate `args` array.
-    commandIsShellLine: args.adapter === "grok-acp",
+    // Grok ACP and CodeBuddy ACP both send a complete command line in
+    // `command` (for example `/bin/bash -lc pwd` or `git status`) without a
+    // separate `args` array. Route those through the system shell instead of
+    // spawning the whole string as an executable name (which fails with
+    // ENOENT and silently reports exit 1 / no output).
+    commandIsShellLine:
+      args.adapter === "grok-acp" || args.adapter === "codebuddy-acp",
     prepareSpawn: processSandboxed
       ? async (input) => {
           const workspaceRoot = args.cwd;
@@ -261,6 +265,17 @@ export async function runAcpAgent({
         }
       : undefined,
     onPreparedSpawnExit: cleanupSandboxCommand,
+    onSpawnError: ({ terminalId, command, args: spawnArgs, cwd, error }) => {
+      logMain().error("acp", "terminal spawn failed", {
+        adapter: args.adapter,
+        sessionId: args.sessionId,
+        terminalId,
+        command,
+        args: spawnArgs,
+        cwd,
+        error: error.message
+      });
+    },
     onOutput: (terminalId, snap) => {
       emit({
         type: "terminal-update",

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import type { ChildProcess } from "node:child_process";
 import spawn from "cross-spawn";
 
@@ -72,6 +73,13 @@ export function createAcpTerminalManager(options: {
     env: Record<string, string | undefined>;
   }>;
   onPreparedSpawnExit?: () => void;
+  onSpawnError?: (info: {
+    terminalId: string;
+    command: string;
+    args: string[];
+    cwd: string;
+    error: Error;
+  }) => void;
 }): AcpTerminalManager {
   const terminals = new Map<string, TerminalRecord>();
 
@@ -135,8 +143,18 @@ export function createAcpTerminalManager(options: {
 
       const cwd = params.cwd || options.defaultCwd || process.cwd();
       const rawArgs = params.args ?? [];
+      // Some ACP agents (Grok, CodeBuddy, …) send a complete shell command line
+      // in `command` without a separate `args` array. When the caller flagged
+      // shell-line mode, or when the command contains whitespace and is not an
+      // existing executable path, route it through the system shell so it does
+      // not get spawned verbatim as a nonexistent binary (ENOENT → silent
+      // exit 1, no output).
+      const looksLikeShellLine =
+        rawArgs.length === 0 &&
+        /\s/.test(params.command) &&
+        !fs.existsSync(params.command);
       const shouldRunShellLine =
-        options.commandIsShellLine && rawArgs.length === 0;
+        (options.commandIsShellLine && rawArgs.length === 0) || looksLikeShellLine;
       const command = shouldRunShellLine
         ? process.platform === "win32"
           ? process.env.ComSpec || "cmd.exe"
@@ -180,7 +198,18 @@ export function createAcpTerminalManager(options: {
         if (options.prepareSpawn) options.onPreparedSpawnExit?.();
         markExited(record, code, signal);
       });
-      child.on("error", () => {
+      child.on("error", (error) => {
+        const message =
+          `\n[freebuddy] terminal spawn failed: ${error.message}\n` +
+          `[freebuddy] command: ${command} ${commandArgs.join(" ")}\n`;
+        appendOutput(record, Buffer.from(message, "utf8"));
+        options.onSpawnError?.({
+          terminalId,
+          command,
+          args: commandArgs,
+          cwd,
+          error
+        });
         markExited(record, 1, null);
       });
 

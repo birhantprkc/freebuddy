@@ -177,6 +177,8 @@ test("translateResponsesRequestToChat maps instructions, input and tools", (t) =
     function: { name: "shell" }
   });
   assert.deepEqual(result.customToolNames, ["apply_patch"]);
+  assert.deepEqual(result.localShellToolNames, []);
+  assert.deepEqual(result.droppedToolTypes, ["web_search"]);
 
   const messages = chat.messages;
   assert.equal(messages[0].role, "system");
@@ -211,6 +213,134 @@ test("translateResponsesRequestToChat maps instructions, input and tools", (t) =
   assert.equal(simple.chat.stream_options, undefined);
   assert.equal(simple.chat.messages[0].role, "user");
   assert.equal(simple.chat.messages[0].content, "hi");
+});
+
+test("translateResponsesRequestToChat maps local_shell tools and call history", (t) => {
+  if (!bridge) {
+    t.skip("dist-electron bridge not built yet");
+    return;
+  }
+  const { translateResponsesRequestToChat } = bridge;
+  const result = translateResponsesRequestToChat({
+    model: "gpt-5.6-terra",
+    stream: true,
+    input: [
+      { type: "message", role: "user", content: [{ type: "input_text", text: "which branch" }] },
+      {
+        type: "local_shell_call",
+        call_id: "call_shell_1",
+        action: { type: "exec", command: ["bash", "-lc", "git branch --show-current"] }
+      },
+      {
+        type: "local_shell_call_output",
+        call_id: "call_shell_1",
+        output: "main"
+      }
+    ],
+    tools: [{ type: "local_shell" }]
+  });
+
+  assert.ok(result);
+  assert.deepEqual(result.localShellToolNames, ["shell"]);
+  assert.deepEqual(result.droppedToolTypes, []);
+
+  const chat = result.chat;
+  assert.equal(chat.tools.length, 1);
+  assert.equal(chat.tools[0].type, "function");
+  assert.equal(chat.tools[0].function.name, "shell");
+  assert.deepEqual(chat.tools[0].function.parameters.required, ["command"]);
+
+  const messages = chat.messages;
+  // user message, assistant tool_calls (from local_shell_call), tool output
+  assert.equal(messages[0].role, "user");
+  assert.equal(messages[1].role, "assistant");
+  assert.equal(messages[1].tool_calls[0].id, "call_shell_1");
+  assert.equal(messages[1].tool_calls[0].function.name, "shell");
+  assert.deepEqual(
+    JSON.parse(messages[1].tool_calls[0].function.arguments),
+    { command: "git branch --show-current" },
+    "local_shell argv must be joined into a single command string"
+  );
+  assert.equal(messages[2].role, "tool");
+  assert.equal(messages[2].tool_call_id, "call_shell_1");
+  assert.equal(messages[2].content, "main");
+});
+
+test("ChatToResponsesStream emits local_shell_call items for shell tool calls", (t) => {
+  if (!bridge) {
+    t.skip("dist-electron bridge not built yet");
+    return;
+  }
+  const stream = new bridge.ChatToResponsesStream("gpt-5.6-terra", [], ["shell"]);
+  const chunks = [];
+  for (const raw of stream.begin()) chunks.push(...sseDataChunks(raw));
+  for (const chunk of [
+    {
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call_shell_2",
+                function: { name: "shell", arguments: "{\"command\":\"git status\"}" }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    { choices: [{ delta: {}, finish_reason: "tool_calls" }] }
+  ]) {
+    for (const raw of stream.handleChatChunk(chunk)) chunks.push(...sseDataChunks(raw));
+  }
+  for (const raw of stream.finish()) chunks.push(...sseDataChunks(raw));
+
+  const events = chunks
+    .filter((line) => line !== "[DONE]")
+    .map((line) => JSON.parse(line));
+
+  const callDone = events.find(
+    (event) =>
+      event.type === "response.output_item.done" &&
+      event.item.type === "local_shell_call"
+  );
+  assert.ok(callDone, "expected a local_shell_call output item");
+  assert.equal(callDone.item.call_id, "call_shell_2");
+  assert.deepEqual(callDone.item.action, { type: "exec", command: ["bash", "-lc", "git status"] });
+});
+
+test("translateChatResponseToResponses emits local_shell_call for non-stream responses", (t) => {
+  if (!bridge) {
+    t.skip("dist-electron bridge not built yet");
+    return;
+  }
+  const responseObj = bridge.translateChatResponseToResponses(
+    {
+      id: "chat_1",
+      model: "gpt-5.6-terra",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            tool_calls: [
+              {
+                id: "call_shell_3",
+                function: { name: "shell", arguments: "{\"command\":\"pwd\"}" }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "gpt-5.6-terra",
+    ["shell"]
+  );
+  assert.ok(responseObj);
+  const item = responseObj.output.find((entry) => entry.type === "local_shell_call");
+  assert.ok(item);
+  assert.equal(item.call_id, "call_shell_3");
+  assert.deepEqual(item.action, { type: "exec", command: ["bash", "-lc", "pwd"] });
 });
 
 test("stripOptionalChatFields removes chat extensions providers reject", (t) => {

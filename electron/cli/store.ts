@@ -10,10 +10,12 @@ import {
 import { buildCodexAppServerWrapperContent } from "./codexByokWrapper.js";
 import {
   registerCodexChatBridgeRoute,
+  setResponsesBridgeLogger,
   startResponsesBridge
 } from "./responsesBridge.js";
 import { getDataDir, getDb } from "./db.js";
 import { getCallerUserId, isCallerAdmin } from "./callerContext.js";
+import { logMain } from "../debugLog.js";
 
 export interface CLICodexByokConfig {
   enabled?: boolean;
@@ -416,6 +418,16 @@ function hasCodexChatWireByok(): boolean {
  */
 export async function ensureCodexChatBridge(): Promise<void> {
   if (!hasCodexChatWireByok()) return;
+  setResponsesBridgeLogger((log) => {
+    logMain().info("responsesBridge", "request translated", {
+      model: log.model,
+      stream: log.stream,
+      tools: log.toolNames,
+      localShell: log.localShellToolNames,
+      custom: log.customToolNames,
+      droppedToolTypes: log.droppedToolTypes
+    });
+  });
   await startResponsesBridge();
 }
 
