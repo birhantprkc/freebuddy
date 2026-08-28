@@ -42,7 +42,7 @@ test("task workspace inspection lists the current and available local branches",
 
   const info = await inspectTaskWorkspace(repo);
   assert.equal(info.isGitRepository, true);
-  assert.equal(path.resolve(info.root), path.resolve(repo));
+  assert.equal(info.root, fs.realpathSync.native(repo));
   assert.equal(info.currentBranch, "main");
   assert.deepEqual(info.branches, ["main", "feature/context-bar"]);
 });
@@ -104,7 +104,7 @@ test("worktree mode creates an isolated checkout from the selected branch", asyn
 
   assert.equal(prepared.mode, "worktree");
   assert.equal(prepared.branch, "feature/context-bar");
-  assert.equal(path.resolve(prepared.sourceCwd), path.resolve(repo));
+  assert.equal(prepared.sourceCwd, fs.realpathSync.native(repo));
   assert.equal(fs.existsSync(prepared.cwd), true);
   assert.equal(git(prepared.cwd, ["branch", "--show-current"]), "");
   assert.equal(
@@ -128,7 +128,7 @@ test("local mode switches branches only from a clean workspace", async (t) => {
     },
     path.join(tempRoot, "unused")
   );
-  assert.equal(prepared.cwd, path.resolve(repo));
+  assert.equal(prepared.cwd, fs.realpathSync.native(repo));
   assert.equal(git(repo, ["branch", "--show-current"]), "feature/context-bar");
 
   fs.writeFileSync(path.join(repo, "dirty.txt"), "dirty\n", "utf8");

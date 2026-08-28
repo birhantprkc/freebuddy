@@ -55,7 +55,11 @@ function normalizeDirectory(cwd: string): string {
   if (!stat.isDirectory()) {
     throw new Error("Task workspace must be a directory");
   }
-  return normalized;
+  try {
+    return fs.realpathSync.native(normalized);
+  } catch {
+    return normalized;
+  }
 }
 
 function isWithin(root: string, candidate: string): boolean {
@@ -86,7 +90,8 @@ export async function inspectTaskWorkspace(cwd: string): Promise<GitWorkspaceInf
 
   let root: string;
   try {
-    root = path.resolve(await runGit(directory, ["rev-parse", "--show-toplevel"]));
+    const gitRoot = path.resolve(await runGit(directory, ["rev-parse", "--show-toplevel"]));
+    root = fs.realpathSync.native(gitRoot);
   } catch {
     return { isGitRepository: false, branches: [] };
   }
