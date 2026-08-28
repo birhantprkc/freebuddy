@@ -181,15 +181,28 @@ function extractModelFromConfigPair(pair: string | undefined): string | undefine
 }
 
 /**
- * BYOK sessions must always ship a model catalog. Even when the selected
- * model id looks like a built-in OpenAI slug (gpt-5.6-…), codex resolves
- * custom providers against its bundled metadata, whose gpt-5.6* entries hide
- * every tool behind Responses-Lite/code-mode for non-OpenAI endpoints
- * (openai/codex#34758). Shipping a catalog entry with shell_type
- * shell_command forces standard tool exposure through the chat bridge.
+ * Slugs from ~/.codex/models_cache.json. Used so the BYOK catalog covers
+ * every model the in-session ACP model picker can select — the selected model
+ * arrives via session/set_config_option AFTER the env is resolved, so the
+ * catalog must be prepared for any of codex's known models.
  */
-function shouldCreateCodexModelCatalog(model: string): boolean {
-  return model.trim().length > 0;
+function readCachedCodexModelSlugs(): string[] {
+  const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+  try {
+    const parsed = JSON.parse(
+      fs.readFileSync(path.join(codexHome, "models_cache.json"), "utf8")
+    );
+    const models = Array.isArray(parsed?.models) ? parsed.models : [];
+    const slugs: string[] = [];
+    for (const entry of models) {
+      const slug =
+        entry && typeof entry.slug === "string" ? entry.slug.trim() : "";
+      if (slug) slugs.push(slug);
+    }
+    return slugs;
+  } catch {
+    return [];
+  }
 }
 
 function safeCatalogFilePart(value: string): string {
@@ -715,14 +728,16 @@ export function resolveCodexByokEnv(
   const envKey = byok.envKey?.trim() || "OPENAI_API_KEY";
   const model = extractModelArg(readOverrideExtraArgs(overrideId));
   const configuredModels = normalizeByokModels(byok.models);
-  const catalogModels = configuredModels.length
-    ? normalizeByokModels([
-        ...configuredModels,
-        ...(model ? [{ id: model }] : [])
-      ])
-    : model && shouldCreateCodexModelCatalog(model)
-      ? [{ id: model }]
-      : [];
+  // The catalog must cover configured models, any explicitly selected model,
+  // and — because the in-session picker selects models via ACP after env
+  // resolution — every cached codex model slug. Without a matching catalog
+  // entry codex falls back to its bundled gpt-5.6* metadata, which hides all
+  // tools behind Responses-Lite for custom providers (openai/codex#34758).
+  const catalogModels = normalizeByokModels([
+    ...configuredModels,
+    ...(model ? [{ id: model }] : []),
+    ...readCachedCodexModelSlugs().map((slug) => ({ id: slug }))
+  ]);
   const modelCatalogPath = createCodexByokModelCatalog(
     catalogModels,
     byok.contextWindow

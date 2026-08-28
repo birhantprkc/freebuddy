@@ -166,7 +166,17 @@ test("Codex BYOK model catalog is written even for gpt-* model ids", () => {
   );
   assert.match(
     storeSource,
-    /function shouldCreateCodexModelCatalog\(model: string\): boolean \{\s*return model\.trim\(\)\.length > 0;\s*\}/,
-    "any non-empty BYOK model id must produce a catalog entry"
+    /function readCachedCodexModelSlugs/,
+    "cached codex model slugs feed the BYOK catalog"
+  );
+  assert.match(
+    storeSource,
+    /\.\.\.readCachedCodexModelSlugs\(\)\.map\(\(slug\) => \(\{ id: slug \}\)\)/,
+    "BYOK catalog must cover every cached codex model because the in-session picker selects models via ACP after env resolution"
+  );
+  assert.match(
+    storeSource,
+    /models_cache\.json/,
+    "cached slugs come from codex's models_cache.json"
   );
 });
