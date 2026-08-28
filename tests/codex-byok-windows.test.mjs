@@ -153,3 +153,20 @@ test("Codex BYOK model catalog template merges fallback to keep required fields"
     "merged template must drop code-mode tool_mode overrides"
   );
 });
+
+test("Codex BYOK model catalog is written even for gpt-* model ids", () => {
+  // The old guard skipped catalog creation for gpt-*/o-series ids, so BYOK
+  // sessions on those models never got a catalog, fell back to codex's
+  // bundled gpt-5.6* metadata, and lost all tools via Responses-Lite
+  // (openai/codex#34758).
+  assert.doesNotMatch(
+    storeSource,
+    /o\[1345\]/,
+    "the gpt-*/o-series guard must not skip BYOK catalog creation"
+  );
+  assert.match(
+    storeSource,
+    /function shouldCreateCodexModelCatalog\(model: string\): boolean \{\s*return model\.trim\(\)\.length > 0;\s*\}/,
+    "any non-empty BYOK model id must produce a catalog entry"
+  );
+});

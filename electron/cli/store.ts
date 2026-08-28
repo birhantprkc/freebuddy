@@ -180,10 +180,16 @@ function extractModelFromConfigPair(pair: string | undefined): string | undefine
   return (quoted ? quoted[2] : raw).trim() || undefined;
 }
 
+/**
+ * BYOK sessions must always ship a model catalog. Even when the selected
+ * model id looks like a built-in OpenAI slug (gpt-5.6-…), codex resolves
+ * custom providers against its bundled metadata, whose gpt-5.6* entries hide
+ * every tool behind Responses-Lite/code-mode for non-OpenAI endpoints
+ * (openai/codex#34758). Shipping a catalog entry with shell_type
+ * shell_command forces standard tool exposure through the chat bridge.
+ */
 function shouldCreateCodexModelCatalog(model: string): boolean {
-  const normalized = model.trim().toLowerCase();
-  if (!normalized) return false;
-  return !/^(gpt-|o[1345](?:-|$)|openai[/:])/.test(normalized);
+  return model.trim().length > 0;
 }
 
 function safeCatalogFilePart(value: string): string {
