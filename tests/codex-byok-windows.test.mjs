@@ -125,3 +125,31 @@ test("Claude BYOK compaction preserves window instead of dropping it on persist"
     "storage must pass the canonical contextWindow so compaction.window stays synced"
   );
 });
+
+test("Codex BYOK model catalog template merges fallback to keep required fields", () => {
+  // The ~/.codex/models_cache.json template lacks required catalog fields
+  // (base_instructions, truncation_policy, …) and may carry Responses-Lite /
+  // code-mode flags that hide all tools from custom providers
+  // (openai/codex#34758). The merged template must fall back for missing
+  // fields and force plain shell tools.
+  assert.match(
+    storeSource,
+    /\.\.\.fallbackCodexModelTemplate\(\),\s*\.\.\.cached/,
+    "cached model template must be merged over the fallback, not used as-is"
+  );
+  assert.match(
+    storeSource,
+    /merged\.shell_type = "shell_command"/,
+    "merged template must force shell_type shell_command so exec tools are exposed"
+  );
+  assert.match(
+    storeSource,
+    /merged\.use_responses_lite = false/,
+    "merged template must disable responses-lite so tools stay in the top-level tools array"
+  );
+  assert.match(
+    storeSource,
+    /delete merged\.tool_mode/,
+    "merged template must drop code-mode tool_mode overrides"
+  );
+});

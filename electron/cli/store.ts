@@ -196,11 +196,25 @@ function readCodexModelTemplate(): Record<string, unknown> | undefined {
   try {
     const parsed = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
     const models = Array.isArray(parsed?.models) ? parsed.models : [];
-    return (
+    const cached =
       models.find((entry: any) => entry?.slug === "gpt-5.4") ??
       models.find((entry: any) => entry?.slug === "gpt-5.5") ??
-      models[0]
-    );
+      models[0];
+    if (!cached) return undefined;
+    // The models cache may lack required catalog fields (base_instructions,
+    // truncation_policy, …) and may carry Responses-Lite / code-mode flags that
+    // hide tools behind a Codex-proprietary input item for custom providers
+    // (openai/codex#34758). Merge over the fallback so the written catalog
+    // always parses and always exposes the shell tool.
+    const merged: Record<string, unknown> = {
+      ...fallbackCodexModelTemplate(),
+      ...cached
+    };
+    merged.shell_type = "shell_command";
+    merged.use_responses_lite = false;
+    delete merged.tool_mode;
+    delete merged.code_mode;
+    return merged;
   } catch {
     return undefined;
   }
