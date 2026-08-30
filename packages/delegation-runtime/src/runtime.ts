@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { resolveAgentRunError } from "@freebuddy/agent-runtime";
 import type {
   DelegationEventStatus,
   DelegationPolicy,
@@ -75,6 +76,8 @@ export class DelegationRuntime {
         const sessionId = `del-${ctx.runId}-${args.nodeId}-${randomUUID().slice(0, 8)}`;
         let summary = "";
         let error: string | null = null;
+        let exitCode: number | null = null;
+        const collected: unknown[] = [];
         try {
           await this.ports.executor.run(
             {
@@ -92,13 +95,18 @@ export class DelegationRuntime {
               signal: this.ports.abort
             },
             (event) => {
-              if (event.type === "done") summary = summary || "done";
+              if (event.type === "items" && event.items.length) {
+                collected.push(...event.items);
+              }
+              if (event.type === "done") exitCode = event.exitCode ?? null;
               if (event.type === "error") error = event.message;
             }
           );
         } catch (err) {
           error = (err as Error).message;
         }
+        error = resolveAgentRunError(collected, error, exitCode);
+        if (!error) summary = summary || "done";
         return { summary, error };
       }
     });

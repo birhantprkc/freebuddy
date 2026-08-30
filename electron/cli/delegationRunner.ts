@@ -1,5 +1,6 @@
 import type { WebContents } from "electron";
 import { randomUUID } from "node:crypto";
+import { resolveAgentRunError } from "@freebuddy/agent-runtime";
 import { cliRun } from "./runtime.js";
 import type { CliRunArgs } from "./runtimeShared.js";
 import { appendMessage, updateMessage } from "./conversations.js";
@@ -89,6 +90,7 @@ export function createDelegateAgentRunner(webContents: WebContents | undefined):
       broadcastMsg("appended");
     }
 
+    let summary = "";
     try {
       await cliRun(webContents as WebContents, args, (e) => {
         if (e.type === "items") {
@@ -104,6 +106,8 @@ export function createDelegateAgentRunner(webContents: WebContents | undefined):
         }
       });
     } finally {
+      summary = summarizeDelegateOutput(collected);
+      errored = resolveAgentRunError(collected, errored, exitCode);
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushTimer = undefined;
@@ -118,7 +122,7 @@ export function createDelegateAgentRunner(webContents: WebContents | undefined):
       }
     }
     return {
-      summary: summarizeDelegateOutput(collected),
+      summary,
       exitCode,
       error: errored
     };
