@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { resolveAgentRunError } from "@freebuddy/agent-runtime";
+import {
+  analyzeAgentOutput,
+  EMPTY_AGENT_OUTPUT_ERROR,
+  resolveAgentRunError
+} from "@freebuddy/agent-runtime";
 import type {
   DelegationEventStatus,
   DelegationPolicy,
   DelegationRosterEntry
 } from "@freebuddy/protocol/delegation";
+import { effectiveDelegationRoleCanWrite } from "@freebuddy/protocol/delegation";
 import { buildDelegateTaskPrompt } from "@freebuddy/delegation-core";
 import type { DelegationRuntimePorts } from "./ports.js";
 import { DelegationOrchestrator } from "./orchestrator.js";
@@ -15,6 +20,7 @@ type RunContext = {
   runId: string;
   teamId: string;
   roster: DelegationRosterEntry[];
+  sharedInstructions?: string;
   policy: DelegationPolicy;
   entryRoleId: string;
   cwd?: string;
@@ -46,6 +52,7 @@ export class DelegationRuntime {
       runId,
       teamId: run.teamId,
       roster: team.roster,
+      sharedInstructions: team.sharedInstructions,
       policy: team.policy,
       entryRoleId: team.entryRoleId,
       cwd: run.cwd ?? undefined,
@@ -61,6 +68,7 @@ export class DelegationRuntime {
     const orch = new DelegationOrchestrator({
       runId: ctx.runId,
       roster: ctx.roster,
+      sharedInstructions: ctx.sharedInstructions,
       policy: ctx.policy,
       entryRoleId: ctx.entryRoleId,
       repository: this.ports.repository,
@@ -74,10 +82,9 @@ export class DelegationRuntime {
           return { summary: "", error: `agent not found: ${agent.agentId}` };
         }
         const sessionId = `del-${ctx.runId}-${args.nodeId}-${randomUUID().slice(0, 8)}`;
-        let summary = "";
-        let error: string | null = null;
-        let exitCode: number | null = null;
         const collected: unknown[] = [];
+        let exitCode: number | null = null;
+        let error: string | null = null;
         try {
           await this.ports.executor.run(
             {
@@ -92,6 +99,9 @@ export class DelegationRuntime {
               skillIds: [...(agent.skillIds ?? []), DELEGATION_SKILL_ID],
               prompt: args.prompt,
               cwd: ctx.cwd,
+              workspaceAccess: effectiveDelegationRoleCanWrite(ctx.policy, agent)
+                ? "read-write"
+                : "read-only",
               signal: this.ports.abort
             },
             (event) => {
@@ -105,9 +115,20 @@ export class DelegationRuntime {
         } catch (err) {
           error = (err as Error).message;
         }
-        error = resolveAgentRunError(collected, error, exitCode);
-        if (!error) summary = summary || "done";
-        return { summary, error };
+        const evidence = analyzeAgentOutput(collected);
+        const resolvedError = resolveAgentRunError(collected, error, exitCode);
+        error =
+          resolvedError === EMPTY_AGENT_OUTPUT_ERROR && evidence.hasOutput
+            ? null
+            : resolvedError;
+        return {
+          summary: evidence.summary,
+          error,
+          hasOutput: evidence.hasOutput,
+          diagnostic: evidence.toolError
+            ? `Agent ended after a failed tool call without a final response or artifact: ${evidence.toolError}`
+            : null
+        };
       }
     });
     ctx.orchestrator = orch;
@@ -119,6 +140,7 @@ export class DelegationRuntime {
     teamId: string;
     teamSnapshot: {
       roster: DelegationRosterEntry[];
+      sharedInstructions?: string;
       policy: RunContext["policy"];
       entryRoleId: string;
     };
@@ -142,6 +164,7 @@ export class DelegationRuntime {
       runId: run.id,
       teamId: input.teamId,
       roster: input.teamSnapshot.roster,
+      sharedInstructions: input.teamSnapshot.sharedInstructions,
       policy: input.teamSnapshot.policy,
       entryRoleId: input.teamSnapshot.entryRoleId,
       cwd: input.cwd,
@@ -164,7 +187,7 @@ export class DelegationRuntime {
       roleLabel: entry.label,
       taskText: goal,
       depth: 0,
-      canWrite: entry.canWrite,
+      canWrite: effectiveDelegationRoleCanWrite(ctx.policy, entry),
       status: "running"
     });
     ctx.rootEventId = rootEventId;
@@ -179,7 +202,18 @@ export class DelegationRuntime {
     }
     const orch = this.ensureOrchestrator(ctx);
     orch.bindEntry(rootEventId);
-    const prompt = buildDelegateTaskPrompt(goal, ctx.roster, entry.id, 0, ctx.policy.maxDepth);
+    const prompt = buildDelegateTaskPrompt(
+      goal,
+      ctx.roster,
+      entry.id,
+      0,
+      ctx.policy.maxDepth,
+      {
+        sharedInstructions: ctx.sharedInstructions,
+        roleInstructions: entry.instructions,
+        selfLabel: entry.label
+      }
+    );
     try {
       const result = await orch.runNodeLoop({
         nodeId: rootEventId,
@@ -213,6 +247,7 @@ export class DelegationRuntime {
     teamId: string;
     teamSnapshot: {
       roster: DelegationRosterEntry[];
+      sharedInstructions?: string;
       policy: RunContext["policy"];
       entryRoleId: string;
     };
@@ -255,7 +290,7 @@ export class DelegationRuntime {
         roleLabel: entry.label,
         taskText: userPrompt,
         depth: 0,
-        canWrite: entry.canWrite,
+        canWrite: effectiveDelegationRoleCanWrite(ctx.policy, entry),
         status: "running"
       });
       root = this.ports.repository.getEvent(rootEventId);
@@ -264,10 +299,22 @@ export class DelegationRuntime {
     ctx.rootEventId = root.id;
     const orch = this.ensureOrchestrator(ctx);
     this.ports.repository.transitionEvent(root.id, "running", null, { allowReopen: true });
+    const prompt = buildDelegateTaskPrompt(
+      userPrompt,
+      ctx.roster,
+      entry.id,
+      0,
+      ctx.policy.maxDepth,
+      {
+        sharedInstructions: ctx.sharedInstructions,
+        roleInstructions: entry.instructions,
+        selfLabel: entry.label
+      }
+    );
     const result = await orch.followUp({
       entryNodeId: root.id,
       entry,
-      prompt: userPrompt
+      prompt
     });
     if (this.killedRunIds.has(runId)) return;
     const status: DelegationEventStatus = result.error ? "failed" : "done";

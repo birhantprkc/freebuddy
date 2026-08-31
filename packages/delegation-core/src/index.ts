@@ -43,7 +43,7 @@ export {
   protocolCanonicalPhrases,
   PROTOCOL_RULES
 } from "./protocol/text.js";
-export type { DelegateWakeInfo } from "./protocol/text.js";
+export type { DelegateWakeInfo, DelegationInstructionContext } from "./protocol/text.js";
 export {
   resolveEffectiveWakeVerdict,
   type EffectiveWakeVerdict

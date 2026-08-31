@@ -5,7 +5,13 @@ export type {
   InsertDelegationEventInput
 } from "./ports.js";
 export { DelegationRuntime, DELEGATION_SKILL_ID } from "./runtime.js";
-export { DelegationOrchestrator } from "./orchestrator.js";
+export {
+  classifyNewDelegationChildren,
+  delegationWakeInfoForSettled,
+  DelegationOrchestrator,
+  EMPTY_DELEGATION_TURN_ERROR,
+  resolveTurnCompletionError
+} from "./orchestrator.js";
 export type { OrchestratorSpawnArgs, OrchestratorTurnResult } from "./orchestrator.js";
 export {
   DelegateConcurrencyQueue,

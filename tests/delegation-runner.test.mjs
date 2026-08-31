@@ -14,12 +14,97 @@ test("summarizeDelegateOutput joins assistant text items", async () => {
   assert.equal(summarizeDelegateOutput(items), "hello world");
 });
 
-test("summarizeDelegateOutput falls back to tool-count when no assistant text", async () => {
+test("summarizeDelegateOutput does not treat tool activity as completed output", async () => {
   const { summarizeDelegateOutput } = await import("../dist-electron/cli/delegationRunner.js");
-  assert.match(summarizeDelegateOutput([{ kind: "tool-call", tool: "x" }, { kind: "tool-call", tool: "y" }]), /2 tool actions/i);
+  assert.match(summarizeDelegateOutput([{ kind: "tool-call", tool: "x" }, { kind: "tool-call", tool: "y" }]), /no assistant response or artifact/i);
   assert.ok(summarizeDelegateOutput([]).length > 0);
   // user-only text is NOT treated as output
-  assert.match(summarizeDelegateOutput([{ kind: "text", role: "user", content: "task" }]), /no output/i);
+  assert.match(summarizeDelegateOutput([{ kind: "text", role: "user", content: "task" }]), /no assistant response or artifact/i);
+});
+
+test("delegation output evidence preserves a nested tool failure diagnostic", async () => {
+  const { analyzeAgentOutput } = await import("@freebuddy/agent-runtime");
+  const evidence = analyzeAgentOutput([
+    {
+      kind: "tool-call",
+      tool: "skill_load",
+      status: "completed",
+      toolOutputs: [
+        {
+          kind: "tool-result",
+          tool: "skill_load",
+          isError: true,
+          content: "Skill is not active: hyperframes"
+        }
+      ]
+    }
+  ]);
+  assert.equal(evidence.hasOutput, false);
+  assert.match(evidence.toolError, /Skill is not active: hyperframes/);
+  assert.doesNotMatch(evidence.summary, /Completed/);
+});
+
+test("file edits count as artifact output even without assistant text", async () => {
+  const { analyzeAgentOutput } = await import("@freebuddy/agent-runtime");
+  const evidence = analyzeAgentOutput([
+    { kind: "file-edit", path: "src/a.ts", action: "update" }
+  ]);
+  assert.equal(evidence.hasOutput, true);
+  assert.equal(evidence.hasArtifactOutput, true);
+});
+
+test("a failed final tool update cannot inherit artifact evidence from an earlier snapshot", async () => {
+  const { analyzeAgentOutput } = await import("@freebuddy/agent-runtime");
+  const evidence = analyzeAgentOutput([
+    {
+      kind: "tool-call",
+      id: "edit-1",
+      tool: "apply_patch",
+      toolKind: "edit",
+      status: "pending",
+      toolOutputs: [
+        { kind: "file-edit", path: "src/a.ts", action: "update" }
+      ]
+    },
+    {
+      kind: "tool-call",
+      id: "edit-1",
+      tool: "apply_patch",
+      toolKind: "edit",
+      status: "failed",
+      isError: true,
+      output: "permission denied"
+    }
+  ]);
+  assert.equal(evidence.hasArtifactOutput, false);
+  assert.equal(evidence.hasOutput, false);
+  assert.match(evidence.toolError ?? "", /permission denied/);
+});
+
+test("a completed final tool update retains artifact evidence from an earlier snapshot", async () => {
+  const { analyzeAgentOutput } = await import("@freebuddy/agent-runtime");
+  const evidence = analyzeAgentOutput([
+    {
+      kind: "tool-call",
+      id: "edit-1",
+      tool: "apply_patch",
+      toolKind: "edit",
+      status: "pending",
+      toolOutputs: [
+        { kind: "file-edit", path: "src/a.ts", action: "update" }
+      ]
+    },
+    {
+      kind: "tool-call",
+      id: "edit-1",
+      tool: "apply_patch",
+      toolKind: "edit",
+      status: "completed"
+    }
+  ]);
+  assert.equal(evidence.hasArtifactOutput, true);
+  assert.equal(evidence.hasOutput, true);
+  assert.equal(evidence.toolError, null);
 });
 
 test("silent team turns fail while upstream errors remain unchanged", async () => {

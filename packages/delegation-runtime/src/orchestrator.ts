@@ -8,13 +8,81 @@ import {
   resolveEffectiveWakeVerdict
 } from "@freebuddy/delegation-core";
 import type { DelegationRosterEntry, DelegationPolicy } from "@freebuddy/protocol/delegation";
-import type { BusEffect, BusState } from "@freebuddy/delegation-core";
+import type { BusEffect, BusState, DelegateWakeInfo } from "@freebuddy/delegation-core";
 import type { DelegationRunRepository } from "./ports.js";
 import { isTerminalDelegationStatus } from "./status.js";
 
 export interface OrchestratorTurnResult {
   summary: string;
   error: string | null;
+  /** False only when the executor positively observed no assistant text or artifact. */
+  hasOutput?: boolean;
+  /** Most useful tool/runtime detail to show when an otherwise empty turn is rejected. */
+  diagnostic?: string | null;
+}
+
+export const EMPTY_DELEGATION_TURN_ERROR =
+  "Agent ended without assistant text, an artifact, or an accepted delegation.";
+
+export function resolveTurnCompletionError(
+  turn: OrchestratorTurnResult,
+  acceptedActiveDelegation: boolean
+): string | null {
+  if (turn.error) return turn.error;
+  if (turn.hasOutput === false && !acceptedActiveDelegation) {
+    return turn.diagnostic?.trim() || EMPTY_DELEGATION_TURN_ERROR;
+  }
+  return null;
+}
+
+export function classifyNewDelegationChildren(
+  children: DelegationEvent[],
+  childIdsBeforeTurn: ReadonlySet<string>
+): { active: DelegationEvent[]; settled: DelegationEvent[] } {
+  const active: DelegationEvent[] = [];
+  const settled: DelegationEvent[] = [];
+  for (const child of children) {
+    if (childIdsBeforeTurn.has(child.id)) continue;
+    if (child.status === "pending" || child.status === "running") active.push(child);
+    else settled.push(child);
+  }
+  return { active, settled };
+}
+
+/** Build one wake payload even when several children settle within one parent turn. */
+export function delegationWakeInfoForSettled(
+  settled: DelegationEvent[]
+): DelegateWakeInfo {
+  const first = settled[0];
+  if (!first) {
+    throw new Error("delegationWakeInfoForSettled requires at least one event");
+  }
+  if (settled.length === 1) {
+    return {
+      taskText: first.taskText,
+      roleLabel: first.roleLabel,
+      status: first.status,
+      resultSummary: first.resultSummary ?? "",
+      verdict: first.verdict,
+      verdictSummary: first.verdictSummary
+    };
+  }
+  const failed = settled.find((event) => event.status !== "done");
+  return {
+    taskText: settled
+      .map((event) => `[${event.status}] ${event.roleLabel}: ${event.taskText}`)
+      .join("\n"),
+    roleLabel: `${settled.length} delegates`,
+    status: failed?.status ?? "done",
+    resultSummary: settled
+      .map(
+        (event) =>
+          `[${event.status}] ${event.roleLabel}: ${event.resultSummary?.trim() || "(no result summary)"}`
+      )
+      .join("\n"),
+    verdict: null,
+    verdictSummary: null
+  };
 }
 
 export interface OrchestratorSpawnArgs {
@@ -39,6 +107,7 @@ export class DelegationOrchestrator {
     private readonly opts: {
       runId: string;
       roster: DelegationRosterEntry[];
+      sharedInstructions?: string;
       policy: DelegationPolicy;
       entryRoleId: string;
       spawnTurn: (args: OrchestratorSpawnArgs) => Promise<OrchestratorTurnResult>;
@@ -52,10 +121,12 @@ export class DelegationOrchestrator {
 
   syncTeamSnapshot(input: {
     roster: DelegationRosterEntry[];
+    sharedInstructions?: string;
     policy: DelegationPolicy;
     entryRoleId: string;
   }): void {
     this.opts.roster = input.roster;
+    this.opts.sharedInstructions = input.sharedInstructions;
     this.opts.policy = input.policy;
     this.opts.entryRoleId = input.entryRoleId;
   }
@@ -193,6 +264,12 @@ export class DelegationOrchestrator {
         this.applyEffects(effects);
       }
 
+      const childIdsBeforeTurn = new Set(
+        this.opts.repository
+          .listEvents(this.opts.runId)
+          .filter((event) => event.parentEventId === opts.nodeId)
+          .map((event) => event.id)
+      );
       const turn = await this.opts.spawnTurn({
         kind,
         nodeId: opts.nodeId,
@@ -201,11 +278,45 @@ export class DelegationOrchestrator {
         selfAgentId: opts.selfAgentId,
         selfLabel: opts.selfLabel
       });
-      lastError = turn.error;
       lastSummary = turn.summary ?? "";
       if (this.killed) break;
 
-      const pending = this.opts.repository.listPendingChildEvents(this.opts.runId, opts.nodeId);
+      const childrenAfterTurn = this.opts.repository
+        .listEvents(this.opts.runId)
+        .filter((event) => event.parentEventId === opts.nodeId);
+      const newlyAccepted = classifyNewDelegationChildren(
+        childrenAfterTurn,
+        childIdsBeforeTurn
+      );
+      if (!turn.error && newlyAccepted.settled.length > 0) {
+        const immediateWake = delegationWakeInfoForSettled(newlyAccepted.settled);
+        const effectiveVerdict =
+          newlyAccepted.settled.length === 1
+            ? resolveEffectiveWakeVerdict(
+                newlyAccepted.settled[0]!,
+                this.opts.repository.listEvents(this.opts.runId)
+              )
+            : { verdict: null, verdictSummary: null };
+        prompt = buildDelegateWakePrompt(
+          { ...immediateWake, ...effectiveVerdict },
+          this.opts.roster,
+          opts.selfAgentId,
+          opts.depth,
+          this.opts.policy.maxDepth,
+          {
+            sharedInstructions: this.opts.sharedInstructions,
+            roleInstructions: this.opts.roster.find((role) => role.id === opts.selfAgentId)
+              ?.instructions,
+            selfLabel: opts.selfLabel
+          }
+        );
+        kind = "wake";
+        continue;
+      }
+      lastError = resolveTurnCompletionError(turn, newlyAccepted.active.length > 0);
+      const pending = childrenAfterTurn.filter(
+        (event) => event.status === "pending" || event.status === "running"
+      );
       {
         const { state, effects } = reduce(this.bus, {
           type: "TurnEnded",
@@ -278,7 +389,13 @@ export class DelegationOrchestrator {
         this.opts.roster,
         opts.selfAgentId,
         opts.depth,
-        this.opts.policy.maxDepth
+        this.opts.policy.maxDepth,
+        {
+          sharedInstructions: this.opts.sharedInstructions,
+          roleInstructions: this.opts.roster.find((role) => role.id === opts.selfAgentId)
+            ?.instructions,
+          selfLabel: opts.selfLabel
+        }
       );
       kind = "wake";
     }

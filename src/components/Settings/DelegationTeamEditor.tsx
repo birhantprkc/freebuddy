@@ -11,6 +11,7 @@ import {
   Typography
 } from "antd";
 import { useTranslation } from "react-i18next";
+import { validateDelegationTeam } from "@freebuddy/protocol/delegation";
 
 import { cliClient } from "@/services/cli/client";
 import type {
@@ -64,6 +65,9 @@ export function DelegationTeamEditor({
 
   const [name, setName] = useState(existing?.name ?? "");
   const [description, setDescription] = useState(existing?.description ?? "");
+  const [sharedInstructions, setSharedInstructions] = useState(
+    existing?.sharedInstructions ?? ""
+  );
   const [roster, setRoster] = useState<DelegationRosterEntry[]>(
     existing?.roster && existing.roster.length > 0
       ? existing.roster
@@ -79,6 +83,7 @@ export function DelegationTeamEditor({
     if (existing) {
       setName(existing.name);
       setDescription(existing.description ?? "");
+      setSharedInstructions(existing.sharedInstructions ?? "");
       setRoster(
         existing.roster.length > 0 ? existing.roster : [newEntry("r-1")]
       );
@@ -87,6 +92,7 @@ export function DelegationTeamEditor({
     } else {
       setName("");
       setDescription("");
+      setSharedInstructions("");
       setRoster([newEntry("r-1")]);
       setEntryRoleId("r-1");
       setPolicy(defaultPolicy());
@@ -241,25 +247,42 @@ export function DelegationTeamEditor({
     }
     const invalidRoster =
       roster.length === 0 ||
-      roster.some((r) => !r.label.trim() || !r.agentId.trim());
+      roster.some((r) => !r.label.trim() || !r.agentId.trim() || !r.capability.trim());
     if (invalidRoster) {
       setErrors([t("workflow.delegation.errors.invalidRoster")]);
       return;
     }
     const trimmedName = name.trim();
     const trimmedDescription = description.trim();
+    const trimmedSharedInstructions = sharedInstructions.trim();
+    const finalRoster = roster.map((role) => ({
+      ...role,
+      capability: role.capability.trim(),
+      instructions: role.instructions?.trim() || undefined
+    }));
     const finalEntryRoleId = roster.some((r) => r.id === entryRoleId)
       ? entryRoleId
       : (roster[0]?.id ?? entryRoleId);
+    const validation = validateDelegationTeam({
+      name: trimmedName,
+      entryRoleId: finalEntryRoleId,
+      roster: finalRoster,
+      policy
+    });
+    if (!validation.ok) {
+      setErrors(validation.errors);
+      return;
+    }
     setErrors([]);
     try {
       if (existing) {
         await update(existing.id, {
           name: trimmedName,
           description: trimmedDescription || null,
+          sharedInstructions: trimmedSharedInstructions || null,
           enabled: existing.enabled,
           entryRoleId: finalEntryRoleId,
-          roster,
+          roster: finalRoster,
           policy
         });
       } else {
@@ -267,10 +290,11 @@ export function DelegationTeamEditor({
           id: `team-delegation-${Date.now().toString(36)}`,
           name: trimmedName,
           description: trimmedDescription || undefined,
+          sharedInstructions: trimmedSharedInstructions || undefined,
           enabled: true,
           source: "user",
           entryRoleId: finalEntryRoleId,
-          roster,
+          roster: finalRoster,
           policy
         });
       }
@@ -317,6 +341,16 @@ export function DelegationTeamEditor({
         placeholder={t("workflow.delegation.descriptionPlaceholder")}
         style={{ marginTop: 8 }}
       />
+      <TextArea
+        value={sharedInstructions}
+        onChange={(e) => setSharedInstructions(e.target.value)}
+        placeholder={t("workflow.delegation.sharedInstructionsPlaceholder")}
+        autoSize={{ minRows: 2 }}
+        style={{ marginTop: 8 }}
+      />
+      <Typography.Text type="secondary">
+        {t("workflow.delegation.sharedInstructionsHelp")}
+      </Typography.Text>
 
       <Typography.Text strong style={{ display: "block", marginTop: 16 }}>
         {t("workflow.delegation.roster")}
@@ -377,6 +411,18 @@ export function DelegationTeamEditor({
               placeholder={t("workflow.delegation.capabilityPlaceholder")}
               autoSize={{ minRows: 2 }}
             />
+            <Typography.Text type="secondary">
+              {t("workflow.delegation.capabilityHelp")}
+            </Typography.Text>
+            <TextArea
+              value={r.instructions ?? ""}
+              onChange={(e) => setEntry({ instructions: e.target.value }, r.id)}
+              placeholder={t("workflow.delegation.roleInstructionsPlaceholder")}
+              autoSize={{ minRows: 2 }}
+            />
+            <Typography.Text type="secondary">
+              {t("workflow.delegation.roleInstructionsHelp")}
+            </Typography.Text>
             <Space>
               <Switch
                 checked={r.canWrite}

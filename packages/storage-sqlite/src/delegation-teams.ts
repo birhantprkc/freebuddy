@@ -3,6 +3,7 @@ import type {
   DelegationRosterEntry,
   DelegationTeam
 } from "@freebuddy/protocol/delegation";
+import { validateDelegationTeam } from "@freebuddy/protocol/delegation";
 import type { SqliteDatabase } from "./types.js";
 
 function defaultDelegationPolicy(): DelegationPolicy {
@@ -22,6 +23,7 @@ function rowToDelegationTeam(r: Record<string, unknown>): DelegationTeam {
     id: String(r.id),
     name: String(r.name),
     description: (r.description as string | null) ?? undefined,
+    sharedInstructions: meta.sharedInstructions ?? undefined,
     icon: (r.icon as string | null) ?? undefined,
     enabled: r.enabled === 1 || r.enabled === true,
     source: ((r.source as "builtin" | "user") ?? "user") as DelegationTeam["source"],
@@ -57,6 +59,7 @@ export interface UpsertDelegationTeamInput {
   id: string;
   name: string;
   description?: string;
+  sharedInstructions?: string;
   icon?: string;
   enabled: boolean;
   source: "builtin" | "user";
@@ -65,11 +68,21 @@ export interface UpsertDelegationTeamInput {
   policy: DelegationPolicy;
 }
 
+function assertValidDelegationTeam(
+  team: Pick<DelegationTeam, "name" | "entryRoleId" | "roster" | "policy">
+): void {
+  const validation = validateDelegationTeam(team);
+  if (!validation.ok) {
+    throw new Error(`Invalid delegation team: ${validation.errors.join(" ")}`);
+  }
+}
+
 export function insertDelegationTeam(
   db: SqliteDatabase,
   input: UpsertDelegationTeamInput,
   now = new Date().toISOString()
 ): DelegationTeam {
+  assertValidDelegationTeam(input);
   db.prepare(
     `INSERT INTO workflow_teams
        (id, name, description, icon, enabled, source, kind,
@@ -85,7 +98,12 @@ export function insertDelegationTeam(
     input.source,
     JSON.stringify(input.roster),
     JSON.stringify(input.policy),
-    JSON.stringify({ entryRoleId: input.entryRoleId }),
+    JSON.stringify({
+      entryRoleId: input.entryRoleId,
+      ...(input.sharedInstructions?.trim()
+        ? { sharedInstructions: input.sharedInstructions.trim() }
+        : {})
+    }),
     now,
     now
   );
@@ -95,6 +113,7 @@ export function insertDelegationTeam(
 export interface UpdateDelegationTeamPatch {
   name?: string;
   description?: string | null;
+  sharedInstructions?: string | null;
   icon?: string | null;
   enabled?: boolean;
   entryRoleId?: string;
@@ -109,6 +128,12 @@ export function updateDelegationTeam(
 ): DelegationTeam | undefined {
   const existing = getDelegationTeam(db, id);
   if (!existing) return undefined;
+  assertValidDelegationTeam({
+    name: patch.name ?? existing.name,
+    entryRoleId: patch.entryRoleId ?? existing.entryRoleId,
+    roster: patch.roster ?? existing.roster,
+    policy: patch.policy ?? existing.policy
+  });
   const fields: string[] = ["updated_at = ?"];
   const params: unknown[] = [new Date().toISOString()];
   if (patch.name !== undefined) {
@@ -135,9 +160,18 @@ export function updateDelegationTeam(
     fields.push("policy_json = ?");
     params.push(JSON.stringify(patch.policy));
   }
-  if (patch.entryRoleId !== undefined) {
+  if (patch.entryRoleId !== undefined || patch.sharedInstructions !== undefined) {
     fields.push("delegation_meta_json = ?");
-    params.push(JSON.stringify({ entryRoleId: patch.entryRoleId }));
+    const sharedInstructions =
+      patch.sharedInstructions === undefined
+        ? existing.sharedInstructions
+        : patch.sharedInstructions?.trim() || undefined;
+    params.push(
+      JSON.stringify({
+        entryRoleId: patch.entryRoleId ?? existing.entryRoleId,
+        ...(sharedInstructions ? { sharedInstructions } : {})
+      })
+    );
   }
   params.push(id);
   db.prepare(
