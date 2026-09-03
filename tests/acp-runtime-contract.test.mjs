@@ -151,6 +151,18 @@ test("ACP watchdog grants bounded time to an explicitly active tool call", () =>
   assert.match(acpRuntimeSource, /MAX_INACTIVITY_REPRIEVES/);
 });
 
+test("ACP runtime fails turns that contain terminal adapter errors", () => {
+  assert.match(
+    acpRuntimeSource,
+    /acpUpdateToItems\(msg\.params\?\.update, sessionId, args\.adapter\)/
+  );
+  assert.match(acpRuntimeSource, /turnTerminalErrorMessage = terminalError\.message/);
+  assert.match(
+    acpRuntimeSource,
+    /if \(turnTerminalErrorMessage\) \{\s*throw new Error\(turnTerminalErrorMessage\);/
+  );
+});
+
 test("DeepSeek empty resumed turns retry fresh once and unhealthy sessions are evicted", () => {
   assert.match(acpRuntimeSource, /shouldRetryEmptyResumedDshTurn/);
   assert.match(acpRuntimeSource, /emptySessionResetAttempted = true/);

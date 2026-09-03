@@ -1354,6 +1354,53 @@ test("acpUpdateToItems maps message, thought, tool, session and usage updates", 
   );
 });
 
+test("acpUpdateToItems treats legacy Antigravity bridge result errors as terminal", () => {
+  assert.deepEqual(
+    acpUpdateToItems(
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: {
+          type: "text",
+          text: "Error: The stream was interrupted. Please continue the task you were working on.\n"
+        }
+      },
+      undefined,
+      "agy-acp"
+    ),
+    [
+      {
+        kind: "error",
+        message:
+          "The stream was interrupted. Please continue the task you were working on.",
+        details: [
+          "Antigravity returned a failed result through the legacy ACP bridge."
+        ],
+        terminal: true
+      }
+    ]
+  );
+  assert.deepEqual(
+    acpUpdateToItems(
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "msg-1",
+        content: { type: "text", text: "Error: this is an example" }
+      },
+      undefined,
+      "agy-acp"
+    ),
+    [
+      {
+        kind: "text",
+        role: "assistant",
+        content: "Error: this is an example",
+        append: true,
+        messageId: "msg-1"
+      }
+    ]
+  );
+});
+
 test("acpUpdateToItems maps session metadata, commands and config options", () => {
   assert.deepEqual(
     acpUpdateToItems({

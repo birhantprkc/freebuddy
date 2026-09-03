@@ -1345,7 +1345,8 @@ export function acpNonRetryableUpstreamError(update: any): string | undefined {
 
 export function acpUpdateToItems(
   update: any,
-  fallbackSessionId?: string
+  fallbackSessionId?: string,
+  adapter?: string
 ): AcpStreamItem[] {
   const type = String(update?.sessionUpdate ?? "");
   switch (type) {
@@ -1354,6 +1355,25 @@ export function acpUpdateToItems(
     case "agent_message_chunk":
       {
         const text = textFromContent(update.content).trim();
+        // agy-acp-bridge <= 0.3.1 reports a failed native `agy` result as an
+        // ordinary, message-id-less assistant chunk and then resolves the ACP
+        // prompt with `end_turn`. Without this adapter-specific compatibility
+        // guard, timeouts such as "The stream was interrupted" are persisted
+        // and announced as successful assistant replies.
+        if (
+          adapter === "agy-acp" &&
+          !update.messageId &&
+          /^Error:\s*\S/i.test(text)
+        ) {
+          return [
+            {
+              kind: "error",
+              message: text.replace(/^Error:\s*/i, ""),
+              details: ["Antigravity returned a failed result through the legacy ACP bridge."],
+              terminal: true
+            }
+          ];
+        }
         if (/^(?:unexpected status \d{3}\b|exceeded retry limit\b)/i.test(text)) {
           return [
             {

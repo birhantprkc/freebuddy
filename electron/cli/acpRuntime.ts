@@ -219,6 +219,7 @@ export async function runAcpAgent({
   let inactivityReprieves = 0;
   let promptHadContent = false;
   let turnHadTerminalError = false;
+  let turnTerminalErrorMessage: string | undefined;
   let turnHadLiveAgentChunk = false;
   let sessionWasResumed = false;
   let mcpServers: AcpStdioMcpServer[] = [];
@@ -613,13 +614,13 @@ export async function runAcpAgent({
       ) {
         return;
       }
-      const items = acpUpdateToItems(msg.params?.update, sessionId);
-      if (
-        items.some(
-          (item) => item.kind === "error" && item.terminal === true
-        )
-      ) {
+      const items = acpUpdateToItems(msg.params?.update, sessionId, args.adapter);
+      const terminalError = items.find(
+        (item) => item.kind === "error" && item.terminal === true
+      );
+      if (terminalError?.kind === "error") {
         turnHadTerminalError = true;
+        turnTerminalErrorMessage = terminalError.message;
       }
       if (items.length) emit({ type: "items", items });
       return;
@@ -1150,6 +1151,7 @@ export async function runAcpAgent({
     promptStarted = true;
     promptHadContent = false;
     turnHadTerminalError = false;
+    turnTerminalErrorMessage = undefined;
     turnHadLiveAgentChunk = false;
     inactivityReprieves = 0;
     activeToolCallIds.clear();
@@ -1168,6 +1170,13 @@ export async function runAcpAgent({
         )
       );
       const resultItems = acpPromptResultToItems(promptResult);
+      const terminalError = resultItems.find(
+        (item) => item.kind === "error" && item.terminal === true
+      );
+      if (terminalError?.kind === "error") {
+        turnHadTerminalError = true;
+        turnTerminalErrorMessage = terminalError.message;
+      }
       if (resultItems.length) {
         emit({ type: "items", items: resultItems });
       }
@@ -1578,6 +1587,9 @@ export async function runAcpAgent({
     }
     if (nonRetryableUpstreamError) {
       throw new Error(nonRetryableUpstreamError);
+    }
+    if (turnTerminalErrorMessage) {
+      throw new Error(turnTerminalErrorMessage);
     }
 
     if (
