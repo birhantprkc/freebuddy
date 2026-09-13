@@ -3,8 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildShareExtension } from "./build-macos-share-extension.mjs";
+import { resolveMacSigningIdentity } from "./resolve-codesign-identity.mjs";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+function q(value) {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
 
 export default async function afterPack(context) {
   if (context.electronPlatformName !== "darwin") return;
@@ -29,19 +34,44 @@ export default async function afterPack(context) {
   fs.rmSync(targetAppex, { recursive: true, force: true });
   fs.cpSync(appexSource, targetAppex, { recursive: true });
 
-  try {
-    const entitlements = path.join(
-      rootDir,
-      "desktop",
-      "macos",
-      "ShareExtension",
-      "FreeBuddyShare.entitlements"
+  const entitlements = path.join(
+    rootDir,
+    "desktop",
+    "macos",
+    "ShareExtension",
+    "FreeBuddyShare.entitlements"
+  );
+  // electron-builder signs Contents/Frameworks and the outer bundle after
+  // afterPack but never walks Contents/PlugIns, so the appex must be signed
+  // here with the same identity: macOS refuses to load an extension whose
+  // team differs from its containing app, and Gatekeeper treats an ad-hoc
+  // nested binary inside a signed app as damaged.
+  const identity = isDev ? null : resolveMacSigningIdentity();
+  const hardenedRuntime = context.packager.config?.mac?.hardenedRuntime !== false;
+
+  if (identity) {
+    execSync(
+      [
+        "codesign --force --sign",
+        q(identity),
+        `--entitlements ${q(entitlements)}`,
+        ...(hardenedRuntime ? ["--options runtime"] : []),
+        "--timestamp",
+        q(targetAppex)
+      ].join(" "),
+      { stdio: "inherit" }
     );
-    execSync(`codesign --force --sign - --entitlements "${entitlements}" "${targetAppex}"`, {
-      stdio: "ignore"
+    console.log(`[afterPack] Signed FreeBuddyShare.appex with "${identity}"`);
+  } else {
+    if (!isDev) {
+      console.warn(
+        "[afterPack] No codesigning identity found; FreeBuddyShare.appex stays ad-hoc signed to match the unsigned app build."
+      );
+    }
+    execSync(`codesign --force --sign - --entitlements ${q(entitlements)} ${q(targetAppex)}`, {
+      stdio: "inherit"
     });
-  } catch {}
+  }
 
   console.log(`[afterPack] Bundled FreeBuddyShare.appex into ${targetAppex}`);
 }
-

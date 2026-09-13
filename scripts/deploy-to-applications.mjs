@@ -3,6 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildShareExtension } from "./build-macos-share-extension.mjs";
+import { resolveMacSigningIdentity } from "./resolve-codesign-identity.mjs";
+
+function q(value) {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LSREGISTER =
@@ -106,21 +111,42 @@ export function deployApp(isDev = false) {
   fs.rmSync(targetAppex, { recursive: true, force: true });
   fs.cpSync(appexSource, targetAppex, { recursive: true });
 
-  const entitlements = path.join(
+  const shareEntitlements = path.join(
     rootDir,
     "desktop",
     "macos",
     "ShareExtension",
     "FreeBuddyShare.entitlements"
   );
-  try {
-    execSync(`codesign --force --sign - --entitlements "${entitlements}" "${targetAppex}"`, {
-      stdio: "ignore"
+  const appEntitlements = path.join(rootDir, "desktop", "macos", "entitlements.mac.plist");
+  // The asar/plist/appex patches above break the existing seal, so the app
+  // must be re-signed. Production deploys have to use a real identity: an
+  // ad-hoc signature pins the designated requirement to the current cdhash
+  // and Squirrel then rejects every future auto-update with
+  // "code failed to satisfy specified code requirement(s)".
+  const identity = isDev ? null : resolveMacSigningIdentity();
+  if (!isDev && !identity) {
+    console.warn(
+      "[deploy] Warning: no codesigning identity found. The /Applications copy will be re-signed ad-hoc, which disables Squirrel auto-updates for it. Prefer installing from the release DMG."
+    );
+  }
+
+  if (identity) {
+    // Sign the appex first, then the outer app, so the outer seal covers it.
+    execSync(
+      `codesign --force --sign ${q(identity)} --entitlements ${q(shareEntitlements)} --options runtime ${q(targetAppex)}`,
+      { stdio: "inherit" }
+    );
+    execSync(
+      `codesign --force --sign ${q(identity)} --entitlements ${q(appEntitlements)} --options runtime ${q(targetApp)}`,
+      { stdio: "inherit" }
+    );
+  } else {
+    execSync(`codesign --force --sign - --entitlements ${q(shareEntitlements)} ${q(targetAppex)}`, {
+      stdio: "inherit"
     });
-    execSync(`codesign --force --sign - "${targetApp}"`, {
-      stdio: "ignore"
-    });
-  } catch {}
+    execSync(`codesign --force --sign - ${q(targetApp)}`, { stdio: "inherit" });
+  }
 
   if (fs.existsSync(LSREGISTER)) {
     try {
