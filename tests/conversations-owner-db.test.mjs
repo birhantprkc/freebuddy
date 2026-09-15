@@ -283,17 +283,48 @@ test("listMessagesForIpc pages newest messages and does not load oversized blobs
     status: "done",
     content: huge
   });
-  const storedHuge = listMessages("c1").find((entry) => entry.id === hugeId);
-  assert.equal(storedHuge?.content.length, huge.length);
+  const full = listMessages("c1");
+  assert.equal(full.at(-1)?.content.length, huge.length);
 
-  // created_at is millisecond ISO time; when it collides with m5, IPC orders by
-  // id DESC ("m5" > "huge") so the newest *page* is not always this row.
-  const ipcPage = listMessagesForIpc("c1", { limit: 6 });
-  const ipcHuge = ipcPage.messages.find((entry) => entry.id === hugeId);
-  assert.ok(ipcHuge);
-  assert.ok(ipcHuge.content.length <= MAX_IPC_MESSAGE_CONTENT_CHARS + 1);
+  const ipcLatest = listMessagesForIpc("c1", { limit: 1 });
+  assert.equal(ipcLatest.messages[0]?.id, hugeId);
+  assert.ok(ipcLatest.messages[0].content.length <= MAX_IPC_MESSAGE_CONTENT_CHARS + 1);
 
   const ipcOne = getMessageForIpc(hugeId);
   assert.ok(ipcOne);
   assert.ok(ipcOne.content.length <= MAX_IPC_MESSAGE_CONTENT_CHARS + 1);
+});
+
+test("listMessagesForIpc keeps insertion order when created_at timestamps collide", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  setDbForTest(db);
+  const { createConversation, listMessagesForIpc } = await import(
+    "../dist-electron/cli/conversations.js"
+  );
+
+  createConversation(baseInput("c1"));
+  const ts = "2026-09-15T00:00:00.000Z";
+  const insert = (id) =>
+    db.prepare(
+      `INSERT INTO conversation_messages
+         (id, conversation_id, role, status, content, created_at, updated_at)
+       VALUES (?, 'c1', 'user', 'sent', ?, ?, ?)`
+    ).run(id, id, ts, ts);
+  insert("z-first");
+  insert("a-second");
+
+  const latest = listMessagesForIpc("c1", { limit: 1 });
+  assert.equal(latest.messages[0]?.id, "a-second");
+  assert.equal(latest.hasMore, true);
+
+  const older = listMessagesForIpc("c1", {
+    limit: 1,
+    beforeCreatedAt: latest.messages[0].createdAt,
+    beforeId: latest.messages[0].id
+  });
+  assert.equal(older.messages[0]?.id, "z-first");
+  assert.equal(older.hasMore, false);
 });

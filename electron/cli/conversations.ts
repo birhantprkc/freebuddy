@@ -684,7 +684,7 @@ export function listMessages(conversationId: string): ConversationMessage[] {
     .prepare(
       `SELECT * FROM conversation_messages
        WHERE conversation_id = ?
-       ORDER BY created_at ASC`
+       ORDER BY created_at ASC, rowid ASC`
     )
     .all(conversationId) as any[];
   return rows.map(rowToMessage);
@@ -736,7 +736,13 @@ export function listMessagesForIpc(
   const params: unknown[] = [IPC_CONTENT_FETCH_CHARS, conversationId];
   let where = "conversation_id = ?";
   if (options.beforeCreatedAt && options.beforeId) {
-    where += " AND (created_at < ? OR (created_at = ? AND id < ?))";
+    where += ` AND (
+      created_at < ?
+      OR (
+        created_at = ?
+        AND rowid < (SELECT rowid FROM conversation_messages WHERE id = ?)
+      )
+    )`;
     params.push(options.beforeCreatedAt, options.beforeCreatedAt, options.beforeId);
   } else if (options.beforeCreatedAt) {
     where += " AND created_at < ?";
@@ -746,7 +752,7 @@ export function listMessagesForIpc(
     .prepare(
       `${IPC_MESSAGE_SELECT}
        WHERE ${where}
-       ORDER BY created_at DESC, id DESC
+       ORDER BY created_at DESC, rowid DESC
        LIMIT ?`
     )
     .all(...params, limit + 1) as any[];
