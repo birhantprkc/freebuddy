@@ -1,3 +1,4 @@
+import { serializeStreamItemsForPersist } from "@freebuddy/cli-stream";
 import type { CliStreamItem } from "@/services/cli/parsers";
 import type { CLIMember } from "@/config/aiMembers";
 import type {
@@ -38,43 +39,12 @@ export function visibleConversationSlice<T>(
   return { hiddenCount, items: messages.slice(hiddenCount) };
 }
 
-function stripBulkyToolCallFields(
-  item: Extract<CliStreamItem, { kind: "tool-call" }>
-): Extract<CliStreamItem, { kind: "tool-call" }> {
-  const next: Extract<CliStreamItem, { kind: "tool-call" }> = { ...item };
-  delete next.input;
-  if (next.output && next.output.length > MAX_MERGED_OUTPUT_CHARS) {
-    next.output = boundMergedStreamText(next.output, MAX_MERGED_OUTPUT_CHARS);
-  }
-  return next;
-}
-
+/** Shared with delegate saves: valid JSON, bounded size, recent output retained. */
 export function capPersistedStreamItems(
   items: CliStreamItem[],
   maxChars = MAX_PERSISTED_STREAM_JSON_CHARS
 ): CliStreamItem[] {
-  if (JSON.stringify(items).length <= maxChars) return items;
-  const stripped = items.map((item) =>
-    item.kind === "tool-call" ? stripBulkyToolCallFields(item) : item
-  );
-  if (JSON.stringify(stripped).length <= maxChars) return stripped;
-
-  const keepKind = (kind: CliStreamItem["kind"]) =>
-    kind === "text" ||
-    kind === "thinking" ||
-    kind === "error" ||
-    kind === "done" ||
-    kind === "usage" ||
-    kind === "session";
-  const essential = stripped.filter((item) => keepKind(item.kind));
-  let keptExtras = stripped.filter((item) => !keepKind(item.kind));
-  while (
-    keptExtras.length > 0 &&
-    JSON.stringify([...essential, ...keptExtras]).length > maxChars
-  ) {
-    keptExtras = keptExtras.slice(1);
-  }
-  return [...essential, ...keptExtras];
+  return JSON.parse(serializeStreamItemsForPersist(items, maxChars)) as CliStreamItem[];
 }
 
 function boundMergedStreamText(value: string, max: number): string {
@@ -785,10 +755,26 @@ export function buildOrphanFollowupContext(
       ? "The latest user question below was not successfully answered. If the current follow-up is a short continue/retry request, answer that unanswered question."
       : "Answer the current follow-up in light of this history.",
     "",
-    "Prior conversation:",
-    ...blocks
+    "Prior conversation:"
   ];
-  return truncateFollowupBlock(lines.join("\n"), maxChars);
+  const header = lines.join("\n");
+  let remaining = Math.max(0, maxChars - header.length - 1);
+  const kept: string[] = [];
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    const cost = block.length + (kept.length ? 1 : 0);
+    if (cost > remaining) {
+      if (kept.length === 0 && remaining > 12) {
+        kept.push(truncateFollowupBlock(block, remaining - 12));
+      }
+      break;
+    }
+    kept.push(block);
+    remaining -= cost;
+  }
+  // Spend the budget on the newest turns; truncating the joined history from
+  // its beginning could discard the very question a retry needs to answer.
+  return `${header}\n${kept.reverse().join("\n")}`.slice(0, maxChars);
 }
 
 export function composeOrphanFollowupPrompt(
@@ -936,8 +922,10 @@ export function mergeConversationMessages(
       continue;
     }
     const attachments = mergeMessageAttachments(message, previous);
+    const sequence = message.sequence ?? previous.sequence;
     if (
       previous.createdAt === message.createdAt &&
+      previous.sequence === sequence &&
       previous.status === message.status &&
       previous.content === message.content &&
       previous.updatedAt === message.updatedAt &&
@@ -948,6 +936,7 @@ export function mergeConversationMessages(
     byId.set(message.id, {
       ...previous,
       ...message,
+      sequence,
       attachments
     });
     changed = true;
@@ -955,6 +944,8 @@ export function mergeConversationMessages(
   if (!changed && byId.size !== existing.length) changed = true;
   if (!changed) return existing;
   return Array.from(byId.values()).sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt)
+    a.createdAt.localeCompare(b.createdAt) ||
+    (a.sequence !== undefined && b.sequence !== undefined
+      ? a.sequence - b.sequence : 0)
   );
 }

@@ -56,6 +56,7 @@ import type {
   AttachConversationSharesResult,
   ConversationContextReference
 } from "@/services/cli/types";
+import type { CliStreamItem } from "@/services/cli/parsers";
 import type {
   WorkflowPlan,
   WorkflowRunRow,
@@ -266,6 +267,14 @@ declare global {
       }
     ): Promise<{ messages: ConversationMessage[]; hasMore: boolean }>;
     listMessage(id: string): Promise<ConversationMessage | undefined>;
+    readMessageDetails(messageId: string, offset?: number): Promise<{
+      items?: CliStreamItem[];
+      available: boolean; text: string; nextOffset: number; hasMore: boolean;
+    }>;
+    listFollowupMessages(
+      conversationId: string,
+      excludeMessageIds: string[]
+    ): Promise<ConversationMessage[]>;
     appendMessage(input: AppendMessageInput): Promise<ConversationMessage>;
     updateMessage(input: UpdateMessageInput): Promise<void>;
 

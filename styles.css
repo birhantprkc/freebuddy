@@ -16114,7 +16114,8 @@ button.ghost:focus-visible,
   margin-top: -12px;
 }
 
-.stream-process > summary {
+.stream-process > summary,
+.history-details-link {
   display: inline-flex;
   max-width: 100%;
   align-items: center;
@@ -16128,7 +16129,8 @@ button.ghost:focus-visible,
   transition: color 120ms ease;
 }
 
-.stream-process > summary:hover {
+.stream-process > summary:hover,
+.history-details-link:hover {
   color: #6f7681;
 }
 
@@ -16136,7 +16138,8 @@ button.ghost:focus-visible,
   display: none;
 }
 
-.stream-process > summary::after {
+.stream-process > summary::after,
+.history-details-link::after {
   width: 6px;
   height: 6px;
   flex: 0 0 6px;
@@ -16148,7 +16151,8 @@ button.ghost:focus-visible,
   transition: transform 120ms ease;
 }
 
-.stream-process[open] > summary::after {
+.stream-process[open] > summary::after,
+.history-details-link[aria-expanded="true"]::after {
   transform: rotate(225deg) translateY(-1px);
 }
 
@@ -17259,11 +17263,13 @@ button.ghost:focus-visible,
   color: var(--fb-text-primary);
 }
 
-[data-theme="dark"] .stream-process {
+[data-theme="dark"] .stream-process,
+[data-theme="dark"] .history-details-link {
   color: rgba(203, 213, 225, 0.62);
 }
 
-[data-theme="dark"] .stream-process > summary:hover {
+[data-theme="dark"] .stream-process > summary:hover,
+[data-theme="dark"] .history-details-link:hover {
   color: rgba(226, 232, 240, 0.82);
 }
 
@@ -23666,3 +23672,28 @@ button.ghost:focus-visible,
 }
 
 
+
+/* Historical details stay lightweight until the user opens the run log. */
+.history-details-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+}
+.history-details-link:focus-visible, .history-details-hint button:focus-visible {
+  outline: 2px solid var(--fb-text-secondary);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.history-details-hint {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  color: var(--fb-text-secondary); font-size: 12px; margin: 6px 0 12px;
+}
+.history-details-hint button {
+  border: 0; padding: 0; background: transparent; color: inherit;
+  font: inherit; cursor: pointer; text-decoration: underline;
+}
+.history-details-hint .spinning { animation: stream-process-spin 1s linear infinite; }

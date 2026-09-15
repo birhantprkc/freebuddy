@@ -339,10 +339,12 @@ test("MessageBubble compacts execution process while preserving final text", () 
   assert.match(css, /\.stream-process\s*\{/);
   assert.match(css, /\.stream-process\s*\{[^}]*color:\s*#969ba3;[^}]*font-size:\s*14px;/);
   assert.match(css, /\.stream-process \+ \.stream-process\s*\{[\s\S]*?margin-top:\s*-12px;/);
-  assert.match(css, /\.stream-process > summary\s*\{/);
-  assert.match(css, /\.stream-process > summary\s*\{[\s\S]*?font-weight:\s*650;/);
-  assert.match(css, /\.stream-process > summary::after\s*\{/);
-  assert.match(css, /\.stream-process\[open\] > summary::after\s*\{/);
+  // The compacted-history link reuses the process summary affordance so both
+  // read as the same inline, collapsible control.
+  assert.match(css, /\.stream-process > summary,\s*\.history-details-link\s*\{/);
+  assert.match(css, /\.stream-process > summary,\s*\.history-details-link\s*\{[\s\S]*?font-weight:\s*650;/);
+  assert.match(css, /\.stream-process > summary::after,\s*\.history-details-link::after\s*\{/);
+  assert.match(css, /\.stream-process\[open\] > summary::after,\s*\.history-details-link\[aria-expanded="true"\]::after\s*\{/);
   assert.doesNotMatch(css, /\.stream-process summary::after\s*\{/);
   assert.doesNotMatch(css, /\.stream-process\[open\] summary::after\s*\{/);
   assert.match(css, /\.stream-process-title\s*\{/);

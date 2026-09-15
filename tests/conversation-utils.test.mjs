@@ -13,7 +13,9 @@ async function loadConversationUtils() {
       module: ts.ModuleKind.ES2022,
       target: ts.ScriptTarget.ES2022
     }
-  }).outputText;
+  }).outputText.replace(
+    '"@freebuddy/cli-stream"', JSON.stringify(import.meta.resolve("@freebuddy/cli-stream"))
+  );
   return import(`data:text/javascript;base64,${Buffer.from(output).toString("base64")}`);
 }
 
@@ -1074,7 +1076,7 @@ test("visibleConversationSlice keeps the newest messages", async () => {
   });
 });
 
-test("capPersistedStreamItems drops bulky tool inputs before the JSON cap", async () => {
+test("capPersistedStreamItems bounds bulky tool inputs while preserving tool identity", async () => {
   const { capPersistedStreamItems } = await loadConversationUtils();
   const bulky = {
     kind: "tool-call",
@@ -1090,8 +1092,84 @@ test("capPersistedStreamItems drops bulky tool inputs before the JSON cap", asyn
     ],
     800
   );
-  assert.equal(JSON.stringify(capped).includes("xxxxx"), false);
+  assert.ok(JSON.stringify(capped).length <= 800);
+  assert.match(capped[1].input, /truncated/);
   assert.equal(capped[0].kind, "text");
   assert.equal(capped[1].kind, "tool-call");
   assert.equal(capped[1].id, "tool-1");
+});
+
+test("persist cap handles oversized text, JSON escapes, and latest content", async () => {
+  const { capPersistedStreamItems, MAX_PERSISTED_STREAM_JSON_CHARS } = await loadConversationUtils();
+  const items = Array.from({ length: 3 }, (_, index) => ({
+    kind: "text", role: "assistant", content: `${index}:` + "x".repeat(199_980)
+  }));
+  const capped = capPersistedStreamItems(items);
+  assert.ok(JSON.stringify(capped).length <= MAX_PERSISTED_STREAM_JSON_CHARS);
+  assert.ok(capped.some((item) => item.content?.startsWith("2:")));
+  assert.match(capped[0].content, /truncated/);
+
+  for (const content of ['"'.repeat(200_000), "\\\n".repeat(100_000), "🙂".repeat(100_000)]) {
+    const small = capPersistedStreamItems([{ kind: "text", role: "assistant", content: content + "latest" }], 800);
+    assert.ok(JSON.stringify(small).length <= 800);
+    assert.match(small[0].content, /truncated/);
+    assert.ok(small[0].content.endsWith("latest"));
+  }
+});
+
+test("renderer persist cap avoids repeated whole-history serialization", async () => {
+  const { capPersistedStreamItems } = await loadConversationUtils();
+  const items = Array.from({ length: 600 }, (_, index) => ({
+    kind: "tool-call", id: String(index), output: "x".repeat(12_000)
+  }));
+  const original = JSON.stringify;
+  let historyEntries = 0;
+  let result;
+  try {
+    JSON.stringify = (value, ...args) => {
+      if (Array.isArray(value)) historyEntries += value.length;
+      return original(value, ...args);
+    };
+    result = capPersistedStreamItems(items);
+  } finally {
+    JSON.stringify = original;
+  }
+  assert.ok(historyEntries <= items.length * 4);
+  assert.equal(result.at(-1).id, "599");
+});
+
+test("merging equal-timestamp pages advances the oldest message in insertion order", async () => {
+  const { mergeConversationMessages } = await loadConversationUtils();
+  const make = (sequence) => ({
+    id: `m${sequence}`, sequence, createdAt: "2026-09-15T00:00:00Z",
+    updatedAt: "2026-09-15T00:00:00Z", status: "done", content: `${sequence}`
+  });
+  const newest = [make(3), make(4)];
+  const merged = mergeConversationMessages(newest, [make(1), make(2)]);
+  assert.deepEqual(merged.map((item) => item.id), ["m1", "m2", "m3", "m4"]);
+  assert.equal(merged[0].id, "m1");
+  const withoutSequence = [{ ...make(1), sequence: undefined }];
+  assert.equal(mergeConversationMessages(withoutSequence, [make(1)])[0].sequence, 1);
+});
+
+test("persisted small inline images retain valid base64", async () => {
+  const { capPersistedStreamItems } = await loadConversationUtils();
+  const image = { kind: "content-block", blockType: "image", mimeType: "image/png", data: "A".repeat(16_000) };
+  assert.deepEqual(capPersistedStreamItems([image]), [image]);
+  const large = capPersistedStreamItems([{ ...image, data: "A".repeat(50_000) }]);
+  assert.match(large[0].content, /inline image omitted/);
+  assert.equal(large[0].data, undefined);
+});
+
+test("followup context budget keeps the latest unanswered question", async () => {
+  const { buildOrphanFollowupContext } = await loadConversationUtils();
+  const messages = Array.from({ length: 10 }, (_, index) => ({
+    id: `old-${index}`, role: "user", status: "sent", content: "old history ".repeat(200)
+  }));
+  messages.push({ id: "latest", role: "user", status: "sent", content: "LATEST QUESTION: repair the remote connection" });
+  messages.push({ id: "failure", role: "assistant", status: "failed", content: "[]" });
+  const context = buildOrphanFollowupContext(messages);
+  assert.ok(context.length <= 6000);
+  assert.match(context, /LATEST QUESTION: repair the remote connection/);
+  assert.match(context, /not successfully answered/);
 });

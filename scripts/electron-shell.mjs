@@ -36,6 +36,9 @@ export function prepareMacElectronShell({
   bundleIdentifier = DEV_BUNDLE_ID,
   iconPath
 }) {
+  if (!fs.existsSync(sourceApp)) {
+    throw new Error("Electron runtime is missing. Run `node node_modules/electron/install.js` before starting FreeBuddy.");
+  }
   const contentsDir = path.join(targetApp, "Contents");
   const resourcesDir = path.join(contentsDir, "Resources");
   const plistPath = path.join(contentsDir, "Info.plist");

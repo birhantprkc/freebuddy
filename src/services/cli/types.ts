@@ -667,6 +667,8 @@ export type MessageStatus =
 
 export interface ConversationMessage {
   id: string;
+  /** Database insertion order for messages sharing a timestamp. */
+  sequence?: number;
   conversationId: string;
   role: MessageRole;
   status: MessageStatus;
@@ -834,6 +836,14 @@ export interface ListMessagesQuery {
 
 export interface ListMessagesPage {
   messages: ConversationMessage[];
+  hasMore: boolean;
+}
+
+export interface MessageDetailsPage {
+  items?: CliStreamItem[];
+  available: boolean;
+  text: string;
+  nextOffset: number;
   hasMore: boolean;
 }
 

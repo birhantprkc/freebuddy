@@ -21,6 +21,9 @@ async function loadConversationStoreHarness() {
     };
 
     export let capturedRunArgs;
+    export let followupMessages = [];
+    export let capturedFollowupQuery;
+    export function setFollowupMessages(value) { followupMessages = value; }
 
     export function setSavedToolSession(value) {
       savedToolSession = value;
@@ -63,6 +66,10 @@ async function loadConversationStoreHarness() {
     export const cliClient = {
       appendMessage: async (message) => message,
       getToolSession: async () => savedToolSession,
+      listFollowupMessages: async (conversationId, excludeMessageIds) => {
+        capturedFollowupQuery = { conversationId, excludeMessageIds };
+        return followupMessages.filter((message) => !excludeMessageIds.includes(message.id));
+      },
       updateMessage: async () => undefined,
       onEvent: () => () => {},
       run: async (args) => {
@@ -138,7 +145,9 @@ async function loadConversationStoreHarness() {
         module: ts.ModuleKind.ES2022,
         target: ts.ScriptTarget.ES2022
       }
-    }).outputText
+    }).outputText.replace(
+      '"@freebuddy/cli-stream"', JSON.stringify(import.meta.resolve("@freebuddy/cli-stream"))
+    )
   );
   const source = fs.readFileSync(
     new URL("../src/store/conversationStore.ts", import.meta.url),
@@ -273,4 +282,46 @@ test("sendMessage keeps matching live chunks when a saved ACP session falls back
     ),
     false
   );
+});
+
+test("orphan followup uses database history regardless of the UI history window", async () => {
+  const prompts = [];
+  for (const showOldHistory of [false, true]) {
+    const { useConversationStore, mocks } = await loadConversationStoreHarness();
+    mocks.setSavedToolSession(undefined);
+    const timestamp = "2026-09-15T00:00:00Z";
+    const conversation = {
+      id: "context-conversation", title: "Context", agentId: "agent-1",
+      agentName: "Mock ACP", adapter: "mock-acp", cwd: "/tmp/context",
+      createdAt: timestamp, updatedAt: timestamp
+    };
+    const make = (id, role, status, content) => ({
+      id, conversationId: conversation.id, role, status, content,
+      createdAt: timestamp, updatedAt: timestamp
+    });
+    const history = [
+      make("original-ask", "user", "sent", "Implement the missing remote feature"),
+      make("failed-answer", "assistant", "failed", "[]")
+    ];
+    mocks.setFollowupMessages(history);
+    const systemMessages = Array.from({ length: 40 }, (_, index) =>
+      make(`notice-${index}`, "system", "done", "Team activity")
+    );
+    useConversationStore.setState({
+      conversations: [conversation],
+      messages: { [conversation.id]: showOldHistory ? [...history, ...systemMessages] : systemMessages },
+      live: {}, pendingFreshContext: {}
+    });
+    await useConversationStore.getState().sendMessage({
+      conversationId: conversation.id, prompt: "continue",
+      userMessageId: "current-user", assistantMessageId: "current-assistant"
+    });
+    assert.deepEqual(mocks.capturedFollowupQuery, {
+      conversationId: conversation.id,
+      excludeMessageIds: ["current-user", "current-assistant"]
+    });
+    assert.match(mocks.capturedRunArgs.prompt, /Implement the missing remote feature/);
+    prompts.push(mocks.capturedRunArgs.prompt);
+  }
+  assert.equal(prompts[0], prompts[1]);
 });

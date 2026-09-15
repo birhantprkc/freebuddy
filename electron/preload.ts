@@ -182,6 +182,10 @@ const cli = {
   ) => ipcRenderer.invoke("cli:listMessages", conversationId, options),
   listMessage: (id: string) =>
     ipcRenderer.invoke("cli:listMessage", id),
+  readMessageDetails: (messageId: string, offset?: number) =>
+    ipcRenderer.invoke("cli:readMessageDetails", messageId, offset),
+  listFollowupMessages: (conversationId: string, excludeMessageIds: string[]) =>
+    ipcRenderer.invoke("cli:listFollowupMessages", conversationId, excludeMessageIds),
   appendMessage: (input: unknown) =>
     ipcRenderer.invoke("cli:appendMessage", input),
   updateMessage: (input: unknown) =>

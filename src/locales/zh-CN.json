@@ -929,6 +929,15 @@
     "copyAll": "复制全部"
   },
   "stream": {
+    "historyCollapse": "收起",
+    "historyLoadMore": "继续加载",
+    "historyRestoreHint": "已还原日志中保留的过程详情；重新进入会话后自动收起。",
+    "historyCompacted": "历史详情已精简",
+    "historyView": "还原展开",
+    "historyLoading": "正在加载详情…",
+    "historyError": "详情加载失败",
+    "historyRetry": "重试",
+    "historyUnavailable": "运行日志不存在或已清理，无法恢复这部分详情。",
     "read": "读取 {{target}}",
     "edit": "修改 {{target}}",
     "exec": "执行 {{target}}",

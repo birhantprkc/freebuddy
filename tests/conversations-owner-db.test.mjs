@@ -293,6 +293,18 @@ test("listMessagesForIpc pages newest messages and does not load oversized blobs
   const ipcOne = getMessageForIpc(hugeId);
   assert.ok(ipcOne);
   assert.ok(ipcOne.content.length <= MAX_IPC_MESSAGE_CONTENT_CHARS + 1);
+
+  // Legacy delegate rows can contain hundreds of MB. Confirm the SQL guard
+  // bypasses substr entirely instead of loading the blob just to slice it.
+  db.prepare("UPDATE conversation_messages SET content = ? WHERE id = ?")
+    .run("x".repeat(MAX_IPC_MESSAGE_CONTENT_CHARS * 4 + 1), hugeId);
+  db.function("substr", (value, start, length) => {
+    assert.ok(value.length <= MAX_IPC_MESSAGE_CONTENT_CHARS * 4,
+      "large blob must not be sliced");
+    return value.slice(start - 1, start - 1 + length);
+  });
+  assert.match(getMessageForIpc(hugeId).content, /omitted/);
+  assert.match(listMessagesForIpc("c1", { limit: 1 }).messages.at(-1).content, /omitted/);
 });
 
 test("listMessagesForIpc keeps insertion order when created_at timestamps collide", async (t) => {
@@ -326,5 +338,37 @@ test("listMessagesForIpc keeps insertion order when created_at timestamps collid
     beforeId: latest.messages[0].id
   });
   assert.equal(older.messages[0]?.id, "z-first");
+  assert.ok(older.messages[0].sequence < latest.messages[0].sequence);
   assert.equal(older.hasMore, false);
+});
+
+test("followup history skips UI-only messages, excluded current turns, and live assistants", async (t) => {
+  if (!bindingAvailable) { t.skip("better-sqlite3 native binding unavailable"); return; }
+  const db = makeDb();
+  const { migrate, setDbForTest } = await import("../dist-electron/cli/db.js");
+  migrate(db);
+  setDbForTest(db);
+  const { createConversation, appendMessage, listFollowupMessagesForIpc } = await import(
+    "../dist-electron/cli/conversations.js"
+  );
+  createConversation(baseInput("c1"));
+  createConversation(baseInput("c2"));
+  const add = (id, role, status, content = id, conversationId = "c1") => appendMessage({
+    id, conversationId, role, status, content
+  });
+  add("ask", "user", "sent", "Build the missing feature");
+  add("failure", "assistant", "failed", "[]");
+  for (let index = 0; index < 60; index++) add(`system-${index}`, "system", "done");
+  add("current", "user", "sent", "continue");
+  add("live", "assistant", "running", "[]");
+  add("starting", "assistant", "starting", "[]");
+  add("foreign", "user", "sent", "Private other conversation", "c2");
+  const messages = listFollowupMessagesForIpc("c1", ["current", "live"]);
+  assert.deepEqual(messages.map((message) => message.id), ["ask", "failure"]);
+  assert.ok(messages[0].sequence < messages[1].sequence);
+  for (let index = 0; index < 20; index++) add(`turn-${index}`, "user", "sent");
+  const recent = listFollowupMessagesForIpc("c1");
+  assert.equal(recent.length, 12);
+  assert.equal(recent[0].id, "turn-8");
+  assert.equal(recent.at(-1).id, "turn-19");
 });

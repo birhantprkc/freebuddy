@@ -33,6 +33,7 @@ import type {
   CreateConversationInput,
   ListConversationsArgs,
   ListMessagesPage,
+  MessageDetailsPage,
   ListMessagesQuery,
   AppendMessageInput,
   UpdateMessageInput,
@@ -324,6 +325,15 @@ export const cliClient = {
   },
   listMessage(id: string): Promise<ConversationMessage | undefined> {
     return api().listMessage(id);
+  },
+  readMessageDetails(messageId: string, offset?: number): Promise<MessageDetailsPage> {
+    return api().readMessageDetails(messageId, offset);
+  },
+  listFollowupMessages(
+    conversationId: string,
+    excludeMessageIds: string[]
+  ): Promise<ConversationMessage[]> {
+    return api().listFollowupMessages(conversationId, excludeMessageIds);
   },
   appendMessage(input: AppendMessageInput): Promise<ConversationMessage> {
     return api().appendMessage(input);

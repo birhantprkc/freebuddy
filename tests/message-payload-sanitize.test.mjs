@@ -40,7 +40,7 @@ test("sanitizeMessageForIpc redacts inline base64 media from stored assistant JS
   );
 
   assert.doesNotMatch(sanitized.content, /data:image\/png;base64,/);
-  assert.doesNotMatch(sanitized.content, /"input"/);
+  assert.ok(JSON.parse(sanitized.content)[0].input.length <= 12_000);
   assert.ok(sanitized.content.length < 20_000);
   assert.doesNotThrow(() => structuredClone(sanitized));
 });
@@ -150,9 +150,42 @@ test("serializeStreamItemsForPersist caps bulky collected tool payloads", () => 
   ]);
   assert.ok(persisted.length <= MAX_IPC_MESSAGE_CONTENT_CHARS);
   assert.match(persisted, /done/);
-  assert.doesNotMatch(persisted, /"input"/);
+  assert.ok(JSON.parse(persisted)[1].input.length <= 12_000);
 });
 
 test("IPC history page size matches the renderer initial window", () => {
   assert.equal(IPC_LIST_MESSAGES_PAGE_SIZE, 40);
+});
+
+test("busy delegate saves serialize a bounded amount of history and preserve chronology", () => {
+  const items = [
+    { kind: "text", content: "before tools" },
+    ...Array.from({ length: 1200 }, (_, index) => ({
+      kind: "tool-call", id: `tool-${index}`, output: "x".repeat(12_000)
+    })),
+    { kind: "text", content: "after tools" }
+  ];
+  const original = JSON.stringify;
+  let arrayEntriesSerialized = 0;
+  let persisted;
+  try {
+    JSON.stringify = function (value, ...args) {
+      if (Array.isArray(value)) arrayEntriesSerialized += value.length;
+      return original(value, ...args);
+    };
+    persisted = serializeStreamItemsForPersist(items);
+  } finally {
+    JSON.stringify = original;
+  }
+  assert.ok(arrayEntriesSerialized <= items.length * 4,
+    `repeatedly serialized ${arrayEntriesSerialized} history entries`);
+  assert.ok(persisted.length <= MAX_IPC_MESSAGE_CONTENT_CHARS);
+  const snapshot = JSON.parse(persisted);
+  assert.match(snapshot[0].content, /earlier stream details truncated/);
+  const result = snapshot.slice(1);
+  assert.equal(result[0].content, "before tools");
+  assert.equal(result.at(-1).content, "after tools");
+  assert.equal(result.at(-2).id, "tool-1199");
+  const retainedIds = new Set(result.filter((item) => item.kind === "tool-call").map((item) => item.id));
+  assert.deepEqual(result, items.filter((item) => item.kind === "text" || retainedIds.has(item.id)));
 });

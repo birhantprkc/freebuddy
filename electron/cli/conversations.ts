@@ -18,7 +18,8 @@ import {
 import { safeSendToWebContents } from "./ipcSend.js";
 import {
   IPC_LIST_MESSAGES_PAGE_SIZE,
-  MAX_IPC_MESSAGE_CONTENT_CHARS
+  MAX_IPC_MESSAGE_CONTENT_CHARS,
+  OMITTED_ASSISTANT_CONTENT
 } from "./messagePayloadSanitize.js";
 
 let notifyMessagesChangedHandler: ((conversationId: string) => void) | null = null;
@@ -83,6 +84,8 @@ export interface Conversation {
 
 export interface ConversationMessage {
   id: string;
+  /** SQLite insertion order, used to break equal createdAt timestamps. */
+  sequence?: number;
   conversationId: string;
   role: "user" | "assistant" | "system";
   /** running | done | failed | killed | sent */
@@ -241,6 +244,7 @@ function rowToMessage(r: any): ConversationMessage {
   return {
     id: r.id,
     conversationId: r.conversation_id,
+    sequence: r.message_sequence,
     role: r.role,
     status: r.status,
     content: r.content,
@@ -670,7 +674,7 @@ export function recoverInterruptedMessages(): number {
 
 export function getMessage(id: string): ConversationMessage | undefined {
   const row = getDb()
-    .prepare(`SELECT * FROM conversation_messages WHERE id = ?`)
+    .prepare(`SELECT *, rowid AS message_sequence FROM conversation_messages WHERE id = ?`)
     .get(id) as any;
   return row ? rowToMessage(row) : undefined;
 }
@@ -682,7 +686,7 @@ export function listMessage(id: string): ConversationMessage | undefined {
 export function listMessages(conversationId: string): ConversationMessage[] {
   const rows = getDb()
     .prepare(
-      `SELECT * FROM conversation_messages
+      `SELECT *, rowid AS message_sequence FROM conversation_messages
        WHERE conversation_id = ?
        ORDER BY created_at ASC, rowid ASC`
     )
@@ -701,10 +705,18 @@ export interface ListMessagesIpcPage {
   hasMore: boolean;
 }
 
+// octet_length reads record metadata without loading the text. Four UTF-8
+// bytes per character is a conservative bound for legacy oversized assistants.
+// substr alone loads those hundreds of MB inside SQLite before slicing them.
 const IPC_MESSAGE_SELECT = `
   SELECT
-    id, conversation_id, role, status,
-    substr(content, 1, ?) AS content,
+    id, rowid AS message_sequence, conversation_id, role, status,
+    CASE
+      WHEN role = 'assistant'
+        AND octet_length(content) > ${MAX_IPC_MESSAGE_CONTENT_CHARS * 4}
+      THEN '${OMITTED_ASSISTANT_CONTENT}'
+      ELSE substr(content, 1, ?)
+    END AS content,
     attachments, task_id, agent_id, agent_name, adapter, role_label,
     workflow_run_id, workflow_step_row_id, author_username,
     created_at, updated_at
@@ -760,4 +772,24 @@ export function listMessagesForIpc(
   const page = hasMore ? rows.slice(0, limit) : rows;
   page.reverse();
   return { messages: page.map(rowToMessage), hasMore };
+}
+
+/** Recent effective turns for context, independent of the UI's history window. */
+export function listFollowupMessagesForIpc(
+  conversationId: string,
+  excludeMessageIds: string[] = []
+): ConversationMessage[] {
+  const excluded = excludeMessageIds.slice(0, 80);
+  const exclusion = excluded.length
+    ? ` AND id NOT IN (${excluded.map(() => "?").join(",")})`
+    : "";
+  const rows = getDb().prepare(
+    `${IPC_MESSAGE_SELECT}
+     WHERE conversation_id = ?
+       AND role IN ('user', 'assistant')
+       AND NOT (role = 'assistant' AND status IN ('running', 'starting'))
+       ${exclusion}
+     ORDER BY created_at DESC, rowid DESC LIMIT 12`
+  ).all(IPC_CONTENT_FETCH_CHARS, conversationId, ...excluded) as any[];
+  return rows.reverse().map(rowToMessage);
 }

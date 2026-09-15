@@ -12,6 +12,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { cliAdapterDefinitions } from "./adapters.js";
+import { readMessageDetails } from "./messageDetails.js";
 import { cliCheck, cliInstall, cliInstallStream, listRuntimes } from "./check.js";
 import {
   listOverrides,
@@ -53,6 +54,7 @@ import {
   getMessageForIpc,
   listMessages,
   listMessagesForIpc,
+  listFollowupMessagesForIpc,
   notifyConversationsChanged,
   renameConversation,
   requireOwnedConversation,
@@ -1581,6 +1583,18 @@ export function registerCliIpc() {
     const message = getMessageForIpc(id);
     return message ? sanitizeMessageForIpc(message) : undefined;
   });
+  registerHandler("cli:readMessageDetails", (_e, messageId: string, offset?: number) =>
+    readMessageDetails(messageId, offset)
+  );
+  registerHandler(
+    "cli:listFollowupMessages",
+    (_e, conversationId: string, excludeMessageIds: string[] = []) => {
+      if (!requireOwnedConversation(conversationId)) return [];
+      return sanitizeMessagesForIpc(
+        listFollowupMessagesForIpc(conversationId, excludeMessageIds)
+      );
+    }
+  );
   registerHandler("cli:appendMessage", (_e, input: AppendMessageInput) => {
     if (!requireOwnedConversation(input.conversationId)) return undefined;
     return sanitizeMessageForIpc(appendMessage(input));

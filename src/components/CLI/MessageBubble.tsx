@@ -16,6 +16,8 @@ import {
 import { memo, useCallback, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
+import { isTruncatedStreamNotice } from "@freebuddy/cli-stream";
+import { HistoryDetails } from "./HistoryDetails";
 
 import { displayAgentName } from "@/config/agentDisplay";
 import type { ChatAttachment, ConversationMessage } from "@/services/cli/types";
@@ -188,6 +190,7 @@ export function normalizeStoredItems(items: CliStreamItem[]): CliStreamItem[] {
 }
 
 function copyableItemText(item: CliStreamItem): string {
+  if (isTruncatedStreamNotice(item)) return "";
   if (item.kind === "text" || item.kind === "raw") return item.content;
   return "";
 }
@@ -800,12 +803,32 @@ export const MessageBubble = memo(function MessageBubble({
       );
     }
   }, [message.role, message.content]);
+  const [restoredItems, setRestoredItems] = useState<CliStreamItem[]>([]);
+  const historyTruncated = items.some(isTruncatedStreamNotice);
+  const displayItems = useMemo(() => {
+    const saved = items.filter((item) => !isTruncatedStreamNotice(item));
+    if (!restoredItems.length) return saved;
+    const restored = normalizeStoredItems(sanitizeStreamItems(restoredItems, (image) =>
+      useImagePreviewStore.getState().register(image)));
+    const savedText = saved.filter((item) => item.kind === "text");
+    const restoredText = restored.filter((item) => item.kind === "text");
+    const answer = savedText.at(-1);
+    const lastText = restoredText.at(-1);
+    // A complete saved answer takes precedence over the last replayed answer.
+    // Earlier assistant messages remain in their original stream positions.
+    if (answer && lastText && (answer.content.includes(lastText.content) || lastText.content.includes(answer.content))) {
+      const index = restored.indexOf(lastText);
+      restored[index] = answer;
+      return normalizeStoredItems(appendItems(restored, saved.filter((item) => item.kind !== "text")));
+    }
+    return normalizeStoredItems(appendItems(restored, saved));
+  }, [items, restoredItems]);
   const visibleItems = useMemo(() => {
-    const hideDiagnosticStderr = items.some(
+    const hideDiagnosticStderr = displayItems.some(
       (item) => item.kind === "error" && Boolean(item.details?.length)
     );
-    return items.filter((item) => isVisibleItem(item, hideDiagnosticStderr));
-  }, [items]);
+    return displayItems.filter((item) => isVisibleItem(item, hideDiagnosticStderr));
+  }, [displayItems]);
   const blocks = useMemo(() => visibleBlocks(visibleItems), [visibleItems]);
   const renderedBlocks = useMemo(() => {
     const sliced = blockLimit != null ? blocks.slice(0, blockLimit) : blocks;
@@ -1088,9 +1111,10 @@ export const MessageBubble = memo(function MessageBubble({
             </span>
           )}
         </div>
-        {renderedBlocks.length > 0 && (
+        {(renderedBlocks.length > 0 || historyTruncated) && (
           <div className="msg-bubble">
             <div className="msg-items">
+              {historyTruncated && <HistoryDetails messageId={message.id} onRestore={setRestoredItems} />}
               {renderedSections.map((section, i) =>
                 section.kind === "process" ? (
                   <StreamProcessGroup

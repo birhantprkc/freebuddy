@@ -1348,9 +1348,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     // FreeBuddy chat history so short follow-ups like "continue" keep prior asks.
     const orphanFollowupContext =
       !workflowRun && !wantFresh && !resumedFromSessionId
-        ? buildOrphanFollowupContext(get().messages[conversationId] ?? [], {
-            excludeMessageIds: [userMsgId, assistantMsgId]
-          })
+        ? buildOrphanFollowupContext(
+            await cliClient.listFollowupMessages(conversationId, [userMsgId, assistantMsgId])
+          )
         : undefined;
     const promptWithWorkflowContext = workflowFollowupContext
       ? `${workflowFollowupContext}\n\nUser follow-up:\n${userPrompt}`

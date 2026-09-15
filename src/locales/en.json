@@ -932,6 +932,15 @@
     "copyAll": "Copy all"
   },
   "stream": {
+    "historyCollapse": "Collapse",
+    "historyLoadMore": "Load more",
+    "historyRestoreHint": "Restored process details retained in the log. Reopening the conversation collapses them.",
+    "historyCompacted": "Some historical details were compacted",
+    "historyView": "Restore and expand",
+    "historyLoading": "Loading details…",
+    "historyError": "Unable to load details",
+    "historyRetry": "Retry",
+    "historyUnavailable": "The run log is missing or has been cleared. These details cannot be recovered.",
     "read": "Read {{target}}",
     "edit": "Edit {{target}}",
     "exec": "Execute {{target}}",
