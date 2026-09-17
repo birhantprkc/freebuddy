@@ -31,6 +31,7 @@ export type CLIAdapterId =
   | "agy-acp"
   | "dsh-acp"
   | "zcode-acp"
+  | "cline-acp"
   | (string & {});
 
 export type CLIStreamMode =
@@ -288,6 +289,23 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     installHint: "npm install -g zcode-acp-server",
     docsUrl: "https://github.com/william0wang/zcode-acp",
     protocol: "acp"
+  },
+  {
+    id: "cline-acp",
+    label: "Cline",
+    defaultBinary: "cline",
+    checkProbe: { args: ["--version"], versionOptional: false },
+    streamMode: "raw",
+    commandGroup: "cline",
+    capabilities: {
+      toolSession: true,
+      skills: { mode: "mcp", reloadPolicy: "new-session" }
+    },
+    toolSessionArgs: [],
+    toolSessionArgPrefixes: [],
+    installHint: "npm install -g cline",
+    docsUrl: "https://docs.cline.bot/usage/acp",
+    protocol: "acp"
   }
 ];
 
@@ -347,6 +365,10 @@ export function isDshAcpExperimentalWarningLine(line: string): boolean {
     return true;
   }
   return /Use `node --trace-warnings/i.test(text);
+}
+
+export function isClineAcpStartupBannerLine(line: string): boolean {
+  return /^\[acp\]\s+starting\s+acp\s+mode/i.test(line.trim());
 }
 
 function dshAcpBinaryBaseName(binary: string): string {
@@ -1505,6 +1527,18 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
       return {
         bin,
         args,
+        promptViaStdin: false,
+        protocol: "acp"
+      };
+    }
+    case "cline-acp": {
+      const { model, args: acpArgs } = splitModelArg(extra);
+      const args: string[] = ["--acp"];
+      args.push(...acpArgs);
+      return {
+        bin,
+        args,
+        ...(model ? { env: { CLINE_MODEL: model } } : {}),
         promptViaStdin: false,
         protocol: "acp"
       };

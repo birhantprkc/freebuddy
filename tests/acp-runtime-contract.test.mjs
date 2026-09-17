@@ -215,6 +215,22 @@ test("ACP runtime hides DeepSeek Node SQLite ExperimentalWarning from UI stderr"
   );
 });
 
+test("ACP runtime hides Cline startup banner from UI stderr", () => {
+  assert.match(acpRuntimeSource, /isClineAcpStartupBannerLine/);
+  const stderrHandler = acpRuntimeSource.slice(
+    acpRuntimeSource.indexOf('rlErr.on("line"'),
+    acpRuntimeSource.indexOf("child.on(\"close\"")
+  );
+  assert.match(stderrHandler, /args\.adapter === "cline-acp"/);
+  assert.match(stderrHandler, /isClineAcpStartupBannerLine\(line\)/);
+  assert.match(stderrHandler, /recentStderr\.push\(line\)/);
+  assert.ok(
+    stderrHandler.indexOf("isClineAcpStartupBannerLine(line)") <
+      stderrHandler.indexOf("recentStderr.push(line)"),
+    "Cline ACP startup banner is skipped before it becomes UI stderr or crash text"
+  );
+});
+
 test("cliRun merges NODE_OPTIONS instead of overwriting them", () => {
   assert.match(runtimeSource, /key === "NODE_OPTIONS"/);
   assert.match(runtimeSource, /mergeNodeOptions/);

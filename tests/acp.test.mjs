@@ -11,6 +11,7 @@ import {
   extraArgsHaveDshConfig,
   resolveDshAcpConfigPath,
   DSH_ACP_NODE_DISABLE_WARNING,
+  isClineAcpStartupBannerLine,
   isDshAcpExperimentalWarningLine,
   mergeNodeOptions,
   sanitizeCliAgentEnv,
@@ -166,7 +167,8 @@ test("visible adapter definitions are ACP-only with product names", () => {
       { id: "grok-acp", label: "Grok", protocol: "acp" },
       { id: "agy-acp", label: "Antigravity", protocol: "acp" },
       { id: "dsh-acp", label: "DeepSeek Harness", protocol: "acp" },
-      { id: "zcode-acp", label: "ZCode", protocol: "acp" }
+      { id: "zcode-acp", label: "ZCode", protocol: "acp" },
+      { id: "cline-acp", label: "Cline", protocol: "acp" }
     ]
   );
 });
@@ -198,6 +200,35 @@ test("buildCommand starts ZCode ACP adapter", () => {
     {
       bin: "zcode-acp-server",
       args: [],
+      promptViaStdin: false,
+      protocol: "acp"
+    }
+  );
+});
+
+test("buildCommand starts Cline ACP adapter", () => {
+  assert.deepEqual(
+    buildCommand({ adapter: "cline-acp", prompt: "hello" }),
+    {
+      bin: "cline",
+      args: ["--acp"],
+      promptViaStdin: false,
+      protocol: "acp"
+    }
+  );
+});
+
+test("buildCommand translates Cline model shorthand for cline-acp", () => {
+  assert.deepEqual(
+    buildCommand({
+      adapter: "cline-acp",
+      prompt: "hello",
+      extraArgs: ["--model", "claude-3-7-sonnet"]
+    }),
+    {
+      bin: "cline",
+      args: ["--acp"],
+      env: { CLINE_MODEL: "claude-3-7-sonnet" },
       promptViaStdin: false,
       protocol: "acp"
     }
@@ -631,6 +662,25 @@ test("isDshAcpExperimentalWarningLine matches Node sqlite warning stderr", () =>
   );
 });
 
+test("isClineAcpStartupBannerLine matches Cline ACP startup banner stderr", () => {
+  assert.equal(
+    isClineAcpStartupBannerLine("[acp] starting ACP mode over stdio…"),
+    true
+  );
+  assert.equal(
+    isClineAcpStartupBannerLine("[acp] starting ACP mode over stdio..."),
+    true
+  );
+  assert.equal(
+    isClineAcpStartupBannerLine("  [acp]  starting ACP mode over stdio  "),
+    true
+  );
+  assert.equal(
+    isClineAcpStartupBannerLine("Error: failed to connect"),
+    false
+  );
+});
+
 test("mergeNodeOptions appends the DeepSeek warning flag without dropping existing options", () => {
   assert.equal(
     mergeNodeOptions(undefined, DSH_ACP_NODE_DISABLE_WARNING),
@@ -993,6 +1043,17 @@ test("ACP auth selection prefers available API keys, otherwise interactive login
       {}
     ),
     undefined
+  );
+  assert.equal(
+    selectAcpAuthMethod(
+      [
+        { id: "cline", name: "Sign in with Cline" },
+        { id: "cline-pass", name: "Sign in with ClinePass" },
+        { id: "openai-codex", name: "Sign in with ChatGPT Subscription" }
+      ],
+      {}
+    )?.id,
+    "cline"
   );
 });
 

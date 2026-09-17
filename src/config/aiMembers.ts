@@ -138,5 +138,14 @@ export const builtinCliMembers: CLIMember[] = [
     source: "builtin",
     enabled: true,
     cli: { adapter: "zcode-acp", approvalMode: "auto", showStderr: true }
+  },
+  {
+    id: "cli-cline-acp",
+    kind: "cli",
+    name: "Cline",
+    description: "Local Cline coding agent via ACP.",
+    source: "builtin",
+    enabled: true,
+    cli: { adapter: "cline-acp", approvalMode: "auto", showStderr: true }
   }
 ];

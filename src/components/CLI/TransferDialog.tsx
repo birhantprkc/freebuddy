@@ -39,8 +39,12 @@ function findConfigOption(
   category: string
 ): SessionConfigOption | undefined {
   return (
-    options.find((option) => option.category === category) ??
-    options.find((option) => option.id === category)
+    options.find((option) => option.id === category) ??
+    options.find(
+      (option) =>
+        option.category === category &&
+        (category !== "model" || option.id !== "provider")
+    )
   );
 }
 

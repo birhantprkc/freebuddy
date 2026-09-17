@@ -56,6 +56,8 @@ function mergeBuiltinRoster(saved: DelegationTeam, builtin: DelegationTeam): Del
     return {
       ...r,
       agentId: s?.agentId ?? r.agentId,
+      ...(s?.provider ? { provider: s.provider } : {}),
+      ...(s?.providerOptionId ? { providerOptionId: s.providerOptionId } : {}),
       ...(s?.model ? { model: s.model } : {}),
       ...(s?.modelOptionId ? { modelOptionId: s.modelOptionId } : {}),
       ...(s?.thoughtLevel ? { thoughtLevel: s.thoughtLevel } : {}),

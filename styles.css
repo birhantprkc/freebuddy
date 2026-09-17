@@ -8227,7 +8227,7 @@ button.new-task-context-control {
 }
 
 .composer-session-config .session-config-picker-trigger {
-  max-width: 180px;
+  max-width: 240px;
   height: 30px;
   gap: 0;
   padding: 0 10px 0 12px;
@@ -8254,7 +8254,7 @@ button.new-task-context-control {
 
 .composer-session-config .session-config-picker-value {
   display: inline-block;
-  max-width: 148px;
+  max-width: 208px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8270,9 +8270,9 @@ button.new-task-context-control {
 .session-config-picker-panel {
   display: grid;
   gap: 12px;
-  min-width: 220px;
-  max-width: min(320px, 70vw);
-  max-height: min(420px, calc(100vh - 24px));
+  min-width: 260px;
+  max-width: min(360px, 80vw);
+  max-height: min(460px, calc(100vh - 24px));
   overflow: auto;
   padding: 12px;
   border: 1px solid var(--fb-border);
@@ -8291,15 +8291,53 @@ button.new-task-context-control {
   gap: 8px;
 }
 
+.session-config-picker-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .session-config-picker-row-label {
   font-size: 12px;
   font-weight: 600;
   color: var(--fb-text-secondary);
 }
 
+.session-config-picker-search {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--fb-border);
+  border-radius: 6px;
+  background: var(--fb-input-bg, transparent);
+  color: var(--fb-text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  width: 140px;
+  transition: border-color 0.15s ease;
+}
+
+.session-config-picker-search:focus {
+  border-color: var(--fb-brand);
+}
+
 .session-config-picker-choices {
   display: grid;
   gap: 4px;
+}
+
+.session-config-picker-choices.scrollable {
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.session-config-picker-empty {
+  padding: 10px;
+  color: var(--fb-text-tertiary);
+  font-size: 12px;
+  text-align: center;
 }
 
 .session-config-picker-choice {

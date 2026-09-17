@@ -203,6 +203,7 @@ export interface SessionConfigProbeInput {
   extraArgs?: string[];
   env?: Record<string, string>;
   cwd?: string;
+  configOptionOverrides?: Record<string, string>;
 }
 
 export type BrowserToolAction =

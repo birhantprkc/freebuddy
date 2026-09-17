@@ -96,5 +96,11 @@ export const builtinCliMembers: CLIMember[] = [
     name: "ZCode",
     enabled: true,
     cli: { adapter: "zcode-acp", approvalMode: "auto", showStderr: true }
+  },
+  {
+    id: "cli-cline-acp",
+    name: "Cline",
+    enabled: true,
+    cli: { adapter: "cline-acp", approvalMode: "auto", showStderr: true }
   }
 ];

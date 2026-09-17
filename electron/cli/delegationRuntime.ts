@@ -75,10 +75,16 @@ function delegationTurnSessionId(runId: string, nodeKey: string): string {
 function modelConfigOverride(entry: {
   model?: string;
   modelOptionId?: string;
+  provider?: string;
+  providerOptionId?: string;
   thoughtLevel?: string;
   thoughtLevelOptionId?: string;
 }): Record<string, string> | undefined {
   const overrides: Record<string, string> = {};
+  const provider = entry.provider?.trim();
+  if (provider) {
+    overrides[entry.providerOptionId?.trim() || "provider"] = provider;
+  }
   const model = entry.model?.trim();
   if (model) {
     const optionId = entry.modelOptionId?.trim() || "model";

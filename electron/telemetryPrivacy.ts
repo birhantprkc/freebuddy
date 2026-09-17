@@ -12,7 +12,8 @@ const KNOWN_ADAPTERS = new Set([
   "grok-acp",
   "agy-acp",
   "dsh-acp",
-  "zcode-acp"
+  "zcode-acp",
+  "cline-acp"
 ]);
 
 export type TelemetryErrorCategory =

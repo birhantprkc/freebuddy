@@ -43,7 +43,10 @@ import {
   pathsEqual
 } from "@/utils/projectPaths";
 import { cliClient } from "@/services/cli/client";
-import { pruneConfigOptionOverrides } from "@/utils/sessionConfigOptions";
+import {
+  findMainModelConfigOption,
+  pruneConfigOptionOverrides
+} from "@/utils/sessionConfigOptions";
 import type {
   AttachmentPrepareRejection,
   ChatAttachment,
@@ -989,6 +992,8 @@ export function ChatView({
   const [newTaskConfigOptionOverrides, setNewTaskConfigOptionOverrides] =
     useState<Record<string, string>>({});
   const [newTaskConfigLoading, setNewTaskConfigLoading] = useState(false);
+  const [activeConversationConfigOptions, setActiveConversationConfigOptions] =
+    useState<SessionConfigOption[] | null>(null);
   const newTaskConfigProbeGenerationRef = useRef(0);
   const [permissionMode, setPermissionMode] = useState<"auto" | "ask">("auto");
   const [preflightMsg, setPreflightMsg] = useState<string | null>(null);
@@ -1552,6 +1557,24 @@ export function ChatView({
             // [none, high] on the default) are wrong until we substitute the
             // values seen for the remembered model in a real conversation.
             let effective = opts;
+            if (stored.provider) {
+              try {
+                const providerCached =
+                  await cliClient.getCachedSessionConfigOptions({
+                    ...probeInput,
+                    configOptionOverrides: { provider: stored.provider }
+                  });
+                if (
+                  newTaskConfigProbeGenerationRef.current === generation &&
+                  providerCached.length > 0
+                ) {
+                  effective = providerCached;
+                  setNewTaskConfigOptions(providerCached);
+                }
+              } catch {
+                /* ignore: provider cache lookup is best-effort */
+              }
+            }
             if (stored.model) {
               try {
                 const seenRaw = await cliClient.getSetting(
@@ -1629,6 +1652,7 @@ export function ChatView({
 
   useEffect(() => {
     isNearBottomRef.current = true;
+    setActiveConversationConfigOptions(null);
   }, [activeId]);
 
   useEffect(() => {
@@ -2607,10 +2631,50 @@ export function ChatView({
           void checkAgentEntries(agentEntriesNeedingDetection(agentAvailability))
         }
         onManageAgents={() => onOpenAgentSettings?.()}
-        onConfigOptionOverrides={(next) => {
+        onConfigOptionOverrides={async (next) => {
           const prevModel = newTaskConfigOptionOverrides.model;
-          setNewTaskConfigOptionOverrides(next);
+          const prevProvider = newTaskConfigOptionOverrides.provider;
+          const currentProvider = next.provider;
           const member = members.find((entry) => entry.id === selectedMemberId);
+
+          if (member && currentProvider !== prevProvider) {
+            const resolved = useCliExecutorStore
+              .getState()
+              .resolve(member.cli.adapter);
+            const providerProbeInput = {
+              agentId: member.id,
+              adapter: member.cli.adapter,
+              binary: member.cli.binary || resolved?.binary,
+              extraArgs: [
+                ...(resolved?.extraArgs ?? []),
+                ...(member.cli.extraArgs ?? [])
+              ],
+              env: { ...(resolved?.env ?? {}), ...(member.cli.env ?? {}) },
+              cwd: newTaskCwd.trim() || undefined,
+              configOptionOverrides: currentProvider
+                ? { provider: currentProvider }
+                : undefined
+            };
+            try {
+              let targetOptions =
+                await cliClient.getCachedSessionConfigOptions(providerProbeInput);
+              if (targetOptions.length === 0 && currentProvider) {
+                targetOptions =
+                  await cliClient.inspectSessionConfigOptions(providerProbeInput);
+              }
+              if (targetOptions.length > 0) {
+                setNewTaskConfigOptions(targetOptions);
+                const modelOpt = findMainModelConfigOption(targetOptions);
+                if (modelOpt?.currentValue) {
+                  next = { ...next, model: modelOpt.currentValue };
+                }
+              }
+            } catch {
+              /* best-effort live refresh on provider switch */
+            }
+          }
+
+          setNewTaskConfigOptionOverrides(next);
           if (member) {
             void cliClient
               .setSetting(
@@ -3083,13 +3147,61 @@ export function ChatView({
           <div className="composer-tail">
             <SessionConfigPicker
               className="composer-session-config"
-              options={sessionConfigOptions}
+              options={activeConversationConfigOptions ?? sessionConfigOptions}
               overrides={conv?.configOptionOverrides}
               disabled={sending || replaying}
               fallback={
                 <span className="composer-hint">{t("chat.enterHint")}</span>
               }
-              onChange={(next) => {
+              onChange={async (next) => {
+                const prevProvider = conv?.configOptionOverrides?.provider;
+                const currentProvider = next.provider;
+                const member = members.find(
+                  (entry) => entry.id === conv?.agentId
+                );
+                if (member && currentProvider !== prevProvider) {
+                  const resolved = useCliExecutorStore
+                    .getState()
+                    .resolve(member.cli.adapter);
+                  const providerProbeInput = {
+                    agentId: member.id,
+                    adapter: member.cli.adapter,
+                    binary: member.cli.binary || resolved?.binary,
+                    extraArgs: [
+                      ...(resolved?.extraArgs ?? []),
+                      ...(member.cli.extraArgs ?? [])
+                    ],
+                    env: {
+                      ...(resolved?.env ?? {}),
+                      ...(member.cli.env ?? {})
+                    },
+                    cwd: conv?.cwd || undefined,
+                    configOptionOverrides: currentProvider
+                      ? { provider: currentProvider }
+                      : undefined
+                  };
+                  try {
+                    let targetOptions =
+                      await cliClient.getCachedSessionConfigOptions(
+                        providerProbeInput
+                      );
+                    if (targetOptions.length === 0 && currentProvider) {
+                      targetOptions =
+                        await cliClient.inspectSessionConfigOptions(
+                          providerProbeInput
+                        );
+                    }
+                    if (targetOptions.length > 0) {
+                      setActiveConversationConfigOptions(targetOptions);
+                      const modelOpt = findMainModelConfigOption(targetOptions);
+                      if (modelOpt?.currentValue) {
+                        next = { ...next, model: modelOpt.currentValue };
+                      }
+                    }
+                  } catch {
+                    /* best-effort live refresh on provider switch */
+                  }
+                }
                 if (conv?.id) void setConfigOptionOverrides(conv.id, next);
               }}
             />

@@ -114,6 +114,7 @@ import { getLanguage } from "./settings.js";
 import {
   adapterAcceptsClientMcpServers,
   formatAcpAgentExitMessage,
+  isClineAcpStartupBannerLine,
   isDshAcpExperimentalWarningLine
 } from "./adapters.js";
 
@@ -1001,8 +1002,8 @@ export async function runAcpAgent({
       if (epoch !== connectionEpoch) return;
       appendLog(logStream, "stderr", line);
       if (
-        args.adapter === "dsh-acp" &&
-        isDshAcpExperimentalWarningLine(line)
+        (args.adapter === "dsh-acp" && isDshAcpExperimentalWarningLine(line)) ||
+        (args.adapter === "cline-acp" && isClineAcpStartupBannerLine(line))
       ) {
         return;
       }
@@ -1500,7 +1501,16 @@ export async function runAcpAgent({
     const applyConfigOptionOverrides = async () => {
       const overrides = args.configOptionOverrides;
       if (!overrides || !activeAcpSessionId) return;
-      for (const [configId, value] of Object.entries(overrides)) {
+      const order = ["provider", "model", "thought_level"];
+      const sortedOverrides = Object.entries(overrides).sort(([a], [b]) => {
+        const ai = order.indexOf(a);
+        const bi = order.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return 0;
+      });
+      for (const [configId, value] of sortedOverrides) {
         if (!configId || value == null || value === "") continue;
         if (
           configId === "model" &&
@@ -1526,7 +1536,9 @@ export async function runAcpAgent({
             const actualModel = setupItems
               .find((item) => item.kind === "config-options")
               ?.options.find(
-                (option) => option.id === "model" || option.category === "model"
+                (option) =>
+                  option.id === "model" ||
+                  (option.category === "model" && option.id !== "provider")
               )?.currentValue;
             const normalizeModel = (model: string) =>
               model

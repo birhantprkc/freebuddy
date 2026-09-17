@@ -112,8 +112,11 @@ export function selectAcpAuthMethod(
         : false;
   if (apiKeyMethod && hasApiKey) return apiKeyMethod;
 
+  const nativeClineMethod = supported.find((method) => method.id === "cline");
+  if (nativeClineMethod) return nativeClineMethod;
+
   const interactiveMethods = supported.filter((method) =>
-    /chat[-_ ]?gpt|oauth|browser|device|log[-_ ]?in|account|subscription|github|google|wechat|ioa/i.test(
+    /chat[-_ ]?gpt|oauth|browser|device|log[-_ ]?in|sign[-_ ]?in|account|subscription|github|google|wechat|ioa/i.test(
       `${method.id} ${method.name ?? ""} ${method.description ?? ""}`
     )
   );

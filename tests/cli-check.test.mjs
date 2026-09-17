@@ -69,6 +69,20 @@ test("ZCode ACP install hint matches official package", () => {
   );
 });
 
+test("cline-acp checks cline binary probe", () => {
+  assert.deepEqual(getCliCheckProbe("cline-acp"), {
+    args: ["--version"],
+    versionOptional: false
+  });
+});
+
+test("Cline ACP install hint matches official package", () => {
+  assert.equal(
+    getAdapterDefinition("cline-acp")?.installHint,
+    "npm install -g cline"
+  );
+});
+
 test("Windows fallback search includes the native Claude installer directory", () => {
   const source = fs.readFileSync(
     new URL("../electron/cli/check.ts", import.meta.url),

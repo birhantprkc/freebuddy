@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { cliClient } from "@/services/cli/client";
+import {
+  findMainModelConfigOption
+} from "@/utils/sessionConfigOptions";
 import type {
   SessionConfigOption,
   SessionConfigProbeInput
@@ -769,12 +772,9 @@ export function WorkflowTeamEditor({
                           setRoleModel(
                             role.id,
                             e.target.value,
-                            (modelOptionsByAgent[role.agentId] ?? []).find(
-                              (entry) => entry.category === "model"
+                            findMainModelConfigOption(
+                              modelOptionsByAgent[role.agentId] ?? []
                             )?.id ??
-                              (modelOptionsByAgent[role.agentId] ?? []).find(
-                                (entry) => entry.id === "model"
-                              )?.id ??
                               role.modelOptionId ??
                               "model"
                           )
@@ -782,17 +782,16 @@ export function WorkflowTeamEditor({
                       >
                         <option value="">{t("workflow.defaultModel")}</option>
                         {modelLoadingByAgent[role.agentId] &&
-                        !(modelOptionsByAgent[role.agentId] ?? []).some(
-                          (option) =>
-                            option.category === "model" || option.id === "model"
+                        !(
+                          findMainModelConfigOption(
+                            modelOptionsByAgent[role.agentId] ?? []
+                          )?.values?.length ?? 0
                         ) ? (
                           <option disabled>{t("chat.modelLoading")}</option>
                         ) : null}
                         {(() => {
-                          const option = (modelOptionsByAgent[role.agentId] ?? []).find(
-                            (entry) => entry.category === "model"
-                          ) ?? (modelOptionsByAgent[role.agentId] ?? []).find(
-                            (entry) => entry.id === "model"
+                          const option = findMainModelConfigOption(
+                            modelOptionsByAgent[role.agentId] ?? []
                           );
                           const values = [...(option?.values ?? [])];
                           if (

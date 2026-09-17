@@ -55,10 +55,16 @@ function renderPrompt(
 function roleConfigOptionOverrides(role: {
   model?: string;
   modelOptionId?: string;
+  provider?: string;
+  providerOptionId?: string;
   thoughtLevel?: string;
   thoughtLevelOptionId?: string;
 }): Record<string, string> | undefined {
   const overrides: Record<string, string> = {};
+  const provider = role.provider?.trim();
+  if (provider) {
+    overrides[role.providerOptionId?.trim() || "provider"] = provider;
+  }
   const model = role.model?.trim();
   if (model) {
     overrides[role.modelOptionId?.trim() || "model"] = model;

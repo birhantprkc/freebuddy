@@ -15,6 +15,7 @@ export type CLIAdapterId =
   | "agy-acp"
   | "dsh-acp"
   | "zcode-acp"
+  | "cline-acp"
   | (string & {});
 
 export type { CLIStreamMode } from "@freebuddy/protocol/cli";
@@ -186,6 +187,19 @@ export const cliAdapterDefinitions: CLIAdapterDefinition[] = [
     toolSessionArgPrefixes: [],
     installHint: "npm install -g zcode-acp-server",
     docsUrl: "https://github.com/william0wang/zcode-acp",
+    protocol: "acp"
+  },
+  {
+    id: "cline-acp",
+    label: "Cline",
+    defaultBinary: "cline",
+    streamMode: "raw",
+    commandGroup: "cline",
+    capabilities: { toolSession: true },
+    toolSessionArgs: [],
+    toolSessionArgPrefixes: [],
+    installHint: "npm install -g cline",
+    docsUrl: "https://docs.cline.bot/usage/acp",
     protocol: "acp"
   }
 ];
