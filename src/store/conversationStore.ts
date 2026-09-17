@@ -42,6 +42,8 @@ import {
   defaultTitleFor,
   feedArticleTitleFromMessages,
   mergeConversationMessages,
+  recoverConversationTitleFromMessages,
+  sanitizeUserConversationTitle,
   shouldApplyAgentSessionTitle,
   upsertConversationMessage,
   INITIAL_VISIBLE_MESSAGES
@@ -851,8 +853,18 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const agentTitle = sessionInfo?.title?.trim();
       const feedArticleTitle = feedArticleTitleFromMessages(list);
       let conversations = s.conversations;
-      if (agentTitle) {
-        const conversation = conversations.find((entry) => entry.id === id);
+      const conversation = conversations.find((entry) => entry.id === id);
+      const recoveredTitle = conversation
+        ? recoverConversationTitleFromMessages(conversation, list)
+        : undefined;
+      if (conversation && recoveredTitle) {
+        conversations = conversations.map((entry) =>
+          entry.id === id
+            ? { ...entry, title: recoveredTitle, titleSource: "prompt" as const }
+            : entry
+        );
+        void cliClient.renameConversation(id, recoveredTitle, "prompt");
+      } else if (agentTitle) {
         const nextTitle =
           conversation &&
           feedArticleTitle &&
@@ -1068,10 +1080,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   async renameConversation(id, title) {
-    await cliClient.renameConversation(id, title, "user");
+    const next = sanitizeUserConversationTitle(title);
+    if (!next) return;
+    const current = get().conversations.find((entry) => entry.id === id);
+    if (current?.title === next && current.titleSource === "user") return;
+    await cliClient.renameConversation(id, next, "user");
     set((s) => ({
       conversations: s.conversations.map((c) =>
-        c.id === id ? { ...c, title, titleSource: "user" as const } : c
+        c.id === id ? { ...c, title: next, titleSource: "user" as const } : c
       )
     }));
   },
