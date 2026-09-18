@@ -36,7 +36,6 @@ const cli = {
   listOverrides: () => ipcRenderer.invoke("cli:listOverrides"),
   upsertOverride: (o: unknown) => ipcRenderer.invoke("cli:upsertOverride", o),
   resetOverride: (id: string) => ipcRenderer.invoke("cli:resetOverride", id),
-
   listRuntimes: () => ipcRenderer.invoke("cli:listRuntimes"),
   onRuntimeUpdated: (cb: (runtime: unknown) => void): (() => void) => {
     const channel = "cli://runtime";
@@ -947,6 +946,17 @@ const game = {
   }
 };
 
+const providers = {
+  list: () => ipcRenderer.invoke("providers:list"),
+  upsert: (input: unknown) => ipcRenderer.invoke("providers:upsert", input),
+  remove: (id: string) => ipcRenderer.invoke("providers:delete", id),
+  setEnabled: (input: { id: string; enabled: boolean }) =>
+    ipcRenderer.invoke("providers:setEnabled", input),
+  reorder: (ids: string[]) => ipcRenderer.invoke("providers:reorder", ids),
+  test: (target: unknown) => ipcRenderer.invoke("providers:test", target),
+  getApiKey: (id: string) => ipcRenderer.invoke("providers:getApiKey", id),
+};
+
 contextBridge.exposeInMainWorld("freebuddy", {
   platform: process.platform,
   arch: process.arch,
@@ -957,6 +967,7 @@ contextBridge.exposeInMainWorld("freebuddy", {
   },
   appVersion: process.env.FB_APP_VERSION ?? "",
   cli,
+  providers,
   workflow,
   workflowTeams,
   skills,

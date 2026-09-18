@@ -33,6 +33,8 @@ export interface CLICodexByokConfig {
 
 export interface CLIClaudeByokConfig {
   enabled?: boolean;
+  /** 引用的服务商 id（provider-xxx），有值时 baseUrl/Key/模型走服务商 */
+  providerId?: string;
   baseUrl?: string;
   envKey?: string;
   apiKey?: string;
@@ -45,6 +47,8 @@ export interface CLIClaudeByokConfig {
 
 export interface CLIDeepSeekByokConfig {
   enabled?: boolean;
+  /** 引用的服务商 id（provider-xxx），有值时 baseUrl/Key/模型走服务商 */
+  providerId?: string;
   baseUrl?: string;
   envKey?: string;
   wireApi?: "chat" | "responses";
@@ -442,6 +446,88 @@ function readDeepSeekByokPrivate(id: string): CLIDeepSeekByokConfig | undefined 
   return readPrivateByok<CLIDeepSeekByokConfig>(id, "deepseek_byok");
 }
 
+/**
+ * 服务商引用解析：Agent BYOK 存 providerId 时，运行时从 providers 表
+ * 取 baseUrl/Key/模型合并。渲染进程永远拿不到 Key 明文。
+ * 动态 import providers.ts 避免 store <-> providers 循环依赖。
+ */
+type ResolvedCodexByok = CLICodexByokConfig & { __providerKeyPlain?: string };
+type ResolvedClaudeByok = CLIClaudeByokConfig & { __providerKeyPlain?: string };
+type ResolvedDeepSeekByok = CLIDeepSeekByokConfig & { __providerKeyPlain?: string };
+
+function providerModelsOf(rec: Record<string, unknown>): CLIByokModel[] {
+  try {
+    const raw = rec.models;
+    const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((m): m is CLIByokModel & { enabled?: boolean } => !!m && typeof (m as CLIByokModel).id === "string")
+      .filter((m) => m.enabled !== false);
+  } catch {
+    return [];
+  }
+}
+
+/** 同步版：providers 表已有数据时直接读（resolve*Env 是同步的，保持同步） */
+function resolveByokWithProvider(
+  overrideId: string,
+  kind: "codex" | "claude" | "deepseek",
+): ResolvedCodexByok | ResolvedClaudeByok | ResolvedDeepSeekByok | undefined {
+  const raw =
+    kind === "codex"
+      ? readCodexByokPrivate(overrideId)
+      : kind === "claude"
+        ? readClaudeByokPrivate(overrideId)
+        : readDeepSeekByokPrivate(overrideId);
+  if (!raw) return raw as undefined;
+  const providerId = (raw as { providerId?: string }).providerId?.trim();
+  if (!providerId) return raw;
+  // 同步读 providers 表（better-sqlite3 是同步的，无需 async）
+  try {
+    const db = getDb();
+    const row = db.prepare(`SELECT * FROM providers WHERE id = ?`).get(providerId) as Record<string, unknown> | undefined;
+    if (!row || row.enabled === 0) return raw;
+    let apiKey: string | undefined;
+    try {
+      const enc = row.api_key_encrypted as string | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      apiKey = decryptSecret(enc);
+    } catch { apiKey = undefined; }
+    const models = providerModelsOf(row);
+    const merged = {
+      ...raw,
+      baseUrl: (row.base_url as string) || (raw as { baseUrl?: string }).baseUrl,
+      envKey: (row.env_key as string) || (raw as { envKey?: string }).envKey,
+      models: models.length ? models : (raw as { models?: CLIByokModel[] }).models,
+      contextWindow:
+        (raw as { contextWindow?: number }).contextWindow ?? (row.context_window as number | undefined),
+      ...(apiKey ? { __providerKeyPlain: apiKey } : {}),
+    } as Record<string, unknown>;
+    if (kind === "codex") {
+      (merged as Record<string, unknown>).providerName =
+        (row.name as string) || (raw as { providerName?: string }).providerName;
+      (merged as Record<string, unknown>).wireApi =
+        (raw as { wireApi?: "chat" | "responses" }).wireApi ??
+        (row.wire_api as "chat" | "responses" | undefined);
+    }
+    if (kind === "deepseek" && !(raw as { wireApi?: string }).wireApi && row.wire_api) {
+      (merged as Record<string, unknown>).wireApi = row.wire_api as string;
+    }
+    return merged as ResolvedCodexByok;
+  } catch {
+    return raw;
+  }
+}
+
+/** 从 merged BYOK 取 Key：优先服务商明文（内存），否则走加密字段 */
+function byokApiKeyOf(byok: { apiKeyEncrypted?: string; __providerKeyPlain?: string } | undefined): string | undefined {
+  if (!byok) return undefined;
+  if (typeof (byok as Record<string, unknown>).__providerKeyPlain === "string") {
+    return (byok as Record<string, unknown>).__providerKeyPlain as string;
+  }
+  return decryptSecret(byok.apiKeyEncrypted);
+}
+
 // codex >= 0.146 removed `wire_api = "chat"` support: the codex binary only
 // speaks the Responses API. Keep the user's "chat" selection in storage —
 // resolveCodexByokEnv serves it through the local Responses↔chat bridge — and
@@ -493,6 +579,28 @@ function normalizeByokForStorage(
 ): CLICodexByokConfig | undefined {
   if (!input?.enabled) return undefined;
   const previous = readCodexByokPrivate(id);
+  // 引用服务商模式：只存 providerId + enabled，其它走服务商表
+  const isExplicitProvider = Boolean(
+    input.providerId?.trim() &&
+    input.providerId.trim() !== "proxy" &&
+    input.providerId.trim() !== "custom"
+  );
+  const providerRef = isExplicitProvider
+    ? input.providerId!.trim()
+    : previous?.providerId && previous.providerId !== "proxy" && previous.providerId !== "custom" && !input.apiKey?.trim() && !input.baseUrl?.trim()
+      ? previous.providerId.trim()
+      : undefined;
+  if (providerRef && !input.apiKey?.trim()) {
+    return {
+      enabled: true,
+      providerId: providerRef,
+      ...(input.providerName?.trim() ? { providerName: input.providerName.trim() } : {}),
+      ...(input.baseUrl?.trim() ? { baseUrl: input.baseUrl.trim() } : {}),
+      ...(input.envKey?.trim() ? { envKey: input.envKey.trim() } : {}),
+      ...(input.wireApi ? { wireApi: normalizeWireApi(input.wireApi) } : {}),
+      ...(input.models?.length ? { models: normalizeCodexByokModels(input.models) } : {}),
+    };
+  }
   const apiKey = input.apiKey?.trim();
   const apiKeyEncrypted = apiKey
     ? encryptSecret(apiKey)
@@ -527,6 +635,43 @@ function normalizeClaudeByokForStorage(
 ): CLIClaudeByokConfig | undefined {
   if (!input?.enabled) return undefined;
   const previous = readClaudeByokPrivate(id);
+  // 引用服务商模式：只存 providerId + enabled，其它走服务商表
+  const isExplicitProvider = Boolean(
+    input.providerId?.trim() &&
+    input.providerId.trim() !== "proxy" &&
+    input.providerId.trim() !== "custom"
+  );
+  const providerRef = isExplicitProvider
+    ? input.providerId!.trim()
+    : previous?.providerId && previous.providerId !== "proxy" && previous.providerId !== "custom" && !input.apiKey?.trim() && !input.baseUrl?.trim()
+      ? previous.providerId.trim()
+      : undefined;
+  if (providerRef && !input.apiKey?.trim()) {
+    const hasContextWindowInput =
+      Object.prototype.hasOwnProperty.call(input, "contextWindow") ||
+      Object.prototype.hasOwnProperty.call(input.compaction ?? {}, "window");
+    const contextWindow = hasContextWindowInput
+      ? normalizeByokContextWindow(
+          input.contextWindow ?? input.compaction?.window
+        )
+      : normalizeByokContextWindow(
+          previous?.contextWindow ?? previous?.compaction?.window
+        );
+    const compaction = normalizeClaudeCompaction(
+      input.compaction ?? previous?.compaction,
+      contextWindow
+    );
+    return {
+      enabled: true,
+      providerId: providerRef,
+      ...(input.baseUrl?.trim() ? { baseUrl: input.baseUrl.trim() } : {}),
+      ...(input.envKey?.trim() ? { envKey: input.envKey.trim() } : {}),
+      ...(input.models?.length ? { models: normalizeByokModels(input.models) } : {}),
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
+      ...(compaction ? { compaction } : {}),
+    };
+  }
+
   const apiKey = input.apiKey?.trim();
   const apiKeyEncrypted = apiKey
     ? encryptSecret(apiKey)
@@ -550,6 +695,7 @@ function normalizeClaudeByokForStorage(
   );
   return {
     enabled: true,
+    ...(input.providerId?.trim() ? { providerId: input.providerId.trim() } : {}),
     baseUrl: input.baseUrl?.trim(),
     envKey: input.envKey?.trim() || "ANTHROPIC_API_KEY",
     models: normalizeByokModels(input.models),
@@ -605,6 +751,38 @@ function normalizeDeepSeekByokForStorage(
     return undefined;
   }
 
+  // 引用服务商模式：只存 providerId + enabled，其它走服务商表
+  const isExplicitProvider = Boolean(
+    input?.providerId?.trim() &&
+    input?.providerId.trim() !== "proxy" &&
+    input?.providerId.trim() !== "custom"
+  );
+  const providerRef = isExplicitProvider
+    ? input!.providerId!.trim()
+    : previous?.providerId && previous.providerId !== "proxy" && previous.providerId !== "custom" && !apiKey && !input?.baseUrl?.trim()
+      ? previous.providerId.trim()
+      : undefined;
+  if (providerRef && !apiKey) {
+    const hasContextWindowInput = Object.prototype.hasOwnProperty.call(
+      input,
+      "contextWindow"
+    );
+    const contextWindow = hasContextWindowInput
+      ? normalizeByokContextWindow(input.contextWindow)
+      : normalizeByokContextWindow(previous?.contextWindow);
+    return {
+      enabled: true,
+      providerId: providerRef,
+      ...(input.baseUrl?.trim() ? { baseUrl: input.baseUrl.trim() } : {}),
+      ...(input.envKey?.trim() ? { envKey: input.envKey.trim() } : {}),
+      wireApi: "chat",
+      models: normalizeByokModels(input.models),
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
+      officialApiKeyPreview,
+      officialApiKeyEncrypted,
+    };
+  }
+
   const hasContextWindowInput = Object.prototype.hasOwnProperty.call(
     input,
     "contextWindow"
@@ -614,6 +792,7 @@ function normalizeDeepSeekByokForStorage(
     : normalizeByokContextWindow(previous?.contextWindow);
   return {
     enabled: true,
+    ...(input.providerId?.trim() ? { providerId: input.providerId.trim() } : {}),
     baseUrl: input.baseUrl?.trim(),
     envKey: input.envKey?.trim() || "DEEPSEEK_API_KEY",
     wireApi: "chat",
@@ -745,9 +924,9 @@ export function resolveCodexByokEnv(
 ): Record<string, string> | undefined {
   if (adapter !== "codex-acp") return undefined;
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok = readCodexByokPrivate(overrideId);
+  const byok = resolveByokWithProvider(overrideId, "codex") as ResolvedCodexByok | undefined;
   if (!byok?.enabled) return undefined;
-  const apiKey = decryptSecret(byok.apiKeyEncrypted);
+  const apiKey = byokApiKeyOf(byok);
   const providerId = byok.providerId?.trim() || "proxy";
   const envKey = byok.envKey?.trim() || "OPENAI_API_KEY";
   const configuredModels = normalizeCodexByokModels(byok.models);
@@ -818,14 +997,23 @@ export function resolveClaudeByokEnv(
 ): Record<string, string> | undefined {
   if (adapter !== "claude-agent-acp" && adapter !== "claude") return undefined;
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok = readClaudeByokPrivate(overrideId);
+  const byok = resolveByokWithProvider(overrideId, "claude") as ResolvedClaudeByok | undefined;
   if (!byok?.enabled) return undefined;
-  const apiKey = decryptSecret(byok.apiKeyEncrypted);
+  const apiKey = byokApiKeyOf(byok);
   const envKey = byok.envKey?.trim() || "ANTHROPIC_API_KEY";
   const env: Record<string, string> = {};
   const baseUrl = byok.baseUrl?.trim();
-  if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
-  if (apiKey) env[envKey] = apiKey;
+  if (baseUrl) {
+    // Anthropic SDK appends /v1/messages to baseURL. Strip trailing /v1 so providers
+    // registered with OpenAI-style paths (e.g. https://api.example.com/v1) work seamlessly.
+    env.ANTHROPIC_BASE_URL = baseUrl.replace(/\/v1\/?$/, "");
+  }
+  if (apiKey) {
+    env[envKey] = apiKey;
+    if (envKey !== "ANTHROPIC_API_KEY") {
+      env.ANTHROPIC_API_KEY = apiKey;
+    }
+  }
   // Claude Code assumes 200K for model names it does not recognize (e.g. a
   // non-Claude model served through a proxy). autoCompactWindow alone cannot
   // raise that perceived limit — it is capped at the model's assumed window.
@@ -883,13 +1071,13 @@ export function resolveDeepSeekByokEnv(
 ): Record<string, string> | undefined {
   if (adapter !== "dsh-acp") return undefined;
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok = readDeepSeekByokPrivate(overrideId);
+  const byok = resolveByokWithProvider(overrideId, "deepseek") as ResolvedDeepSeekByok | undefined;
   if (!byok) return undefined;
   const env: Record<string, string> = {};
 
   if (!byok.enabled) {
     const officialKey = decryptSecret(
-      byok.officialApiKeyEncrypted ?? byok.apiKeyEncrypted
+      byok.officialApiKeyEncrypted ?? byokApiKeyOf(byok)
     );
     if (officialKey) {
       env.DEEPSEEK_API_KEY = officialKey;
@@ -897,7 +1085,7 @@ export function resolveDeepSeekByokEnv(
     return Object.keys(env).length ? env : undefined;
   }
 
-  const apiKey = decryptSecret(byok.apiKeyEncrypted);
+  const apiKey = byokApiKeyOf(byok);
   const envKey = byok.envKey?.trim() || "DEEPSEEK_API_KEY";
   const baseUrl = byok.baseUrl?.trim();
   if (baseUrl) env.DEEPSEEK_BASE_URL = baseUrl;
@@ -941,19 +1129,28 @@ export function resolveCliByokEnv(
   );
 }
 
+function resolveByokForAdapter(
+  overrideId: string,
+  adapter: string
+): ResolvedCodexByok | ResolvedClaudeByok | ResolvedDeepSeekByok | undefined {
+  if (adapter === "codex-acp") {
+    return resolveByokWithProvider(overrideId, "codex");
+  }
+  if (adapter === "claude-agent-acp" || adapter === "claude") {
+    return resolveByokWithProvider(overrideId, "claude");
+  }
+  if (adapter === "dsh-acp") {
+    return resolveByokWithProvider(overrideId, "deepseek");
+  }
+  return undefined;
+}
+
 export function cliByokModelSignature(
   agentId: string,
   adapter: string
 ): string {
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok =
-    adapter === "codex-acp"
-      ? readCodexByokPrivate(overrideId)
-      : adapter === "claude-agent-acp" || adapter === "claude"
-        ? readClaudeByokPrivate(overrideId)
-        : adapter === "dsh-acp"
-          ? readDeepSeekByokPrivate(overrideId)
-          : undefined;
+  const byok = resolveByokForAdapter(overrideId, adapter);
   return JSON.stringify(
     adapter === "codex-acp"
       ? normalizeCodexByokModels(byok?.models)
@@ -963,14 +1160,7 @@ export function cliByokModelSignature(
 
 export function hasCliByokModels(agentId: string, adapter: string): boolean {
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok =
-    adapter === "codex-acp"
-      ? readCodexByokPrivate(overrideId)
-      : adapter === "claude-agent-acp" || adapter === "claude"
-        ? readClaudeByokPrivate(overrideId)
-        : adapter === "dsh-acp"
-          ? readDeepSeekByokPrivate(overrideId)
-          : undefined;
+  const byok = resolveByokForAdapter(overrideId, adapter);
   return byok?.enabled === true && normalizeByokModels(byok.models).length > 0;
 }
 
@@ -988,14 +1178,7 @@ export function mergeCliByokModelOption<T extends {
   selectedModel?: string
 ): T[] {
   const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
-  const byok =
-    adapter === "codex-acp"
-      ? readCodexByokPrivate(overrideId)
-      : adapter === "claude-agent-acp" || adapter === "claude"
-        ? readClaudeByokPrivate(overrideId)
-        : adapter === "dsh-acp"
-          ? readDeepSeekByokPrivate(overrideId)
-          : undefined;
+  const byok = resolveByokForAdapter(overrideId, adapter);
   if (!byok?.enabled) return options;
   const models = normalizeByokModels(byok.models);
   if (!models.length) return options;

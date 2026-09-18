@@ -198,13 +198,15 @@ export function guardRemoteInvokeArgs(
  * desktop.
  */
 export function filterRemoteInvokeResult(channel: string, result: unknown): unknown {
-  if (channel !== "cli:listOverrides" || !Array.isArray(result)) return result;
-  return result.map((entry) => {
-    const override = asRecord(entry);
-    if (!override?.env || typeof override.env !== "object") return entry;
-    const redacted = Object.fromEntries(
-      Object.keys(override.env as Record<string, string>).map((key) => [key, ""])
-    );
-    return { ...override, env: redacted };
-  });
+  if (channel === "cli:listOverrides" && Array.isArray(result)) {
+    return result.map((entry) => {
+      const override = asRecord(entry);
+      if (!override?.env || typeof override.env !== "object") return entry;
+      const redacted = Object.fromEntries(
+        Object.keys(override.env as Record<string, string>).map((key) => [key, ""])
+      );
+      return { ...override, env: redacted };
+    });
+  }
+  return result;
 }

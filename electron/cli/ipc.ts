@@ -23,6 +23,16 @@ import {
   type CLIExecutorOverride
 } from "./store.js";
 import {
+  listProviders,
+  upsertProvider,
+  deleteProvider,
+  setProviderEnabled,
+  reorderProviders,
+  getProviderApiKey,
+  type ProviderInput,
+} from "./providers.js";
+import { testProvider, type TestProviderOptions } from "./providerCheck.js";
+import {
   cliKill,
   cliRun,
   type CliRunArgs
@@ -884,6 +894,19 @@ export function registerCliIpc() {
     (_e, override: CLIExecutorOverride) => upsertOverride(override)
   );
   registerHandler("cli:resetOverride", (_e, id: string) => resetOverride(id));
+
+  // ---- 服务商 / Provider ----
+  registerHandler("providers:list", () => listProviders());
+  registerHandler("providers:upsert", (_e, input: ProviderInput) => upsertProvider(input));
+  registerHandler("providers:delete", (_e, id: string) => deleteProvider(id));
+  registerHandler("providers:setEnabled", (_e, args: { id: string; enabled: boolean }) =>
+    setProviderEnabled(args.id, args.enabled)
+  );
+  registerHandler("providers:reorder", (_e, ids: string[]) => reorderProviders(ids));
+  registerHandler("providers:test", (_e, target: unknown) =>
+    testProvider(target as string | TestProviderOptions)
+  );
+  registerHandler("providers:getApiKey", (_e, id: string) => getProviderApiKey(id));
 
   registerHandler("cli:listRuntimes", () => listRuntimes());
   registerHandler("cli:codexUsage", () => readCodexUsage());
