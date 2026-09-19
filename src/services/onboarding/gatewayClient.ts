@@ -8,28 +8,14 @@
  */
 
 import {
+  DEFAULT_GUIDE_FALLBACK_ACTIVATION,
   GUIDE_GATEWAY_ACTIVATE_PATH,
-  GUIDE_GATEWAY_URL
+  GUIDE_GATEWAY_URL,
+  type GuideTrialActivation
 } from "@/config/onboarding";
 import { getOrCreateDeviceId } from "@/services/freebie/communityClient";
 
-export interface GuideTrialActivation {
-  /** Trial bearer token — stored as the provider instance's API key. */
-  token: string;
-  /** Gateway base URL the token is valid against (OpenAI-compatible). */
-  baseUrl: string;
-  /** Env/selector name the token is presented under. */
-  envKey: string;
-  /** Whitelisted models the trial may use. */
-  models: Array<{
-    id: string;
-    name?: string;
-    contextWindow?: number;
-    supportsVision?: boolean;
-  }>;
-  /** Seconds until the token expires (informational UI). */
-  expiresInSeconds?: number;
-}
+export type { GuideTrialActivation };
 
 export class GatewayUnavailableError extends Error {
   constructor(message: string) {
@@ -42,43 +28,52 @@ export async function activateGuideTrial(
   signal?: AbortSignal
 ): Promise<GuideTrialActivation> {
   const deviceId = getOrCreateDeviceId();
-  let response: Response;
+  const url = new URL(GUIDE_GATEWAY_ACTIVATE_PATH, GUIDE_GATEWAY_URL).toString();
+
+  // Short timeout (3.5s) to avoid hanging when gateway is blocked or slow
+  const timeoutCtrl = new AbortController();
+  const timeoutId = setTimeout(() => timeoutCtrl.abort(), 3500);
+
+  const combinedSignal = signal
+    ? AbortSignal.any([signal, timeoutCtrl.signal])
+    : timeoutCtrl.signal;
+
   try {
-    response = await fetch(new URL(GUIDE_GATEWAY_ACTIVATE_PATH, GUIDE_GATEWAY_URL).toString(), {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-FreeBuddy-Device-Id": deviceId
       },
       body: JSON.stringify({ deviceId, client: "freebuddy" }),
-      signal
+      signal: combinedSignal
     });
-  } catch (error) {
-    throw new GatewayUnavailableError(
-      (error as Error)?.message || "guide gateway unreachable"
-    );
-  }
-  if (!response.ok) {
-    let message = `HTTP ${response.status}`;
-    try {
-      const data = (await response.json()) as { message?: string; error?: string };
-      message = data.message || data.error || message;
-    } catch {
-      /* keep status message */
+
+    if (response.ok) {
+      const data = (await response.json()) as Partial<GuideTrialActivation> & {
+        ok?: boolean;
+      };
+      if (data?.token && data?.baseUrl) {
+        return {
+          token: data.token,
+          baseUrl: data.baseUrl,
+          envKey: data.envKey || "FREEBUDDY_GUIDE_TOKEN",
+          models: Array.isArray(data.models) ? data.models : [],
+          expiresInSeconds: data.expiresInSeconds
+        };
+      }
     }
-    throw new GatewayUnavailableError(message);
+    console.warn(`[guideGateway] gateway status ${response.status}, falling back to built-in trial endpoint`);
+  } catch (err) {
+    console.warn(
+      "[guideGateway] gateway unreachable, falling back to built-in trial endpoint:",
+      (err as Error)?.message || err
+    );
+  } finally {
+    clearTimeout(timeoutId);
   }
-  const data = (await response.json()) as Partial<GuideTrialActivation> & {
-    ok?: boolean;
-  };
-  if (!data?.token || !data?.baseUrl) {
-    throw new GatewayUnavailableError("gateway returned an incomplete activation");
-  }
-  return {
-    token: data.token,
-    baseUrl: data.baseUrl,
-    envKey: data.envKey || "FREEBUDDY_GUIDE_TOKEN",
-    models: Array.isArray(data.models) ? data.models : [],
-    expiresInSeconds: data.expiresInSeconds
-  };
+
+  // Gracefully fallback to built-in trial activation to guarantee zero-fail onboarding
+  return { ...DEFAULT_GUIDE_FALLBACK_ACTIVATION };
 }
+

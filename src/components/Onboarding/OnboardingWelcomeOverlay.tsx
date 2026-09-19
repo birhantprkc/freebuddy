@@ -12,8 +12,11 @@ import { useTranslation } from "react-i18next";
 import { ArrowRight, KeyRound, LoaderCircle, Sparkles, X } from "lucide-react";
 
 import piLogoUrl from "../../../assets/pi-logo.svg";
+import { ONBOARDING_GUIDE_AGENT_ID } from "@/config/agentProfiles";
 import { GUIDE_GATEWAY_URL } from "@/config/onboarding";
 import { activateGuideTrial } from "@/services/onboarding/gatewayClient";
+import { useCliExecutorStore } from "@/store/cliExecutorStore";
+import { useConversationStore } from "@/store/conversationStore";
 import { useOnboardingStore } from "@/store/onboardingStore";
 import { useProviderStore } from "@/store/providerStore";
 
@@ -51,7 +54,7 @@ export function OnboardingWelcomeOverlay({
     setError("");
     try {
       const trial = await activateGuideTrial();
-      await upsertProvider({
+      const provider = await upsertProvider({
         presetId: "freebuddy-guide",
         name: t("onboarding.trialProviderName"),
         protocol: "openai-chat",
@@ -60,10 +63,46 @@ export function OnboardingWelcomeOverlay({
         icon: "lobehub:Pi",
         models: trial.models.length
           ? trial.models
-          : [{ id: "freebuddy-guide", name: t("onboarding.trialProviderName") }],
+          : [{ id: "auto", name: t("onboarding.trialProviderName") }],
         enabled: true,
         apiKey: trial.token
       });
+
+      // Bind pi-acp adapter to the newly provisioned trial provider
+      const executorStore = useCliExecutorStore.getState();
+      const existingPiOverride = executorStore.overrides["pi-acp"];
+      await executorStore.upsertOverride({
+        ...existingPiOverride,
+        id: "pi-acp",
+        baseAdapter: "pi-acp",
+        piByok: {
+          enabled: true,
+          providerId: provider.id,
+          envKey: trial.envKey || "FREEBUDDY_GUIDE_TOKEN",
+          models: trial.models
+        },
+        enabled: true
+      });
+
+      // Seamlessly switch to or start GuideBuddy conversation
+      const convStore = useConversationStore.getState();
+      const guideMember = convStore.members.find(
+        (m) => m.id === ONBOARDING_GUIDE_AGENT_ID
+      );
+      if (guideMember) {
+        const existingConv = convStore.conversations.find(
+          (c) => c.agentId === ONBOARDING_GUIDE_AGENT_ID
+        );
+        if (existingConv) {
+          convStore.setActive(existingConv.id);
+        } else {
+          await convStore.newConversation({
+            member: guideMember,
+            title: guideMember.name
+          });
+        }
+      }
+
       await markDone();
     } catch (err) {
       setError(
