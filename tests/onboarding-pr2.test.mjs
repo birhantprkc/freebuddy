@@ -39,6 +39,8 @@ test("extension never embeds secrets and honours the protocol mapping", () => {
   assert.doesNotMatch(PI_BYOK_EXTENSION_SOURCE, /sk-[A-Za-z0-9]/);
   assert.match(PI_BYOK_EXTENSION_SOURCE, /api: config\.api \|\| "openai-completions"/);
   assert.match(PI_BYOK_EXTENSION_SOURCE, /"freebuddy-relay"/);
+  assert.match(PI_BYOK_EXTENSION_SOURCE, /apiKey/);
+  assert.match(PI_BYOK_EXTENSION_SOURCE, /\$"\s*\+\s*envVar/);
 });
 
 test("pi BYOK resolves to env + FREEBUDDY_PI_BYOK payload with protocol mapping", () => {

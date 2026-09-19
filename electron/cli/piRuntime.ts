@@ -286,9 +286,11 @@ export default function (pi) {
   }
   if (!config?.enabled) return;
   const models = Array.isArray(config.models) ? config.models : [];
+  const envVar = config.envKey || "FREEBUDDY_PI_RELAY_KEY";
+  const apiKey = envVar.startsWith("$") ? envVar : ("$" + envVar);
   pi.registerProvider("freebuddy-relay", {
     baseUrl: config.baseUrl || "https://api.openai.com/v1",
-    apiKey: config.envKey || "FREEBUDDY_PI_RELAY_KEY",
+    apiKey,
     api: config.api || "openai-completions",
     models: models.map((model) => ({
       id: String(model.id),
