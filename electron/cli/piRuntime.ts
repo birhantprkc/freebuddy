@@ -415,3 +415,49 @@ export function resolvePiAcpSpawnPlan(
     }
   };
 }
+
+/**
+ * Scans the pi-agent session files for the last error message recorded for a given session.
+ * Used to enrich ACP error messages when Pi exits silently or fails without streaming text.
+ */
+export function findLastPiSessionErrorMessage(
+  dataDir: string | undefined,
+  sessionId: string | undefined
+): string | undefined {
+  if (!dataDir || !sessionId) return undefined;
+  const sessionsDir = path.join(dataDir, "pi-agent", "sessions");
+  if (!fs.existsSync(sessionsDir)) return undefined;
+  try {
+    const cwdDirs = fs.readdirSync(sessionsDir, { withFileTypes: true });
+    for (const dir of cwdDirs) {
+      if (!dir.isDirectory()) continue;
+      const cwdDirPath = path.join(sessionsDir, dir.name);
+      const files = fs.readdirSync(cwdDirPath);
+      const targetFile = files.find(
+        (f) => f.includes(sessionId) && f.endsWith(".jsonl")
+      );
+      if (targetFile) {
+        const fullPath = path.join(cwdDirPath, targetFile);
+        const content = fs.readFileSync(fullPath, "utf8");
+        const lines = content.trim().split("\n");
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const parsed = JSON.parse(lines[i]);
+            if (parsed.message?.errorMessage) {
+              return String(parsed.message.errorMessage);
+            }
+            if (parsed.errorMessage) {
+              return String(parsed.errorMessage);
+            }
+          } catch {
+            /* ignore bad line */
+          }
+        }
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  return undefined;
+}
+

@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import {
   PI_BYOK_EXTENSION_SOURCE,
   ensurePiByokExtension,
-  ensurePiSettings
+  ensurePiSettings,
+  findLastPiSessionErrorMessage
 } from "../dist-electron/cli/piRuntime.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -141,3 +142,35 @@ test("acpRuntime and conversationStore auto-apply default Pi BYOK model", () => 
   assert.match(convStore, /defaultPiByokModel/);
   assert.match(convStore, /freebuddy-relay\//);
 });
+
+test("findLastPiSessionErrorMessage extracts errorMessage from pi session jsonl", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-pi-err-"));
+  const cwdDir = path.join(tempDir, "pi-agent", "sessions", "--Users-test--");
+  fs.mkdirSync(cwdDir, { recursive: true });
+
+  const testSessionId = "01a0b825-test-session-id";
+  const sessionFilePath = path.join(cwdDir, `2026-09-19T00-00-00-000Z_${testSessionId}.jsonl`);
+
+  fs.writeFileSync(
+    sessionFilePath,
+    [
+      JSON.stringify({ type: "session", id: testSessionId }),
+      JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text: "hello" }] } }),
+      JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "401: {\"code\":16,\"message\":\"Forbidden\"}"
+        }
+      })
+    ].join("\n") + "\n"
+  );
+
+  const found = findLastPiSessionErrorMessage(tempDir, testSessionId);
+  assert.equal(found, '401: {"code":16,"message":"Forbidden"}');
+
+  assert.equal(findLastPiSessionErrorMessage(tempDir, "non-existent-session"), undefined);
+  assert.equal(findLastPiSessionErrorMessage(undefined, testSessionId), undefined);
+});
+

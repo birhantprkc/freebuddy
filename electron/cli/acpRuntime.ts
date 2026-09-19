@@ -43,6 +43,8 @@ import {
 } from "./acp.js";
 import { createAcpTerminalManager } from "./acpTerminal.js";
 import { updateRuntimeRun } from "./check.js";
+import { getDataDir } from "./db.js";
+import { findLastPiSessionErrorMessage } from "./piRuntime.js";
 import {
   hasCliByokModels,
   mergeCliByokModelOption,
@@ -1738,10 +1740,15 @@ export async function runAcpAgent({
           const model =
             args.configOptionOverrides?.model ??
             resolvePiByokDefaultModel(args.agentId, args.adapter);
+          const piErr = findLastPiSessionErrorMessage(
+            getDataDir(),
+            activeAcpSessionId
+          );
+          const detail = piErr ? `: ${piErr}` : "";
           throw new Error(
             `The Pi agent completed the turn without producing output (model: ${
               model || "unknown"
-            }). Please check your provider API key, base URL, or model quota.`
+            })${detail}. Please check your provider API key, base URL, or model quota.`
           );
         }
         const hasExistingCreds = recentStderr.some((line) =>
