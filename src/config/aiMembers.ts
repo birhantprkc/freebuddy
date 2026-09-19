@@ -166,5 +166,15 @@ export const builtinCliMembers: CLIMember[] = [
     source: "builtin",
     enabled: true,
     cli: { adapter: "cline-acp", approvalMode: "auto", showStderr: true }
+  },
+  {
+    id: "cli-pi-acp",
+    kind: "cli",
+    name: "Pi",
+    description:
+      "Minimal local coding agent bundled with FreeBuddy. Configure a provider key via env overrides or log in from its first conversation.",
+    source: "builtin",
+    enabled: true,
+    cli: { adapter: "pi-acp", approvalMode: "auto", showStderr: true }
   }
 ];

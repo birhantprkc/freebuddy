@@ -118,5 +118,11 @@ export const builtinCliMembers: CLIMember[] = [
     name: "Cline",
     enabled: true,
     cli: { adapter: "cline-acp", approvalMode: "auto", showStderr: true }
+  },
+  {
+    id: "cli-pi-acp",
+    name: "Pi",
+    enabled: true,
+    cli: { adapter: "pi-acp", approvalMode: "auto", showStderr: true }
   }
 ];
