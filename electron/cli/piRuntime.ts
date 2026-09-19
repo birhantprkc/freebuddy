@@ -288,7 +288,7 @@ export default function (pi) {
   const models = Array.isArray(config.models) ? config.models : [];
   pi.registerProvider("freebuddy-relay", {
     baseUrl: config.baseUrl || "https://api.openai.com/v1",
-    apiKey: config.envKey || "OPENAI_API_KEY",
+    apiKey: config.envKey || "FREEBUDDY_PI_RELAY_KEY",
     api: config.api || "openai-completions",
     models: models.map((model) => ({
       id: String(model.id),
@@ -302,6 +302,44 @@ export default function (pi) {
   });
 }
 `;
+
+/**
+ * Ensures pi-agent/settings.json exists and optionally pins the default provider
+ * and default model so pi does not fall back to built-in providers (e.g. openai)
+ * when relay keys are present.
+ */
+export function ensurePiSettings(
+  dataDir: string,
+  defaults?: { defaultProvider?: string; defaultModel?: string }
+): void {
+  const dir = path.join(dataDir, "pi-agent");
+  fs.mkdirSync(dir, { recursive: true });
+  const settingsPath = path.join(dir, "settings.json");
+  let existing: Record<string, unknown> = {};
+  try {
+    existing = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+  } catch {
+    existing = {};
+  }
+  let changed = false;
+  if (
+    defaults?.defaultProvider &&
+    existing.defaultProvider !== defaults.defaultProvider
+  ) {
+    existing.defaultProvider = defaults.defaultProvider;
+    changed = true;
+  }
+  if (
+    defaults?.defaultModel &&
+    existing.defaultModel !== defaults.defaultModel
+  ) {
+    existing.defaultModel = defaults.defaultModel;
+    changed = true;
+  }
+  if (changed || !fs.existsSync(settingsPath)) {
+    fs.writeFileSync(settingsPath, JSON.stringify(existing, null, 2), "utf8");
+  }
+}
 
 /**
  * Writes (idempotently) the BYOK extension into pi's global extension dir.
@@ -344,6 +382,22 @@ export function resolvePiAcpSpawnPlan(
   const agentDir = dataDir ? path.join(dataDir, "pi-agent") : undefined;
   if (dataDir) {
     ensurePiByokExtension(dataDir);
+    if (env.FREEBUDDY_PI_BYOK) {
+      try {
+        const byok = JSON.parse(env.FREEBUDDY_PI_BYOK);
+        if (byok?.enabled && byok.defaultModel) {
+          ensurePiSettings(dataDir, {
+            defaultProvider: "freebuddy-relay",
+            defaultModel: String(byok.defaultModel).replace(
+              /^freebuddy-relay\//,
+              ""
+            )
+          });
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
   }
   const launcher = ensurePiAcpLauncher({
     dataDir: dataDir ?? path.join(os.tmpdir(), "freebuddy-pi"),

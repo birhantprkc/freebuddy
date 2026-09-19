@@ -47,6 +47,7 @@ import {
   hasCliByokModels,
   mergeCliByokModelOption,
   clearToolSession,
+  resolvePiByokDefaultModel,
   saveToolSession
 } from "./store.js";
 import {
@@ -1504,8 +1505,17 @@ export async function runAcpAgent({
     }
 
     const applyConfigOptionOverrides = async () => {
-      const overrides = args.configOptionOverrides;
-      if (!overrides || !activeAcpSessionId) return;
+      const overrides = { ...(args.configOptionOverrides ?? {}) };
+      if (!overrides.model && args.adapter === "pi-acp") {
+        const defaultPiModel = resolvePiByokDefaultModel(
+          args.agentId,
+          args.adapter
+        );
+        if (defaultPiModel) {
+          overrides.model = defaultPiModel;
+        }
+      }
+      if (!Object.keys(overrides).length || !activeAcpSessionId) return;
       const order = ["provider", "model", "thought_level"];
       const sortedOverrides = Object.entries(overrides).sort(([a], [b]) => {
         const ai = order.indexOf(a);
@@ -1715,12 +1725,25 @@ export async function runAcpAgent({
     // agent advertised auth methods and produced nothing, treat it as a missing
     // login rather than a silent success.
     if (!promptHadContent && authMethods.length > 0 && !finished) {
-      if (!authenticationAttempted) {
+      const isPiByok =
+        args.adapter === "pi-acp" &&
+        hasCliByokModels(args.agentId, args.adapter);
+      if (!authenticationAttempted && !isPiByok) {
         const restarted = await authenticate(authMethods);
         if (restarted) await establishSession();
         await runPromptOnSession();
       }
       if (!promptHadContent) {
+        if (isPiByok) {
+          const model =
+            args.configOptionOverrides?.model ??
+            resolvePiByokDefaultModel(args.agentId, args.adapter);
+          throw new Error(
+            `The Pi agent completed the turn without producing output (model: ${
+              model || "unknown"
+            }). Please check your provider API key, base URL, or model quota.`
+          );
+        }
         const hasExistingCreds = recentStderr.some((line) =>
           /using existing credentials/i.test(line)
         );

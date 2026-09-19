@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   PI_BYOK_EXTENSION_SOURCE,
-  ensurePiByokExtension
+  ensurePiByokExtension,
+  ensurePiSettings
 } from "../dist-electron/cli/piRuntime.js";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -100,4 +101,43 @@ test("gateway client posts the device id and never ships a shared key", () => {
   assert.match(client, /GUIDE_GATEWAY_ACTIVATE_PATH/);
   // A leaked upstream key would look like a hardcoded sk-/Bearer literal.
   assert.doesNotMatch(client, /"sk-[A-Za-z0-9]{8,}"/);
+});
+
+test("ensurePiSettings writes and pins defaultProvider and defaultModel idempotently", () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fb-pi-settings-"));
+  ensurePiSettings(dataDir, {
+    defaultProvider: "freebuddy-relay",
+    defaultModel: "deepseek-v4-flash"
+  });
+  const settingsFile = path.join(dataDir, "pi-agent", "settings.json");
+  assert.equal(fs.existsSync(settingsFile), true);
+  const parsed = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+  assert.equal(parsed.defaultProvider, "freebuddy-relay");
+  assert.equal(parsed.defaultModel, "deepseek-v4-flash");
+
+  const before = fs.statSync(settingsFile).mtimeMs;
+  ensurePiSettings(dataDir, {
+    defaultProvider: "freebuddy-relay",
+    defaultModel: "deepseek-v4-flash"
+  });
+  assert.equal(fs.statSync(settingsFile).mtimeMs, before);
+});
+
+test("pi BYOK resolves default model and avoids exposing custom relay keys in OPENAI_API_KEY", () => {
+  const store = read("electron/cli/store.ts");
+  assert.match(store, /export function resolvePiByokDefaultModel\(/);
+  assert.match(store, /FREEBUDDY_PI_RELAY_KEY/);
+  assert.match(store, /isCustomBaseUrl/);
+  assert.match(store, /resolveByokWithProvider\("pi-acp", "pi"\)/);
+});
+
+test("acpRuntime and conversationStore auto-apply default Pi BYOK model", () => {
+  const acpRuntime = read("electron/cli/acpRuntime.ts");
+  assert.match(acpRuntime, /resolvePiByokDefaultModel/);
+  assert.match(acpRuntime, /overrides\.model = defaultPiModel/);
+  assert.match(acpRuntime, /isPiByok/);
+
+  const convStore = read("src/store/conversationStore.ts");
+  assert.match(convStore, /defaultPiByokModel/);
+  assert.match(convStore, /freebuddy-relay\//);
 });

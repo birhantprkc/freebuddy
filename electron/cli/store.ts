@@ -1225,15 +1225,25 @@ export function resolvePiByokEnv(
     selectedModel?.trim() ||
     models[0]?.id;
   const env: Record<string, string> = {};
+  const isCustomBaseUrl = Boolean(
+    byok.baseUrl?.trim() && !byok.baseUrl.includes("api.openai.com")
+  );
   if (apiKey) {
-    env[byok.envKey?.trim() || "OPENAI_API_KEY"] = apiKey;
+    env.FREEBUDDY_PI_RELAY_KEY = apiKey;
+    const keyName = byok.envKey?.trim() || "OPENAI_API_KEY";
+    // Only inject OPENAI_API_KEY if the endpoint actually targets official OpenAI.
+    // When using a custom relay/proxy, exposing non-OpenAI credentials in OPENAI_API_KEY
+    // causes pi's built-in OpenAI provider to activate and fail upstream authentication.
+    if (!isCustomBaseUrl || keyName !== "OPENAI_API_KEY") {
+      env[keyName] = apiKey;
+    }
   }
   env.FREEBUDDY_PI_BYOK = JSON.stringify({
     enabled: true,
     providerId: byok.providerId?.trim() || "freebuddy-byok",
     providerName: byok.providerId?.trim() || "FreeBuddy BYOK",
     baseUrl: byok.baseUrl?.trim() || undefined,
-    envKey: byok.envKey?.trim() || "OPENAI_API_KEY",
+    envKey: "FREEBUDDY_PI_RELAY_KEY",
     api: piApiForProtocol(byok.__providerProtocol),
     models: models.map((model) => ({
       id: model.id,
@@ -1242,7 +1252,7 @@ export function resolvePiByokEnv(
       supportsVision: model.supportsVision
     })),
     contextWindow: byok.contextWindow,
-    defaultModel: model
+    defaultModel: model?.replace(/^freebuddy-relay\//, "")
   });
   return env;
 }
@@ -1281,9 +1291,29 @@ function resolveByokForAdapter(
     return resolveByokWithProvider(overrideId, "deepseek");
   }
   if (adapter === "pi-acp") {
-    return resolveByokWithProvider(overrideId, "pi");
+    return (
+      (resolveByokWithProvider(overrideId, "pi") as ResolvedPiByok | undefined) ??
+      (overrideId !== "pi-acp"
+        ? (resolveByokWithProvider("pi-acp", "pi") as ResolvedPiByok | undefined)
+        : undefined)
+    );
   }
   return undefined;
+}
+
+export function resolvePiByokDefaultModel(
+  agentId: string,
+  adapter: string
+): string | undefined {
+  if (adapter !== "pi-acp") return undefined;
+  const overrideId = agentId.startsWith("cli-") ? agentId.slice(4) : agentId;
+  const byok = resolveByokForAdapter(overrideId, adapter) as
+    | ResolvedPiByok
+    | undefined;
+  if (!byok?.enabled) return undefined;
+  const models = normalizeByokModels(byok.models);
+  const first = models[0]?.id?.trim();
+  return first ? `freebuddy-relay/${first}` : undefined;
 }
 
 export function cliByokModelSignature(
@@ -1324,6 +1354,10 @@ export function mergeCliByokModelOption<T extends {
   const models = normalizeByokModels(byok.models);
   if (!models.length) return options;
 
+  const isPi = adapter === "pi-acp";
+  const piPrefixed = (id: string) =>
+    id.startsWith("freebuddy-relay/") ? id : `freebuddy-relay/${id}`;
+
   const existingIndex = options.findIndex(
     (option) => option.id === "model" || option.category === "model"
   );
@@ -1333,12 +1367,22 @@ export function mergeCliByokModelOption<T extends {
   const currentValue =
     adapter === "codex-acp" && existingCurrent
       ? existingCurrent
-      : models.some((model) => model.id === requested)
-        ? requested
+      : models.some(
+          (m) => m.id === requested || (isPi && piPrefixed(m.id) === requested)
+        )
+        ? isPi
+          ? piPrefixed(requested!)
+          : requested!
         : existingCurrent &&
-            models.some((model) => model.id === existingCurrent)
+            models.some(
+              (m) =>
+                m.id === existingCurrent ||
+                (isPi && piPrefixed(m.id) === existingCurrent)
+            )
           ? existingCurrent
-          : models[0].id;
+          : isPi
+            ? piPrefixed(models[0].id)
+            : models[0].id;
   const modelOption = {
     ...(existing ?? {}),
     id: existing?.id || "model",
@@ -1346,9 +1390,12 @@ export function mergeCliByokModelOption<T extends {
     category: "model",
     currentValue,
     currentLabel:
-      models.find((model) => model.id === currentValue)?.name || currentValue,
+      models.find(
+        (m) =>
+          m.id === currentValue || (isPi && piPrefixed(m.id) === currentValue)
+      )?.name || currentValue,
     values: models.map((model) => ({
-      id: model.id,
+      id: isPi ? piPrefixed(model.id) : model.id,
       name: model.name || model.id
     }))
   } as T;
