@@ -1572,10 +1572,15 @@ export function isAcpMetadataSessionUpdate(type: string): boolean {
 
 export function shouldSkipUserMessageChunk(
   update: any,
-  context: { userMessageId?: string; promptText?: string }
+  context: {
+    userMessageId?: string;
+    promptText?: string;
+    replaySuppressionEnabled?: boolean;
+  }
 ): boolean {
   const type = String(update?.sessionUpdate ?? "");
   if (type !== "user_message_chunk") return false;
+  if (context.replaySuppressionEnabled) return true;
   const messageId =
     typeof update?.messageId === "string" ? update.messageId : undefined;
   if (context.userMessageId && messageId === context.userMessageId) {
@@ -1631,6 +1636,8 @@ export function shouldWriteAcpStdoutLog(
     replaySuppressionEnabled: boolean;
     replayMessageIds?: ReadonlySet<string>;
     replayContentSignatures?: ReadonlySet<string>;
+    suppressReplayByPhase?: boolean;
+    turnHadLiveAgentChunk?: boolean;
   }
 ): boolean {
   if (!msg || msg.method !== "session/update") return true;
@@ -1644,6 +1651,8 @@ export function shouldEmitAcpUpdate(
     replaySuppressionEnabled: boolean;
     replayMessageIds?: ReadonlySet<string>;
     replayContentSignatures?: ReadonlySet<string>;
+    suppressReplayByPhase?: boolean;
+    turnHadLiveAgentChunk?: boolean;
   }
 ): boolean {
   const type = String(update?.sessionUpdate ?? "");
@@ -1655,6 +1664,19 @@ export function shouldEmitAcpUpdate(
   }
   if (!state.replaySuppressionEnabled) {
     return true;
+  }
+  if (type === "user_message_chunk") {
+    return false;
+  }
+  if (
+    state.suppressReplayByPhase &&
+    !state.turnHadLiveAgentChunk &&
+    shouldDropReplayPhaseAgentChunk(update, {
+      suppressReplayByPhase: true,
+      turnHadLiveAgentChunk: false
+    })
+  ) {
+    return false;
   }
   const isMessageOrThought =
     type === "agent_message_chunk" || type === "agent_thought_chunk";
@@ -1679,6 +1701,12 @@ export function shouldEmitAcpUpdate(
     toolCallId &&
     state.replayMessageIds?.has(toolCallId) &&
     (type === "tool_call" || type === "tool_call_update")
+  ) {
+    return false;
+  }
+  if (
+    (type === "tool_call" || type === "tool_call_update") &&
+    update?.status === "completed"
   ) {
     return false;
   }

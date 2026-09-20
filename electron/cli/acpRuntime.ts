@@ -248,11 +248,12 @@ export async function runAcpAgent({
   );
   // Qoder-style adapters stream live agent chunks WITHOUT a messageId and only
   // attach messageIds when replaying history on resume. When resuming such an
-  // adapter (prior turns persisted zero agent messageIds), drop messageId-
-  // carrying chunks until the first live chunk signals real generation.
+  // adapter (or when prior turns persisted zero agent messageIds), drop
+  // messageId-carrying chunks until the first live chunk signals real generation.
   const suppressReplayByPhase = () =>
     sessionWasResumed &&
-    (args.knownAgentStreamMessageIds ?? []).length === 0;
+    (args.adapter.includes("qoder") ||
+      (args.knownAgentStreamMessageIds ?? []).length === 0);
   const terminalManager = createAcpTerminalManager({
     defaultCwd: args.cwd,
     // Grok ACP and CodeBuddy ACP both send a complete command line in
@@ -552,11 +553,14 @@ export async function runAcpAgent({
 
   const handleAcpLine = (line: string) => {
     const msg = parseAcpLine(line);
+    const replayPhaseSuppressionEnabled = suppressReplayByPhase();
     const logState = {
       promptStarted,
       replaySuppressionEnabled: sessionWasResumed,
       replayMessageIds,
-      replayContentSignatures
+      replayContentSignatures,
+      suppressReplayByPhase: replayPhaseSuppressionEnabled,
+      turnHadLiveAgentChunk
     };
     if (!msg) {
       appendLog(logStream, "stdout", line);
@@ -632,7 +636,8 @@ export async function runAcpAgent({
       if (
         shouldSkipUserMessageChunk(msg.params?.update, {
           userMessageId: args.userMessageId,
-          promptText: args.prompt
+          promptText: args.prompt,
+          replaySuppressionEnabled: sessionWasResumed
         })
       ) {
         return;
@@ -640,7 +645,6 @@ export async function runAcpAgent({
       const isAgentChunkForPhase =
         updateType === "agent_message_chunk" ||
         updateType === "agent_thought_chunk";
-      const replayPhaseSuppressionEnabled = suppressReplayByPhase();
       if (isAgentChunkForPhase && replayPhaseSuppressionEnabled) {
         if (
           shouldDropReplayPhaseAgentChunk(msg.params?.update, {
@@ -663,7 +667,9 @@ export async function runAcpAgent({
           promptStarted,
           replaySuppressionEnabled: sessionWasResumed,
           replayMessageIds,
-          replayContentSignatures
+          replayContentSignatures,
+          suppressReplayByPhase: replayPhaseSuppressionEnabled,
+          turnHadLiveAgentChunk
         })
       ) {
         return;

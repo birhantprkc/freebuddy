@@ -2658,3 +2658,186 @@ test("ACP runtime keeps sessionWasResumed active across prompt until first live 
     /if\s*\(\s*sessionWasResumed\s*&&\s*!isAcpMetadataSessionUpdate\(updateType\)\s*\)\s*\{\s*turnHadLiveAgentChunk = true;\s*sessionWasResumed = false;\s*\}/
   );
 });
+
+test("shouldSkipUserMessageChunk drops any user_message_chunk during replay suppression", () => {
+  assert.equal(
+    shouldSkipUserMessageChunk(
+      {
+        sessionUpdate: "user_message_chunk",
+        messageId: "historical-user-id",
+        content: { type: "text", text: "历史提问" }
+      },
+      {
+        userMessageId: "current-user-id",
+        promptText: "当前新问题",
+        replaySuppressionEnabled: true
+      }
+    ),
+    true
+  );
+});
+
+test("shouldEmitAcpUpdate suppresses completed tool calls and user messages on resumed sessions", () => {
+  // Replayed tool call arriving with status completed before any live tool execution
+  assert.equal(
+    shouldEmitAcpUpdate(
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "pruned-old-tool",
+        status: "completed",
+        title: "git status"
+      },
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true
+      }
+    ),
+    false
+  );
+  assert.equal(
+    shouldEmitAcpUpdate(
+      {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "pruned-old-tool",
+        status: "completed"
+      },
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true
+      }
+    ),
+    false
+  );
+  // Live tool call (status pending or undefined) must pass
+  assert.equal(
+    shouldEmitAcpUpdate(
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "live-new-tool",
+        status: "pending",
+        title: "git status"
+      },
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true
+      }
+    ),
+    true
+  );
+  // Replayed user message chunk must be suppressed
+  assert.equal(
+    shouldEmitAcpUpdate(
+      {
+        sessionUpdate: "user_message_chunk",
+        messageId: "old-user-mid",
+        content: { type: "text", text: "历史问题" }
+      },
+      {
+        promptStarted: true,
+        replaySuppressionEnabled: true
+      }
+    ),
+    false
+  );
+});
+
+test("Qoder ACP resume sequence cleanly drops historical replay and emits live generation", () => {
+  const updates = [
+    // Historical completed tool call (pruned from stored history)
+    { sessionUpdate: "tool_call", toolCallId: "call-hist-1", status: "completed", title: "search" },
+    // Historical thought chunk with replay messageId
+    { sessionUpdate: "agent_thought_chunk", messageId: "hist-mid-thought", content: { type: "text", text: "thinking about step 1" } },
+    // Historical echoed user message
+    { sessionUpdate: "user_message_chunk", messageId: "hist-user-mid", content: { type: "text", text: "之前的问题" } },
+    // Historical agent message chunk with replay messageId
+    { sessionUpdate: "agent_message_chunk", messageId: "hist-mid-msg", content: { type: "text", text: "已完成第一步。" } },
+    // Available commands update (metadata)
+    { sessionUpdate: "available_commands_update", availableCommands: [{ name: "run" }] },
+    // Live thought chunk (no messageId)
+    { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Now handling new turn" } },
+    // Live message chunk (no messageId)
+    { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "这是当前轮次的live回答" } },
+    // Live tool call (status pending)
+    { sessionUpdate: "tool_call", toolCallId: "call-live-1", status: "pending", title: "test" }
+  ];
+
+  let sessionWasResumed = true;
+  let turnHadLiveAgentChunk = false;
+  const promptStarted = true;
+  const knownAgentStreamMessageIds = ["polluted-old-mid"]; // Even if polluted by an earlier run
+  const isQoder = true;
+
+  const suppressReplayByPhase = () =>
+    sessionWasResumed &&
+    (isQoder || knownAgentStreamMessageIds.length === 0);
+
+  const emitted = [];
+
+  for (const update of updates) {
+    const updateType = update.sessionUpdate;
+    if (
+      shouldSkipUserMessageChunk(update, {
+        userMessageId: "current-user-mid",
+        promptText: "当前新问题",
+        replaySuppressionEnabled: sessionWasResumed
+      })
+    ) {
+      continue;
+    }
+
+    const isAgentChunkForPhase =
+      updateType === "agent_message_chunk" ||
+      updateType === "agent_thought_chunk";
+    const phaseSuppression = suppressReplayByPhase();
+
+    if (isAgentChunkForPhase && phaseSuppression) {
+      if (
+        shouldDropReplayPhaseAgentChunk(update, {
+          suppressReplayByPhase: phaseSuppression,
+          turnHadLiveAgentChunk
+        })
+      ) {
+        continue;
+      }
+      const hasMessageId =
+        typeof update.messageId === "string" && update.messageId.length > 0;
+      if (!hasMessageId) {
+        turnHadLiveAgentChunk = true;
+        sessionWasResumed = false;
+      }
+    }
+
+    if (
+      !shouldEmitAcpUpdate(update, {
+        promptStarted,
+        replaySuppressionEnabled: sessionWasResumed,
+        suppressReplayByPhase: phaseSuppression,
+        turnHadLiveAgentChunk
+      })
+    ) {
+      continue;
+    }
+
+    if (sessionWasResumed && !isAcpMetadataSessionUpdate(updateType)) {
+      turnHadLiveAgentChunk = true;
+      sessionWasResumed = false;
+    }
+
+    emitted.push(update);
+  }
+
+  // Only metadata and live items should be emitted
+  assert.deepEqual(
+    emitted.map((u) => u.sessionUpdate),
+    [
+      "available_commands_update",
+      "agent_thought_chunk",
+      "agent_message_chunk",
+      "tool_call"
+    ]
+  );
+  assert.equal(emitted[1].content.text, "Now handling new turn");
+  assert.equal(emitted[2].content.text, "这是当前轮次的live回答");
+  assert.equal(emitted[3].toolCallId, "call-live-1");
+});
+
