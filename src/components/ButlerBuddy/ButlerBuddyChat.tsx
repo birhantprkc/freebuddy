@@ -387,12 +387,21 @@ export function ButlerBuddyChat() {
     });
   }, [visibleMessages, running, previewReplying]);
 
+  const prevReplyingRef = useRef(running || previewReplying);
+  useEffect(() => {
+    if (prevReplyingRef.current && !(running || previewReplying)) {
+      inputRef.current?.focus();
+    }
+    prevReplyingRef.current = running || previewReplying;
+  }, [running, previewReplying]);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const prompt = draft.trim();
     if (!prompt || running || previewReplying || !ready) return;
     setDraft("");
     setError("");
+    inputRef.current?.focus();
 
     if (!hasDesktopBridge) {
       const id = `${Date.now()}`;

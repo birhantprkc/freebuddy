@@ -267,3 +267,18 @@ test("sidebar brand uses the dedicated sidebar logo asset", () => {
   assert.doesNotMatch(brandMarkSource, /<svg/m);
   assert.match(stylesSource, /\.sidebar-logo-img\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*cover;/m);
 });
+
+test("composer textarea stays enabled and preserves focus across sending and conversation switch", () => {
+  const freshChatViewSource = fs.readFileSync(
+    new URL("../src/components/CLI/ChatView.tsx", import.meta.url),
+    "utf8"
+  );
+  // chat textarea is not disabled by sending or sendLock so it doesn't blur
+  assert.match(freshChatViewSource, /<textarea\s+ref=\{chatTextareaRef\}[\s\S]*?disabled=\{replaying \|\| attachmentBusy\}/);
+  assert.doesNotMatch(freshChatViewSource, /<textarea\s+ref=\{chatTextareaRef\}[^>]*disabled=\{[^}]*sending/);
+  // focusComposer helper is called when sending message and when reply finishes
+  assert.match(freshChatViewSource, /const focusComposer = useCallback\(/);
+  assert.match(freshChatViewSource, /setDraft\(""\);\s*focusComposer\(\);/);
+  assert.match(freshChatViewSource, /prevSendingRef\.current && !sending/);
+});
+

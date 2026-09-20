@@ -1021,6 +1021,20 @@ export function ChatView({
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const focusComposer = useCallback(() => {
+    const activeEl = document.activeElement;
+    const isTypingElsewhere =
+      activeEl &&
+      activeEl !== chatTextareaRef.current &&
+      activeEl !== document.body &&
+      (activeEl.tagName === "INPUT" ||
+        activeEl.tagName === "TEXTAREA" ||
+        activeEl.tagName === "SELECT" ||
+        (activeEl as HTMLElement).isContentEditable);
+    if (!isTypingElsewhere) {
+      chatTextareaRef.current?.focus();
+    }
+  }, []);
   const pendingAttachmentsRef = useRef(pendingAttachments);
   const draftRef = useRef(draft);
   const conversationDraftsRef = useRef(new Map<string, string>());
@@ -1107,6 +1121,13 @@ export function ChatView({
   const replayIndex = useReplayStore((s) => s.index);
   const stopReplay = useReplayStore((s) => s.stop);
   const replaying = replayConvId === conv?.id && replayConvId !== null;
+  const prevSendingRef = useRef(sending);
+  useEffect(() => {
+    if (prevSendingRef.current && !sending) {
+      focusComposer();
+    }
+    prevSendingRef.current = sending;
+  }, [sending, focusComposer]);
   const starterPrompts = [
     t("chat.starter.one"),
     t("chat.starter.two"),
@@ -1889,7 +1910,11 @@ export function ChatView({
         : []
     );
     previousConversationIdRef.current = activeId;
-  }, [activeId]);
+    if (activeId) {
+      const timer = window.setTimeout(focusComposer, 50);
+      return () => window.clearTimeout(timer);
+    }
+  }, [activeId, focusComposer]);
 
   const formatMergeWarnings = (
     warnings: ReturnType<typeof mergePendingAttachments>["warnings"]
@@ -2354,6 +2379,7 @@ export function ChatView({
       unprotectManagedAttachments(attachmentsToSend);
       newTaskSendInFlightRef.current = false;
       setNewTaskSendLock(false);
+      window.setTimeout(focusComposer, 0);
     }
   };
 
@@ -2384,7 +2410,7 @@ export function ChatView({
   };
 
   const onSend = async () => {
-    if (attachmentBusy || sendInFlightRef.current || sendLock) return;
+    if (attachmentBusy || sendInFlightRef.current || sendLock || sending) return;
     const prompt = draft.trim();
     const attachmentsToSend = pendingAttachments;
 
@@ -2406,6 +2432,7 @@ export function ChatView({
         const userMessageId = nanoid();
         const now = new Date().toISOString();
         setDraft("");
+        focusComposer();
         setPendingAttachments((prev) => detachAttachmentsForSend(attachmentsToSend, prev));
         try {
           const savedUser = await cliClient.appendMessage({
@@ -2454,6 +2481,7 @@ export function ChatView({
           setPreflightMsg(
             t("errors.sendFailed", { err: e instanceof Error ? e.message : String(e) })
           );
+          focusComposer();
         }
         return;
       }
@@ -2478,6 +2506,7 @@ export function ChatView({
       };
       setSubmitPreview(preview);
       setDraft("");
+      focusComposer();
       setPendingAttachments((prev) => detachAttachmentsForSend(attachmentsToSend, prev));
 
       if (!(await preflightMember(targetMember))) {
@@ -2486,6 +2515,7 @@ export function ChatView({
         setPendingAttachments((prev) =>
           restoreAttachmentsForSend(attachmentsToSend, prev)
         );
+        focusComposer();
         return;
       }
 
@@ -2532,10 +2562,12 @@ export function ChatView({
         restoreAttachmentsForSend(attachmentsToSend, prev)
       );
       setPreflightMsg(t("errors.sendFailed", { err: e instanceof Error ? e.message : String(e) }));
+      focusComposer();
     } finally {
       unprotectManagedAttachments(attachmentsToSend);
       sendInFlightRef.current = false;
       setSendLock(false);
+      window.setTimeout(focusComposer, 0);
     }
   };
 
@@ -2557,6 +2589,7 @@ export function ChatView({
     setPreflightMsg(null);
     setDraft("");
     setPendingAttachments((prev) => detachAttachmentsForSend(attachmentsToSend, prev));
+    window.setTimeout(focusComposer, 0);
   };
 
   const onEditScheduledSend = () => {
@@ -3120,7 +3153,7 @@ export function ChatView({
             ref={chatTextareaRef}
             rows={3}
             value={draft}
-            disabled={sending || replaying || attachmentBusy || sendLock}
+            disabled={replaying || attachmentBusy}
             placeholder={
               pendingWorkflowAction
                 ? t("workflow.requestChangesPlaceholder")
@@ -3165,7 +3198,7 @@ export function ChatView({
               }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (!attachmentBusy && !sendLock) void onSend();
+                if (!attachmentBusy && !sendLock && !sending) void onSend();
               }
             }}
           />
@@ -3413,6 +3446,12 @@ function NewTaskHome({
 }) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, []);
   const teamMode = taskMode === "team";
   const selectedTeam = teams.find((tt) => tt.id === selectedTeamId);
   const delegationPreviewTeam =
@@ -3507,7 +3546,7 @@ function NewTaskHome({
           autoFocus
           rows={4}
           value={draft}
-          disabled={attachmentBusy || sendLocked}
+          disabled={attachmentBusy}
           placeholder={t("chat.inputPlaceholder")}
           onChange={fileMentions.handleChange}
           onClick={fileMentions.handleCaretChange}
