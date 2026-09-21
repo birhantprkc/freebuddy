@@ -316,7 +316,7 @@ export function inferModelCapabilities(
 
   const defaultReasoning = /(o1|o3|r1|reasoner|thinking|reasoning)/i.test(lower);
   const defaultVision =
-    /(4o|vision|vl|sonnet|gemini|omni|pixtral|qwen-vl|glm-4v|internvl)/i.test(
+    /(4o|vision|vl|sonnet|gemini|omni|pixtral|qwen-vl|glm-4v|internvl|v4\.1|v41)/i.test(
       lower,
     );
   const defaultCode = /(code|coder|codestral|starcoder|deepseek-coder)/i.test(
