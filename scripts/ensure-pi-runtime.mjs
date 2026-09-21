@@ -6,6 +6,11 @@
  * installs a minimal dependency tree into the staging dir and writes a
  * pi-runtime.json manifest consumed by electron/cli/piRuntime.ts.
  *
+ * The dependency tree is staged under a nested `runtime/` subdir on purpose:
+ * electron-builder's extraResources copy filter drops a root-level
+ * `node_modules` directory, which would silently ship an app without the pi
+ * runtime. See scripts/pi-runtime-layout.mjs for the full story.
+ *
  * Idempotent: exits quickly when the staged tree already matches the pins.
  */
 
@@ -14,7 +19,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+import {
+  PI_ACP_ENTRY_REL,
+  PI_CLI_ENTRY_REL,
+  PI_RUNTIME_MANIFEST_FILE,
+  PI_RUNTIME_ROOT_DIR,
+  piRuntimeStagingDir
+} from "./pi-runtime-layout.mjs";
+
+const rootDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  ".."
+);
 const rootPackage = JSON.parse(
   fs.readFileSync(path.join(rootDir, "package.json"), "utf8")
 );
@@ -33,24 +49,13 @@ for (const [name, version] of [
   }
 }
 
-const outDir = path.join(rootDir, ".build", "pi-runtime");
-const manifestPath = path.join(outDir, "pi-runtime.json");
-const piAcpEntry = path.join(
-  outDir,
-  "node_modules",
-  "pi-acp",
-  "dist",
-  "index.js"
-);
-const piCliEntry = path.join(
-  outDir,
-  "node_modules",
-  "@earendil-works",
-  "pi-coding-agent",
-  "dist",
-  "bundle",
-  "cli.js"
-);
+const outDir = PI_RUNTIME_ROOT_DIR;
+// Nested one level below the extraResources copy root so electron-builder's
+// filter cannot drop the dependency tree (see the header comment).
+const stagingDir = piRuntimeStagingDir(outDir);
+const manifestPath = path.join(stagingDir, PI_RUNTIME_MANIFEST_FILE);
+const piAcpEntry = path.join(stagingDir, PI_ACP_ENTRY_REL);
+const piCliEntry = path.join(stagingDir, PI_CLI_ENTRY_REL);
 
 function entriesPresent() {
   return fs.existsSync(piAcpEntry) && fs.existsSync(piCliEntry);
@@ -73,9 +78,9 @@ if (upToDate) {
 }
 
 fs.rmSync(outDir, { recursive: true, force: true });
-fs.mkdirSync(outDir, { recursive: true });
+fs.mkdirSync(stagingDir, { recursive: true });
 fs.writeFileSync(
-  path.join(outDir, "package.json"),
+  path.join(stagingDir, "package.json"),
   `${JSON.stringify(
     {
       name: "freebuddy-pi-runtime",
@@ -103,13 +108,13 @@ const install = spawnSync(
     "--loglevel=error"
   ],
   {
-    cwd: outDir,
+    cwd: stagingDir,
     stdio: "inherit",
     ...(process.platform === "win32" ? { shell: true } : {})
   }
 );
 if (install.status !== 0) {
-  throw new Error(`npm install failed in ${outDir} (exit ${install.status})`);
+  throw new Error(`npm install failed in ${stagingDir} (exit ${install.status})`);
 }
 if (!entriesPresent()) {
   throw new Error("pi runtime entries missing after install");

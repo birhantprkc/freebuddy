@@ -7,14 +7,21 @@
  * globally installed CLI agent).
  *
  * Layout (staged by scripts/ensure-pi-runtime.mjs):
- *   <root>/node_modules/pi-acp/dist/index.js                          ACP bridge
- *   <root>/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js  pi CLI
- *   <root>/pi-runtime.json                                            version manifest
+ *   <root>/runtime/node_modules/pi-acp/dist/index.js                    ACP bridge
+ *   <root>/runtime/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js  pi CLI
+ *   <root>/runtime/pi-runtime.json                                     version manifest
  *
  * Roots, in priority order:
- *   1. <resourcesPath>/pi-runtime  — packaged extraResources
- *   2. <repo>/.build/pi-runtime    — locally staged for packaging
- *   3. <repo>                      — dev: packages installed as devDependencies
+ *   1. <resourcesPath>/pi-runtime/runtime — packaged extraResources
+ *   2. <repo>/.build/pi-runtime/runtime   — locally staged for packaging
+ *   3. <repo>                             — dev: packages installed as devDependencies
+ *
+ * The nested `runtime/` subdir is required: electron-builder's extraResources
+ * copy filter drops a root-level `node_modules` directory, so a flat
+ * `<root>/node_modules` layout ships without the pi runtime and the adapter
+ * silently falls back to a PATH lookup ("binary not found"). See
+ * scripts/pi-runtime-layout.mjs; tests/pi-runtime.test.mjs guards the layout
+ * against electron-builder's copy filter.
  *
  * Spawning model:
  *   FreeBuddy spawns `node <pi-acp>/dist/index.js` directly (mirrors how
@@ -37,6 +44,14 @@ import { fileURLToPath } from "node:url";
 import { resolveNodeBinaryHint } from "./codexBinaryHint.js";
 
 export const PI_ACP_ADAPTER_ID = "pi-acp";
+
+/**
+ * Subdir under the packaged/staged pi-runtime root that holds node_modules.
+ * Must not be named `node_modules` — electron-builder drops a root-level
+ * node_modules when copying extraResources (see the header comment and
+ * scripts/pi-runtime-layout.mjs).
+ */
+const PI_RUNTIME_STAGING_SUBDIR = "runtime";
 
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 const PI_ACP_PACKAGE = "pi-acp";
@@ -99,10 +114,10 @@ export function piRuntimeRoots(): string[] {
   const roots: string[] = [];
   const packaged =
     typeof process.resourcesPath === "string"
-      ? path.join(process.resourcesPath, "pi-runtime")
+      ? path.join(process.resourcesPath, "pi-runtime", PI_RUNTIME_STAGING_SUBDIR)
       : "";
   if (packaged) roots.push(packaged);
-  roots.push(path.join(repoRoot(), ".build", "pi-runtime"));
+  roots.push(path.join(repoRoot(), ".build", "pi-runtime", PI_RUNTIME_STAGING_SUBDIR));
   roots.push(repoRoot());
   return roots;
 }
