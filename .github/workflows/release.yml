@@ -129,6 +129,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ matrix.platform == 'macos-latest' && 'true' || 'false' }}
         run: |
           node scripts/ensure-tokscale-platform.mjs --platform ${{ matrix.tokscale_platform }} --arch ${{ matrix.tokscale_arch }}
+          node scripts/ensure-pi-runtime.mjs
           npm run build
           npx electron-builder ${{ matrix.builder_args }} --publish never
 
