@@ -57,6 +57,40 @@ test("titlebar truncates long conversation titles to one line", () => {
   assert.match(appSource, /className="breadcrumb"[\s\S]*title=\{/m);
 });
 
+test("chat titlebar icons are hidden by default and revealed on hover", () => {
+  // The rename pencil must hug the title and the actions stay right-aligned.
+  assert.match(appSource, /titlebar--chat/);
+  assert.match(
+    stylesSource,
+    /\.conversation-title-editor\.titlebar,\s*\.conversation-title-editor\.titlebar \.conversation-title-text\s*\{[^}]*flex:\s*0 1 auto;/m
+  );
+
+  // Hidden by default, revealed on hover/keyboard focus, without layout shift.
+  assert.match(
+    stylesSource,
+    /\.titlebar--chat \.conversation-title-edit-btn,\s*\.titlebar--chat \.titlebar-actions\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;/m
+  );
+  assert.match(
+    stylesSource,
+    /\.titlebar--chat:hover \.conversation-title-edit-btn,\s*\.titlebar--chat:hover \.titlebar-actions[^}]*\}/m
+  );
+  assert.match(
+    stylesSource,
+    /\.titlebar--chat:focus-within \.conversation-title-edit-btn/m
+  );
+  // The open overflow menu must keep the row visible while the pointer is
+  // outside the titlebar (the dropdown hangs below it).
+  assert.match(
+    stylesSource,
+    /\.titlebar--chat:has\(\.titlebar-overflow\.open\) \.titlebar-actions\s*\{[^}]*opacity:\s*1;/m
+  );
+  // Touch devices have no hover: always show the actions there.
+  assert.match(
+    stylesSource,
+    /@media \(hover: none\)\s*\{[\s\S]*?\.titlebar--chat \.conversation-title-edit-btn[\s\S]*?opacity:\s*1;/m
+  );
+});
+
 test("chat history windows to the newest messages with an earlier-load control", () => {
   assert.match(chatViewSource, /INITIAL_VISIBLE_MESSAGES/);
   assert.match(chatViewSource, /visibleConversationSlice/);

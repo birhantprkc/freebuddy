@@ -961,7 +961,13 @@ function App() {
       </aside>
 
       <main className={`workspace${settingsOpen ? " settings-workspace" : ""}`}>
-        <header className="titlebar">
+        <header
+          className={`titlebar${
+            workspaceView === "chat" && activeConversation && !settingsOpen
+              ? " titlebar--chat"
+              : ""
+          }`}
+        >
           {sidebarCollapsed && renderToggleButton("floating")}
           {workspaceView === "chat" && activeConversation ? (
             <EditableConversationTitle
