@@ -8849,6 +8849,15 @@ button.new-task-context-control {
   gap: 2px;
 }
 
+/* Titlebar conversation title: let the title hug its text instead of growing
+   to fill the row, so the rename pencil sits right after the title. The
+   share/overflow/detail actions stay right-aligned via their own
+   margin-left: auto, and the title still ellipsizes when space runs out. */
+.conversation-title-editor.titlebar,
+.conversation-title-editor.titlebar .conversation-title-text {
+  flex: 0 1 auto;
+}
+
 .titlebar-icon-button,
 .titlebar-overflow-trigger {
   display: inline-grid;
