@@ -16,17 +16,22 @@ import { nanoid } from "nanoid";
 import {
   Check,
   ChevronDown,
+  ChevronUp,
   ExternalLink,
   Folder,
   FolderLock,
   GitBranch,
   Laptop,
+  Layers,
   Plus,
   Search,
+  Sparkles,
   X
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { ONBOARDING_GUIDE_AGENT_ID } from "@/config/agentProfiles";
+import { OnboardingGuideSetupCard } from "@/components/Onboarding/OnboardingGuideSetupCard";
 import { useConversationStore } from "@/store/conversationStore";
 import { useCliExecutorStore } from "@/store/cliExecutorStore";
 import { useWorkflowStore } from "@/store/workflowStore";
@@ -1107,11 +1112,42 @@ export function ChatView({
   const replayIndex = useReplayStore((s) => s.index);
   const stopReplay = useReplayStore((s) => s.stop);
   const replaying = replayConvId === conv?.id && replayConvId !== null;
-  const starterPrompts = [
-    t("chat.starter.one"),
-    t("chat.starter.two"),
-    t("chat.starter.three")
-  ];
+  const isGuide =
+    member?.profile === "guide" ||
+    conv?.agentId === ONBOARDING_GUIDE_AGENT_ID ||
+    member?.id === ONBOARDING_GUIDE_AGENT_ID;
+  const starterPrompts = isGuide
+    ? [
+        t("onboarding.starter.tour"),
+        t("onboarding.starter.installAgent"),
+        t("onboarding.starter.freebie"),
+        t("onboarding.starter.tryCoding")
+      ]
+    : [
+        t("chat.starter.one"),
+        t("chat.starter.two"),
+        t("chat.starter.three")
+      ];
+
+  const [setupCardExpanded, setSetupCardExpanded] = useState(false);
+
+  const handleAskGuide = useCallback(
+    (prompt: string) => {
+      if (activeId) {
+        setSetupCardExpanded(true);
+        void sendMessage({
+          conversationId: activeId,
+          prompt
+        });
+      } else {
+        setDraft(prompt);
+        setTimeout(() => {
+          chatTextareaRef.current?.focus();
+        }, 50);
+      }
+    },
+    [activeId, sendMessage]
+  );
 
   const sessionMeta = useMemo(() => {
     if (!conv) {
@@ -2821,16 +2857,73 @@ export function ChatView({
     <div className="chat-view">
       <CodeWhipOverlay />
       <div className={`chat-scroll${replaying ? " replay-active" : ""}`} ref={scrollRef} onScroll={handleScroll}>
+        {isGuide && (
+          <div className="guide-chat-banner" role="status">
+            <div className="guide-chat-banner-info">
+              <Sparkles size={15} className="guide-chat-banner-icon" />
+              <span>{t("onboarding.guideBannerText")}</span>
+            </div>
+            <div className="guide-chat-banner-actions">
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  className={`guide-chat-banner-btn guide-chat-banner-btn--setup${setupCardExpanded ? " is-active" : ""}`}
+                  onClick={() => setSetupCardExpanded((prev) => !prev)}
+                  title={t("onboarding.guideBannerSetup")}
+                >
+                  <Layers size={13} />
+                  <span>{t("onboarding.guideBannerSetup")}</span>
+                  {setupCardExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                </button>
+              )}
+              {onOpenAgentSettings && (
+                <button
+                  type="button"
+                  className="guide-chat-banner-btn"
+                  onClick={onOpenAgentSettings}
+                >
+                  {t("onboarding.guideBannerSettings")}
+                </button>
+              )}
+
+            </div>
+          </div>
+        )}
+        {isGuide && messages.length > 0 && setupCardExpanded && (
+          <div className="guide-chat-floating-card">
+            <OnboardingGuideSetupCard
+              onOpenSettings={onOpenAgentSettings}
+              onAskGuide={handleAskGuide}
+            />
+          </div>
+        )}
         {messages.length === 0 && !conv?.sourceConversationId && (
-          <div className="chat-empty chat-empty-hero">
-            <p className="eyebrow">{t("chat.newAgentChat")}</p>
-            <h2>{t("chat.emptyHeroHeading", { name: member?.name ?? "" })}</h2>
-            <p className="muted">
-              {t("chat.emptyHeroBody")}
+          <div className={`chat-empty chat-empty-hero${isGuide ? " chat-empty-hero--guide" : ""}`}>
+            <p className="eyebrow">
+              {isGuide ? t("onboarding.guideEyebrow") : t("chat.newAgentChat")}
             </p>
+            <h2>
+              {isGuide
+                ? t("onboarding.guideHeroHeading")
+                : t("chat.emptyHeroHeading", { name: member?.name ?? "" })}
+            </h2>
+            <p className="muted">
+              {isGuide ? t("onboarding.guideHeroBody") : t("chat.emptyHeroBody")}
+            </p>
+            {isGuide && (
+              <OnboardingGuideSetupCard
+                onOpenSettings={onOpenAgentSettings}
+                onAskGuide={handleAskGuide}
+              />
+            )}
             <div className="starter-prompts">
               {starterPrompts.map((prompt) => (
                 <button key={prompt} onClick={() => {
+                  if (isGuide && prompt === t("onboarding.starter.installAgent")) {
+                    setSetupCardExpanded(true);
+                    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                    return;
+                  }
                   setDraft(prompt);
                   chatTextareaRef.current?.focus();
                 }}>
