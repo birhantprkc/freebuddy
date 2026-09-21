@@ -1152,6 +1152,22 @@ export function ChatView({
 
   const [setupCardExpanded, setSetupCardExpanded] = useState(false);
 
+  // Guide sessions may install agents from chat via bash, so the setup card
+  // must re-detect after each completed turn to reflect what the assistant
+  // actually installed (otherwise it keeps showing stale "not installed").
+  const [guideTurnCount, setGuideTurnCount] = useState(0);
+  const prevGuideSendingRef = useRef(sending);
+  useEffect(() => {
+    if (!isGuide) {
+      prevGuideSendingRef.current = sending;
+      return;
+    }
+    if (prevGuideSendingRef.current && !sending) {
+      setGuideTurnCount((count) => count + 1);
+    }
+    prevGuideSendingRef.current = sending;
+  }, [isGuide, sending]);
+
   const handleAskGuide = useCallback(
     (prompt: string) => {
       if (activeId) {
@@ -2927,6 +2943,7 @@ export function ChatView({
             <OnboardingGuideSetupCard
               onOpenSettings={onOpenAgentSettings}
               onAskGuide={handleAskGuide}
+              refreshKey={guideTurnCount}
             />
           </div>
         )}
@@ -2947,6 +2964,7 @@ export function ChatView({
               <OnboardingGuideSetupCard
                 onOpenSettings={onOpenAgentSettings}
                 onAskGuide={handleAskGuide}
+                refreshKey={guideTurnCount}
               />
             )}
             <div className="starter-prompts">

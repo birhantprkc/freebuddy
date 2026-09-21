@@ -81,6 +81,44 @@ test("onboarding-guide skill exists as a builtin with proper frontmatter and ins
   assert.match(content, /Graduation/);
 });
 
+test("onboarding-guide skill lets the assistant install agents via bash when asked", () => {
+  const content = read("assets/skills/onboarding-guide/SKILL.md");
+
+  // The old policy forbade bash installs outright; asking the assistant to
+  // install was meaningless while that held.
+  assert.doesNotMatch(content, /Do not execute npm\/curl install commands through bash/);
+  assert.doesNotMatch(content, /never create a second shell installation workflow/);
+
+  // Approved install commands must stay in lockstep with the adapter registry.
+  const adapters = read("src/config/cliAdapters.ts");
+  for (const command of [
+    "npm install -g --force @agentclientprotocol/codex-acp",
+    "npm install -g --include=optional @agentclientprotocol/claude-agent-acp",
+    "npm install -g deepseek-harness-acp"
+  ]) {
+    assert.ok(content.includes(command), `skill missing approved command: ${command}`);
+    assert.ok(adapters.includes(command), `adapter registry missing install hint: ${command}`);
+  }
+
+  // Guardrails that keep unattended global installs safe.
+  assert.match(content, /Never use sudo/);
+  assert.match(content, /skip anything installed/);
+  assert.match(content, /verify each binary responds/);
+});
+
+test("setup card re-detects after guide turns and offers assistant-driven install", () => {
+  const chatView = read("src/components/CLI/ChatView.tsx");
+  assert.match(chatView, /guideTurnCount/);
+  assert.match(chatView, /refreshKey=\{guideTurnCount\}/);
+
+  const card = read("src/components/Onboarding/OnboardingGuideSetupCard.tsx");
+  assert.match(card, /refreshKey/);
+  assert.match(card, /lastRefreshKeyRef/);
+  assert.match(card, /onboarding\.setup\.askGuideBtn/);
+  assert.match(card, /onboarding\.setup\.askGuidePrompt/);
+  assert.match(card, /step-btn--guide-auto/);
+});
+
 test("ChatView renders OnboardingGuideSetupCard for guide onboarding", () => {
   const chatView = read("src/components/CLI/ChatView.tsx");
   assert.match(chatView, /<OnboardingGuideSetupCard/);

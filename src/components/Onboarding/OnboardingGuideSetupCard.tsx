@@ -1,15 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckCircle2, Download, ExternalLink, Layers, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, Layers, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { useCliExecutorStore } from "@/store/cliExecutorStore";
 import { useCliInstallStore } from "@/store/cliInstallStore";
 import { useOnboardingDetectionStore } from "@/store/onboardingDetectionStore";
 import { useOnboardingStore } from "@/store/onboardingStore";
 import { buildOnboardingInstallPlan, type OnboardingInstallItem } from "@/utils/onboardingInstallPlan";
 
-export function OnboardingGuideSetupCard({ onOpenSettings, onAskGuide }: {
+export function OnboardingGuideSetupCard({ onOpenSettings, onAskGuide, refreshKey = 0 }: {
   onOpenSettings?: () => void;
   onAskGuide?: (prompt: string) => void;
+  /**
+   * Increments whenever a guide turn completes. The assistant can install
+   * agents from chat via bash, so the card re-detects on each completed turn
+   * instead of showing a stale "not installed" state.
+   */
+  refreshKey?: number;
 }) {
   const { t } = useTranslation();
   const adapters = useCliExecutorStore((s) => s.adapters);
@@ -26,6 +32,15 @@ export function OnboardingGuideSetupCard({ onOpenSettings, onAskGuide }: {
   const [batchIds, setBatchIds] = useState<string[]>([]);
 
   useEffect(() => { if (phase === "idle") void detect(); }, [phase, detect]);
+
+  // Re-detect when a guide turn completes (refreshKey changes), so agents the
+  // assistant installed from chat show up without a manual rescan.
+  const lastRefreshKeyRef = useRef(refreshKey);
+  useEffect(() => {
+    if (refreshKey === lastRefreshKeyRef.current) return;
+    lastRefreshKeyRef.current = refreshKey;
+    if (refreshKey > 0 && phase !== "checking") void detect();
+  }, [refreshKey, phase, detect]);
 
   const plan = buildOnboardingInstallPlan(adapters, runtimes, discoveryRuntimes);
   const busy = jobs.some((job) => !job.done) || queue.length > 0;
@@ -116,6 +131,10 @@ export function OnboardingGuideSetupCard({ onOpenSettings, onAskGuide }: {
         <button type="button" className="step-btn step-btn--primary" disabled={!canInstall || !selected.length}
           onClick={handleInstallSelected}><Download size={14} />
           {t("onboarding.setup.installSelected", { count: selected.length })}</button>
+        {onAskGuide && <button type="button" className="step-btn step-btn--guide-auto" disabled={checking}
+          title={t("onboarding.setup.askGuideTooltip")}
+          onClick={() => onAskGuide(t("onboarding.setup.askGuidePrompt"))}><Sparkles size={14} />
+          {t("onboarding.setup.askGuideBtn")}</button>}
       </div>}
     </>}
     {busy && <div className="onboarding-install-progress" role="status" aria-live="polite">
