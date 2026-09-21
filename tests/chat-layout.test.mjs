@@ -57,7 +57,7 @@ test("titlebar truncates long conversation titles to one line", () => {
   assert.match(appSource, /className="breadcrumb"[\s\S]*title=\{/m);
 });
 
-test("chat titlebar icons are hidden by default and revealed on hover", () => {
+test("chat titlebar rename pencil is hover-revealed while actions stay visible", () => {
   // The rename pencil must hug the title and the actions stay right-aligned.
   assert.match(appSource, /titlebar--chat/);
   assert.match(
@@ -65,26 +65,27 @@ test("chat titlebar icons are hidden by default and revealed on hover", () => {
     /\.conversation-title-editor\.titlebar,\s*\.conversation-title-editor\.titlebar \.conversation-title-text\s*\{[^}]*flex:\s*0 1 auto;/m
   );
 
-  // Hidden by default, revealed on hover/keyboard focus, without layout shift.
+  // Only the rename pencil is hidden by default and revealed on hover/keyboard
+  // focus, without layout shift.
   assert.match(
     stylesSource,
-    /\.titlebar--chat \.conversation-title-edit-btn,\s*\.titlebar--chat \.titlebar-actions\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;/m
+    /\.titlebar--chat \.conversation-title-edit-btn\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;/m
   );
   assert.match(
     stylesSource,
-    /\.titlebar--chat:hover \.conversation-title-edit-btn,\s*\.titlebar--chat:hover \.titlebar-actions[^}]*\}/m
+    /\.titlebar--chat:hover \.conversation-title-edit-btn[^;{}]*\{[^}]*opacity:\s*1;/m
   );
   assert.match(
     stylesSource,
     /\.titlebar--chat:focus-within \.conversation-title-edit-btn/m
   );
-  // The open overflow menu must keep the row visible while the pointer is
-  // outside the titlebar (the dropdown hangs below it).
-  assert.match(
+  // The share/overflow/detail actions must stay always visible: no rule may
+  // hide the actions row behind opacity 0.
+  assert.doesNotMatch(
     stylesSource,
-    /\.titlebar--chat:has\(\.titlebar-overflow\.open\) \.titlebar-actions\s*\{[^}]*opacity:\s*1;/m
+    /\.titlebar--chat [^{]*\.titlebar-actions[^{]*\{[^}]*opacity:\s*0;/m
   );
-  // Touch devices have no hover: always show the actions there.
+  // Touch devices have no hover: always show the pencil there.
   assert.match(
     stylesSource,
     /@media \(hover: none\)\s*\{[\s\S]*?\.titlebar--chat \.conversation-title-edit-btn[\s\S]*?opacity:\s*1;/m

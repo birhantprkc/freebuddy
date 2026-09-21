@@ -8858,28 +8858,22 @@ button.new-task-context-control {
   flex: 0 1 auto;
 }
 
-/* Chat titlebar actions stay out of the way until the user reaches for them:
-   hidden by default, revealed on titlebar hover or keyboard focus. Space is
-   preserved (no layout shift), the overflow menu keeps the row visible while
-   open, and touch devices (no hover) always show them. */
-.titlebar--chat .conversation-title-edit-btn,
-.titlebar--chat .titlebar-actions {
+/* Chat titlebar: only the rename pencil stays out of the way until the user
+   reaches for it — hidden by default, revealed on titlebar hover or keyboard
+   focus. Space is preserved (no layout shift) and touch devices (no hover)
+   always show it. The share/overflow/detail actions stay always visible. */
+.titlebar--chat .conversation-title-edit-btn {
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
 }
 .titlebar--chat:hover .conversation-title-edit-btn,
-.titlebar--chat:hover .titlebar-actions,
-.titlebar--chat:focus-within .conversation-title-edit-btn,
-.titlebar--chat:focus-within .titlebar-actions,
-.titlebar--chat:has(.titlebar-overflow.open) .conversation-title-edit-btn,
-.titlebar--chat:has(.titlebar-overflow.open) .titlebar-actions {
+.titlebar--chat:focus-within .conversation-title-edit-btn {
   opacity: 1;
   pointer-events: auto;
 }
 @media (hover: none) {
-  .titlebar--chat .conversation-title-edit-btn,
-  .titlebar--chat .titlebar-actions {
+  .titlebar--chat .conversation-title-edit-btn {
     opacity: 1;
     pointer-events: auto;
   }
