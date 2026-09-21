@@ -32,7 +32,7 @@ test("piRuntimeRoots prefers packaged resources, then staging, then repo", () =>
   const roots = piRuntimeRoots();
   assert.ok(roots.length >= 2);
   assert.equal(roots[roots.length - 1], path.resolve(fileURLToPath(new URL("..", import.meta.url))));
-  assert.ok(roots.some((root) => root.endsWith(".build/pi-runtime")));
+  assert.ok(roots.some((root) => root.endsWith(path.join(".build", "pi-runtime"))));
 });
 
 test("resolvePiAcpRuntime finds the first ready root and its manifest", () => {
@@ -85,7 +85,13 @@ test("resolvePiNodeRuntime prefers an explicit node and falls back to Electron-a
   assert.equal(withNode.bin, fakeNode);
   assert.deepEqual(withNode.env, {});
 
-  const fallback = resolvePiNodeRuntime({ PATH: "", FREEBUDDY_NODE_BIN: "" });
+  const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-no-node-"));
+  const fallback = resolvePiNodeRuntime({
+    PATH: "",
+    FREEBUDDY_NODE_BIN: "",
+    ProgramFiles: emptyRoot,
+    "ProgramFiles(x86)": emptyRoot
+  });
   assert.equal(fallback.bin, process.execPath);
   assert.deepEqual(fallback.env, { ELECTRON_RUN_AS_NODE: "1" });
 });

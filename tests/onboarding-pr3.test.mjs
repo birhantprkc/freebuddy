@@ -73,7 +73,7 @@ test("onboarding-guide skill exists as a builtin with proper frontmatter and ins
   assert.equal(fs.existsSync(skillFile), true, "onboarding-guide/SKILL.md not found");
 
   const content = fs.readFileSync(skillFile, "utf8");
-  assert.match(content, /^---\nname:\s*onboarding-guide/m);
+  assert.match(content, /^---\r?\nname:\s*onboarding-guide/m);
   assert.match(content, /description:/);
   assert.match(content, /FreeBuddy's onboarding guide/);
   assert.match(content, /Audience assumptions/);
