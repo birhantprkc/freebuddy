@@ -2,6 +2,25 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.10.4] - 2026-09-21
+
+### 新功能
+
+- GuideBuddy 对话向导体验与完成闭环（新手引导 PR3/3） (#189)
+- 内置 pi 运行时 + 官方新手引导 Agent GuideBuddy（新手引导 PR1/3） (#187)
+- point guide gateway to freebuddy-freebie worker
+- PR2 — pi BYOK 能力 + 首次安装引导浮层
+- 新增普通 Pi 内置成员，可直接在 AgentPicker 中选用
+- 内置 pi 运行时 + 官方新手引导 Agent GuideBuddy（新手引导 PR1）
+
+### 问题修复
+
+- add mainland fallback activation and auto-bind pi adapter
+- prefix apiKey with $ so pi-ai expands envKey instead of treating it as literal token
+- enrich silent turn failure with pi session error details
+- 默认切换至 BYOK Relay 模型并避免 OpenAI 凭证劫持
+- Pi 图标 + GuideBuddy 固定 pi-acp 运行时（评审反馈）
+
 ## [0.10.3] - 2026-09-21
 
 ### 问题修复
