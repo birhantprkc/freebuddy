@@ -1100,6 +1100,7 @@ export function resolveDeepSeekByokEnv(
   }
   if (byok.wireApi) {
     env.DEEPSEEK_WIRE_API = byok.wireApi;
+    if (byok.wireApi === "chat") env.DEEPSEEK_PROTOCOL = "chat-completions";
   }
   const contextWindow = normalizeByokContextWindow(byok.contextWindow);
   if (contextWindow) {
@@ -1113,6 +1114,12 @@ export function resolveDeepSeekByokEnv(
     env.DEEPSEEK_MODEL = activeModel;
     env.DSH_MODEL = activeModel;
     env.MODEL = activeModel;
+    env.DEEPSEEK_MODELS_JSON = JSON.stringify(models.map((model) => ({
+      id: model.id,
+      name: model.name ?? model.id,
+      ...(model.contextWindow || contextWindow ? { contextWindow: model.contextWindow ?? contextWindow } : {}),
+      inputModalities: model.supportsVision ? ["text", "image"] : ["text"]
+    })));
   }
   return Object.keys(env).length ? env : undefined;
 }

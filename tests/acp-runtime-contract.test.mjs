@@ -195,7 +195,7 @@ test("acpRuntime skips client MCP servers for adapters that reject them", () => 
   assert.match(acpRuntimeSource, /adapterAcceptsClientMcpServers\(args\.adapter\)/);
   assert.match(
     acpRuntimeSource,
-    /DeepSeek Harness ACP rejects non-empty mcpServers/
+    /registerSkillToolSession\(args\.sessionId, args\.skills\)/
   );
 });
 

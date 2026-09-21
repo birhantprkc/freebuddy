@@ -997,6 +997,22 @@ function normalizeConfigOptions(update: any): ConfigOptionItem[] {
   return normalizeConfigOptionList(rawOptions);
 }
 
+export function acpModelSelectionMatches(adapter: string, actual: string, requested: string): boolean {
+  const normalize = (value: string) => value.trim().replace(/\[(?:none|low|medium|high|xhigh|max)\]$/i, "");
+  const selection = (value: string): [string, string] => {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (Array.isArray(parsed) && parsed.length === 2 && parsed.every((part) => typeof part === "string")) {
+        return [parsed[0], normalize(parsed[1])];
+      }
+    } catch { /* Legacy clients select a bare model ID. */ }
+    return ["deepseek-official", normalize(value)];
+  };
+  if (adapter !== "dsh-acp") return normalize(actual) === normalize(requested);
+  const a = selection(actual), b = selection(requested);
+  return a[0] === b[0] && a[1] === b[1];
+}
+
 function configOptionValueId(value: any): string {
   const raw = value?.id ?? value?.value;
   return raw == null ? "" : String(raw);
@@ -1011,7 +1027,12 @@ function configOptionValuesSource(option: any): any[] | undefined {
       nested[0]?.id != null ||
       typeof nested[0]?.name === "string"
     ) {
-      return nested;
+      // ACP select options can be grouped by provider; the composer consumes flat values.
+      return nested.flatMap((value: any) =>
+        Array.isArray(value?.options) && typeof value?.group === "string"
+          ? configOptionValuesSource(value) ?? []
+          : [value]
+      );
     }
   }
   if (nested && typeof nested === "object" && Array.isArray(nested.values)) {

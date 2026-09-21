@@ -1126,7 +1126,7 @@ function EditOverridePanel({
           ...(contextWindow !== undefined ? { contextWindow } : {}),
           ...(isCodex
             ? { supportsVision: entry.supportsVision !== false }
-            : {})
+            : isDeepSeek ? { supportsVision: entry.supportsVision === true } : {})
         };
         return model;
       })
@@ -1139,7 +1139,7 @@ function EditOverridePanel({
             id: m.id,
             ...(m.name ? { name: m.name } : {}),
             ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
-            ...(isCodex ? { supportsVision: m.supportsVision !== false } : {})
+            ...(isCodex ? { supportsVision: m.supportsVision !== false } : isDeepSeek ? { supportsVision: m.supportsVision === true } : {})
           }))
       : normalizedByokModels;
 
@@ -1630,14 +1630,14 @@ function EditOverridePanel({
                             }
                           />
                         )}
-                        {isCodex && (
+                        {(isCodex || isDeepSeek) && (
                           <label
                             className="byok-model-vision"
                             title={t("settings.cli.byok.modelVisionHint")}
                           >
                             <input
                               type="checkbox"
-                              checked={byokModel.supportsVision !== false}
+                              checked={isCodex ? byokModel.supportsVision !== false : byokModel.supportsVision === true}
                               aria-label={t(
                                 "settings.cli.byok.modelVisionEnabled"
                               )}

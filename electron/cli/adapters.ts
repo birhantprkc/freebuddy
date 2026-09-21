@@ -430,6 +430,18 @@ function dshAcpDemoBinJsFromBinaryHint(binary?: string): string | undefined {
   return demoDir ? dshAcpDemoBinJsFromDir(demoDir) : undefined;
 }
 
+/** The dsh-base standalone owns its composition; legacy demos still need ours. */
+export function isModernDshAcpBinary(binary: string): boolean {
+  const pkgDir = resolveDshAcpDemoDirFromBinary(binary);
+  if (!pkgDir) return false;
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(pkgDir, "package.json"), "utf8"));
+    return pkg.name === "deepseek-harness-acp" && Boolean(pkg.dependencies?.["@deepseek-ai/dsh-base"]);
+  } catch {
+    return false;
+  }
+}
+
 function wellKnownGlobalDshAcpDemoBinJs(
   env: NodeJS.ProcessEnv = process.env
 ): string | undefined {
@@ -977,6 +989,8 @@ export function buildDshAcpRuntimeDiagnostics(input: {
 }
 
 export function patchDshAcpManagedRuntime(root: string): number {
+  if (isModernDshAcpBinary(path.join(root, "lib", "bin.js"))) return 0;
+  if (isModernDshAcpBinary(path.join(root, "node_modules", "deepseek-harness-acp", "lib", "bin.js"))) return 0;
   const overlayRoot = dshHarnessOverlayDir();
   const jsonlFrom = path.join(
     overlayRoot,
@@ -989,6 +1003,13 @@ export function patchDshAcpManagedRuntime(root: string): number {
   try {
     if (existsSync(jsonlFrom)) {
       for (const dest of findDshPackageLibIndex(root, DSH_JSONL_PACKAGE)) {
+        // A legacy prefix can contain newer nested/linked installs. Check the target too.
+        try {
+          const pkg = JSON.parse(readFileSync(path.join(path.dirname(path.dirname(dest)), "package.json"), "utf8"));
+          const version = /^(\d+)\.(\d+)\.(\d+)/.exec(pkg.version ?? "");
+          if (version && (Number(version[1]) > 0 || Number(version[2]) > 1 ||
+            (Number(version[2]) === 1 && Number(version[3]) >= 6))) continue;
+        } catch { /* Legacy test fixtures and incomplete installs may lack metadata. */ }
         try {
           copyFileSync(jsonlFrom, dest);
           count += 1;
@@ -1014,6 +1035,7 @@ export function patchDshAcpManagedRuntime(root: string): number {
 
 /** Overlay the npm prefix that owns a `dsh-acp-demo` bin, including PATH installs. */
 export function patchDshAcpRuntimeFromBin(binPath: string): void {
+  if (isModernDshAcpBinary(binPath)) return;
   try {
     const demoDir = resolveDshAcpDemoDirFromBinary(binPath);
     if (!demoDir) return;
@@ -1163,6 +1185,10 @@ export function dshAcpCompositionReady(
   configPath?: string
 ): boolean {
   const pkgDir = resolveDshAcpDemoDirFromBinary(binPath) ?? path.dirname(binPath);
+  if (isModernDshAcpBinary(binPath)) {
+    return ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-acp", "@deepseek-ai/dsh-app-boot"]
+      .every((pkg) => nodeModulesHasPackage(pkgDir, pkg));
+  }
   if (!nodeModulesHasPackage(pkgDir, DSH_ACP_PROBE_PACKAGE)) {
     return false;
   }
@@ -1549,6 +1575,17 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
         cwd: input.cwd,
         dshAcpRuntimeRoot: input.dshAcpRuntimeRoot
       });
+      if (nodeEntry && isModernDshAcpBinary(nodeEntry)) {
+        const { model, args: acpArgs } = splitModelArg(extra);
+        // Explicit --config remains supported. Never inject legacy composition or koffi hooks.
+        return {
+          bin: "node",
+          args: [DSH_ACP_NODE_DISABLE_WARNING, nodeEntry, ...acpArgs],
+          ...(model ? { env: { DEEPSEEK_MODEL: model } } : {}),
+          promptViaStdin: false,
+          protocol: "acp"
+        };
+      }
       const args = extraArgsHaveDshConfig(extra)
         ? [...extra]
         : [

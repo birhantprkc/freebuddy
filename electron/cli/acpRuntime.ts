@@ -7,6 +7,7 @@ import type { WebContents } from "electron";
 
 import {
   acpPromptResultToItems,
+  acpModelSelectionMatches,
   acpNonRetryableUpstreamError,
   acpSessionListToItems,
   acpSessionSetupToItems,
@@ -1397,7 +1398,7 @@ export async function runAcpAgent({
     // and launches an Electron child process. Remote WebUI callers use the
     // authenticated HTTP Browser endpoints instead, so do not expose this
     // desktop-only capability to isolated remote users.
-    // DeepSeek Harness ACP rejects non-empty mcpServers on session/new.
+    // Pass client tools to adapters that accept session-scoped MCP servers.
     if (adapterAcceptsClientMcpServers(args.adapter)) {
       if (args.conversationId && !remoteIsolated) {
         mcpServers.push(
@@ -1551,13 +1552,9 @@ export async function runAcpAgent({
                   option.id === "model" ||
                   (option.category === "model" && option.id !== "provider")
               )?.currentValue;
-            const normalizeModel = (model: string) =>
-              model
-                .trim()
-                .replace(/\[(?:none|low|medium|high|xhigh|max)\]$/i, "");
             if (
               actualModel &&
-              normalizeModel(actualModel) !== normalizeModel(value)
+              !acpModelSelectionMatches(args.adapter, actualModel, value)
             ) {
               throw new Error(
                 `agent kept ${actualModel} after selecting ${value}`
