@@ -51,3 +51,13 @@ test("modern standalone owns configuration and is protected from legacy overlays
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("default binary resolution finds global standalone deepseek-harness-acp", () => {
+  const built = buildCommand({ adapter: "dsh-acp", prompt: "hello", extraArgs: ["--model=glm-5.3-flash"] });
+  if (built.bin === "node") {
+    assert.match(built.args[1], /deepseek-harness-acp[/\\]lib[/\\]bin\.js$/);
+    assert.equal(built.args.includes("--config"), false);
+    assert.equal(built.env?.DEEPSEEK_MODEL, "glm-5.3-flash");
+  }
+});
+

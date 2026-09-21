@@ -445,6 +445,13 @@ export function isModernDshAcpBinary(binary: string): boolean {
 function wellKnownGlobalDshAcpDemoBinJs(
   env: NodeJS.ProcessEnv = process.env
 ): string | undefined {
+  const appdata = env.APPDATA?.trim();
+  if (appdata) {
+    const standalone = dshAcpDemoBinJsFromDir(
+      path.join(appdata, "npm", "node_modules", "deepseek-harness-acp")
+    );
+    if (standalone) return standalone;
+  }
   const residue =
     dshAcpWindowsResiduePath(env) ??
     (env.APPDATA?.trim()
@@ -453,13 +460,6 @@ function wellKnownGlobalDshAcpDemoBinJs(
   if (residue) {
     const demo = dshAcpDemoBinJsFromDir(path.join(residue, "dsh-acp-demo"));
     if (demo) return demo;
-  }
-  const appdata = env.APPDATA?.trim();
-  if (appdata) {
-    const standalone = dshAcpDemoBinJsFromDir(
-      path.join(appdata, "npm", "node_modules", "deepseek-harness-acp")
-    );
-    if (standalone) return standalone;
   }
   return undefined;
 }
@@ -696,8 +696,7 @@ export function resolveDshAcpDemoBinJs(input: {
   if (isDefaultDshAcpBinary(input.binary) && managedReady) return managedBin;
   const fromHint = dshAcpDemoBinJsFromBinaryHint(input.binary);
   if (fromHint) return fromHint;
-  const base = dshAcpBinaryBaseName(input.binary?.trim() ?? "");
-  if (isDefaultDshAcpBinary(input.binary) && base.startsWith("dsh-acp-demo")) {
+  if (isDefaultDshAcpBinary(input.binary)) {
     const globalBin = wellKnownGlobalDshAcpDemoBinJs();
     if (globalBin) return globalBin;
   }
