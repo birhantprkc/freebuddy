@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { nanoid } from "nanoid";
-import { Info, Plus, Trash2 } from "lucide-react";
+import { Info, Plus, Sparkles, Trash2 } from "lucide-react";
 
 import { useCliExecutorStore, type ResolvedExecutor } from "@/store/cliExecutorStore";
 import { useConversationStore } from "@/store/conversationStore";
@@ -16,6 +16,7 @@ import { AgentAvatar } from "@/components/CLI/AgentAvatar";
 import { AvatarPicker } from "./AvatarPicker";
 import { useCliInstallStore } from "@/store/cliInstallStore";
 import { useAgentBridgeStore } from "@/store/agentBridgeStore";
+import { useGuideInstallStore } from "@/store/guideInstallStore";
 import { getAgentIconId } from "@/config/agentIcon";
 import { SkillPicker } from "@/components/CLI/SkillPicker";
 import { useSkillStore } from "@/store/skillStore";
@@ -258,6 +259,20 @@ export function CLIAdaptersTab() {
     );
   }, [officialMembers, query]);
 
+  // Built-in agents that are not installed yet — candidates to hand to
+  // GuideBuddy for assisted installation (Pi is bundled and excluded).
+  const missingBuiltinAgents = useMemo(
+    () =>
+      list.filter(
+        (ex) =>
+          !ex.isClone &&
+          ex.id !== "pi-acp" &&
+          !ex.runtime?.installed &&
+          ex.installHint
+      ),
+    [list]
+  );
+
   const handleCheck = useCallback(
     async (id: string) => {
       setCheckingIds((prev) => new Set(prev).add(id));
@@ -441,6 +456,11 @@ export function CLIAdaptersTab() {
       onCheck={() => void handleCheck(ex.id)}
       onClone={() => void handleClone(ex)}
       onEdit={() => setEditingId(ex.id)}
+      onAskGuideInstall={
+        ex.id !== "pi-acp" && ex.installHint && !ex.runtime?.installed
+          ? () => useGuideInstallStore.getState().requestGuideInstall([ex.id])
+          : undefined
+      }
       onInstall={() => {
         if (!ex.installHint) return;
         startInstall({
@@ -541,6 +561,32 @@ export function CLIAdaptersTab() {
 
       <div className="adapter-settings-workspace">
         <div className="adapter-list-panel">
+          {category === "builtin" && loaded && missingBuiltinAgents.length > 0 && (
+            <div className="adapter-guide-install-banner" role="status">
+              <Sparkles
+                size={14}
+                className="adapter-guide-install-banner-icon"
+                aria-hidden="true"
+              />
+              <span className="adapter-guide-install-banner-text">
+                {t("settings.cli.guideInstall.bannerHint", {
+                  count: missingBuiltinAgents.length
+                })}
+              </span>
+              <button
+                type="button"
+                className="step-btn step-btn--guide-auto"
+                onClick={() =>
+                  useGuideInstallStore
+                    .getState()
+                    .requestGuideInstall(missingBuiltinAgents.map((ex) => ex.id))
+                }
+              >
+                <Sparkles size={13} aria-hidden="true" />
+                {t("settings.cli.guideInstall.bannerAction")}
+              </button>
+            </div>
+          )}
           <div className="adapter-list">
             {category === "official" ? (
               filteredOfficialMembers.length === 0 ? (
@@ -742,6 +788,7 @@ function AdapterRow({
   onClone,
   onEdit,
   onInstall,
+  onAskGuideInstall,
   authProbe,
   authBusy,
   authMessage,
@@ -756,6 +803,7 @@ function AdapterRow({
   onClone: () => void;
   onEdit: () => void;
   onInstall: () => void;
+  onAskGuideInstall?: () => void;
   authProbe?: CliAuthProbeResult;
   authBusy: boolean;
   authMessage?: string;
@@ -843,6 +891,18 @@ function AdapterRow({
         </div>
       </button>
       <div className="adapter-row-actions">
+        {onAskGuideInstall && (
+          <button
+            type="button"
+            className="adapter-row-guide-install"
+            title={t("settings.cli.guideInstall.rowAction", { name: ex.label })}
+            aria-label={t("settings.cli.guideInstall.rowAction", { name: ex.label })}
+            disabled={installing || checking}
+            onClick={onAskGuideInstall}
+          >
+            <Sparkles size={13} aria-hidden="true" />
+          </button>
+        )}
         {!rt?.installed && ex.installHint && (
           <button
             type="button"

@@ -334,6 +334,74 @@ test("coding agent settings force-install the new Codex ACP when the old package
   assert.match(settingsSource, /startInstall\(\{\s*adapterId: ex\.id,\s*label: ex\.label,\s*command: ex\.installHint!/s);
 });
 
+test("built-in agent list can hand missing installs to GuideBuddy", () => {
+  const guideStoreSource = fs.readFileSync(
+    new URL("../src/store/guideInstallStore.ts", import.meta.url),
+    "utf8"
+  );
+  const appSource = fs.readFileSync(
+    new URL("../src/App.tsx", import.meta.url),
+    "utf8"
+  );
+  const skillSource = fs.readFileSync(
+    new URL("../assets/skills/onboarding-guide/SKILL.md", import.meta.url),
+    "utf8"
+  );
+  const adaptersSource = fs.readFileSync(
+    new URL("../src/config/cliAdapters.ts", import.meta.url),
+    "utf8"
+  );
+
+  // Built-in list: banner + per-row sparkle entry, excluding the bundled Pi.
+  assert.match(settingsSource, /adapter-guide-install-banner/);
+  assert.match(settingsSource, /missingBuiltinAgents/);
+  assert.match(settingsSource, /ex\.id !== "pi-acp"/);
+  assert.match(settingsSource, /onAskGuideInstall/);
+  assert.match(
+    settingsSource,
+    /useGuideInstallStore\s*\.\s*getState\(\)\s*\.\s*requestGuideInstall/
+  );
+
+  // Hand-off store: readiness pre-checks, find-or-create the guide
+  // conversation, then send the prompt through the normal message pipeline.
+  assert.match(guideStoreSource, /export async function executeGuideInstall/);
+  assert.match(guideStoreSource, /ONBOARDING_GUIDE_AGENT_ID/);
+  assert.match(guideStoreSource, /isRunning\(/);
+  assert.match(guideStoreSource, /piByok\?\.enabled/);
+  assert.match(guideStoreSource, /newConversation\(/);
+  assert.match(guideStoreSource, /sendMessage\(/);
+
+  // App consumes the request: close Settings, switch to chat, notify.
+  assert.match(appSource, /useGuideInstallStore/);
+  assert.match(appSource, /executeGuideInstall/);
+
+  // SKILL.md approved commands stay in lockstep with the adapter registry:
+  // every adapter installHint must be an approved GuideBuddy command.
+  for (const match of adaptersSource.matchAll(/installHint:\s*\n?\s*"([^"]+)"/g)) {
+    assert.ok(
+      skillSource.includes(match[1]),
+      `skill missing approved command: ${match[1]}`
+    );
+  }
+
+  // Locale strings mirrored across zh-CN and en.
+  for (const key of ["bannerHint", "bannerAction", "rowAction", "requested", "prompt"]) {
+    assert.ok(zhLocale.settings.cli.guideInstall?.[key], `zh missing guideInstall.${key}`);
+    assert.ok(enLocale.settings.cli.guideInstall?.[key], `en missing guideInstall.${key}`);
+  }
+  for (const key of [
+    "no_member",
+    "runtime_missing",
+    "model_missing",
+    "busy",
+    "nothing_to_do",
+    "send_failed"
+  ]) {
+    assert.ok(zhLocale.settings.cli.guideInstall?.error?.[key]);
+    assert.ok(enLocale.settings.cli.guideInstall?.error?.[key]);
+  }
+});
+
 test("Codex CLI and ACP updates run in the background and surface runtime status", () => {
   assert.equal(cliCheckSource.includes("startCodexToolchainAutoUpdate"), true);
   assert.equal(cliCheckSource.includes("CODEX_UPDATE_INTERVAL_MS"), true);

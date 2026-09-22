@@ -49,6 +49,10 @@ import { useProjectStore } from "./store/projectStore";
 import { useWorkflowStore } from "./store/workflowStore";
 import { useTaskReceiptStore } from "./store/taskReceiptStore";
 import { useAgentBridgeStore } from "./store/agentBridgeStore";
+import {
+  executeGuideInstall,
+  useGuideInstallStore
+} from "./store/guideInstallStore";
 import { createChatAttachment } from "./utils/chatAttachments";
 import {
   notifyTaskFinished,
@@ -261,6 +265,31 @@ function App() {
       off?.();
     };
   }, []);
+
+  // Settings → CLI Agents: hand missing built-in installs to GuideBuddy.
+  // Consumed here because closing Settings and switching to the chat
+  // workspace is App-level state; the hand-off itself lives in the store.
+  const guideInstallRequest = useGuideInstallStore((s) => s.pending);
+  useEffect(() => {
+    if (!guideInstallRequest) return;
+    useGuideInstallStore.getState().clearRequest();
+    void (async () => {
+      const outcome = await executeGuideInstall(guideInstallRequest.agentIds);
+      if (!outcome.ok) {
+        useAgentBridgeStore
+          .getState()
+          .notify(
+            i18next.t(`settings.cli.guideInstall.error.${outcome.reason}`)
+          );
+        return;
+      }
+      setSettingsOpen(false);
+      setWorkspaceView("chat");
+      useAgentBridgeStore
+        .getState()
+        .notify(i18next.t("settings.cli.guideInstall.requested"));
+    })();
+  }, [guideInstallRequest]);
 
   useEffect(() => {
     const off = window.freebuddy?.window?.onNewConversation?.(() => {

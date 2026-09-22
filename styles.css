@@ -27311,3 +27311,49 @@ button.ghost:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .guide-chat-floating-card { animation: none; }
 }
+
+/* Built-in agent list: hand missing installs to the GuideBuddy assistant.
+   GuideBuddy hand-off actions use the workflow purple (--fb-workflow) so they
+   read as distinct from the green native-install buttons beside them. */
+.adapter-guide-install-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--fb-workflow) 25%, var(--fb-border-strong));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--fb-workflow) 8%, var(--fb-panel-soft));
+}
+.adapter-guide-install-banner-icon {
+  color: var(--fb-workflow);
+  flex: 0 0 auto;
+}
+.adapter-guide-install-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--fb-text-secondary);
+}
+.adapter-guide-install-banner .step-btn {
+  flex: 0 0 auto;
+}
+.adapter-row-guide-install {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fb-workflow);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.adapter-row-guide-install:hover {
+  background: color-mix(in srgb, var(--fb-workflow) 12%, transparent);
+}
+.adapter-row-guide-install:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

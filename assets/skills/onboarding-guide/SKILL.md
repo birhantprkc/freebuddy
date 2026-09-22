@@ -44,10 +44,21 @@ verified", prioritizing their existing tools, then hand off gracefully.
    listed in the existing-tools group is not repeated in the recommendations.
 4. Install with bash yourself when the user asks you to install or clearly
    wants hands-off help — running the commands is the whole point of asking an
-   agent. The approved commands are fixed, one per agent:
-   - Codex:      `npm install -g --force @agentclientprotocol/codex-acp`  (binary `codex-acp`)
-   - ClaudeCode: `npm install -g --include=optional @agentclientprotocol/claude-agent-acp`  (binary `claude-agent-acp`)
-   - DeepSeek:   `npm install -g deepseek-harness-acp`  (binary `deepseek-harness-acp`)
+   agent. The approved commands are fixed, one per agent, and must stay in
+   lockstep with the adapter registry (src/config/cliAdapters.ts):
+   - Codex:       `npm install -g --force @agentclientprotocol/codex-acp`  (binary `codex-acp`)
+   - ClaudeCode:  `npm install -g --include=optional @agentclientprotocol/claude-agent-acp`  (binary `claude-agent-acp`)
+   - DeepSeek:    `npm install -g deepseek-harness-acp`  (binary `deepseek-harness-acp`)
+   - OpenCode:    `npm install -g opencode-ai`  (binary `opencode`)
+   - Cursor:      `curl https://cursor.com/install -fsS | bash`  (binary `cursor-agent`)
+   - Kimi:        `curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash`  (binary `kimi`)
+   - Qoder:       `curl -fsSL https://qoder.com/install | bash`  (binary `qodercli`)
+   - CodeBuddy:   `npm install -g @tencent-ai/codebuddy-code`  (binary `codebuddy`)
+   - Grok:        `curl -fsSL https://x.ai/cli/install.sh | bash`  (binary `grok`)
+   - Antigravity: `npm install -g agy-acp-bridge`  (binary `agy-acp`)
+   - ZCode:       `npm install -g zcode-acp-server`  (binary `zcode-acp-server`)
+   - Cline:       `npm install -g cline`  (binary `cline`)
+   - Pi:          `npm install -g pi-acp @earendil-works/pi-coding-agent`  (binary `pi-acp`)
 
    Before running anything:
    - Check what is already present (`which <binary>`, `npm ls -g --depth=0`) and

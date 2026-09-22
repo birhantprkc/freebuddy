@@ -1247,6 +1247,21 @@
         "restartOnboarding": "Restart onboarding",
         "onboardingHint": "Show the first-run welcome guide again (trial credits / configure your own key)."
       },
+      "guideInstall": {
+        "bannerHint": "{{count}} built-in agents are not installed yet — let GuideBuddy, the official guide, install them for you.",
+        "bannerAction": "Ask GuideBuddy to install",
+        "rowAction": "Ask GuideBuddy to install {{name}}",
+        "requested": "GuideBuddy conversation opened — install request sent.",
+        "prompt": "Please install the following coding agents, running each official install command exactly as given (do not modify the commands):\n{{items}}\nAfterwards verify each binary responds and report the install and verification results.",
+        "error": {
+          "no_member": "GuideBuddy was not found — restart the app and try again.",
+          "runtime_missing": "GuideBuddy's Pi runtime is not installed — check or install it under Settings → CLI Agents → Official first.",
+          "model_missing": "GuideBuddy has no model yet — finish the onboarding trial or configure and bind a model in Settings first.",
+          "busy": "GuideBuddy is still handling the previous request — try again shortly.",
+          "nothing_to_do": "Nothing to install.",
+          "send_failed": "Failed to send the install request — please try again."
+        }
+      },
       "loading": "Loading…",
       "runInBackground": "Run in background",
       "installBackgroundHint": "Installation continues in the background. Close this panel and keep using FreeBuddy.",

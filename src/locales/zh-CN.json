@@ -1234,6 +1234,21 @@
         "restartOnboarding": "重新开始引导",
         "onboardingHint": "重新显示首次安装时的欢迎引导（试用额度 / 配置自己的 Key）。"
       },
+      "guideInstall": {
+        "bannerHint": "还有 {{count}} 个内置助手未安装，可以让官方向导 GuideBuddy 代为安装。",
+        "bannerAction": "让 GuideBuddy 安装",
+        "rowAction": "让 GuideBuddy 安装 {{name}}",
+        "requested": "已打开 GuideBuddy 会话，安装请求已发送。",
+        "prompt": "请帮我安装以下编程助手，逐个执行给出的官方安装命令（不要修改命令）：\n{{items}}\n安装完成后请逐个验证对应命令是否可用，并汇报安装与验证结果。",
+        "error": {
+          "no_member": "未找到 GuideBuddy，请重启应用后重试。",
+          "runtime_missing": "GuideBuddy 的 Pi 运行时未安装，请先在 设置 → CLI Agent → 官方 中检查或安装。",
+          "model_missing": "GuideBuddy 还没有可用模型：请先完成新手引导领取试用额度，或在设置中配置并绑定模型。",
+          "busy": "GuideBuddy 正在处理上一条请求，请稍后再试。",
+          "nothing_to_do": "没有需要安装的助手。",
+          "send_failed": "安装请求发送失败，请重试。"
+        }
+      },
       "loading": "加载中…",
       "runInBackground": "后台运行",
       "installBackgroundHint": "安装会在后台继续，你可以关闭此面板并使用其他功能。",
