@@ -643,7 +643,7 @@ export function CLIAdaptersTab() {
       <div className="adapter-guide-install-banner">
         <div className="adapter-guide-install-banner-head">
           <Sparkles
-            size={14}
+            size={12}
             className="adapter-guide-install-banner-icon"
             aria-hidden="true"
           />
@@ -714,7 +714,7 @@ export function CLIAdaptersTab() {
               setGuideSelectedIds([]);
             }}
           >
-            <Sparkles size={13} aria-hidden="true" />
+            <Sparkles size={11} aria-hidden="true" />
             {guideSelectionActive
               ? t("settings.cli.guideInstall.bannerActionCount", {
                   count: selectedGuideAgents.length
