@@ -6317,6 +6317,22 @@ html[data-surface="butler-screen-ball"] #root {
   margin-left: 0;
 }
 
+/* Search field and the installed count share one row in the narrow list. */
+.adapter-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adapter-list-toolbar .adapter-search {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.adapter-list-toolbar .adapter-availability-summary {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 10px 0 0;
+}
+
 .adapter-master-items {
   display: flex;
   flex: 1;
@@ -6349,14 +6365,6 @@ html[data-surface="butler-screen-ball"] #root {
 .adapter-master-item:hover {
   background: var(--fb-hover);
   color: var(--fb-text-primary);
-}
-
-/* Beats `.settings-surface label`, which stacks labels vertically. */
-label.adapter-master-item {
-  flex-direction: row;
-  gap: 10px;
-  font-size: 13px;
-  font-weight: 400;
 }
 
 .adapter-master-item.selected {
@@ -6495,6 +6503,7 @@ label.adapter-master-item {
   height: 28px;
   flex: 0 0 auto;
   align-items: center;
+  gap: 6px;
   padding: 0 12px;
   border: 1px solid var(--fb-border-strong);
   border-radius: 8px;
@@ -27575,126 +27584,4 @@ button.ghost:focus-visible,
 .onboarding-setup-card :is(button, input):focus-visible { outline: 2px solid var(--fb-brand); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) {
   .guide-chat-floating-card { animation: none; }
-}
-
-/* Built-in agent list: hand missing installs to the GuideBuddy assistant.
-   Rendered as a calm, low-priority inline hint so it does not disturb the
-   rest of the adapted-agent list. */
-.adapter-guide-install-banner {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--fb-border);
-  border-radius: 12px;
-  background: var(--fb-panel-bg);
-}
-.adapter-guide-install-banner-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.adapter-guide-install-banner-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.adapter-guide-install-banner-actions label.adapter-guide-install-select-all {
-  margin-right: auto;
-}
-.adapter-guide-install-banner-icon {
-  color: var(--fb-text-tertiary);
-  flex: 0 0 auto;
-  margin-top: 0;
-  opacity: 0.7;
-}
-label.adapter-guide-install-select-all {
-  display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 7px;
-  flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fb-text);
-  cursor: pointer;
-}
-.adapter-guide-install-banner-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--fb-text-secondary);
-}
-.adapter-master-item.adapter-master-item--guide-selected {
-  border-color: color-mix(in srgb, var(--fb-brand) 38%, var(--fb-border));
-  background: color-mix(in srgb, var(--fb-brand) 6%, var(--fb-panel-bg));
-}
-.adapter-guide-install-banner .step-btn {
-  flex: 0 0 auto;
-  padding: 3px 9px;
-  font-size: 11px;
-  font-weight: 500;
-  border-radius: 999px;
-}
-/* Muted ghost action inside the banner: no purple fill, just a quiet outline. */
-.adapter-guide-install-banner .step-btn--guide-auto {
-  background: transparent;
-  border-color: var(--fb-border-strong);
-  color: var(--fb-text-secondary);
-}
-.adapter-guide-install-banner .step-btn--guide-auto:hover:not(:disabled) {
-  background: var(--fb-hover);
-  color: var(--fb-text-primary);
-  border-color: var(--fb-border-strong);
-}
-.adapter-guide-install-banner .step-btn--guide-auto svg {
-  opacity: 0.65;
-}
-/* One polished checkbox shared by the banner select-all and every selectable
-   row card: appearance:none + an inline SVG tick renders identically on every
-   platform instead of falling back to the OS default control. */
-input.guide-install-checkbox {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  display: block;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  padding: 0;
-  border: 1.5px solid var(--fb-border-strong);
-  border-radius: 5px;
-  background: var(--fb-panel-bg);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: border-color 0.15s ease, background 0.15s ease,
-    box-shadow 0.15s ease, transform 0.12s ease;
-}
-input.guide-install-checkbox:hover {
-  border-color: color-mix(in srgb, var(--fb-brand) 55%, var(--fb-border-strong));
-}
-input.guide-install-checkbox:checked {
-  border-color: var(--fb-brand);
-  background: var(--fb-brand)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6.6 4.8 8.8 9.4 3.4' fill='none' stroke='%23fff' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-    center / 11px 11px no-repeat;
-}
-input.guide-install-checkbox:indeterminate {
-  border-color: var(--fb-brand);
-  background: var(--fb-brand)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 6h6' stroke='%23fff' stroke-width='1.9' stroke-linecap='round'/%3E%3C/svg%3E")
-    center / 11px 11px no-repeat;
-}
-input.guide-install-checkbox:active {
-  transform: scale(0.9);
-}
-input.guide-install-checkbox:focus {
-  box-shadow: none;
-}
-input.guide-install-checkbox:focus-visible {
-  outline: 2px solid var(--fb-brand);
-  outline-offset: 2px;
 }

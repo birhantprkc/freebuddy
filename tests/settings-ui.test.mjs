@@ -357,10 +357,9 @@ test("built-in agent list can hand missing installs to GuideBuddy", () => {
     "utf8"
   );
 
-  // Built-in list: banner + per-row sparkle entry, excluding the bundled Pi.
-  assert.match(settingsSource, /adapter-guide-install-banner/);
-  assert.match(settingsSource, /missingBuiltinAgents/);
-  assert.match(settingsSource, /ex\.id !== "pi-acp"/);
+  // Editor header: dedicated GuideBuddy action on uninstalled agents,
+  // excluding the bundled Pi.
+  assert.match(settingsSource, /selectedExecutor\.id !== "pi-acp"/);
   assert.match(settingsSource, /onAskGuideInstall/);
   assert.match(
     settingsSource,
@@ -390,7 +389,7 @@ test("built-in agent list can hand missing installs to GuideBuddy", () => {
   }
 
   // Locale strings mirrored across zh-CN and en.
-  for (const key of ["bannerHint", "bannerAction", "requested", "prompt"]) {
+  for (const key of ["bannerAction", "actionHint", "requested", "prompt"]) {
     assert.ok(zhLocale.settings.cli.guideInstall?.[key], `zh missing guideInstall.${key}`);
     assert.ok(enLocale.settings.cli.guideInstall?.[key], `en missing guideInstall.${key}`);
   }  for (const key of [
@@ -425,65 +424,35 @@ test("built-in agent list can hand missing installs to GuideBuddy", () => {
   );
 });
 
-test("GuideBuddy batch install asks the user to pick which missing agents to install", () => {
-  assert.match(settingsSource, /guideSelectedIds/);
-  assert.match(settingsSource, /missingAgentIds/);
-  assert.match(settingsSource, /toggleGuideAgent/);
+test("uninstalled agents get a GuideBuddy install action in the editor header", () => {
+  // The header action is wired only for uninstalled agents that carry an
+  // installHint (the bundled Pi adapter is excluded at the call site).
   assert.match(
     settingsSource,
-    /const toggleGuideAgent = useCallback\(\(id: string, checked: boolean\) => \{[\s\S]*?checked[\s\S]*?\[\.\.\.prev, id\][\s\S]*?prev\.filter\(\(existing\) => existing !== id\)/
+    /selectedExecutor\.id !== "pi-acp"[\s\S]*?selectedExecutor\.installHint[\s\S]*?!selectedExecutor\.runtime\?\.installed[\s\S]*?requestGuideInstall\(\[selectedExecutor\.id\]\)/
   );
+  // Rendered as a visible header button (not hidden in the overflow menu):
+  // the guide-install menu item is gone, the button uses the shared
+  // adapter-editor-action style next to Install.
+  assert.doesNotMatch(settingsSource, /key: "guide-install"/);
   assert.match(
     settingsSource,
-    /requestGuideInstall\(selectedGuideAgents\.map\(\(ex\) => ex\.id\)\)/
+    /\{onAskGuideInstall && \([\s\S]*?className="adapter-editor-action"[\s\S]*?guideInstall\.actionHint[\s\S]*?guideInstall\.bannerAction/
   );
-  // Banner action is disabled while the selection is empty.
-  assert.match(settingsSource, /disabled=\{guideSelectionActive && !selectedGuideAgents\.length\}/);
-  assert.match(settingsSource, /\[guideSelectionActive, setGuideSelectionActive\] = useState\(false\)/);
-  assert.match(settingsSource, /if \(!guideSelectionActive\) \{\s*setGuideSelectedIds\(\[\]\);\s*setGuideSelectionActive\(true\);\s*return;/);
-  assert.match(settingsSource, /guideSelectionActive && <label/);
-  // Per-agent checkbox on the docked list items, wired to the selection.
-  assert.match(settingsSource, /adapter-master-item--guide-choice/);
-  assert.match(settingsSource, /guideSelectable=\{guideSelectionActive && missingAgentIds\.includes\(ex\.id\)\}/);
-  assert.match(settingsSource, /guideSelected=\{guideSelectionActive && guideSelectedIds\.includes\(ex\.id\)\}/);
-  assert.match(
-    settingsSource,
-    /onGuideSelectChange=\{\(checked\) => toggleGuideAgent\(ex\.id, checked\)\}/
-  );
-  // Select-all lives in the banner; per-item aria-labels are localized.
-  assert.match(
-    settingsSource,
-    /checked=\{allGuideSelected\}[\s\S]*?setGuideSelectedIds\(allGuideSelected \? \[\] : missingAgentIds\)/
-  );
-  assert.match(settingsSource, /guideInstall\.selectAgent/);
 
-  // One polished custom checkbox (appearance:none + SVG tick) shared by the
-  // banner select-all and the list items; selected items get a brand outline.
-  assert.equal(
-    (settingsSource.match(/guide-install-checkbox/g) || []).length >= 2,
-    true
-  );
-  assert.match(settingsSource, /adapter-master-item--guide-selected/);
+  // The batch-selection banner is gone entirely: no selection state, no
+  // checkboxes, no meta row, and no leftover styles.
+  assert.doesNotMatch(settingsSource, /adapter-guide-install-banner/);
+  assert.doesNotMatch(settingsSource, /guide-install-checkbox/);
+  assert.doesNotMatch(settingsSource, /guideSelectionActive/);
+  assert.doesNotMatch(settingsSource, /adapter-master-item--guide/);
   const stylesSource = fs.readFileSync(
     new URL("../styles.css", import.meta.url),
     "utf8"
   );
-  assert.match(stylesSource, /\.guide-install-checkbox\s*\{[^}]*appearance:\s*none/s);
-  assert.match(stylesSource, /\.guide-install-checkbox:checked\s*\{[^}]*var\(--fb-brand\)/s);
-  assert.match(stylesSource, /\.adapter-master-item\.adapter-master-item--guide-selected/);
-  // Checkbox rows are <label>s; keep them horizontal despite the generic
-  // `.settings-surface label { flex-direction: column }` rule.
-  assert.match(stylesSource, /label\.adapter-master-item\s*\{[^}]*flex-direction:\s*row/s);
-
-  // Selection strings mirrored across zh-CN and en.
-  for (const key of ["selectAll", "selectAgent", "bannerActionCount", "selectAllScope", "pickHint", "selectionHint"]) {
-    assert.ok(zhLocale.settings.cli.guideInstall?.[key], `zh missing guideInstall.${key}`);
-    assert.ok(enLocale.settings.cli.guideInstall?.[key], `en missing guideInstall.${key}`);
-  }
-  assert.match(
-    zhLocale.settings.cli.guideInstall.bannerActionCount,
-    /\{\{count\}\}/
-  );
+  assert.doesNotMatch(stylesSource, /\.adapter-list-meta/);
+  assert.doesNotMatch(stylesSource, /guide-install-checkbox/);
+  assert.doesNotMatch(stylesSource, /adapter-guide-install-banner/);
 });
 
 test("Codex CLI and ACP updates run in the background and surface runtime status", () => {
