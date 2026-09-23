@@ -2,6 +2,16 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.10.11] - 2026-09-23
+
+### 新功能
+
+- master-detail CLI agent management page (#194)
+
+### 问题修复
+
+- sweep orphaned install-dir processes during Windows upgrades
+
 ## [0.10.10] - 2026-09-22
 
 ### 新功能
