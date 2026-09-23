@@ -643,7 +643,7 @@ export function CLIAdaptersTab() {
       <div className="adapter-guide-install-banner">
         <div className="adapter-guide-install-banner-head">
           <Sparkles
-            size={12}
+            size={11}
             className="adapter-guide-install-banner-icon"
             aria-hidden="true"
           />

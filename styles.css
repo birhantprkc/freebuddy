@@ -27578,15 +27578,16 @@ button.ghost:focus-visible,
 }
 
 /* Built-in agent list: hand missing installs to the GuideBuddy assistant.
-   Kept deliberately muted so it reads as a hint, not a CTA banner. */
+   Rendered as a calm, low-priority inline hint so it does not disturb the
+   rest of the adapted-agent list. */
 .adapter-guide-install-banner {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
   border: 1px solid var(--fb-border);
-  border-radius: 8px;
-  background: transparent;
+  border-radius: 12px;
+  background: var(--fb-panel-bg);
 }
 .adapter-guide-install-banner-head {
   display: flex;
@@ -27607,7 +27608,7 @@ button.ghost:focus-visible,
   color: var(--fb-text-tertiary);
   flex: 0 0 auto;
   margin-top: 0;
-  opacity: 0.8;
+  opacity: 0.7;
 }
 label.adapter-guide-install-select-all {
   display: inline-flex;
@@ -27625,7 +27626,7 @@ label.adapter-guide-install-select-all {
   min-width: 0;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--fb-text-tertiary);
+  color: var(--fb-text-secondary);
 }
 .adapter-master-item.adapter-master-item--guide-selected {
   border-color: color-mix(in srgb, var(--fb-brand) 38%, var(--fb-border));
@@ -27650,7 +27651,7 @@ label.adapter-guide-install-select-all {
   border-color: var(--fb-border-strong);
 }
 .adapter-guide-install-banner .step-btn--guide-auto svg {
-  opacity: 0.7;
+  opacity: 0.65;
 }
 /* One polished checkbox shared by the banner select-all and every selectable
    row card: appearance:none + an inline SVG tick renders identically on every
