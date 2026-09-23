@@ -77,8 +77,46 @@ Var /GLOBAL fbLegacyUninstallerFileName
   ClearErrors
 !macroend
 
+; Log every process still running under $INSTDIR so "app cannot be closed"
+; reports name the actual offender (leftover agent helpers are often named
+; node.exe/winpty-agent.exe, not FreeBuddy.exe).
+!macro FreeBuddyLogInstDirProcesses
+  ${if} $IsPowerShellAvailable == 0
+    nsExec::ExecToLog `"$PowerShellPath" -C "Get-CimInstance -ClassName Win32_Process | ? {$$_.Path -and $$_.Path.StartsWith('$INSTDIR', 'CurrentCultureIgnoreCase')} | % { 'still running: PID=' + $$_.ProcessId + ' ' + $$_.Path }"`
+  ${else}
+    nsExec::ExecToLog `"$CmdPath" /C tasklist /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}" /FI "USERNAME eq %USERNAME%" /FO LIST`
+  ${endif}
+!macroend
+
 !macro customCheckAppRunning
   !insertmacro IS_POWERSHELL_AVAILABLE
+
+  ${if} ${isUpdated}
+    ; Builds <= 0.10.8 orphan agent/runtime helpers under $INSTDIR on quit
+    ; (pi-acp may even run FreeBuddy.exe itself as Node). Sweep them with a
+    ; longer grace window than the stock check so it rarely has to prompt.
+    ${GetProcessInfo} 0 $pid $1 $2 $3 $4
+    ${if} $3 != "${APP_EXECUTABLE_FILENAME}"
+      Sleep 500
+      StrCpy $R2 0
+      ${Do}
+        IntOp $R2 $R2 + 1
+        !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+        ${if} $R0 != 0
+          ${ExitDo}
+        ${endif}
+        DetailPrint "Terminating leftover FreeBuddy processes (attempt $R2)..."
+        !insertmacro FreeBuddyLogInstDirProcesses
+        ${if} $R2 > 1
+          !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 1
+        ${else}
+          !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 0
+        ${endif}
+        Sleep 1500
+      ${LoopUntil} $R2 >= 6
+    ${endif}
+  ${endif}
+
   !insertmacro _CHECK_APP_RUNNING
 
   !ifndef BUILD_UNINSTALLER

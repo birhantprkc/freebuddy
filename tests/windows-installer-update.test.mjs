@@ -14,6 +14,12 @@ test("Windows updater bypasses legacy pi-runtime uninstaller paths", () => {
   assert.match(nsh, /!macro customCheckAppRunning/);
   assert.match(nsh, /!insertmacro IS_POWERSHELL_AVAILABLE/);
   assert.match(nsh, /!insertmacro _CHECK_APP_RUNNING/);
+  // Sweep orphaned helper processes under $INSTDIR (older builds leave
+  // FreeBuddy.exe-as-node / winpty-agent behind) before the stock check.
+  assert.match(nsh, /!macro FreeBuddyLogInstDirProcesses/);
+  assert.match(nsh, /!insertmacro FIND_PROCESS "\$\{APP_EXECUTABLE_FILENAME\}" \$R0/);
+  assert.match(nsh, /!insertmacro KILL_PROCESS "\$\{APP_EXECUTABLE_FILENAME\}" 1/);
+  assert.match(nsh, /Terminating leftover FreeBuddy processes/);
   assert.match(nsh, /resources\\pi-runtime\\runtime\\node_modules/);
   assert.match(nsh, /robocopy\.exe/);
   assert.match(nsh, /!macro customRemoveFiles/);
