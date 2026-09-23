@@ -998,7 +998,7 @@ function App() {
           }`}
         >
           {sidebarCollapsed && renderToggleButton("floating")}
-          {workspaceView === "chat" && activeConversation ? (
+          {!settingsOpen && workspaceView === "chat" && activeConversation ? (
             <EditableConversationTitle
               conversation={activeConversation}
               variant="titlebar"

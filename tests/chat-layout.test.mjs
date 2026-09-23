@@ -92,6 +92,20 @@ test("chat titlebar rename pencil is hover-revealed while actions stay visible",
   );
 });
 
+test("settings view shows the page title instead of the editable conversation title", () => {
+  // While Settings is open the conversation stays active in the background;
+  // the titlebar must fall back to the workspace breadcrumb rather than
+  // rendering (and allowing edits on) the stale conversation title.
+  assert.match(
+    appSource,
+    /\{!settingsOpen && workspaceView === "chat" && activeConversation \? \(\s*<EditableConversationTitle/
+  );
+  assert.match(
+    appSource,
+    /const workspaceTitle = settingsOpen\s*\?\s*t\("common\.settings"\)/
+  );
+});
+
 test("chat history windows to the newest messages with an earlier-load control", () => {
   assert.match(chatViewSource, /INITIAL_VISIBLE_MESSAGES/);
   assert.match(chatViewSource, /visibleConversationSlice/);
