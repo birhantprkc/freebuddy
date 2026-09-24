@@ -522,3 +522,19 @@ test("coding agent settings allow manual typing of model context window without 
     /parseByokContextWindow\(entry\.contextWindow\)/
   );
 });
+
+test("coding agent settings toggle DeepSeek official vs custom provider properly", () => {
+  assert.match(
+    settingsSource,
+    /const deepseekByokConfig = isDeepSeek\s*\?\s*codexByokEnabled\s*\?\s*selectedProviderId/
+  );
+  assert.match(
+    settingsSource,
+    /if \(savedByok\?\.enabled !== true\) return undefined;/
+  );
+  assert.match(
+    settingsSource,
+    /if \(!codexByokEnabled\) \{\s*setSelectedProviderId\(undefined\);\s*\}/
+  );
+});
+

@@ -1629,11 +1629,15 @@ export function buildCommand(input: BuildCommandInput): BuiltCommand {
       });
       if (nodeEntry && isModernDshAcpBinary(nodeEntry)) {
         const { model, args: acpArgs } = splitModelArg(extra);
+        const effectiveModel =
+          model && model.trim().toLowerCase() !== "auto"
+            ? model.trim()
+            : undefined;
         // Explicit --config remains supported. Never inject legacy composition or koffi hooks.
         return {
           bin: "node",
           args: [DSH_ACP_NODE_DISABLE_WARNING, nodeEntry, ...acpArgs],
-          ...(model ? { env: { DEEPSEEK_MODEL: model } } : {}),
+          ...(effectiveModel ? { env: { DEEPSEEK_MODEL: effectiveModel } } : {}),
           promptViaStdin: false,
           protocol: "acp"
         };

@@ -1190,16 +1190,23 @@ export function resolveDeepSeekByokEnv(
   if (models.length) {
     const requestedModel = selectedModel?.trim();
     const activeModel =
-      models.find((model) => model.id === requestedModel)?.id ?? models[0].id;
+      models.find((model) => model.id === requestedModel)?.id ??
+      (requestedModel && requestedModel.toLowerCase() !== "auto" ? requestedModel : undefined) ??
+      models[0].id;
     env.DEEPSEEK_MODEL = activeModel;
     env.DSH_MODEL = activeModel;
     env.MODEL = activeModel;
-    env.DEEPSEEK_MODELS_JSON = JSON.stringify(models.map((model) => ({
-      id: model.id,
-      name: model.name ?? model.id,
-      ...(model.contextWindow || contextWindow ? { contextWindow: model.contextWindow ?? contextWindow } : {}),
-      inputModalities: model.supportsVision ? ["text", "image"] : ["text"]
-    })));
+    env.DEEPSEEK_MODELS_JSON = JSON.stringify(models.map((model) => {
+      const isVision =
+        model.supportsVision ??
+        (model.id.toLowerCase().includes("flash") || model.id.toLowerCase().includes("vision"));
+      return {
+        id: model.id,
+        name: model.name ?? model.id,
+        ...(model.contextWindow || contextWindow ? { contextWindow: model.contextWindow ?? contextWindow } : {}),
+        inputModalities: isVision ? ["text", "image"] : ["text"]
+      };
+    }));
   }
   return Object.keys(env).length ? env : undefined;
 }

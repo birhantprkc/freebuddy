@@ -1296,6 +1296,7 @@ function EditOverridePanel({
     savedByok?.enabled === true
   );
   const [selectedProviderId, setSelectedProviderId] = useState<string | undefined>(() => {
+    if (savedByok?.enabled !== true) return undefined;
     const byok = savedByok as { providerId?: string } | undefined;
     const pid = byok?.providerId;
     return pid && pid !== "proxy" && pid !== "custom" ? pid : undefined;
@@ -1457,7 +1458,13 @@ function EditOverridePanel({
           ...(contextWindow !== undefined ? { contextWindow } : {}),
           ...(isCodex
             ? { supportsVision: entry.supportsVision !== false }
-            : isDeepSeek ? { supportsVision: entry.supportsVision === true } : {})
+            : isDeepSeek
+              ? {
+                  supportsVision:
+                    entry.supportsVision ??
+                    (id.toLowerCase().includes("flash") || id.toLowerCase().includes("vision"))
+                }
+              : {})
         };
         return model;
       })
@@ -1470,7 +1477,15 @@ function EditOverridePanel({
             id: m.id,
             ...(m.name ? { name: m.name } : {}),
             ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
-            ...(isCodex ? { supportsVision: m.supportsVision !== false } : isDeepSeek ? { supportsVision: m.supportsVision === true } : {})
+            ...(isCodex
+              ? { supportsVision: m.supportsVision !== false }
+              : isDeepSeek
+                ? {
+                    supportsVision:
+                      m.supportsVision ??
+                      (m.id.toLowerCase().includes("flash") || m.id.toLowerCase().includes("vision"))
+                  }
+                : {})
           }))
       : normalizedByokModels;
 
@@ -1522,8 +1537,9 @@ function EditOverridePanel({
             }
         : undefined;
     const deepseekByokConfig = isDeepSeek
-      ? selectedProviderId
-        ? {
+      ? codexByokEnabled
+        ? selectedProviderId
+          ? {
             enabled: true,
             providerId: selectedProviderId,
             envKey: selectedProvider?.envKey || codexEnvKey.trim() || "DEEPSEEK_API_KEY",
@@ -1531,18 +1547,21 @@ function EditOverridePanel({
             models: effectiveByokModels
           }
         : {
-            enabled: codexByokEnabled,
-            baseUrl: codexByokEnabled ? codexBaseUrl.trim() || undefined : undefined,
-            envKey: codexByokEnabled ? codexEnvKey.trim() || undefined : undefined,
+            enabled: true,
+            baseUrl: codexBaseUrl.trim() || undefined,
+            envKey: codexEnvKey.trim() || undefined,
             wireApi: "chat" as const,
             officialApiKey: deepseekOfficialApiKey.trim() || undefined,
             officialApiKeyPreview: savedDeepSeekByok?.officialApiKeyPreview,
             apiKey: codexApiKey.trim() || undefined,
             apiKeyPreview: savedDeepSeekByok?.apiKeyPreview,
-            models: codexByokEnabled ? normalizedByokModels : [],
-            contextWindow: codexByokEnabled
-              ? parseByokContextWindow(byokContextWindow)
-              : undefined
+            models: normalizedByokModels,
+            contextWindow: parseByokContextWindow(byokContextWindow)
+          }
+        : {
+            enabled: false,
+            officialApiKey: deepseekOfficialApiKey.trim() || undefined,
+            officialApiKeyPreview: savedDeepSeekByok?.officialApiKeyPreview
           }
       : undefined;
 
@@ -1607,6 +1626,9 @@ function EditOverridePanel({
       setExtraArgs(extractModelArg(override.extraArgs ?? []).args.join("\n"));
       setCodexApiKey("");
       setDeepseekOfficialApiKey("");
+      if (!codexByokEnabled) {
+        setSelectedProviderId(undefined);
+      }
       baselineRef.current = JSON.stringify(override);
       setSaveStatus("saved");
     } catch (err) {
@@ -2000,7 +2022,12 @@ function EditOverridePanel({
                           >
                             <input
                               type="checkbox"
-                              checked={isCodex ? byokModel.supportsVision !== false : byokModel.supportsVision === true}
+                              checked={
+                                isCodex
+                                  ? byokModel.supportsVision !== false
+                                  : (byokModel.supportsVision ??
+                                     (byokModel.id.toLowerCase().includes("flash") || byokModel.id.toLowerCase().includes("vision")))
+                              }
                               aria-label={t(
                                 "settings.cli.byok.modelVisionEnabled"
                               )}
