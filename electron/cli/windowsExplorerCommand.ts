@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -209,6 +210,14 @@ export interface WindowsExplorerCommandStamp {
   version: string;
   installDir: string;
   thumbprint: string;
+  status?: "registered" | "failed";
+}
+
+export function isWindows11OrGreater(release: string = os.release()): boolean {
+  if (process.platform !== "win32") return false;
+  const parts = release.split(".");
+  const build = Number.parseInt(parts[2] || "0", 10);
+  return build >= 22000;
 }
 
 export function shouldRegisterWindowsExplorerCommand(
@@ -241,7 +250,8 @@ export function readWindowsExplorerCommandStamp(
       packageName: parsed.packageName,
       version: parsed.version,
       installDir: parsed.installDir,
-      thumbprint: parsed.thumbprint
+      thumbprint: parsed.thumbprint,
+      status: parsed.status === "failed" ? "failed" : "registered"
     };
   } catch {
     return null;
@@ -352,11 +362,6 @@ public static class FreeBuddyShellNotify {
 }
 "@
 [FreeBuddyShellNotify]::SHChangeNotify(0x08000000, 0x1000, [IntPtr]::Zero, [IntPtr]::Zero)
-Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 800
-if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) {
-  Start-Process explorer
-}
 Get-AppxPackage -Name $name | Select-Object -ExpandProperty PackageFullName
 `.trim();
 }
@@ -380,6 +385,7 @@ export interface ApplyWindowsExplorerCommandSpec {
   installDir: string;
   stampPath: string;
   isDevInstance: boolean;
+  osRelease?: string;
 }
 
 export async function applyWindowsExplorerCommandPackage(
@@ -388,6 +394,7 @@ export async function applyWindowsExplorerCommandPackage(
 ): Promise<"skipped" | "unchanged" | "registered"> {
   if (process.platform !== "win32") return "skipped";
   if (!spec.packaged) return "skipped";
+  if (!isWindows11OrGreater(spec.osRelease)) return "skipped";
   const payload = readWindowsExplorerCommandPayload(spec.installDir);
   if (!payload) return "skipped";
   const paths = windowsExplorerCommandPaths(spec.installDir);
@@ -398,7 +405,8 @@ export async function applyWindowsExplorerCommandPackage(
     packageName: payload.packageName,
     version: payload.version,
     installDir: path.resolve(spec.installDir),
-    thumbprint: payload.thumbprint
+    thumbprint: payload.thumbprint,
+    status: "registered"
   };
   const stamp = readWindowsExplorerCommandStamp(spec.stampPath);
   if (!shouldRegisterWindowsExplorerCommand(stamp, next)) return "unchanged";
@@ -409,9 +417,19 @@ export async function applyWindowsExplorerCommandPackage(
     packageName: payload.packageName,
     thumbprint: payload.thumbprint
   });
-  await runPowerShell(script);
-  writeWindowsExplorerCommandStamp(spec.stampPath, next);
-  return "registered";
+  try {
+    await runPowerShell(script);
+    writeWindowsExplorerCommandStamp(spec.stampPath, next);
+    return "registered";
+  } catch (err) {
+    // Record that we attempted registration for this version so we do NOT
+    // endlessly prompt UAC or re-execute scripts on every launch.
+    writeWindowsExplorerCommandStamp(spec.stampPath, {
+      ...next,
+      status: "failed"
+    });
+    throw err;
+  }
 }
 
 async function runPowerShellScript(script: string): Promise<string> {

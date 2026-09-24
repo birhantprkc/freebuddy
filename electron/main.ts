@@ -111,6 +111,14 @@ if (!app.isPackaged) {
 if (process.platform === "darwin") {
   app.setActivationPolicy("regular");
 }
+if (process.platform === "win32") {
+  // Prevent GPU process crashes (STATUS_BREAKPOINT 0x80000003) on Windows machines
+  // with multi-GPU setups or third-party virtual display drivers (e.g. ToDesk, Sunlogin, Parsec).
+  app.commandLine.appendSwitch("disable-gpu-sandbox");
+}
+if (process.env.FB_DISABLE_GPU === "1") {
+  app.disableHardwareAcceleration();
+}
 process.env.FB_APP_VERSION = APP_VERSION;
 app.setAboutPanelOptions({
   applicationName: !isDevInstance ? APP_NAME : `${APP_NAME} (Dev)`,
@@ -1952,6 +1960,16 @@ function registerTaskNotificationIpc(): void {
     }
   });
 }
+
+app.on("child-process-gone", (_event, details) => {
+  logMain().error("crash", "child process gone", {
+    type: details.type,
+    reason: details.reason,
+    exitCode: details.exitCode,
+    name: details.name,
+    serviceName: details.serviceName
+  });
+});
 
 app.whenReady().then(async () => {
   initDebugLog();

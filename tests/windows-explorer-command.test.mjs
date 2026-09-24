@@ -14,6 +14,7 @@ const {
   buildWindowsExplorerCommandAppxManifest,
   windowsExplorerCommandPaths,
   readWindowsExplorerCommandPayload,
+  isWindows11OrGreater,
   shouldRegisterWindowsExplorerCommand,
   writeWindowsExplorerCommandStamp,
   readWindowsExplorerCommandStamp,
@@ -100,7 +101,8 @@ test("sparse package registration script trusts the bundled cert then Add-AppxPa
   assert.match(script, /800B0109/);
   assert.match(script, /Add-AppxPackage/);
   assert.match(script, /Remove-AppxPackage/);
-  assert.match(script, /Stop-Process -Name explorer/);
+  assert.doesNotMatch(script, /Stop-Process -Name explorer/);
+  assert.match(script, /SHChangeNotify/);
   assert.match(script, /ExternalLocation/);
   assert.match(script, /ForceUpdateFromAnyVersion/);
   assert.match(script, /FreeBuddyExplorerCommand\.msix/);
@@ -252,7 +254,8 @@ test("applyWindowsExplorerCommandPackage is idempotent and skips missing payload
         packaged: true,
         installDir,
         stampPath,
-        isDevInstance: false
+        isDevInstance: false,
+        osRelease: "10.0.22000"
       },
       async (script) => {
         scripts.push(script);
@@ -274,12 +277,27 @@ test("applyWindowsExplorerCommandPackage is idempotent and skips missing payload
       }),
       "utf8"
     );
+
+    // On Windows 10 (build < 22000), it should skip registration entirely.
+    const win10Result = await applyWindowsExplorerCommandPackage(
+      {
+        packaged: true,
+        installDir,
+        stampPath,
+        isDevInstance: false,
+        osRelease: "10.0.19045"
+      },
+      async () => "ok"
+    );
+    assert.equal(win10Result, "skipped");
+
     const updated = await applyWindowsExplorerCommandPackage(
       {
         packaged: true,
         installDir,
         stampPath,
-        isDevInstance: false
+        isDevInstance: false,
+        osRelease: "10.0.22000"
       },
       async (script) => {
         scripts.push(script);
@@ -291,8 +309,64 @@ test("applyWindowsExplorerCommandPackage is idempotent and skips missing payload
       assert.equal(scripts.length, 1);
       assert.match(scripts[0], /Add-AppxPackage/);
     }
+
+    // When registration throws, it records status: "failed" so it does not endlessly retry
+    fs.writeFileSync(
+      paths.meta,
+      JSON.stringify({
+        ...JSON.parse(fs.readFileSync(paths.meta, "utf8")),
+        version: "0.9.28.0"
+      }),
+      "utf8"
+    );
+    if (process.platform === "win32") {
+      await assert.rejects(
+        applyWindowsExplorerCommandPackage(
+          {
+            packaged: true,
+            installDir,
+            stampPath,
+            isDevInstance: false,
+            osRelease: "10.0.22000"
+          },
+          async () => {
+            throw new Error("UAC certificate trust was cancelled");
+          }
+        ),
+        /UAC certificate trust was cancelled/
+      );
+      const failedStamp = readWindowsExplorerCommandStamp(stampPath);
+      assert.equal(failedStamp?.version, "0.9.28.0");
+      assert.equal(failedStamp?.status, "failed");
+
+      // Next attempt with the same version should return unchanged without retrying
+      const retryResult = await applyWindowsExplorerCommandPackage(
+        {
+          packaged: true,
+          installDir,
+          stampPath,
+          isDevInstance: false,
+          osRelease: "10.0.22000"
+        },
+        async () => {
+          throw new Error("Should not be called");
+        }
+      );
+      assert.equal(retryResult, "unchanged");
+    }
   } finally {
     fs.rmSync(installDir, { recursive: true, force: true });
+  }
+});
+
+test("isWindows11OrGreater checks Windows build number", () => {
+  if (process.platform === "win32") {
+    assert.equal(isWindows11OrGreater("10.0.19045"), false);
+    assert.equal(isWindows11OrGreater("10.0.22000"), true);
+    assert.equal(isWindows11OrGreater("10.0.26100"), true);
+  } else {
+    assert.equal(isWindows11OrGreater("10.0.19045"), false);
+    assert.equal(isWindows11OrGreater("10.0.22000"), false);
   }
 });
 
