@@ -38,13 +38,19 @@ const devDeps = rootPackage.devDependencies ?? {};
 const piVersion = devDeps["@earendil-works/pi-coding-agent"];
 const piAcpVersion = devDeps["pi-acp"];
 
+// Accepts an exact semver pin ("1.2.3", optionally with a prerelease tag like
+// "1.2.3-fb.1") or an npm alias spec ("npm:@scope/pkg@1.2.3") — the latter lets
+// FreeBuddy consume a scoped fork while keeping the node_modules/pi-acp dir name.
+const PIN_RE =
+  /^(?:npm:(?:@[\w.-]+\/)?[\w.-]+@)?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
 for (const [name, version] of [
   ["@earendil-works/pi-coding-agent", piVersion],
   ["pi-acp", piAcpVersion]
 ]) {
-  if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) {
+  if (!PIN_RE.test(version ?? "")) {
     throw new Error(
-      `package.json devDependencies must pin ${name} to an exact version (found: ${String(version)})`
+      `package.json devDependencies must pin ${name} to an exact version or npm: alias (found: ${String(version)})`
     );
   }
 }
