@@ -2,6 +2,12 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.10.16] - 2026-09-25
+
+### 新功能
+
+- bridge ACP session mcpServers into bundled pi via forked pi-acp
+
 ## [0.10.15] - 2026-09-24
 
 ### 问题修复
