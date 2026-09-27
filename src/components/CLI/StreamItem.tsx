@@ -428,6 +428,12 @@ function normalizeMermaidSource(code: string): string {
 }
 
 function mermaidSvgToDataUrl(svg: string, background: string): string {
+  const host = document.createElement("div");
+  host.innerHTML = svg;
+  const svgEl = host.firstElementChild;
+  if (svgEl) {
+    svg = new XMLSerializer().serializeToString(svgEl);
+  }
   const sized = svg.replace(/<svg\b([^>]*)>/, (match, attrs: string) => {
     const viewBox = attrs.match(/viewBox="([^"]+)"/);
     if (!viewBox) return match;
