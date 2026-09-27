@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolveWindowsPowerShell } from "./windowsEnv.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -228,18 +229,82 @@ async function readSystemKeyringSecret(service: string, account: string): Promis
   }
 
   if (platform === "win32") {
-    // On Windows, zalando/go-keyring uses Windows Credential Manager under the target name `<service>:<account>`.
+    // On Windows, zalando/go-keyring uses Windows Credential Manager under the target name `<service>:<account>`
+    // using Win32 CredReadW (generic credentials). We invoke CredReadW via PowerShell P/Invoke.
     const target = `${service}:${account}`;
     const psScript = `
-      $target = "${target}";
-      $cred = cmdkey /list | Select-String -Pattern "Target: $target";
-      if (-not $cred) { exit 1 };
-      [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime] | Out-Null;
-      $vault = New-Object Windows.Security.Credentials.PasswordVault;
-      $item = $vault.FindAllByResource("${service}") | Where-Object { $_.UserName -eq "${account}" } | Select-Object -First 1;
-      if ($item) { $item.RetrievePassword(); $item.Password } else { exit 1 };
-    `;
-    const { stdout } = await execFileAsync("powershell", ["-NoProfile", "-Command", psScript]);
+$code = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public class WinCredReader {
+    [DllImport("advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CredRead(string target, int type, int reservedFlag, out IntPtr credentialPtr);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern void CredFree(IntPtr buffer);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct CREDENTIAL {
+        public uint Flags;
+        public uint Type;
+        public IntPtr TargetName;
+        public IntPtr Comment;
+        public long LastWritten;
+        public uint CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public uint Persist;
+        public uint AttributeCount;
+        public IntPtr Attributes;
+        public IntPtr TargetAlias;
+        public IntPtr UserName;
+    }
+
+    public static string ReadGeneric(string target) {
+        IntPtr credPtr = IntPtr.Zero;
+        if (!CredRead(target, 1, 0, out credPtr) || credPtr == IntPtr.Zero) {
+            return null;
+        }
+        try {
+            CREDENTIAL cred = (CREDENTIAL)Marshal.PtrToStructure(credPtr, typeof(CREDENTIAL));
+            if (cred.CredentialBlobSize == 0 || cred.CredentialBlob == IntPtr.Zero) {
+                return string.Empty;
+            }
+            byte[] bytes = new byte[cred.CredentialBlobSize];
+            Marshal.Copy(cred.CredentialBlob, bytes, 0, (int)cred.CredentialBlobSize);
+            if (bytes.Length >= 2 && bytes[1] == 0 && (bytes.Length < 4 || bytes[3] == 0)) {
+                return Encoding.Unicode.GetString(bytes);
+            }
+            return Encoding.UTF8.GetString(bytes);
+        } finally {
+            CredFree(credPtr);
+        }
+    }
+}
+'@;
+Add-Type -TypeDefinition $code;
+$secret = [WinCredReader]::ReadGeneric("${target}");
+if ($null -eq $secret -and "${service}") {
+    $secret = [WinCredReader]::ReadGeneric("${service}");
+}
+if ($null -ne $secret) {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+    [Console]::Out.Write($secret);
+} else {
+    exit 1;
+}
+`;
+    const encodedCommand = Buffer.from(psScript, "utf16le").toString("base64");
+    const pwshPath = resolveWindowsPowerShell(process.env);
+    const { stdout } = await execFileAsync(pwshPath, [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-EncodedCommand",
+      encodedCommand
+    ]);
     return stdout;
   }
 
