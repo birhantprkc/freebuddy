@@ -340,7 +340,7 @@ test("composer textarea stays enabled and preserves focus across sending and con
     "utf8"
   );
   // chat textarea is not disabled by sending or sendLock so it doesn't blur
-  assert.match(freshChatViewSource, /<textarea\s+ref=\{chatTextareaRef\}[\s\S]*?disabled=\{replaying \|\| attachmentBusy\}/);
+  assert.match(freshChatViewSource, /<textarea\s+ref=\{chatTextareaRef\}[\s\S]*?disabled=\{attachmentBusy\}/);
   assert.doesNotMatch(freshChatViewSource, /<textarea\s+ref=\{chatTextareaRef\}[^>]*disabled=\{[^}]*sending/);
   // focusComposer helper is called when sending message and when reply finishes
   assert.match(freshChatViewSource, /const focusComposer = useCallback\(/);

@@ -16,7 +16,6 @@ import type {
 } from "@/services/cli/types";
 import type { CliStreamItem } from "@/services/cli/parsers";
 import { useConversationStore } from "@/store/conversationStore";
-import { useReplayStore } from "@/store/replayStore";
 import { useWorkflowStore } from "@/store/workflowStore";
 import { useProjectStore } from "@/store/projectStore";
 import { copyToClipboard } from "@/utils/clipboard";
@@ -73,9 +72,6 @@ export function WorkspacePanel({
   );
   const activeRun = useWorkflowStore((s) => s.activeRun);
   const workflowSteps = useWorkflowStore((s) => s.steps);
-  const replayConvId = useReplayStore((s) => s.conversationId);
-  const replayIndex = useReplayStore((s) => s.index);
-  const replayFrames = useReplayStore((s) => s.frames);
 
   useEffect(() => {
     if (!activeId) {
@@ -85,18 +81,11 @@ export function WorkspacePanel({
     void loadWorkflowForConversation(activeId);
   }, [activeId, clearActiveWorkflowConversation, loadWorkflowForConversation]);
 
-  const replayFrame =
-    replayConvId === activeId && replayIndex >= 0
-      ? replayFrames[replayIndex]
-      : undefined;
-  const replayWorkflow = replayFrame?.workflow;
-  const displayMessages = replayFrame
-    ? messages.slice(0, replayFrame.messageIndex + 1)
-    : messages;
-  const displayLive = replayFrame ? undefined : live;
+  const displayMessages = messages;
+  const displayLive = live;
   const currentWorkflowRun =
     activeRun?.conversationId === activeId ? activeRun : undefined;
-  const displayRun = replayWorkflow?.run ?? currentWorkflowRun;
+  const displayRun = currentWorkflowRun;
 
   const active = conversations.find((c) => c.id === activeId);
   const activeAgentName = displayAgentName(active?.agentName, active?.adapter);
@@ -149,7 +138,6 @@ export function WorkspacePanel({
 
   const isTeamRun = (!!displayRun && displayRun.conversationId === activeId) || isDelegationConv;
   const isTeamLive =
-    !replayFrame &&
     !!displayRun &&
     isTeamRun &&
     (displayRun.status === "running" ||
@@ -283,26 +271,16 @@ export function WorkspacePanel({
   const durationMs = useMemo(() => {
     if (isTeamRun && displayRun?.createdAt) {
       const start = Date.parse(displayRun.createdAt);
-      const end = replayWorkflow?.at
-        ? Date.parse(replayWorkflow.at)
-        : displayRun.endedAt
-          ? Date.parse(displayRun.endedAt)
-          : now;
+      const end = displayRun.endedAt ? Date.parse(displayRun.endedAt) : now;
       if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
       const ms = end - start;
       return Math.max(ms, 0);
     }
-    const replayMessage = replayFrame ? messages[replayFrame.messageIndex] : undefined;
     for (let i = displayMessages.length - 1; i >= 0; i -= 1) {
       const message = displayMessages[i];
       if (message.role !== "assistant") continue;
       const start = Date.parse(message.createdAt);
-      const replayingMessage = Boolean(replayFrame && message.id === replayMessage?.id);
-      const end = replayingMessage
-        ? Date.parse(replayFrame?.messageComplete ? message.updatedAt : message.createdAt)
-        : isLive
-          ? now
-          : Date.parse(message.updatedAt);
+      const end = isLive ? now : Date.parse(message.updatedAt);
       if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
       const ms = end - start;
       return Math.max(ms, 0);
@@ -312,10 +290,6 @@ export function WorkspacePanel({
     isTeamRun,
     displayRun?.createdAt,
     displayRun?.endedAt,
-    replayWorkflow?.at,
-    replayFrame,
-    replayFrame?.messageComplete,
-    messages,
     displayMessages,
     isLive,
     now

@@ -814,20 +814,7 @@
     "unreadConversations": "未读对话",
     "unreadConversationsAria": "未读对话",
     "commonTasksAria": "常用任务",
-    "titlebarMore": "更多操作",
     "loadEarlier": "加载更早的 {{count}} 条消息",
-    "replay": {
-      "title": "对话回放",
-      "entry": "回放",
-      "play": "播放",
-      "pause": "暂停",
-      "exitShort": "退出",
-      "exit": "退出回放",
-      "progress": "{{n}}/{{total}}",
-      "disabledRunning": "Agent 运行中无法回放",
-      "disabledWorkflowActive": "团队工作流处理中无法回放",
-      "disabledEmpty": "暂无消息可回放"
-    },
     "starter": {
       "one": "先分析当前项目结构，给我下一步实现建议",
       "two": "检查刚才的改动有没有 UI/UX 问题",
@@ -1903,10 +1890,10 @@
     "advanced": "高级运行时控制"
   },
   "debugLogs": {
-    "title": "导出调试日志",
+    "title": "诊断",
     "aboutSectionTitle": "诊断",
     "aboutSectionHint": "导出诊断日志包，帮助开发者定位你遇到的问题。",
-    "openButton": "导出调试日志…",
+    "openButton": "诊断…",
     "dialogTitle": "导出调试日志",
     "scopeConversation": "仅包含当前会话的 agent 会话日志。",
     "modeAgent": "用 Agent 自查（推荐）",

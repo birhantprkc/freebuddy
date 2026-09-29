@@ -767,8 +767,6 @@ export const MessageBubble = memo(function MessageBubble({
   adapter,
   agentName,
   agentIconKey,
-  blockLimit,
-  typingChars,
   afterContent,
   cwd
 }: {
@@ -776,8 +774,6 @@ export const MessageBubble = memo(function MessageBubble({
   adapter?: string;
   agentName?: string;
   agentIconKey?: string;
-  blockLimit?: number;
-  typingChars?: number;
   afterContent?: ReactNode;
   cwd?: string;
 }) {
@@ -830,27 +826,7 @@ export const MessageBubble = memo(function MessageBubble({
     return displayItems.filter((item) => isVisibleItem(item, hideDiagnosticStderr));
   }, [displayItems]);
   const blocks = useMemo(() => visibleBlocks(visibleItems), [visibleItems]);
-  const renderedBlocks = useMemo(() => {
-    const sliced = blockLimit != null ? blocks.slice(0, blockLimit) : blocks;
-    if (typingChars == null || sliced.length === 0) return sliced;
-    const lastIdx = sliced.length - 1;
-    const last = sliced[lastIdx];
-    if (
-      last.kind === "single" &&
-      (last.item.kind === "text" || last.item.kind === "raw")
-    ) {
-      const next = sliced.slice();
-      next[lastIdx] = {
-        ...last,
-        item: {
-          ...last.item,
-          content: (last.item.content ?? "").slice(0, typingChars)
-        }
-      };
-      return next;
-    }
-    return sliced;
-  }, [blocks, blockLimit, typingChars]);
+  const renderedBlocks = blocks;
   const renderedSections = useMemo(
     () => buildDisplaySections(renderedBlocks),
     [renderedBlocks]

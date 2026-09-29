@@ -1,10 +1,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { ConfigProvider, theme as antdTheme } from "antd";
-import { Menu, Monitor, Moon, PanelLeft, PanelRight, Search, Share2, Sun } from "lucide-react";
+import { Menu, Monitor, Moon, PanelLeft, PanelRight, Search, Share2, Stethoscope, Sun } from "lucide-react";
 
 import sidebarLogoUrl from "../assets/sidebar-logo.png";
 import { ChatView } from "./components/CLI/ChatView";
-import { TitlebarOverflowMenu } from "./components/CLI/ReplayBar";
 import { ConversationList } from "./components/CLI/ConversationList";
 import { ConversationCommandPalette } from "./components/CLI/ConversationCommandPalette";
 import {
@@ -39,6 +38,7 @@ import { FreebiePage } from "./components/Freebie/FreebiePage";
 import { useCliExecutorStore } from "./store/cliExecutorStore";
 import { useProviderStore } from "./store/providerStore";
 import { useConversationStore } from "./store/conversationStore";
+import { useDebugLogsDialogStore } from "./store/debugLogsDialogStore";
 import { useOnboardingStore } from "./store/onboardingStore";
 import { useSettingsStore } from "./store/settingsStore";
 import { useSkillStore } from "./store/skillStore";
@@ -1043,7 +1043,19 @@ function App() {
                   <Share2 size={14} aria-hidden="true" />
                 </button>
               )}
-              <TitlebarOverflowMenu />
+              <button
+                type="button"
+                className="titlebar-icon-button"
+                title={t("debugLogs.title")}
+                aria-label={t("debugLogs.title")}
+                onClick={() =>
+                  useDebugLogsDialogStore
+                    .getState()
+                    .setOpen(true, activeConversation?.id)
+                }
+              >
+                <Stethoscope size={14} aria-hidden="true" />
+              </button>
               {detailCollapsed && (
                 <button
                   type="button"

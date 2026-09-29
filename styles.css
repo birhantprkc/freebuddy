@@ -9103,8 +9103,7 @@ button.new-task-context-control {
   }
 }
 
-.titlebar-icon-button,
-.titlebar-overflow-trigger {
+.titlebar-icon-button {
   display: inline-grid;
   width: 28px;
   height: 28px;
@@ -9118,10 +9117,7 @@ button.new-task-context-control {
 }
 
 .titlebar-icon-button:hover:not(:disabled),
-.titlebar-icon-button:focus-visible,
-.titlebar-overflow-trigger:hover,
-.titlebar-overflow-trigger:focus-visible,
-.titlebar-overflow.open .titlebar-overflow-trigger {
+.titlebar-icon-button:focus-visible {
   border-color: var(--fb-border);
   background: var(--fb-panel-bg);
   color: var(--fb-brand);
@@ -9159,112 +9155,6 @@ button.new-task-context-control {
   opacity: 0.48;
 }
 
-.titlebar-overflow {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-.titlebar-overflow.replaying .titlebar-overflow-trigger {
-  color: var(--fb-brand);
-  background: var(--fb-brand-glow);
-  border-color: rgba(16, 185, 129, 0.28);
-}
-
-.titlebar-overflow-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
-  min-width: 148px;
-  padding: 6px;
-  border: 1px solid var(--fb-border);
-  border-radius: 10px;
-  background: var(--fb-panel-bg);
-  box-shadow: var(--fb-shadow-md, 0 10px 28px rgba(15, 23, 42, 0.12));
-}
-
-.titlebar-overflow-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--fb-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-
-.titlebar-overflow-item:hover:not(:disabled),
-.titlebar-overflow-item:focus-visible {
-  background: var(--fb-panel-soft);
-  color: var(--fb-text-primary);
-}
-
-.titlebar-overflow-item.replaying {
-  color: var(--fb-brand);
-}
-
-.titlebar-overflow-item:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-}
-
-.title-replay-btn {
-  display: inline-flex;
-  height: 30px;
-  min-width: 68px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 10px;
-  color: var(--fb-text-secondary);
-  background: var(--fb-panel-bg);
-  border: 1px solid var(--fb-border);
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-}
-
-.title-replay-btn:hover:not(:disabled) {
-  color: var(--fb-text-primary);
-  background: var(--fb-panel-soft);
-  border-color: var(--fb-border-strong);
-}
-
-.title-replay-btn.replaying {
-  color: var(--fb-brand);
-  background: var(--fb-brand-glow);
-  border-color: rgba(16, 185, 129, 0.28);
-}
-
-.title-replay-btn.replaying:hover:not(:disabled) {
-  color: var(--fb-brand);
-  background: rgba(16, 185, 129, 0.18);
-  border-color: rgba(16, 185, 129, 0.36);
-}
-
-.title-replay-btn:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
-}
-
-.title-replay-btn svg {
-  width: 15px;
-  height: 15px;
-}
-
-.title-replay-label {
-  white-space: nowrap;
-}
-
 .titlebar-detail-toggle {
   display: inline-flex;
   height: 28px;
@@ -9296,19 +9186,6 @@ button.new-task-context-control {
 .titlebar-detail-toggle svg {
   width: 15px;
   height: 15px;
-}
-
-.chat-composer.replay-disabled {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-.chat-scroll.replay-active {
-  scroll-behavior: auto;
-}
-
-.chat-scroll.replay-active > .msg {
-  animation: none;
 }
 
 .chat-scroll > .msg,

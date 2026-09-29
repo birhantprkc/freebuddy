@@ -143,7 +143,7 @@ test("handoff UI auto-starts with a reference card and keeps per-conversation dr
   assert.doesNotMatch(store, /pendingTransferSeed/);
   assert.doesNotMatch(store, /handoffBriefId|maybeHandoffArgs/);
   assert.doesNotMatch(chat, /composer-context-transfer/);
-  assert.match(app, /TitlebarOverflowMenu/);
+  assert.match(app, /useDebugLogsDialogStore/);
   assert.match(app, /titlebar-icon-button/);
   assert.match(app, /activeConversationHasContent/);
   assert.match(app, /conversationContext\.stopBeforeAction/);

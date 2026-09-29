@@ -98,7 +98,6 @@ import { AgentAvatar } from "./AgentAvatar";
 import { CodeWhipOverlay } from "./CodeWhipOverlay";
 import { DelegationTeamPreviewCard } from "../Workflows/DelegationTeamPreviewCard";
 import { DelegationApprovalCard } from "../Workflows/DelegationApprovalCard";
-import { useReplayStore } from "@/store/replayStore";
 import { parseSlashDraft, SlashCommandMenu } from "./SlashCommandMenu";
 import {
   mergeSessionMetaItems,
@@ -1128,10 +1127,6 @@ export function ChatView({
   const sending =
     running ||
     (submitPreview !== null && submitPreview.conversationId === conv?.id);
-  const replayConvId = useReplayStore((s) => s.conversationId);
-  const replayIndex = useReplayStore((s) => s.index);
-  const stopReplay = useReplayStore((s) => s.stop);
-  const replaying = replayConvId === conv?.id && replayConvId !== null;
   const prevSendingRef = useRef(sending);
   useEffect(() => {
     if (prevSendingRef.current && !sending) {
@@ -1449,56 +1444,30 @@ export function ChatView({
     return preview.filter((m) => !existing.has(m.id));
   }, [conv, submitPreview, messages, member, currentUser?.username]);
 
-  const storeFrames = useReplayStore((s) => s.frames);
-  const replayFrame =
-    replaying && replayIndex >= 0 && replayIndex < storeFrames.length
-      ? storeFrames[replayIndex]
-      : undefined;
   const displayMessages = useMemo<ConversationMessage[]>(() => {
-    if (!replaying) {
-      const current = [...messages, ...previewMessages];
-      if (!live) return current;
-      const liveContent = JSON.stringify(live.items);
-      return current.map((message) =>
-        message.id === live.messageId
-          ? {
-              ...message,
-              status: live.status,
-              content: liveContent
-            }
-          : message
-      );
-    }
-    if (!replayFrame) return [];
-    return messages.slice(0, replayFrame.messageIndex + 1);
-  }, [replaying, replayFrame, messages, previewMessages, live]);
-  const historyWindow = useMemo(() => {
-    if (replaying) {
-      return { hiddenCount: 0, items: displayMessages };
-    }
-    return visibleConversationSlice(displayMessages, historyReveal);
-  }, [replaying, displayMessages, historyReveal]);
+    const current = [...messages, ...previewMessages];
+    if (!live) return current;
+    const liveContent = JSON.stringify(live.items);
+    return current.map((message) =>
+      message.id === live.messageId
+        ? {
+            ...message,
+            status: live.status,
+            content: liveContent
+          }
+        : message
+    );
+  }, [messages, previewMessages, live]);
+  const historyWindow = useMemo(
+    () => visibleConversationSlice(displayMessages, historyReveal),
+    [displayMessages, historyReveal]
+  );
   const renderedMessages = historyWindow.items;
   const hiddenHistoryCount = historyWindow.hiddenCount;
   const shareReferencesByMessageId = useMemo(
     () => assignShareReferencesToMessages(displayMessages, contextReferences),
     [displayMessages, contextReferences]
   );
-  const replayPartial = useMemo<{
-    messageId: string;
-    blockLimit?: number;
-    typingChars?: number;
-  } | null>(() => {
-    if (!replaying || !replayFrame) return null;
-    const message = messages[replayFrame.messageIndex];
-    return message
-      ? {
-          messageId: message.id,
-          blockLimit: replayFrame.blockLimit,
-          typingChars: replayFrame.typingChars
-        }
-      : null;
-  }, [replaying, replayFrame, messages]);
 
   const handleScroll = () => {
     const el = scrollRef.current;
@@ -1827,10 +1796,6 @@ export function ChatView({
   }, [activeId, loadWorkflowForConversation]);
 
   useEffect(() => {
-    stopReplay();
-  }, [activeId, stopReplay]);
-
-  useEffect(() => {
     clearTeamPreview();
   }, [activeConversationId, clearTeamPreview]);
 
@@ -1975,7 +1940,7 @@ export function ChatView({
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && (replaying || isNearBottomRef.current)) {
+    if (el && isNearBottomRef.current) {
       pinToBottom(el);
     }
   }, [
@@ -1983,9 +1948,7 @@ export function ChatView({
     live,
     submitPreview,
     scheduledSend?.createdAt,
-    gatingPhaseId,
-    replaying,
-    replayIndex
+    gatingPhaseId
   ]);
 
   useEffect(() => {
@@ -2105,7 +2068,7 @@ export function ChatView({
   const canImportAttachments = (target: "chat" | "new") => {
     if (attachmentBusy) return false;
     if (target === "chat") {
-      if (sending || replaying || sendLock || sendInFlightRef.current) return false;
+      if (sending || sendLock || sendInFlightRef.current) return false;
     } else if (newTaskSendLock || newTaskSendInFlightRef.current) {
       return false;
     }
@@ -2960,7 +2923,7 @@ export function ChatView({
   return (
     <div className="chat-view">
       <CodeWhipOverlay />
-      <div className={`chat-scroll${replaying ? " replay-active" : ""}`} ref={scrollRef} onScroll={handleScroll}>
+      <div className="chat-scroll" ref={scrollRef} onScroll={handleScroll}>
         {isGuide && (
           <div className="guide-chat-banner" role="status">
             <div className="guide-chat-banner-info">
@@ -3096,10 +3059,6 @@ export function ChatView({
           </button>
         ) : null}
         {renderedMessages.map((m, idx) => {
-          const partial =
-            replayPartial && replayPartial.messageId === m.id
-              ? replayPartial
-              : undefined;
           const messageMember =
             (m.agentId ? membersById.get(m.agentId) : undefined) ??
             (m.agentName ? membersByName.get(m.agentName) : undefined);
@@ -3128,8 +3087,6 @@ export function ChatView({
                 adapter={m.adapter ?? messageMember?.cli.adapter ?? conv?.adapter}
                 agentName={m.agentName ?? messageMember?.name ?? conv?.agentName}
                 agentIconKey={messageMember?.avatar}
-                blockLimit={partial?.blockLimit}
-                typingChars={partial?.typingChars}
                 cwd={conv?.cwd || conv?.sourceCwd}
                 afterContent={
                   shareReferences && shareReferences.length > 0 ? (
@@ -3143,7 +3100,7 @@ export function ChatView({
             </Fragment>
           );
         })}
-        {scheduledSend && scheduledSend.conversationId === conv.id && !replaying ? (
+        {scheduledSend && scheduledSend.conversationId === conv.id ? (
           <div
             className={`scheduled-send-bubble scheduled-send-bubble-${scheduledSend.status}`}
           >
@@ -3208,7 +3165,7 @@ export function ChatView({
       {conv && <DelegationApprovalCard conversationId={conv.id} />}
 
       <div
-        className={`chat-composer${replaying ? " replay-disabled" : ""}${chatAttachmentImport.dragActive ? " attachment-drop-active" : ""}`}
+        className={`chat-composer${chatAttachmentImport.dragActive ? " attachment-drop-active" : ""}`}
         onDragEnter={chatAttachmentImport.handleDragEnter}
         onDragLeave={chatAttachmentImport.handleDragLeave}
         onDragOver={chatAttachmentImport.handleDragOver}
@@ -3319,7 +3276,7 @@ export function ChatView({
             ref={chatTextareaRef}
             rows={3}
             value={draft}
-            disabled={replaying || attachmentBusy}
+            disabled={attachmentBusy}
             placeholder={
               pendingWorkflowAction
                 ? t("workflow.requestChangesPlaceholder")
@@ -3378,12 +3335,11 @@ export function ChatView({
               pluginAgent={pluginAgentForAdapter(member?.cli.adapter ?? conv?.adapter)}
               attachmentDisabled={
                 sending ||
-                replaying ||
                 attachmentBusy ||
                 pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE
               }
-              skillsDisabled={sending || replaying}
-              pluginsDisabled={sending || replaying}
+              skillsDisabled={sending}
+              pluginsDisabled={sending}
               onSelectAttachments={() => void handleSelectAttachments("chat")}
               onSelectPlugin={(plugin) =>
                 insertPluginMention(draft, plugin, chatTextareaRef.current, setDraft)
@@ -3417,7 +3373,7 @@ export function ChatView({
               className="composer-session-config"
               options={activeConversationConfigOptions ?? sessionConfigOptions}
               overrides={conv?.configOptionOverrides}
-              disabled={sending || replaying}
+              disabled={sending}
               fallback={
                 <span className="composer-hint">{t("chat.enterHint")}</span>
               }
@@ -3476,7 +3432,7 @@ export function ChatView({
             {!sending && !pendingWorkflowAction ? (
               <ScheduledSendControl
                 adapter={member?.cli.adapter ?? conv.adapter}
-                disabled={replaying || attachmentBusy || sendLock}
+                disabled={attachmentBusy || sendLock}
                 canSchedule={!!(draft.trim() || pendingAttachments.length > 0)}
                 onSchedule={onScheduleSend}
               />
