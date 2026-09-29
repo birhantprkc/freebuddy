@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync as fsRealpath,
+  rmSync,
   unlinkSync
 } from "node:fs";
 import path from "node:path";
@@ -1106,6 +1107,30 @@ export function patchDshAcpRuntimeFromCommand(command: {
     ? command.args.find((arg) => /dsh-acp-demo[/\\]lib[/\\]bin\.js$/i.test(arg))
     : command.bin;
   if (entry) patchDshAcpRuntimeFromBin(entry);
+}
+
+/**
+ * Wipe the managed install's `node_modules`/lockfile before a reinstall.
+ *
+ * DeepSeek republishes some sibling packages (e.g. `@deepseek-ai/dsh-session-persistence`
+ * and `@deepseek-ai/dsh-session-persistence-jsonl`) under the same floating
+ * alpha tag with different contents. An incremental `npm install` can keep a
+ * stale copy of one sibling while fetching a fresh copy of the other,
+ * producing mismatched exports at import time (silent plugin activation
+ * failures inside the harness). Forcing npm to re-resolve everything from
+ * scratch avoids that drift.
+ */
+export function cleanDshAcpManagedNodeModules(root: string): void {
+  try {
+    rmSync(path.join(root, "node_modules"), { recursive: true, force: true });
+  } catch {
+    /* best-effort; a failed cleanup just falls back to an incremental install */
+  }
+  try {
+    unlinkSync(path.join(root, "package-lock.json"));
+  } catch {
+    /* ignore a missing lockfile */
+  }
 }
 
 /** Clean up legacy package.json and lockfile in the managed runtime if they hold stale granular dependencies. */

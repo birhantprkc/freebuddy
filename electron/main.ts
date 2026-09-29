@@ -11,7 +11,11 @@ import AdmZip from "adm-zip";
 
 import { registerCliIpc } from "./cli/ipc.js";
 import { shutdownCliProcesses } from "./cli/runtime.js";
-import { logAllCliRuntimes, startCodexToolchainAutoUpdate } from "./cli/check.js";
+import {
+  logAllCliRuntimes,
+  startCodexToolchainAutoUpdate,
+  startDshAcpAutoUpdate
+} from "./cli/check.js";
 import { safeSendToWebContents } from "./cli/ipcSend.js";
 import { handleFreebuddyFileRequest } from "./freebuddyFileProtocol.js";
 import { handleBrowserRequest } from "./browserProtocol.js";
@@ -2140,6 +2144,7 @@ app.whenReady().then(async () => {
     mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : undefined
   );
   void startCodexToolchainAutoUpdate();
+  void startDshAcpAutoUpdate();
   initAutoUpdater();
 
   app.on("activate", () => {

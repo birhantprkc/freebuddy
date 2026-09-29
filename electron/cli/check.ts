@@ -6,6 +6,7 @@ import {
   adapterBinary,
   applyDshAcpNpmInstallEnv,
   bundledDshAcpConfigPath,
+  cleanDshAcpManagedNodeModules,
   cleanupLegacyDshAcpManagedFiles,
   dshAcpCompositionReady,
   dshAcpInstallCommand,
@@ -45,7 +46,10 @@ const CODEX_ACP_PACKAGE = "@agentclientprotocol/codex-acp";
 const CODEX_CLI_PACKAGE = "@openai/codex";
 const CODEX_CLI_FOUND_ACP_MISSING = "codex cli found; acp adapter missing";
 const CLAUDE_CLI_FOUND_ACP_MISSING = "claude cli found; acp adapter missing";
-const CODEX_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DSH_ACP_ADAPTER = "dsh-acp";
+const DSH_ACP_PACKAGE = "deepseek-harness-acp";
+// Shared throttle for every toolchain auto-update check (codex, dsh-acp, ...).
+const TOOLCHAIN_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CLI_RUNTIME_CHANNEL = "cli://runtime";
 
 interface CodexUpdateTarget {
@@ -663,7 +667,7 @@ function recentSuccessfulUpdateCheck(runtime: CliRuntime | undefined): boolean {
   const checkedAt = Date.parse(runtime.lastUpdateCheckAt);
   return (
     Number.isFinite(checkedAt) &&
-    Date.now() - checkedAt < CODEX_UPDATE_INTERVAL_MS
+    Date.now() - checkedAt < TOOLCHAIN_UPDATE_INTERVAL_MS
   );
 }
 
@@ -807,9 +811,101 @@ export function startCodexToolchainAutoUpdate(): Promise<void> {
   return promise;
 }
 
+/** Read the version FreeBuddy's managed dsh-acp install currently has on disk. */
+function readDshAcpManagedVersion(root: string): string | undefined {
+  try {
+    const pkgPath = path.join(
+      root,
+      "node_modules",
+      DSH_ACP_PACKAGE,
+      "package.json"
+    );
+    if (!fs.existsSync(pkgPath)) return undefined;
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as {
+      version?: unknown;
+    };
+    return typeof pkg.version === "string" ? pkg.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+let dshAcpAutoUpdatePromise: Promise<void> | null = null;
+
+async function runDshAcpAutoUpdate(): Promise<void> {
+  const root = dshAcpManagedRoot(getDataDir());
+  const current = extractSemver(readDshAcpManagedVersion(root));
+  if (!current) {
+    // Nothing managed by FreeBuddy yet (not installed, or a PATH binary is
+    // used instead) — there is nothing for us to keep up to date.
+    setRuntimeUpdateState(DSH_ACP_ADAPTER, "idle");
+    return;
+  }
+  if (recentSuccessfulUpdateCheck(runtimeFor(DSH_ACP_ADAPTER))) return;
+
+  setRuntimeUpdateState(DSH_ACP_ADAPTER, "checking");
+  const checkedAt = new Date().toISOString();
+  try {
+    const latestVersion = await latestPackageVersion(DSH_ACP_PACKAGE);
+    const latest = extractSemver(latestVersion)!;
+    if (compareSemver(current, latest) >= 0) {
+      setRuntimeUpdateState(DSH_ACP_ADAPTER, "current", {
+        latestVersion,
+        checkedAt
+      });
+      return;
+    }
+
+    setRuntimeUpdateState(DSH_ACP_ADAPTER, "updating", { latestVersion });
+    // Reuses the managed-install path used by the manual "install" button in
+    // Settings, which now wipes node_modules/lockfile first (see
+    // cleanDshAcpManagedNodeModules) so sibling packages published under the
+    // same floating alpha tag can't drift out of sync with each other.
+    const result = await cliInstall("", DSH_ACP_ADAPTER);
+    if (!result.success) {
+      throw new Error(
+        firstNonEmptyLine(result.stderr) ??
+          firstNonEmptyLine(result.stdout) ??
+          `${DSH_ACP_PACKAGE} update failed`
+      );
+    }
+
+    const verified = extractSemver(readDshAcpManagedVersion(root));
+    if (!verified || compareSemver(verified, latest) < 0) {
+      throw new Error(
+        `${DSH_ACP_PACKAGE} update completed but the new version was not detected`
+      );
+    }
+    setRuntimeUpdateState(DSH_ACP_ADAPTER, "updated", {
+      latestVersion,
+      checkedAt
+    });
+  } catch (error) {
+    setRuntimeUpdateState(DSH_ACP_ADAPTER, "error", {
+      checkedAt,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+export function startDshAcpAutoUpdate(): Promise<void> {
+  if (dshAcpAutoUpdatePromise) return dshAcpAutoUpdatePromise;
+  const promise = runDshAcpAutoUpdate().finally(() => {
+    if (dshAcpAutoUpdatePromise === promise) {
+      dshAcpAutoUpdatePromise = null;
+    }
+  });
+  dshAcpAutoUpdatePromise = promise;
+  return promise;
+}
+
 export async function waitForCodexToolchainAutoUpdate(
   adapter: string
 ): Promise<void> {
+  if (adapter === DSH_ACP_ADAPTER) {
+    await dshAcpAutoUpdatePromise;
+    return;
+  }
   if (adapter !== CODEX_ACP_ADAPTER && adapter !== CODEX_CLI_ADAPTER) return;
   await codexToolchainAutoUpdatePromise;
 }
@@ -956,6 +1052,10 @@ async function removeDshAcpWindowsResidue(
 }
 
 function prepareDshAcpManagedInstall(): string {
+  // Wipe any existing node_modules/lockfile first so npm re-resolves every
+  // package from scratch instead of reusing a stale sibling dependency (see
+  // cleanDshAcpManagedNodeModules for why that matters for dsh-acp).
+  cleanDshAcpManagedNodeModules(dshAcpManagedRoot(getDataDir()));
   const root = syncDshAcpManagedConfig(getDataDir());
   cleanupLegacyDshAcpManagedFiles(root);
   return dshAcpInstallCommand({ prefix: root });

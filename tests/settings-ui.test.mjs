@@ -457,7 +457,7 @@ test("uninstalled agents get a GuideBuddy install action in the editor header", 
 
 test("Codex CLI and ACP updates run in the background and surface runtime status", () => {
   assert.equal(cliCheckSource.includes("startCodexToolchainAutoUpdate"), true);
-  assert.equal(cliCheckSource.includes("CODEX_UPDATE_INTERVAL_MS"), true);
+  assert.equal(cliCheckSource.includes("TOOLCHAIN_UPDATE_INTERVAL_MS"), true);
   assert.equal(cliCheckSource.includes("isNpmManagedBinary"), true);
   assert.equal(cliCheckSource.includes('CODEX_CLI_PACKAGE = "@openai/codex"'), true);
   assert.equal(
