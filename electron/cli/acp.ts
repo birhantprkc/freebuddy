@@ -395,6 +395,9 @@ export function isMissingSavedSessionError(err: unknown): boolean {
     }
   }
   const haystack = parts.join(" ");
+  if (/already\s+has\s+an\s+active\s+writer/i.test(haystack)) {
+    return false;
+  }
   if (/session\s+["'`]?[^"'`\s]+["'`]?\s+not found/i.test(haystack)) {
     return true;
   }
@@ -410,6 +413,95 @@ export function isMissingSavedSessionError(err: unknown): boolean {
   return /saved (?:agent )?session.*(?:not found|no longer available|unavailable)/i.test(
     haystack
   );
+}
+
+/**
+ * Unpacks structured ACP JSON-RPC error payloads (especially from Codex and other ACP agents)
+ * and formats human-friendly error messages for users instead of generic "Internal error".
+ */
+export function formatAcpRpcError(err: unknown): string {
+  if (!err) return "Unknown ACP error";
+  if (typeof err === "string") return err;
+
+  const e = err as { code?: number; message?: string; data?: unknown };
+  const rawMessage = typeof e.message === "string" ? e.message.trim() : "";
+  const data = e.data;
+
+  let details = "";
+  let dataMessage = "";
+  let codexErrorInfo = "";
+  let nestedErrorMessage = "";
+
+  if (typeof data === "string") {
+    details = data.trim();
+  } else if (data && typeof data === "object") {
+    const d = data as Record<string, unknown>;
+    if (typeof d.details === "string") details = d.details.trim();
+    if (typeof d.message === "string") dataMessage = d.message.trim();
+    if (typeof d.codexErrorInfo === "string") codexErrorInfo = d.codexErrorInfo.trim();
+    if (typeof d.error === "string") nestedErrorMessage = d.error.trim();
+    else if (d.error && typeof d.error === "object") {
+      const ne = d.error as Record<string, unknown>;
+      if (typeof ne.message === "string") nestedErrorMessage = ne.message.trim();
+    }
+  }
+
+  const allTexts = [rawMessage, dataMessage, details, nestedErrorMessage, codexErrorInfo]
+    .filter(Boolean)
+    .join(" ");
+
+  // 1. Detect usage limit exceeded (e.g. ChatGPT / Codex quota)
+  const isUsageLimit =
+    codexErrorInfo === "usageLimitExceeded" ||
+    /usageLimitExceeded/i.test(allTexts) ||
+    /hit\s+your\s+usage\s+limit/i.test(allTexts) ||
+    /usage\s+limit\s+exceeded/i.test(allTexts) ||
+    /exceeded\s+your\s+(?:current\s+)?quota/i.test(allTexts);
+
+  if (isUsageLimit) {
+    const timeMatch = allTexts.match(/try\s+again\s+at\s+([^,.;)]+)/i);
+    const retryTime = timeMatch ? timeMatch[1].trim() : undefined;
+    const basePrompt = retryTime
+      ? `账户额度已用尽，预计于 ${retryTime} 恢复。`
+      : `账户额度已用尽（usageLimitExceeded）。`;
+
+    const extra = dataMessage || details || (rawMessage && !/^internal error$/i.test(rawMessage) ? rawMessage : "");
+    if (extra) {
+      return `${basePrompt} ${extra}`;
+    }
+    return `${basePrompt} 请稍后重试或前往对应平台升级账户配额。`;
+  }
+
+  // 2. Detect active writer conflict (e.g. concurrent session access in Codex)
+  const isActiveWriter =
+    /already\s+has\s+an\s+active\s+writer/i.test(allTexts) ||
+    /\bactive\s+writer\b/i.test(allTexts);
+
+  if (isActiveWriter) {
+    const threadMatch = allTexts.match(/(?:thread|session)\s+([a-zA-Z0-9_-]+)\s+already\s+has\s+an\s+active\s+writer/i);
+    const threadId = threadMatch ? threadMatch[1] : undefined;
+    const threadSuffix = threadId ? `（会话 ID: ${threadId}）` : "";
+    return `该会话${threadSuffix}正被另一个 Codex/ChatGPT 实例占用，请关闭其他客户端后重试（thread already has an active writer）。`;
+  }
+
+  // 3. Fallback for other errors: prefer specific details/message over generic "Internal error"
+  const isGeneric = !rawMessage || /^internal error$/i.test(rawMessage) || /^request error$/i.test(rawMessage);
+  if (isGeneric) {
+    if (details) return details;
+    if (dataMessage) return dataMessage;
+    if (nestedErrorMessage) return nestedErrorMessage;
+    if (codexErrorInfo) return `Codex error: ${codexErrorInfo}`;
+    return rawMessage || "Internal error";
+  }
+
+  // If rawMessage is specific, append details if not already present
+  if (details && !rawMessage.includes(details)) {
+    return `${rawMessage}: ${details}`;
+  }
+  if (dataMessage && !rawMessage.includes(dataMessage)) {
+    return `${rawMessage}: ${dataMessage}`;
+  }
+  return rawMessage;
 }
 
 export function buildSessionNewRequest(
@@ -1305,11 +1397,39 @@ function codexMetaErrorToItems(meta: unknown): AcpStreamItem[] {
   };
   const info = e.codexErrorInfo as
     | { responseStreamDisconnected?: { httpStatusCode?: unknown } }
+    | string
     | undefined;
-  const httpStatus = info?.responseStreamDisconnected?.httpStatusCode;
+  const httpStatus =
+    typeof info === "object" && info !== null
+      ? info.responseStreamDisconnected?.httpStatusCode
+      : undefined;
   const message = typeof e.message === "string" ? e.message : "";
   const additionalDetails =
     typeof e.additionalDetails === "string" ? e.additionalDetails : "";
+
+  if (
+    info === "usageLimitExceeded" ||
+    /usageLimitExceeded|hit\s+your\s+usage\s+limit/i.test(message) ||
+    /usageLimitExceeded|hit\s+your\s+usage\s+limit/i.test(additionalDetails)
+  ) {
+    const timeMatch = (message + " " + additionalDetails).match(/try\s+again\s+at\s+([^,.;)]+)/i);
+    const retryTime = timeMatch ? timeMatch[1].trim() : undefined;
+    const headline = retryTime
+      ? `账户额度已用尽，预计于 ${retryTime} 恢复`
+      : `账户额度已用尽（usageLimitExceeded）`;
+    const details: string[] = [];
+    if (message) details.push(message);
+    if (additionalDetails) details.push(additionalDetails);
+    return [
+      {
+        kind: "error",
+        message: `${headline} — the turn did not complete.`,
+        details,
+        terminal: true
+      }
+    ];
+  }
+
   const attemptMatch = message.match(/(\d+)\s*\/\s*\d+/);
   const attempt = attemptMatch ? attemptMatch[1] : undefined;
 

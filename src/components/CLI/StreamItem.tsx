@@ -25,6 +25,7 @@ import { useDebugLogsDialogStore } from "@/store/debugLogsDialogStore";
 import { dedupeCommands, dedupeToolResults } from "@/store/conversationUtils";
 import { useImagePreviewStore } from "@/store/imagePreviewStore";
 import { useTerminalStore } from "@/store/terminalStore";
+import { useFileDiffStore } from "@/store/fileDiffStore";
 import { splitAutolinkSegments } from "@/utils/autolink";
 import { copyToClipboard } from "@/utils/clipboard";
 import { prepareToolResultText } from "@/utils/streamMedia";
@@ -1341,17 +1342,12 @@ export function StreamItem({ item, cwd }: { item: CliStreamItem; cwd?: string })
       );
     case "file-edit":
       return (
-        <details className="stream-file-edit">
-          <summary>{item.action} {item.path}</summary>
-          {item.oldText != null && item.newText != null ? (
-            <div className="stream-diff">
-              <pre className="stream-diff-old">{item.oldText}</pre>
-              <pre className="stream-diff-new">{item.newText}</pre>
-            </div>
-          ) : item.patch ? (
-            <pre>{item.patch}</pre>
-          ) : null}
-        </details>
+        <button type="button" className="file-change-entry stream-file-edit" onClick={() => {
+          const conversationId = useConversationStore.getState().activeId;
+          if (conversationId) useFileDiffStore.getState().open({ conversationId, edits: [item], index: 0 });
+        }}>
+          <FileText size={15} /><span className="file-change-path">{item.path}</span><span>{t("fileDiff.view")}</span>
+        </button>
       );
     case "terminal-embed":
       return <TerminalEmbed item={item} />;

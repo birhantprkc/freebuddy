@@ -47,6 +47,7 @@ import {
   buildTerminalOutputResponse,
   contentBlockToItems,
   isMissingSavedSessionError,
+  formatAcpRpcError,
   parseAcpLine,
   selectAcpAuthMethod,
   selectAcpSessionStartMode,
@@ -2912,4 +2913,53 @@ test("Qoder ACP resume sequence cleanly drops historical replay and emits live g
   assert.equal(emitted[1].content.text, "Now handling new turn");
   assert.equal(emitted[2].content.text, "这是当前轮次的live回答");
   assert.equal(emitted[3].toolCallId, "call-live-1");
+});
+
+test("formatAcpRpcError extracts friendly quota recovery time for usageLimitExceeded", () => {
+  const err = {
+    code: -32603,
+    message: "Internal error",
+    data: {
+      message: "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 11:11 PM.",
+      codexErrorInfo: "usageLimitExceeded"
+    }
+  };
+  const formatted = formatAcpRpcError(err);
+  assert.match(formatted, /账户额度已用尽，预计于 11:11 PM 恢复/);
+  assert.match(formatted, /Upgrade to Pro/);
+});
+
+test("formatAcpRpcError formats active writer conflict with user-facing instruction", () => {
+  const err = {
+    code: -32603,
+    message: "Internal error",
+    data: {
+      details: "thread 01a0ed62-47fd-7ea2-93f9-b71262ca4080 already has an active writer"
+    }
+  };
+  const formatted = formatAcpRpcError(err);
+  assert.match(formatted, /该会话（会话 ID: 01a0ed62-47fd-7ea2-93f9-b71262ca4080）正被另一个 Codex\/ChatGPT 实例占用/);
+  assert.match(formatted, /请关闭其他客户端后重试/);
+});
+
+test("formatAcpRpcError unpacks specific details instead of generic Internal error", () => {
+  const err = {
+    code: -32603,
+    message: "Internal error",
+    data: {
+      details: "custom subsystem failure: pipe broke"
+    }
+  };
+  assert.equal(formatAcpRpcError(err), "custom subsystem failure: pipe broke");
+});
+
+test("isMissingSavedSessionError does not abandon session on active writer conflict", () => {
+  const err = {
+    code: -32603,
+    message: "Internal error",
+    data: {
+      details: "thread 01a0ed62-47fd-7ea2-93f9-b71262ca4080 already has an active writer"
+    }
+  };
+  assert.equal(isMissingSavedSessionError(err), false);
 });

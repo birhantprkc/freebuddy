@@ -352,7 +352,7 @@ function extractLastFileEditPath(
   return undefined;
 }
 
-export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
+export function BrowserCanvas({ onClose, visible = true }: { onClose?: () => void; visible?: boolean }) {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -368,6 +368,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const nativeHostRef = useRef<HTMLDivElement | null>(null);
+  const lastNativeTarget = useRef<{ conversationId: string | undefined; target: string } | null>(null);
   const [nativeBrowserState, setNativeBrowserState] = useState<NativeBrowserState>(
     EMPTY_NATIVE_BROWSER_STATE
   );
@@ -1182,7 +1183,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
   }, [activeId, isRunning, agentInfo]);
 
   useEffect(() => {
-    if (!nativeBrowserAvailable || !isNativeRemote || !entry?.manualEntry) {
+    if (!visible || !nativeBrowserAvailable || !isNativeRemote || !entry?.manualEntry) {
       if (nativeBrowserAvailable) void cliClient.hideNativeBrowser();
       setNativeBrowserState(EMPTY_NATIVE_BROWSER_STATE);
       return;
@@ -1201,8 +1202,13 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
         height: rect.height
       };
       try {
+        const previous = lastNativeTarget.current;
+        const resumeUrl = activeId && previous?.conversationId === activeId && previous.target === entry.manualEntry
+          ? useBrowserStore.getState().nativeUrls[activeId]
+          : undefined;
+        if (navigate) lastNativeTarget.current = { conversationId: activeId, target: entry.manualEntry! };
         const state = navigate
-          ? await cliClient.showNativeBrowser(entry.manualEntry!, bounds)
+          ? await cliClient.showNativeBrowser(resumeUrl || entry.manualEntry!, bounds)
           : await cliClient.setNativeBrowserBounds(bounds);
         if (!cancelled) {
           setNativeBrowserState(state);
@@ -1237,7 +1243,7 @@ export function BrowserCanvas({ onClose }: { onClose?: () => void }) {
       window.removeEventListener("resize", onWindowResize);
       void cliClient.hideNativeBrowser();
     };
-  }, [activeId, entry?.manualEntry, isNativeRemote, nativeBrowserAvailable, t]);
+  }, [activeId, entry?.manualEntry, isNativeRemote, nativeBrowserAvailable, t, visible]);
 
   useEffect(() => {
     if (!activeId || !entry?.url || (!isMarkdown && !isDocument)) return;

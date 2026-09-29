@@ -18,6 +18,7 @@ import { memo, useCallback, useMemo, useRef, useState, type CSSProperties, type 
 import { useTranslation } from "react-i18next";
 import { isTruncatedStreamNotice } from "@freebuddy/cli-stream";
 import { HistoryDetails } from "./HistoryDetails";
+import { FileChangesCard } from "./FileChanges";
 
 import { displayAgentName } from "@/config/agentDisplay";
 import type { ChatAttachment, ConversationMessage } from "@/services/cli/types";
@@ -1110,6 +1111,7 @@ export const MessageBubble = memo(function MessageBubble({
             <span>{t("message.thinking")}</span>
           </div>
         )}
+        <FileChangesCard items={displayItems} conversationId={message.conversationId} messageId={message.id} />
         {actionBarNode}
       </div>
     </div>

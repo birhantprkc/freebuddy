@@ -97,6 +97,7 @@ function compactStreamItem(item: unknown, maxString = MAX_STREAM_STRING_CHARS): 
     for (const key of ["patch", "oldText", "newText"]) {
       if (typeof next[key] === "string") {
         next[key] = capRawString(next[key] as string, maxString);
+        if (next[key] !== rec[key]) next.truncated = true;
       }
     }
     return next;

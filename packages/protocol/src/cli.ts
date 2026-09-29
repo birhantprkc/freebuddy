@@ -57,9 +57,14 @@ export type CliStreamItem =
       kind: "file-edit";
       path: string;
       action: "create" | "update" | "delete";
+      status?: ToolCallStatus;
       patch?: string;
       oldText?: string;
       newText?: string;
+      /** Content is a snippet rather than a complete file. */
+      partial?: boolean;
+      /** Content was shortened while saving or sanitizing the stream. */
+      truncated?: boolean;
     }
   | {
       kind: "terminal-embed";

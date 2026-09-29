@@ -37,6 +37,7 @@ import {
   textFromContent,
   updateActiveAcpToolCalls,
   isMissingSavedSessionError,
+  formatAcpRpcError,
   isAcpMetadataSessionUpdate,
   type AcpAuthMethod,
   type AcpMessage,
@@ -579,7 +580,8 @@ export async function runAcpAgent({
       const waiter = pending.get(String(msg.id));
       if (waiter) {
         if (msg.error) {
-          const err = new Error(msg.error.message);
+          const userFacingMessage = formatAcpRpcError(msg.error);
+          const err = new Error(userFacingMessage);
           (err as Error & { code?: number; data?: unknown }).code = msg.error.code;
           (err as Error & { code?: number; data?: unknown }).data = msg.error.data;
           waiter.reject(err);
@@ -1349,7 +1351,12 @@ export async function runAcpAgent({
   };
 
   const isAuthenticationRequiredError = (err: unknown) => {
-    const e = err as Error & { code?: number };
+    const e = err as Error & { code?: number; data?: unknown };
+    const eData = e?.data as Record<string, unknown> | undefined;
+    if (eData?.codexErrorInfo === "usageLimitExceeded") return false;
+    if (/usageLimitExceeded|hit\s+your\s+usage\s+limit/i.test(String(e?.message ?? err))) {
+      return false;
+    }
     if (e?.code === -32000) return true;
     if (e?.code === 401 || e?.code === 403) return true;
     const message = String(e?.message ?? err).toLowerCase();
@@ -1806,7 +1813,7 @@ export async function runAcpAgent({
       finish("done", 0);
       return;
     }
-    const msg = (e as Error)?.message || String(e);
+    const msg = formatAcpRpcError(e);
     appendLog(logStream, "system", msg);
     try {
       child.stdin.end();
