@@ -373,7 +373,8 @@ test("a settled child schedules a recovery wake when the parked waiter's memory 
   assert.equal(repository.getRun(run.id)?.status, "completed");
 });
 
-test("follow-up while parked is folded into the next wake instead of starting a concurrent turn", async () => {
+for (const resumeStoppedRun of [false, true]) {
+test(`follow-up while parked is folded into the next wake (resume stopped: ${resumeStoppedRun})`, async () => {
   const repository = createMemoryDelegationRepository();
   const run = repository.createRun({
     goal: "g",
@@ -427,7 +428,15 @@ test("follow-up while parked is folded into the next wake instead of starting a 
   });
   orchestrator.bindEntry(rootId);
 
-  const drive = orchestrator.runNodeLoop({
+  if (resumeStoppedRun) {
+    orchestrator.markKilled();
+    assert.equal(orchestrator.state.runStatus, "killed");
+  }
+  const drive = resumeStoppedRun ? orchestrator.followUp({
+    entryNodeId: rootId,
+    entry: roster[0],
+    prompt: "continue and delegate review"
+  }) : orchestrator.runNodeLoop({
     nodeId: rootId,
     depth: 0,
     selfAgentId: "r-impl",
@@ -438,6 +447,9 @@ test("follow-up while parked is folded into the next wake instead of starting a 
   while (orchestrator.state.nodes[rootId].status !== "parked" && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+  assert.equal(orchestrator.state.runStatus, "running");
+  assert.equal(orchestrator.state.nodes[rootId].status, "parked");
+  assert.equal(repository.getRun(run.id).status, "running");
 
   const followUp = await orchestrator.followUp({
     entryNodeId: rootId,
@@ -457,7 +469,10 @@ test("follow-up while parked is folded into the next wake instead of starting a 
   assert.equal(prompts.length, 2);
   assert.match(prompts[1], /review complete/);
   assert.match(prompts[1], /also verify the release notes/);
+  assert.equal(orchestrator.state.runStatus, "completed");
+  assert.equal(repository.getRun(run.id).status, "completed");
 });
+}
 
 test("raceAnySettle removes losing waiters so stale registrations cannot swallow a later wake", async () => {
   const repository = createMemoryDelegationRepository();

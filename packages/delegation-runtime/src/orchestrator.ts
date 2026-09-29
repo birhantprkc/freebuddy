@@ -500,7 +500,7 @@ export class DelegationOrchestrator {
         });
         this.bus = state;
         const parked = state.nodes[opts.nodeId]?.status === "parked";
-        this.trace("turn disposition", { parentEventId: opts.nodeId, parked, pendingChildIds: pending.map((child) => child.id) });
+        this.trace("turn disposition", { parentEventId: opts.nodeId, runStatus: state.runStatus, nodeStatus: state.nodes[opts.nodeId]?.status, parked, pendingChildIds: pending.map((child) => child.id) });
         if (!parked) {
           this.applyEffects(effects);
           break;
