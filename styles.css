@@ -10650,9 +10650,9 @@ button.new-task-context-control {
 
 .workspace-file-mention-option {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -10666,6 +10666,10 @@ button.new-task-context-control {
 .workspace-file-mention-option:hover,
 .workspace-file-mention-option.active {
   background: var(--fb-panel-bg);
+}
+
+.workspace-file-mention-icon {
+  color: var(--fb-text-tertiary);
 }
 
 .workspace-file-mention-name,

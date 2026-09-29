@@ -197,6 +197,11 @@ test("the arg guard replaces caller-supplied executables and clamps paths", () =
     /"workflow:createDelegationRun"/,
     "remote delegation cwd must use the workspace-root guard"
   );
+  assert.match(
+    guard,
+    /roots: filterPathsWithinRoots\(payload\.roots, roots\)/,
+    "search roots are clamped to the caller's workspace roots"
+  );
 
   const roots = fs.readFileSync(new URL("cli/remoteRoots.ts", electronDir), "utf8");
   assert.match(

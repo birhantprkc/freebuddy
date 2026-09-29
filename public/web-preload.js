@@ -223,7 +223,7 @@
       updateMessage: function (input) { return invoke("cli:updateMessage", input); },
 
       selectDirectory: function () { return Promise.resolve(null); },
-      searchWorkspaceFiles: function (cwd, query, limit) { return invoke("cli:searchWorkspaceFiles", { cwd: cwd, query: query, limit: limit }); },
+      searchWorkspaceFiles: function (cwd, query, limit, roots) { return invoke("cli:searchWorkspaceFiles", { cwd: cwd, query: query, limit: limit, roots: roots }); },
       selectAttachments: async function () {
         var files = await pickAttachmentFiles();
         if (!files || files.length === 0) return [];

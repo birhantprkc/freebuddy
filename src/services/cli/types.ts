@@ -611,10 +611,11 @@ export interface AttachmentCandidate {
 }
 
 export interface WorkspaceFileMatch {
-  /** Path inserted into the composer: relative for single-root, absolute for multi-root. */
+  /** Path inserted into the composer: relative for single-root, absolute for multi-root. Directories end with "/". */
   path: string;
   name: string;
   directory: string;
+  kind: "file" | "directory";
   /** Absolute workspace root when the match came from a multi-root search. */
   root?: string;
   /** Disambiguated display path (basename(root)/rel) for multi-root picker UI. */

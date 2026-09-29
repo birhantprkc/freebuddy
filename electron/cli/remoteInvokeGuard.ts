@@ -3,7 +3,7 @@ import path from "node:path";
 import { getAdapterDefinition } from "./adapters.js";
 import { listOverrides, type CLIExecutorOverride } from "./store.js";
 import { remoteRootsForUser } from "./remoteRoots.js";
-import { isPathWithinRoots } from "../shared/workspaceRoots.js";
+import { filterPathsWithinRoots, isPathWithinRoots } from "../shared/workspaceRoots.js";
 import {
   REMOTE_READABLE_SETTING_KEYS,
   REMOTE_WRITABLE_SETTING_KEYS
@@ -153,6 +153,9 @@ export function guardRemoteInvokeArgs(
 
   if (CWD_CHANNELS.has(channel) && payload) {
     assertPathAllowed(payload.cwd, roots, "cwd");
+    if (channel === "cli:searchWorkspaceFiles" && payload.roots !== undefined) {
+      return [{ ...payload, roots: filterPathsWithinRoots(payload.roots, roots) }, ...args.slice(1)];
+    }
     return args;
   }
 
