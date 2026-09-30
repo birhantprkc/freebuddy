@@ -865,17 +865,22 @@ function toolCallContentToItems(entries: any[]): AcpStreamItem[] {
         if (!path) break;
         const hasOld = typeof entry.oldText === "string";
         const hasNew = typeof entry.newText === "string";
-        const action: "create" | "update" | "delete" = !hasOld
-          ? "create"
-          : !hasNew
-            ? "delete"
-            : "update";
+        const patch = typeof entry.patch === "string" && entry.patch.trim() ? entry.patch.trim() : undefined;
+        const action: "create" | "update" | "delete" =
+          entry.action === "create" || entry.action === "delete" || entry.action === "update"
+            ? entry.action
+            : !hasOld && !patch
+              ? "create"
+              : !hasNew && !patch
+                ? "delete"
+                : "update";
         out.push({
           kind: "file-edit",
           path,
           action,
           ...(hasOld ? { oldText: entry.oldText } : {}),
-          ...(hasNew ? { newText: entry.newText } : {})
+          ...(hasNew ? { newText: entry.newText } : {}),
+          ...(patch ? { patch } : {})
         });
         break;
       }
@@ -981,7 +986,20 @@ function buildToolCallItem(
   }
   if (update.status === "failed") item.isError = true;
 
-  if (!item.toolOutputs?.length) {
+  if (item.toolOutputs?.length) {
+    if (update.rawOutput != null) {
+      const rawText = stringifyValue(update.rawOutput);
+      const diffMatch = rawText.match(/\[diff_block_start\]\s*([\s\S]*?)\s*\[diff_block_end\]/);
+      const patchVal = diffMatch ? diffMatch[1].trim() : rawText;
+      if (patchVal) {
+        for (const outItem of item.toolOutputs) {
+          if (outItem.kind === "file-edit" && !outItem.patch && !outItem.oldText && !outItem.newText) {
+            outItem.patch = patchVal;
+          }
+        }
+      }
+    }
+  } else {
     if (update.kind === "execute" && update.rawInput?.command) {
       item.toolOutputs = [
         {

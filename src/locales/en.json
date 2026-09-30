@@ -1,17 +1,12 @@
 {
   "fileDiff": {
     "close": "Close file changes and return to overview",
-    "edited": "Edited {{count}} files",
-    "review": "Review",
-    "undo": "Undo",
-    "undoUnavailable": "Undo file changes is not yet available",
     "showMore": "Show {{count}} more files",
     "showLess": "Show fewer files",
     "countsUnavailable": "Counts unavailable",
     "countsHint": "Total lines added and removed across individual edits",
     "title": "File changes",
     "overview": "Overview",
-    "summary": "File changes · {{count}} files",
     "editCount": "{{count}} edits",
     "record": "Change record",
     "create": "Added",
@@ -28,6 +23,9 @@
     "raw": "Showing the original patch; line numbers and counts are unavailable.",
     "identical": "No content changes in this record.",
     "expand": "Show {{count}} unchanged lines",
+    "expandAll": "Show all unchanged lines",
+    "prev": "Previous change (Alt+↑)",
+    "next": "Next change (Alt+↓)",
     "empty": "Select a file from a conversation’s file changes card to view its diff."
   },
   "common": {

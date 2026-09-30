@@ -2198,6 +2198,45 @@ test("acpUpdateToItems maps structured tool_call_update diff and terminal conten
   );
 });
 
+test("acpUpdateToItems maps structured tool_call_update diff with patch", () => {
+  assert.deepEqual(
+    acpUpdateToItems({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "tool-6",
+      title: "replace_file_content",
+      kind: "edit",
+      status: "completed",
+      locations: [{ path: "/tmp/app.ts" }],
+      content: [
+        {
+          type: "diff",
+          path: "/tmp/app.ts",
+          patch: "@@ -1,2 +1,2 @@\n-old\n+new"
+        }
+      ]
+    }),
+    [
+      {
+        kind: "tool-call",
+        id: "tool-6",
+        tool: "replace_file_content",
+        status: "completed",
+        toolKind: "edit",
+        locations: [{ path: "/tmp/app.ts" }],
+        toolOutputs: [
+          {
+            kind: "file-edit",
+            path: "/tmp/app.ts",
+            action: "update",
+            patch: "@@ -1,2 +1,2 @@\n-old\n+new"
+          }
+        ],
+        replaceToolOutputs: true
+      }
+    ]
+  );
+});
+
 test("acpUpdateToItems keeps legacy tool_call_update without toolCallId", () => {
   assert.deepEqual(
     acpUpdateToItems({

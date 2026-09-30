@@ -7,7 +7,7 @@ import { getParser, serializeStreamItemsForPersist } from "@freebuddy/cli-stream
 const output = ts.transpileModule(fs.readFileSync(new URL("../src/utils/fileDiff.ts", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 }
 }).outputText;
-const { buildFileDiff, collectFileEdits, foldDiffRows } = await import(`data:text/javascript;base64,${Buffer.from(output).toString("base64")}`);
+const { buildFileDiff, collectFileEdits, foldDiffRows, inlineHighlights } = await import(`data:text/javascript;base64,${Buffer.from(output).toString("base64")}`);
 const edit = (fields) => ({ kind: "file-edit", path: "src/a.ts", action: "update", ...fields });
 
 test("diff preserves context, exact line numbers, and added/removed counts", () => {
@@ -47,8 +47,28 @@ test("EOF newline changes remain visible and unchanged runs can be expanded", ()
   const unchanged = Array.from({ length: 20 }, (_, i) => ({ kind: "context", text: String(i) }));
   const folded = foldDiffRows(unchanged);
   assert.equal(folded.length, 7);
-  assert.deepEqual(folded[3], { kind: "fold", count: 14 });
+  assert.deepEqual(folded[3], { kind: "fold", start: 3, count: 14 });
   assert.equal(unchanged.length, 20);
+});
+
+test("edge folds keep context only next to changes and expanded folds stay open", () => {
+  const ctx = (n) => Array.from({ length: n }, (_, i) => ({ kind: "context", text: `c${i}` }));
+  const rows = [...ctx(10), { kind: "add", text: "x" }, ...ctx(10)];
+  const folded = foldDiffRows(rows);
+  assert.deepEqual(folded[0], { kind: "fold", start: 0, count: 7 });
+  assert.deepEqual(folded.at(-1), { kind: "fold", start: 14, count: 7 });
+  assert.equal(folded.length, 9);
+  assert.equal(foldDiffRows(rows, new Set([0])).length, 15);
+});
+
+test("replaced lines highlight only the changed words", () => {
+  const diff = buildFileDiff(edit({ oldText: "const foo = 1;\n", newText: "const foobar = 1;\n" }));
+  const marks = inlineHighlights(diff.rows);
+  const [del, add] = diff.rows;
+  assert.deepEqual(marks.get(del), [6, 9]);
+  assert.deepEqual(marks.get(add), [6, 12]);
+  assert.equal(inlineHighlights(buildFileDiff(edit({ oldText: "a\nb\n", newText: "x y z\n" })).rows).size, 0);
+  assert.equal(inlineHighlights(buildFileDiff(edit({ oldText: "  foo\n", newText: "  bar\n" })).rows).size, 0);
 });
 
 test("persisted file edits explicitly mark shortened content", () => {
@@ -85,4 +105,153 @@ test("Codex completed file changes reach the diff model; failed changes stay exc
   assert.equal(collectFileEdits(items).length, 1);
   event.item.status = "failed";
   assert.equal(collectFileEdits(parser.parseStdoutLine(JSON.stringify(event), {})).length, 0);
+});
+
+test("Antigravity replace_file_content extracts unified diff patch from tool output even with text toolOutputs", () => {
+  const patchContent = "@@ -10,3 +10,4 @@\n-const a = 1;\n+const a = 2;\n+const b = 3;";
+  const outputText = `The following changes were made by the replace_file_content tool to: /src/app.ts.\n[diff_block_start]\n${patchContent}\n[diff_block_end]\nUnchanged lines...`;
+  const call = {
+    kind: "tool-call",
+    id: "tool-1",
+    tool: "replace_file_content",
+    status: "completed",
+    input: { TargetFile: "/src/app.ts", TargetContent: "const a = 1;", ReplacementContent: "const a = 2;\nconst b = 3;" },
+    toolOutputs: [{ kind: "text", role: "assistant", content: outputText }]
+  };
+  const edits = collectFileEdits([call]);
+  assert.equal(edits.length, 1);
+  assert.equal(edits[0].path, "/src/app.ts");
+  assert.equal(edits[0].action, "update");
+  assert.equal(edits[0].patch, patchContent);
+
+  const diff = buildFileDiff(edits[0]);
+  assert.equal(diff.added, 2);
+  assert.equal(diff.removed, 1);
+});
+
+test("Antigravity replace_file_content falls back to snippet parameters without patch", () => {
+  const call = {
+    kind: "tool-call",
+    id: "tool-2",
+    tool: "replace_file_content",
+    status: "completed",
+    input: { TargetFile: "/src/app.ts", TargetContent: "const a = 1;\n", ReplacementContent: "const a = 2;\n" }
+  };
+  const [editItem] = collectFileEdits([call]);
+  assert.equal(editItem.path, "/src/app.ts");
+  assert.equal(editItem.oldText, "const a = 1;\n");
+  assert.equal(editItem.newText, "const a = 2;\n");
+  assert.equal(editItem.partial, true);
+
+  const diff = buildFileDiff(editItem);
+  assert.equal(diff.added, 1);
+  assert.equal(diff.removed, 1);
+});
+
+test("Antigravity write_to_file handles creation and overwrite", () => {
+  const createCall = {
+    kind: "tool-call",
+    id: "tool-create",
+    tool: "write_to_file",
+    status: "completed",
+    input: { TargetFile: "/src/new.ts", CodeContent: "export const x = 1;\n" }
+  };
+  const [created] = collectFileEdits([createCall]);
+  assert.equal(created.action, "create");
+  assert.equal(created.newText, "export const x = 1;\n");
+  assert.equal(buildFileDiff(created).added, 1);
+
+  const overwriteCall = {
+    kind: "tool-call",
+    id: "tool-update",
+    tool: "write_to_file",
+    status: "completed",
+    input: { TargetFile: "/src/existing.ts", CodeContent: "export const x = 2;\n", Overwrite: true }
+  };
+  const [overwritten] = collectFileEdits([overwriteCall]);
+  assert.equal(overwritten.action, "update");
+  assert.equal(overwritten.newText, "export const x = 2;\n");
+});
+
+test("Antigravity multi_replace_file_content extracts multiple edits", () => {
+  const call = {
+    kind: "tool-call",
+    id: "tool-multi",
+    tool: "multi_replace_file_content",
+    status: "completed",
+    input: {
+      TargetFile: "/src/app.ts",
+      Replacements: [
+        { TargetContent: "foo", ReplacementContent: "bar" },
+        { TargetContent: "baz", ReplacementContent: "qux" }
+      ]
+    }
+  };
+  const edits = collectFileEdits([call]);
+  assert.equal(edits.length, 2);
+  assert.equal(edits[0].oldText, "foo");
+  assert.equal(edits[0].newText, "bar");
+  assert.equal(edits[1].oldText, "baz");
+  assert.equal(edits[1].newText, "qux");
+});
+
+test("collectFileEdits supersedes hollow nested toolOutputs edits when tool-call has output diff block", () => {
+  const patchContent = "@@ -1,3 +1,3 @@\n-Hello World\n+Hello FreeBuddy\n Line 2\n-Line 3";
+  const call = {
+    kind: "tool-call",
+    id: "tool-9",
+    tool: "replace_file_content",
+    status: "completed",
+    toolOutputs: [
+      {
+        kind: "file-edit",
+        path: "/Users/hongbin9/www/freebuddy-main/test-diff.txt",
+        action: "update"
+      }
+    ],
+    output: `The following changes were made by the replace_file_content tool to: /Users/hongbin9/www/freebuddy-main/test-diff.txt
+[diff_block_start]
+${patchContent}
+[diff_block_end]
+`
+  };
+
+  const edits = collectFileEdits([call]);
+  assert.equal(edits.length, 1);
+  assert.equal(edits[0].path, "/Users/hongbin9/www/freebuddy-main/test-diff.txt");
+  assert.equal(edits[0].patch, patchContent);
+
+  const diff = buildFileDiff(edits[0]);
+  assert.equal(diff.notice, undefined);
+  assert.equal(diff.added, 1);
+  assert.equal(diff.removed, 2);
+});
+
+const { relativePath, pickerLabels } = await import(`data:text/javascript;base64,${Buffer.from(output).toString("base64")}`);
+
+test("relativePath strips the longest matching workspace root", () => {
+  const file = "/Users/me/www/app/src/types/a.d.ts";
+  assert.equal(relativePath(file, ["/Users/me/www/app"]), "src/types/a.d.ts");
+  assert.equal(relativePath(file, ["/Users/me/www/app/"]), "src/types/a.d.ts");
+  assert.equal(relativePath(file, ["/Users/me", "/Users/me/www/app", undefined]), "src/types/a.d.ts");
+  assert.equal(relativePath(file, ["/users/ME/www/APP"]), "src/types/a.d.ts");
+});
+
+test("relativePath keeps paths outside every root and avoids partial segment matches", () => {
+  assert.equal(relativePath("/etc/hosts", ["/Users/me/www/app"]), "/etc/hosts");
+  assert.equal(relativePath("/Users/me/www/app-old/x.ts", ["/Users/me/www/app"]), "/Users/me/www/app-old/x.ts");
+  assert.equal(relativePath("src/a.ts", ["/Users/me/www/app"]), "src/a.ts");
+  assert.equal(relativePath("C:\\repo\\src\\a.ts", ["C:\\repo"]), "src/a.ts");
+});
+
+test("pickerLabels shows file name only and adds directory for name clashes", () => {
+  const root = "/r";
+  assert.deepEqual(
+    pickerLabels(["/r/src/a.ts", "/r/src/b.ts", "/r/src/a.ts"], [root]),
+    ["a.ts", "b.ts", "a.ts"]
+  );
+  assert.deepEqual(
+    pickerLabels(["/r/src/index.ts", "/r/lib/index.ts", "/r/README.md"], [root]),
+    ["index.ts — src", "index.ts — lib", "README.md"]
+  );
 });

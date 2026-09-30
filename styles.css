@@ -14882,10 +14882,15 @@ button.ghost:disabled {
 .file-change-entry:hover { background: var(--fb-panel-soft); }
 .file-change-icon, .file-change-chevron { flex-shrink: 0; color: var(--fb-text-tertiary); }
 .file-change-entry:hover .file-change-chevron { color: var(--fb-text-secondary); }
-.file-change-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.file-changes-card, .file-diff-panel { --fb-diff-add-fg: #1a7f37; --fb-diff-delete-fg: #cf222e; --fb-diff-add-bg: rgba(36, 170, 85, .12); --fb-diff-delete-bg: rgba(225, 65, 65, .11); --fb-diff-add-word: rgba(36, 170, 85, .32); --fb-diff-delete-word: rgba(225, 65, 65, .3); }
+[data-theme="dark"] .file-changes-card, [data-theme="dark"] .file-diff-panel { --fb-diff-add-fg: #4ac26b; --fb-diff-delete-fg: #f47067; --fb-diff-add-bg: rgba(46, 160, 67, .16); --fb-diff-delete-bg: rgba(248, 81, 73, .15); --fb-diff-add-word: rgba(46, 160, 67, .42); --fb-diff-delete-word: rgba(248, 81, 73, .4); }
+.file-change-path { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; }
+.file-change-name { flex-shrink: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.file-change-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--fb-text-tertiary); }
+.file-change-edits { flex-shrink: 0; font-size: 12px; color: var(--fb-text-tertiary); }
 .file-change-counts { display: inline-flex; gap: 8px; flex-shrink: 0; font-variant-numeric: tabular-nums; font-size: 13px; }
-.file-change-counts > span:first-child { color: #43865b; }
-.file-change-counts > span:last-child { color: #b36565; }
+.file-change-counts .is-add, .file-diff-counts .is-add { color: var(--fb-diff-add-fg); }
+.file-change-counts .is-delete, .file-diff-counts .is-delete { color: var(--fb-diff-delete-fg); }
 .file-change-unavailable { font-size: 12px; color: var(--fb-text-secondary); }
 .file-changes-more { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 34px; padding: 7px 12px; border: 0; border-top: 1px solid var(--fb-border); background: transparent; color: var(--fb-text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
 .file-changes-more:hover { background: var(--fb-panel-soft); }
@@ -14893,23 +14898,32 @@ button.ghost:disabled {
 .file-changes-more svg.is-expanded { transform: rotate(180deg); }
 .file-changes-card button:focus-visible { outline: 2px solid var(--fb-brand); outline-offset: -3px; }
 .file-diff-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; gap: 10px; }
-.file-diff-picker { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--fb-text-secondary); }
+.file-diff-toolbar { display: flex; align-items: flex-end; gap: 8px; }
+.file-diff-picker { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--fb-text-secondary); }
+.file-diff-nav { display: flex; align-items: center; gap: 2px; flex-shrink: 0; height: 35px; font-size: 12px; color: var(--fb-text-tertiary); font-variant-numeric: tabular-nums; }
+.file-diff-nav > span { padding: 0 6px; }
+.file-diff-nav button:disabled { opacity: .35; cursor: default; }
 .file-diff-picker select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--fb-border); border-radius: 6px; color: var(--fb-text-primary); background: var(--fb-panel-bg); }
 .file-diff-heading { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .file-diff-heading strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.file-diff-counts { flex-shrink: 0; font-family: monospace; }
-.file-diff-counts > span:first-child { color: #168044; }
-.file-diff-counts > span:last-child { color: #d04545; }
+.file-diff-counts { display: inline-flex; gap: 6px; flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-variant-numeric: tabular-nums; }
 .file-diff-notice { margin: 0; padding: 10px; background: var(--fb-panel-soft); color: var(--fb-text-secondary); font-size: 12px; line-height: 1.6; border-radius: 6px; }
 .file-diff-scroll { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--fb-border); border-radius: 8px; background: var(--fb-panel-bg); }
 .file-diff-lines { min-width: 100%; width: max-content; font: 12px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; padding: 6px 0; }
-.file-diff-line { display: flex; min-height: 20px; padding-right: 16px; white-space: pre; }
+.file-diff-line { display: flex; min-height: 20px; padding-right: 16px; white-space: pre; background: var(--row-bg, transparent); }
 .file-diff-line code { font: inherit; tab-size: 4; }
-.file-diff-number { width: 42px; flex-shrink: 0; text-align: right; padding-right: 8px; color: var(--fb-text-tertiary); user-select: none; }
-.file-diff-sign { width: 22px; flex-shrink: 0; text-align: center; user-select: none; }
-.file-diff-add { background: rgba(36, 170, 85, .14); }
-.file-diff-delete { background: rgba(225, 65, 65, .13); }
-.file-diff-meta { color: var(--fb-text-secondary); background: var(--fb-panel-soft); }
+/* Sticky gutter keeps line numbers visible while scrolling long lines horizontally. */
+.file-diff-gutter { position: sticky; left: 0; z-index: 1; display: flex; flex-shrink: 0; background: linear-gradient(var(--row-bg, transparent), var(--row-bg, transparent)), var(--fb-panel-bg); user-select: none; }
+.file-diff-number { width: 42px; flex-shrink: 0; text-align: right; padding-right: 8px; color: var(--fb-text-tertiary); }
+.file-diff-sign { width: 22px; flex-shrink: 0; text-align: center; }
+.file-diff-add { --row-bg: var(--fb-diff-add-bg); }
+.file-diff-delete { --row-bg: var(--fb-diff-delete-bg); }
+.file-diff-add .file-diff-sign { color: var(--fb-diff-add-fg); }
+.file-diff-delete .file-diff-sign { color: var(--fb-diff-delete-fg); }
+.file-diff-word { color: inherit; background: transparent; border-radius: 2px; }
+.file-diff-add .file-diff-word { background: var(--fb-diff-add-word); }
+.file-diff-delete .file-diff-word { background: var(--fb-diff-delete-word); }
+.file-diff-meta { color: var(--fb-text-secondary); --row-bg: var(--fb-panel-soft); }
 .file-diff-fold { display: block; width: 100%; padding: 6px; border: 0; color: var(--fb-brand); background: var(--fb-panel-soft); cursor: pointer; font: inherit; }
 .file-diff-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 24px; color: var(--fb-text-secondary); font-size: 13px; text-align: center; line-height: 1.7; }
 .file-change-entry:focus-visible, .file-diff-fold:focus-visible, .file-detail-tabs button:focus-visible { outline: 2px solid var(--fb-brand); outline-offset: -2px; }
@@ -27633,4 +27647,27 @@ button.ghost:focus-visible,
 .onboarding-setup-card :is(button, input):focus-visible { outline: 2px solid var(--fb-brand); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) {
   .guide-chat-floating-card { animation: none; }
+}
+
+.file-diff-heading .file-diff-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.file-diff-heading .file-diff-title strong {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.file-diff-heading .file-diff-dir {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+  font-size: 11px;
+  color: var(--fb-text-tertiary);
 }

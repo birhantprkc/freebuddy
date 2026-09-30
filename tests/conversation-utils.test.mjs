@@ -1299,3 +1299,23 @@ test("followup context budget keeps the latest unanswered question", async () =>
   assert.match(context, /LATEST QUESTION: repair the remote connection/);
   assert.match(context, /not successfully answered/);
 });
+
+test("mergeToolCalls preserves specific tool name when update provides generic fallback", async () => {
+  const { mergeToolCalls } = await loadConversationUtils();
+  const prev = {
+    kind: "tool-call",
+    id: "tool-1",
+    tool: "replace_file_content",
+    status: "running"
+  };
+  const next = {
+    kind: "tool-call",
+    id: "tool-1",
+    tool: "tool",
+    status: "completed"
+  };
+  const merged = mergeToolCalls(prev, next);
+  assert.equal(merged.tool, "replace_file_content");
+  assert.equal(merged.status, "completed");
+});
+

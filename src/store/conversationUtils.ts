@@ -254,10 +254,14 @@ export function collectStreamContentSignatures(
 }
 
 export function mergeToolCalls(prev: ToolCallItem, next: ToolCallItem): ToolCallItem {
+  const isGenericTool = (name?: string) => !name || name === "tool" || name === "edit";
+  const tool = isGenericTool(next.tool) && !isGenericTool(prev.tool)
+    ? prev.tool
+    : (next.tool || prev.tool);
   const merged: ToolCallItem = {
     kind: "tool-call",
     id: prev.id!,
-    tool: next.tool || prev.tool
+    tool
   };
 
   const input = next.input !== undefined ? next.input : prev.input;
