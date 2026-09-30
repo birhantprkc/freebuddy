@@ -2,6 +2,16 @@
 
 记录面向用户的版本变更。每次执行 `npm run release` 时，系统会从上一个 tag 之后的提交生成初稿；如需使用人工或 Agent 润色的文案，可传入 `--notes-file <路径>`。
 
+## [0.10.22] - 2026-09-30
+
+### 新功能
+
+- support Antigravity agent file diffs and polish diff viewer UI
+
+### 问题修复
+
+- restrict release artifact lookup to root release directory
+
 ## [0.10.21] - 2026-09-29
 
 ### 新功能
