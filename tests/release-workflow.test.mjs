@@ -85,7 +85,9 @@ test("release workflow uploads version-suffixed assets and update metadata for e
   // AppImage and .deb both auto-update through latest-linux.yml; rewrite both
   // friendly asset names so Ubuntu .deb installs do not 404.
   assert.match(workflow, /Upload Linux update metadata/);
-  assert.match(workflow, /find release -name latest-linux\.yml/);
+  assert.match(workflow, /find release -maxdepth 1 -name latest-linux\.yml/);
+  assert.match(workflow, /FILE=\$\(find release -maxdepth 1 -name "\$find_pattern"/);
+  assert.doesNotMatch(workflow, /Get-ChildItem -Path release -Recurse/);
   assert.match(workflow, /FreeBuddy_Linux_x64-\$\{version_suffix\}\.AppImage/);
   assert.match(workflow, /FreeBuddy_Ubuntu_x64-\$\{version_suffix\}\.deb/);
   assert.match(
