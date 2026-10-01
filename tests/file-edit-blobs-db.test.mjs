@@ -59,9 +59,18 @@ function persist(content, status, toolCallId) {
 
 test("full ACP diffs survive sanitization, budget eviction, UTF-8 paging and database reopen", { skip: !bindingAvailable }, async testContext => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "freebuddy-diff-"));
-  testContext.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  let db;
+  let reopened;
+  testContext.after(() => {
+    setDbForTest(null);
+    if (reopened?.open) reopened.close();
+    if (db?.open) db.close();
+    assert.equal(reopened?.open ?? false, false);
+    assert.equal(db?.open ?? false, false);
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
   const filename = path.join(directory, "diff.db");
-  const db = setup(testContext, filename);
+  db = setup(testContext, filename);
   const baseline = 'const value = "中文🙂";\n'.repeat(1800);
   const oldText = baseline + 'const label = "[truncated] data:image/png;base64,AAAA";\n';
   const newText = baseline + 'const label = "updated";\n';
@@ -79,8 +88,7 @@ test("full ACP diffs survive sanitization, budget eviction, UTF-8 paging and dat
   db.prepare("UPDATE conversation_messages SET content = ? WHERE id = 'message'").run(snapshot);
   setDbForTest(null);
   db.close();
-  const reopened = new Database(filename);
-  testContext.after(() => reopened.close());
+  reopened = new Database(filename);
   reopened.pragma("foreign_keys = ON");
   setDbForTest(reopened);
   migrate(reopened);
