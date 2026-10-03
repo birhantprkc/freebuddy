@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil } from "lucide-react";
+import { ChevronRight, Search, X } from "lucide-react";
 import { FREEBIE_BUNDLED_PROVIDERS } from "@/config/freebie";
 import { ProviderBrandIcon } from "./ProviderBrandIcon";
+import "./ProviderPresetPicker.css";
 
 export interface ProviderPresetPickerProps {
   /** `null` means the user chose the fully custom (blank) form. */
@@ -10,13 +11,12 @@ export interface ProviderPresetPickerProps {
 }
 
 /**
- * Grid of bundled provider presets shown on the empty state and above the
- * "new provider" form so first-time users can one-click fill name/baseUrl/
- * protocol instead of typing everything by hand.
+ * Searchable catalog of bundled presets. Connection setup stays in the editor.
  */
 export function ProviderPresetPicker({ onPick }: ProviderPresetPickerProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language?.startsWith("zh") ? "zh-CN" : "en";
+  const [query, setQuery] = useState("");
 
   const presets = useMemo(() => {
     const list = [...FREEBIE_BUNDLED_PROVIDERS];
@@ -30,37 +30,67 @@ export function ProviderPresetPicker({ onPick }: ProviderPresetPickerProps) {
     return list;
   }, [locale]);
 
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return presets.filter((preset) =>
+      `${preset.name} ${preset.id} ${preset.baseUrl}`.toLowerCase().includes(needle),
+    );
+  }, [presets, query]);
+
   return (
-    <div className="preset-picker">
-      <div className="preset-picker-title">{t("providers.pickPreset")}</div>
-      <div className="preset-picker-grid">
-        {presets.map((p) => (
+    <div className="preset-picker preset-picker-clean">
+      <div className="preset-picker-toolbar">
+        <div className="preset-picker-search">
+          <Search size={14} aria-hidden="true" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label={t("providers.searchPresets")}
+            placeholder={t("providers.searchPresets")}
+          />
+          {query && (
+            <button type="button" onClick={() => setQuery("")} aria-label={t("providers.clearPresetSearch")}>
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <span className="preset-picker-count" role="status">
+          {t("providers.presetCount", { count: filtered.length })}
+        </span>
+      </div>
+      <div className="preset-picker-grid" aria-label={t("providers.pickPreset")}>
+        {filtered.map((p) => (
           <button
             key={p.id}
             type="button"
             className="preset-card"
             onClick={() => onPick(p.id)}
-            title={p.freeTierSummary?.[locale] ?? p.baseUrl}
+            aria-label={t("providers.configurePreset", { name: p.name })}
           >
             <ProviderBrandIcon
               nameOrId={p.id}
+              alt={p.name}
               lobeIconId={p.icon}
-              size={26}
+              size={38}
               className="preset-card-icon"
             />
             <span className="preset-card-body">
-              <span className="preset-card-name">{p.name}</span>
-              {p.freeTierSummary?.[locale] ? (
-                <span className="preset-card-summary">{p.freeTierSummary[locale]}</span>
-              ) : null}
+              <span className="preset-card-name" title={p.name}>{p.name}</span>
+              <span className="preset-card-summary" title={p.baseUrl}>{new URL(p.baseUrl).hostname}</span>
             </span>
+            <ChevronRight size={14} className="preset-card-chevron" aria-hidden="true" />
           </button>
         ))}
       </div>
-      <button type="button" className="preset-custom-btn" onClick={() => onPick(null)}>
-        <Pencil size={12} />
-        <span>{t("providers.customProvider")}</span>
-      </button>
+      {filtered.length === 0 && (
+        <div className="preset-picker-empty">
+          <Search size={24} aria-hidden="true" />
+          <p>{t("providers.noPresetMatch")}</p>
+          <button type="button" className="preset-custom-btn" onClick={() => onPick(null)}>
+            {t("providers.customProvider")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

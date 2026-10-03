@@ -15,6 +15,7 @@ import type { Conversation, Project } from "@/services/cli/types";
 import i18next from "i18next";
 import { useTranslation } from "react-i18next";
 import {
+  CheckCheck,
   ChevronDown,
   ChevronUp,
   Folder,
@@ -41,6 +42,7 @@ import {
   groupConversationsByProject,
   groupConversationsByProjects,
   recentConversations,
+  unreadConversationView,
   type ConversationProjectGroup
 } from "./conversationProjectGrouping";
 
@@ -440,6 +442,10 @@ export function ConversationList({
   const unpin = usePinnedProjectsStore((s) => s.unpin);
   const { t } = useTranslation();
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(() => new Set());
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [collapsedUnreadProjects, setCollapsedUnreadProjects] = useState<Set<string>>(() => new Set());
+  const allFilterRef = useRef<HTMLButtonElement>(null);
+  const unreadFilterRef = useRef<HTMLButtonElement>(null);
   const [expandedFully, setExpandedFully] = useState<Set<string>>(() => new Set());
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [menuProjectKey, setMenuProjectKey] = useState<string | null>(null);
@@ -498,6 +504,10 @@ export function ConversationList({
 
   const handleSelect = useCallback(
     (id: string) => {
+      // A read row leaves the filtered list. Keep keyboard focus on a stable control.
+      if (unreadOnly && document.activeElement?.matches(".conv-item")) {
+        unreadFilterRef.current?.focus();
+      }
       void setActive(id);
       const conv = conversations.find((c) => c.id === id);
       if (conv?.kind === "game") {
@@ -505,7 +515,7 @@ export function ConversationList({
         useDetailLayoutStore.getState().setDetailCollapsed(false);
       }
     },
-    [setActive, conversations]
+    [setActive, conversations, unreadOnly]
   );
   const handleDelete = useCallback(
     (id: string, title: string) => {
@@ -543,14 +553,19 @@ export function ConversationList({
       return b.latestAt - a.latestAt || a.label.localeCompare(b.label);
     });
   }, [conversations, apiProjects, pinnedKeys, projectsLoaded]);
+  const unreadView = useMemo(
+    () => unreadConversationView(conversations, projects, unreadConversations),
+    [conversations, projects, unreadConversations]
+  );
   const recent = useMemo(() => {
+    if (unreadOnly) return unreadView.recent;
     // null = not hydrated yet → keep projectId chats in Recent temporarily.
     // After load, only exclude chats whose project appears in the sidebar.
     const knownProjectIds = projectsLoaded
       ? new Set(apiProjects.map((project) => project.id))
       : null;
     return recentConversations(conversations, RECENT_LIMIT, knownProjectIds);
-  }, [conversations, apiProjects, projectsLoaded]);
+  }, [conversations, apiProjects, projectsLoaded, unreadOnly, unreadView]);
 
   const activeProjectKey = useMemo(() => {
     const active = conversations.find((c) => c.id === activeId);
@@ -565,6 +580,7 @@ export function ConversationList({
   const currentUser = useConversationStore((s) => s.currentUser);
 
   const visibleProjects = useMemo(() => {
+    if (unreadOnly) return unreadView.projects;
     const relevantProjects =
       currentUser && !currentUser.isOwner
         ? projects.filter(
@@ -597,7 +613,7 @@ export function ConversationList({
       if (active) result.push(active);
     }
     return result;
-  }, [projects, showAllProjects, pinnedKeys, activeProjectKey, currentUser]);
+  }, [projects, showAllProjects, pinnedKeys, activeProjectKey, currentUser, unreadOnly, unreadView]);
 
   const hiddenProjectCount = Math.max(0, projects.length - visibleProjects.length);
 
@@ -613,6 +629,15 @@ export function ConversationList({
   }, [projects, activeProjectKey]);
 
   const toggleProject = (key: string) => {
+    if (unreadOnly) {
+      setCollapsedUnreadProjects((current) => {
+        const next = new Set(current);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+      return;
+    }
     setExpandedProjects((current) => {
       const next = new Set(current);
       if (next.has(key)) {
@@ -689,23 +714,58 @@ export function ConversationList({
   );
 
   const showEmpty =
-    conversations.length === 0 && apiProjects.length === 0 && recent.length === 0;
+    !unreadOnly && conversations.length === 0 && apiProjects.length === 0 && recent.length === 0;
+
+  const changeFilter = (onlyUnread: boolean) => {
+    (onlyUnread ? unreadFilterRef : allFilterRef).current?.focus();
+    if (onlyUnread === unreadOnly) return;
+    setUnreadOnly(onlyUnread);
+    setCollapsedUnreadProjects(new Set());
+    setMenuProjectKey(null);
+    setHoverProjectKey(null);
+    setHoverCardStyle(null);
+    clearHoverCloseTimer();
+  };
 
   return (
     <div className="conv-list">
+      <div className="conv-filter" role="group" aria-label={t("conversations.filterLabel")}>
+        <button
+          ref={allFilterRef}
+          type="button"
+          className="conv-filter-button"
+          aria-pressed={!unreadOnly}
+          onClick={() => changeFilter(false)}
+        >
+          {t("conversations.filterAll")}
+        </button>
+        <button
+          ref={unreadFilterRef}
+          type="button"
+          className="conv-filter-button"
+          aria-pressed={unreadOnly}
+          aria-label={t("conversations.filterUnreadCount", { count: unreadView.count })}
+          onClick={() => changeFilter(true)}
+        >
+          {t("conversations.filterUnread")}
+          <span className="conv-filter-count" aria-hidden="true">{unreadView.count}</span>
+        </button>
+      </div>
       <ul>
-        <li className="conv-group-header projects">
-          <span>{t("conversations.projects")}</span>
-          <button
-            type="button"
-            className="conv-projects-add"
-            title={t("conversations.addProject")}
-            aria-label={t("conversations.addProject")}
-            onClick={openCreateModal}
-          >
-            <Plus aria-hidden="true" size={14} strokeWidth={2} />
-          </button>
-        </li>
+        {(!unreadOnly || visibleProjects.length > 0) && (
+          <li className="conv-group-header projects">
+            <span>{t("conversations.projects")}</span>
+            <button
+              type="button"
+              className="conv-projects-add"
+              title={t("conversations.addProject")}
+              aria-label={t("conversations.addProject")}
+              onClick={openCreateModal}
+            >
+              <Plus aria-hidden="true" size={14} strokeWidth={2} />
+            </button>
+          </li>
+        )}
         {projectsError ? (
           <li className="conv-projects-error" role="status">
             {t("conversations.projectsLoadFailed")}
@@ -713,8 +773,10 @@ export function ConversationList({
         ) : null}
 
         {visibleProjects.map((project) => {
-          const expanded = expandedProjects.has(project.key);
-          const showAll = expandedFully.has(project.key);
+          const expanded = unreadOnly
+            ? !collapsedUnreadProjects.has(project.key)
+            : expandedProjects.has(project.key);
+          const showAll = unreadOnly || expandedFully.has(project.key);
           const visibleItems = expanded
             ? showAll
               ? project.items
@@ -858,7 +920,9 @@ export function ConversationList({
                       label={project.label}
                       folders={project.folders ?? []}
                       primaryPath={primaryPath}
-                      conversationCount={project.items.length}
+                      conversationCount={
+                        projects.find((entry) => entry.key === project.key)?.items.length ?? project.items.length
+                      }
                       pinned={pinned}
                       canReveal={canReveal}
                       onTogglePin={() => togglePin(project.key)}
@@ -900,7 +964,7 @@ export function ConversationList({
           );
         })}
 
-        {projects.length > PROJECT_LIST_LIMIT && (
+        {!unreadOnly && projects.length > PROJECT_LIST_LIMIT && (
           <li className="conv-projects-footer">
             <button
               type="button"
@@ -935,6 +999,18 @@ export function ConversationList({
 
         {showEmpty && (
           <li className="conv-empty muted">{t("conversations.empty")}</li>
+        )}
+        {unreadOnly && unreadView.count === 0 && (
+          <li className="conv-unread-empty">
+            <div className="conv-unread-empty-message" role="status">
+              <CheckCheck aria-hidden="true" size={22} strokeWidth={1.6} />
+              <strong>{t("conversations.noUnread")}</strong>
+              <span>{t("conversations.noUnreadHint")}</span>
+            </div>
+            <button type="button" onClick={() => changeFilter(false)}>
+              {t("conversations.viewAll")}
+            </button>
+          </li>
         )}
       </ul>
 

@@ -15,10 +15,10 @@ import {
 import { useProviderStore } from "@/store/providerStore";
 import { providersClient } from "@/services/providers/client";
 import type { Provider } from "@/services/providers/types";
-import { getModelBrand } from "@/services/providers/modelUtils";
 import { ProviderEditor } from "./ProviderEditor";
 import { ProviderBrandIcon } from "./ProviderBrandIcon";
 import { ProviderPresetPicker } from "./ProviderPresetPicker";
+import "./ProviderWorkspace.css";
 
 export function ProvidersTab() {
   const { t } = useTranslation();
@@ -32,7 +32,8 @@ export function ProvidersTab() {
   const reorder = useProviderStore((s) => s.reorder);
 
   const [selectedId, setSelectedId] = useState<string | "new" | null>(null);
-  const [pendingPresetId, setPendingPresetId] = useState<string | undefined>(undefined);
+  // undefined = preset catalog, null = custom form, string = chosen preset.
+  const [pendingPresetId, setPendingPresetId] = useState<string | null | undefined>(undefined);
   const [searchText, setSearchText] = useState("");
   const [onlyEnabled, setOnlyEnabled] = useState(false);
   const [testingAll, setTestingAll] = useState(false);
@@ -99,7 +100,12 @@ export function ProvidersTab() {
   );
 
   const onPickPreset = useCallback((presetId: string | null) => {
-    setPendingPresetId(presetId ?? undefined);
+    setPendingPresetId(presetId);
+    setSelectedId("new");
+  }, []);
+
+  const openProviderCatalog = useCallback(() => {
+    setPendingPresetId(undefined);
     setSelectedId("new");
   }, []);
 
@@ -166,7 +172,6 @@ export function ProvidersTab() {
       );
     }
     return filtered.map((p) => {
-      const brand = getModelBrand(p.name || p.id);
       const isSelected = selectedId === p.id;
       const isEnabled = p.enabled !== false;
       const draggable = !searchText && !onlyEnabled;
@@ -182,7 +187,7 @@ export function ProvidersTab() {
           ]
             .filter(Boolean)
             .join(" ")}
-          onClick={() => setSelectedId(p.id)}
+          role="listitem"
           draggable={draggable}
           onDragStart={
             draggable
@@ -218,9 +223,7 @@ export function ProvidersTab() {
               : undefined
           }
         >
-          {/* Always render the handle slot so the card layout stays identical
-              whether or not dragging is enabled; hide it visually instead of
-              unmounting to avoid the icon/text shifting. */}
+          {/* Keep the drag handle separate from the selection button. */}
           <span
             className={`provider-drag-handle ${draggable ? "" : "hidden"}`}
             title={draggable ? t("providers.dragToReorder") : undefined}
@@ -228,55 +231,62 @@ export function ProvidersTab() {
           >
             <GripVertical size={12} />
           </span>
-          <ProviderBrandIcon
-            nameOrId={p.name || p.presetId || p.id}
-            lobeIconId={p.icon}
-            size={28}
-            className="provider-item-brand"
-          />
+          <button
+            type="button"
+            className="provider-item-select"
+            aria-current={isSelected ? "true" : undefined}
+            onClick={() => setSelectedId(p.id)}
+          >
+            <ProviderBrandIcon
+              nameOrId={p.name || p.presetId || p.id}
+              lobeIconId={p.icon}
+              size={28}
+              className="provider-item-brand"
+            />
 
-          <div className="provider-item-content">
-            <div className="provider-item-row-top">
-              <strong className="provider-item-name">{p.name}</strong>
-              {!p.hasKey ? (
-                <span className="provider-nokey-badge" title={t("providers.noKeyHint")}>
-                  <KeyRound size={10} />
-                  <span>{t("providers.noKeyBadge")}</span>
+            <div className="provider-item-content">
+              <div className="provider-item-row-top">
+                <strong className="provider-item-name" title={p.name}>{p.name}</strong>
+                {p.lastHealth === "ok" ? (
+                  <span
+                    className="provider-health-dot ok"
+                    title={
+                      p.lastLatencyMs
+                        ? `${p.lastLatencyMs}ms`
+                        : t("providers.statusOk")
+                    }
+                  />
+                ) : p.lastHealth === "error" ? (
+                  <span
+                    className="provider-health-dot error"
+                    title={p.lastError || t("providers.statusError")}
+                  />
+                ) : (
+                  <span
+                    className="provider-health-dot untested"
+                    title={t("providers.untested")}
+                  />
+                )}
+              </div>
+              <div className="provider-item-row-bottom">
+                {!p.hasKey ? (
+                  <span className="provider-nokey-badge" title={t("providers.noKeyHint")}>
+                    <KeyRound size={10} />
+                    <span>{t("providers.noKeyBadge")}</span>
+                  </span>
+                ) : null}
+                {p.hasKey && <span className="provider-item-proto">{p.protocol}</span>}
+                {p.hasKey && p.protocols && p.protocols.length > 1 && (
+                  <span className="provider-item-extra-proto">
+                    +{p.protocols.length - 1}
+                  </span>
+                )}
+                <span className="provider-item-model-count">
+                  {t("providers.modelsCount", { count: p.models.length })}
                 </span>
-              ) : null}
-              {p.lastHealth === "ok" ? (
-                <span
-                  className="provider-health-dot ok"
-                  title={
-                    p.lastLatencyMs
-                      ? `${p.lastLatencyMs}ms`
-                      : t("providers.statusOk")
-                  }
-                />
-              ) : p.lastHealth === "error" ? (
-                <span
-                  className="provider-health-dot error"
-                  title={p.lastError || t("providers.statusError")}
-                />
-              ) : (
-                <span
-                  className="provider-health-dot untested"
-                  title={t("providers.untested")}
-                />
-              )}
+              </div>
             </div>
-            <div className="provider-item-row-bottom">
-              <span className="provider-item-proto">{p.protocol}</span>
-              {p.protocols && p.protocols.length > 1 && (
-                <span className="provider-item-extra-proto">
-                  +{p.protocols.length - 1}
-                </span>
-              )}
-              <span className="provider-item-model-count">
-                {t("providers.modelsCount", { count: p.models.length })}
-              </span>
-            </div>
-          </div>
+          </button>
 
           <div
             className="provider-item-quick-actions"
@@ -286,6 +296,8 @@ export function ProvidersTab() {
               type="button"
               className={`provider-switch-btn ${isEnabled ? "on" : "off"}`}
               title={isEnabled ? t("providers.disable") : t("providers.enable")}
+              aria-label={isEnabled ? t("providers.disable") : t("providers.enable")}
+              aria-pressed={isEnabled}
               onClick={() => void setEnabled(p.id, !isEnabled)}
             >
               <Power size={11} />
@@ -295,6 +307,22 @@ export function ProvidersTab() {
       );
     });
   };
+
+  const providerCatalog = (
+    <div className="providers-catalog">
+      <div className="providers-catalog-intro">
+        <div>
+          <h3>{t("providers.catalogTitle")}</h3>
+          <p>{t("providers.catalogDescription")}</p>
+        </div>
+        <button type="button" className="providers-catalog-custom" onClick={() => onPickPreset(null)}>
+          <Plus size={14} aria-hidden="true" />
+          {t("providers.customProviderShort")}
+        </button>
+      </div>
+      <ProviderPresetPicker onPick={onPickPreset} />
+    </div>
+  );
 
   return (
     <section className="providers-workspace">
@@ -308,29 +336,13 @@ export function ProvidersTab() {
           <div className="providers-sidebar-actions">
             <button
               type="button"
-              className="icon-btn"
-              onClick={() => void onTestAll()}
-              disabled={testingAll || sorted.length === 0}
-              title={t("providers.testAll")}
-            >
-              {testingAll ? <Loader2 size={13} className="spinning" /> : <Zap size={13} />}
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => void refresh()}
-              title={t("common.refresh")}
-            >
-              <RefreshCw size={13} />
-            </button>
-            <button
-              type="button"
               className="providers-add-btn"
-              onClick={() => onPickPreset(null)}
+              onClick={openProviderCatalog}
               title={t("providers.add")}
+              aria-label={t("providers.add")}
             >
               <Plus size={13} />
-              <span>{t("providers.add")}</span>
+              <span>{t("providers.addShort")}</span>
             </button>
           </div>
         </div>
@@ -343,6 +355,7 @@ export function ProvidersTab() {
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
                 placeholder={t("providers.searchProviders")}
+                aria-label={t("providers.searchProviders")}
               />
               {searchText ? (
                 <button
@@ -355,29 +368,46 @@ export function ProvidersTab() {
                 </button>
               ) : null}
             </div>
+            <div className="providers-list-tools">
             <button
               type="button"
               className={`providers-enabled-filter ${onlyEnabled ? "active" : ""}`}
               onClick={() => setOnlyEnabled((v) => !v)}
               title={t("providers.onlyEnabled")}
+              aria-pressed={onlyEnabled}
             >
               {onlyEnabled ? <Check size={12} /> : null}
               <span>{t("providers.onlyEnabled")}</span>
             </button>
+            <div className="providers-sidebar-actions">
+              <button type="button" className="icon-btn" onClick={() => void onTestAll()}
+                disabled={testingAll} title={t("providers.testAll")} aria-label={t("providers.testAll")}>
+                {testingAll ? <Loader2 size={14} className="spinning" /> : <Zap size={14} />}
+              </button>
+              <button type="button" className="icon-btn" onClick={() => void refresh()}
+                title={t("common.refresh")} aria-label={t("common.refresh")}>
+                <RefreshCw size={14} />
+              </button>
+            </div>
+            </div>
           </div>
         ) : null}
 
         {storeError ? <div className="providers-error">{storeError}</div> : null}
 
-        <div className="providers-nav-list">{renderList()}</div>
+        <div className="providers-nav-list" role="list" aria-label={t("providers.providerList")}>
+          {renderList()}
+        </div>
       </aside>
 
       {/* Right Detail Pane */}
       <main className="providers-detail-pane">
-        {selectedId === "new" ? (
+        {selectedId === "new" && pendingPresetId === undefined ? (
+          providerCatalog
+        ) : selectedId === "new" ? (
           <ProviderEditor
-            key={pendingPresetId ?? "new"}
-            presetId={pendingPresetId}
+            key={pendingPresetId ?? "custom"}
+            presetId={pendingPresetId ?? undefined}
             onSaved={onSaved}
             onDeleted={onDeleted}
           />
@@ -389,11 +419,7 @@ export function ProvidersTab() {
             onDeleted={onDeleted}
           />
         ) : (
-          <div className="providers-empty-state providers-empty-state-wide">
-            <h3>{t("providers.selectPrompt")}</h3>
-            <p>{t("providers.selectPromptDesc")}</p>
-            <ProviderPresetPicker onPick={onPickPreset} />
-          </div>
+          providerCatalog
         )}
       </main>
     </section>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search,
@@ -16,7 +16,7 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
-  Layers,
+  MoreHorizontal,
   LayoutList,
   Tags,
   FileText,
@@ -29,7 +29,6 @@ import {
 } from "lucide-react";
 import type { ProviderModel } from "@/services/providers/types";
 import {
-  getModelBrand,
   inferModelCapabilities,
   inferContextWindow,
   inferModelGroup,
@@ -37,6 +36,7 @@ import {
 } from "@/services/providers/modelUtils";
 import { ModelConfigModal } from "./ModelConfigModal";
 import { ProviderBrandIcon } from "./ProviderBrandIcon";
+import "./ProviderModelManager.css";
 
 interface ProviderModelManagerProps {
   models: ProviderModel[];
@@ -44,6 +44,7 @@ interface ProviderModelManagerProps {
   isDirty?: boolean;
   onSave?: () => void;
   saving?: boolean;
+  toolbarActions?: React.ReactNode;
 }
 
 type CapabilityFilter = "all" | "reasoning" | "tools" | "vision" | "code";
@@ -55,6 +56,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
   isDirty,
   onSave,
   saving,
+  toolbarActions,
 }) => {
   const { t } = useTranslation();
 
@@ -64,10 +66,59 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [newModelId, setNewModelId] = useState("");
   const [rawBatchText, setRawBatchText] = useState("");
+  const [addModelOpen, setAddModelOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
 
-  // Group expansion state: record of groupName -> boolean (true = expanded)
+  // Group expansion state: record of groupName -> boolean (true = collapsed)
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-  const [allExpanded, setAllExpanded] = useState(true);
+
+  useEffect(() => {
+    if (addModelOpen) addInputRef.current?.focus();
+  }, [addModelOpen]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    const closeOnPointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && !moreRef.current?.contains(event.target)) {
+        setMoreOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnPointer);
+    return () => document.removeEventListener("pointerdown", closeOnPointer);
+  }, [moreOpen]);
+
+  const closeMore = () => {
+    setMoreOpen(false);
+    moreButtonRef.current?.focus();
+  };
+
+  const closeAddModel = () => {
+    setAddModelOpen(false);
+    addButtonRef.current?.focus();
+  };
+
+  const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMore();
+      return;
+    }
+    const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? []);
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+        : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next]?.focus();
+    }
+  };
 
   // Copy feedback state: modelId -> boolean
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -210,7 +261,6 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
 
   const toggleAllGroups = () => {
     const nextState = !allExpanded;
-    setAllExpanded(nextState);
     // If expanding all, clear collapsedGroups. If collapsing all, mark all as true (collapsed)
     if (nextState) {
       setCollapsedGroups({});
@@ -295,17 +345,17 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
     () => models.filter((m) => m.enabled !== false).length,
     [models],
   );
+  const allExpanded = Object.keys(groupedModels).every((groupName) => !collapsedGroups[groupName]);
 
   return (
-    <div className="provider-model-manager">
-      {/* 1. Header Toolbar */}
+    <div className="provider-model-manager provider-model-manager-clean">
       <div className="model-mgr-toolbar">
         <div className="model-mgr-toolbar-left">
           <span className="model-mgr-count-badge">
             {t("providers.modelTotalCount")} ({models.length})
           </span>
           <span className={`model-mgr-enabled-badge ${enabledCount === 0 ? "zero" : ""}`}>
-            {t("providers.enabledCount", { enabled: enabledCount, total: models.length })}
+            {t("providers.modelEnabledSummary", { count: enabledCount })}
           </span>
           {filteredModels.length !== models.length && (
             <span className="model-mgr-filtered-badge">
@@ -315,6 +365,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
         </div>
 
         <div className="model-mgr-toolbar-right">
+          {viewMode !== "batch" && toolbarActions}
           {isDirty && onSave && (
             <button
               type="button"
@@ -327,64 +378,65 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
               <span>{saving ? t("common.saving") : t("providers.saveChanges")}</span>
             </button>
           )}
-          {models.length > 0 && viewMode !== "batch" && (
-            <>
-              <button
-                type="button"
-                className="provider-text-btn"
-                onClick={() => handleToggleAll(enabledCount < models.length)}
-                title={enabledCount === models.length ? t("providers.disableAll") : t("providers.enableAll")}
-              >
-                {enabledCount === models.length ? (
-                  <>
-                    <ToggleLeft size={13} />
-                    <span>{t("providers.disableAll")}</span>
-                  </>
-                ) : (
-                  <>
-                    <ToggleRight size={13} />
-                    <span>{t("providers.enableAll")}</span>
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                className="provider-text-btn danger"
-                onClick={() => onChange([])}
-                title={t("providers.clearModels")}
-              >
-                <Trash2 size={12} />
-                <span>{t("providers.clearModels")}</span>
-              </button>
-            </>
+          {viewMode !== "batch" && (
+            <button
+              ref={addButtonRef}
+              type="button"
+              className="model-mgr-toolbar-btn"
+              onClick={() => setAddModelOpen((open) => !open)}
+              aria-expanded={addModelOpen}
+            >
+              <Plus size={14} />
+              {t("providers.addModelAction")}
+            </button>
           )}
-
-          {/* View mode buttons */}
-          <div className="model-mgr-view-toggle">
+          <div
+            className="model-mgr-more"
+            ref={moreRef}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMoreOpen(false);
+            }}
+          >
             <button
+              ref={moreButtonRef}
               type="button"
-              className={`view-toggle-btn ${viewMode === "list" ? "active" : ""}`}
-              onClick={() => setViewMode("list")}
-              title={t("providers.listView")}
+              className={`model-mgr-toolbar-btn icon-only ${moreOpen ? "active" : ""}`}
+              onClick={() => setMoreOpen((open) => !open)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setMoreOpen(true);
+                }
+              }}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label={t("providers.modelActions")}
+              title={t("providers.modelActions")}
             >
-              <LayoutList size={13} />
+              <MoreHorizontal size={17} />
             </button>
-            <button
-              type="button"
-              className={`view-toggle-btn ${viewMode === "tags" ? "active" : ""}`}
-              onClick={() => setViewMode("tags")}
-              title={t("providers.tagsView")}
-            >
-              <Tags size={13} />
-            </button>
-            <button
-              type="button"
-              className={`view-toggle-btn ${viewMode === "batch" ? "active" : ""}`}
-              onClick={handleSwitchToBatch}
-              title={t("providers.batchView")}
-            >
-              <FileText size={13} />
-            </button>
+            {moreOpen && (
+              <div className="model-mgr-more-menu" role="menu" ref={menuRef} onKeyDown={handleMenuKeyDown}>
+                <button type="button" role="menuitem" disabled={!models.length || viewMode === "batch"} onClick={() => { handleToggleAll(enabledCount < models.length); closeMore(); }}>
+                  {enabledCount === models.length ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
+                  {enabledCount === models.length ? t("providers.disableAll") : t("providers.enableAll")}
+                </button>
+                <div className="model-mgr-menu-divider" role="separator" />
+                <button type="button" role="menuitemradio" aria-checked={viewMode === "list"} onClick={() => { setViewMode("list"); closeMore(); }}>
+                  <LayoutList size={14} />{t("providers.listView")}{viewMode === "list" && <Check size={13} className="model-mgr-menu-check" />}
+                </button>
+                <button type="button" role="menuitemradio" aria-checked={viewMode === "tags"} onClick={() => { setViewMode("tags"); closeMore(); }}>
+                  <Tags size={14} />{t("providers.tagsView")}{viewMode === "tags" && <Check size={13} className="model-mgr-menu-check" />}
+                </button>
+                <button type="button" role="menuitem" onClick={() => { handleSwitchToBatch(); closeMore(); }}>
+                  <FileText size={14} />{t("providers.batchView")}
+                </button>
+                <div className="model-mgr-menu-divider" role="separator" />
+                <button type="button" role="menuitem" className="danger" disabled={!models.length || viewMode === "batch"} onClick={() => { onChange([]); closeMore(); }}>
+                  <Trash2 size={14} />{t("providers.clearModels")}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -400,6 +452,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
             onChange={(e) => setRawBatchText(e.target.value)}
             rows={8}
             className="provider-models-textarea"
+            aria-label={t("providers.batchView")}
             placeholder="gpt-4o&#10;claude-3-7-sonnet&#10;deepseek-chat&#10;deepseek-reasoner"
           />
           <div className="model-mgr-batch-actions">
@@ -423,18 +476,23 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
       ) : (
         /* List or Tags Mode */
         <>
-          {/* Quick Add row */}
-          <div className="provider-model-input-row">
+          {addModelOpen && <div className="provider-model-input-row model-mgr-add-row">
             <input
+              ref={addInputRef}
               value={newModelId}
               onChange={(e) => setNewModelId(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
                   handleAddModel(newModelId);
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  closeAddModel();
                 }
               }}
               placeholder={t("providers.addModelPlaceholder")}
+              aria-label={t("providers.addModelAction")}
             />
             <button
               type="button"
@@ -445,7 +503,10 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
               <Plus size={14} />
               {t("providers.addModel")}
             </button>
-          </div>
+            <button type="button" className="model-mgr-toolbar-btn icon-only" onClick={closeAddModel} aria-label={t("common.cancel")}>
+              <X size={14} />
+            </button>
+          </div>}
 
           {/* Search & Capability Filter Row */}
           {models.length > 0 && (
@@ -457,6 +518,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                   value={searchText}
                   onChange={(e) => setSearchText(e.target.value)}
                   placeholder={t("providers.searchModels")}
+                  aria-label={t("providers.searchModels")}
                   className="model-mgr-search-input"
                 />
                 {searchText && (
@@ -464,59 +526,33 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                     type="button"
                     className="model-mgr-search-clear"
                     onClick={() => setSearchText("")}
+                    aria-label={t("providers.clearModelSearch")}
                   >
                     <X size={12} />
                   </button>
                 )}
               </div>
 
-              {/* Capability Tabs & Group Toggle Row */}
               <div className="model-mgr-filter-row">
-                <div className="model-mgr-cap-tabs">
-                  <button
-                    type="button"
-                    className={`cap-tab ${capFilter === "all" ? "active" : ""}`}
-                    onClick={() => setCapFilter("all")}
-                  >
-                    {t("providers.capFilterAll")} ({counts.all})
-                  </button>
-                  <button
-                    type="button"
-                    className={`cap-tab ${capFilter === "reasoning" ? "active" : ""}`}
-                    onClick={() => setCapFilter("reasoning")}
-                  >
-                    {t("providers.capFilterReasoning")} ({counts.reasoning})
-                  </button>
-                  <button
-                    type="button"
-                    className={`cap-tab ${capFilter === "tools" ? "active" : ""}`}
-                    onClick={() => setCapFilter("tools")}
-                  >
-                    {t("providers.capFilterTools")} ({counts.tools})
-                  </button>
-                  <button
-                    type="button"
-                    className={`cap-tab ${capFilter === "vision" ? "active" : ""}`}
-                    onClick={() => setCapFilter("vision")}
-                  >
-                    {t("providers.capFilterVision")} ({counts.vision})
-                  </button>
-                  <button
-                    type="button"
-                    className={`cap-tab ${capFilter === "code" ? "active" : ""}`}
-                    onClick={() => setCapFilter("code")}
-                  >
-                    {t("providers.capFilterCode")} ({counts.code})
-                  </button>
-                </div>
-
-                {/* Expand/Collapse All (for list view) */}
+                <select
+                  className="model-mgr-cap-select"
+                  value={capFilter}
+                  onChange={(event) => setCapFilter(event.target.value as CapabilityFilter)}
+                  aria-label={t("providers.filterModelCapabilities")}
+                >
+                  <option value="all">{t("providers.allCapabilities")} ({counts.all})</option>
+                  <option value="reasoning">{t("providers.capFilterReasoning")} ({counts.reasoning})</option>
+                  <option value="tools">{t("providers.capFilterTools")} ({counts.tools})</option>
+                  <option value="vision">{t("providers.capFilterVision")} ({counts.vision})</option>
+                  <option value="code">{t("providers.capFilterCode")} ({counts.code})</option>
+                </select>
                 {viewMode === "list" && (
                   <button
                     type="button"
                     className="model-mgr-group-toggle-all"
                     onClick={toggleAllGroups}
                     title={allExpanded ? t("providers.collapseAll") : t("providers.expandAll")}
+                    aria-label={allExpanded ? t("providers.collapseAll") : t("providers.expandAll")}
                   >
                     {allExpanded ? <ChevronsDownUp size={14} /> : <ChevronsUpDown size={14} />}
                   </button>
@@ -536,7 +572,6 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
             /* Tags View */
             <div className="model-mgr-tags-container">
               {filteredModels.map((m) => {
-                const brand = getModelBrand(m.id);
                 const caps = inferModelCapabilities(m.id, {
                   supportsReasoning: m.supportsReasoning,
                   supportsTools: m.supportsTools,
@@ -551,6 +586,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                     >
                       <input
                         type="checkbox"
+                        aria-label={`${m.name || m.id} · ${t("providers.modelEnabled")}`}
                         checked={m.enabled !== false}
                         onChange={() => handleToggleModelEnabled(m.id)}
                       />
@@ -561,17 +597,18 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                       size={16}
                       className="model-tag-brand-avatar"
                     />
-                    <code className="model-tag-name">{m.name || m.id}</code>
+                    <code className="model-tag-name" title={m.id}>{m.name || m.id}</code>
                     <div className="model-tag-badges">
-                      {caps.reasoning && <span className="mini-badge purple">🧠</span>}
-                      {caps.tools && <span className="mini-badge green">🛠️</span>}
-                      {caps.vision && <span className="mini-badge blue">👁️</span>}
+                      {caps.reasoning && <span title={t("providers.capFilterReasoning")}><Brain size={12} /></span>}
+                      {caps.tools && <span title={t("providers.capFilterTools")}><Wrench size={12} /></span>}
+                      {caps.vision && <span title={t("providers.capFilterVision")}><Eye size={12} /></span>}
                     </div>
                     <button
                       type="button"
                       className="model-mgr-icon-btn edit"
                       onClick={() => setConfigModel(m)}
                       title={t("providers.configAdvanced")}
+                      aria-label={`${t("providers.configAdvanced")}: ${m.name || m.id}`}
                     >
                       <Settings size={11} />
                     </button>
@@ -580,6 +617,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                       className="model-mgr-icon-btn del"
                       onClick={() => handleRemoveModel(m.id)}
                       title={t("providers.deleteModel")}
+                      aria-label={`${t("providers.deleteModel")}: ${m.name || m.id}`}
                     >
                       <X size={11} />
                     </button>
@@ -595,11 +633,13 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                 return (
                   <div key={groupName} className="model-mgr-group">
                     {/* Group Header */}
-                    <div
-                      className="model-mgr-group-header"
-                      onClick={() => toggleGroup(groupName)}
-                    >
-                      <div className="model-mgr-group-title">
+                    <div className="model-mgr-group-header">
+                      <button
+                        type="button"
+                        className="model-mgr-group-title"
+                        onClick={() => toggleGroup(groupName)}
+                        aria-expanded={!isCollapsed}
+                      >
                         {isCollapsed ? (
                            <ChevronRight size={14} className="group-arrow" />
                         ) : (
@@ -608,12 +648,11 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                         <span className="group-name">{groupName}</span>
                         <span className="group-count">({groupList.length})</span>
                         <span className="group-enabled-count">
-                          · {t("providers.groupEnabledCount", {
-                            enabled: groupList.filter((m) => m.enabled !== false).length,
-                            total: groupList.length
+                          · {t("providers.modelEnabledSummary", {
+                            count: groupList.filter((m) => m.enabled !== false).length,
                           })}
                         </span>
-                      </div>
+                      </button>
                       <div
                         className="model-mgr-group-actions"
                         onClick={(e) => e.stopPropagation()}
@@ -646,7 +685,6 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                     {!isCollapsed && (
                       <div className="model-mgr-group-body">
                         {groupList.map((m) => {
-                          const brand = getModelBrand(m.id);
                           const caps = inferModelCapabilities(m.id, {
                             supportsReasoning: m.supportsReasoning,
                             supportsTools: m.supportsTools,
@@ -665,7 +703,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                                   size={26}
                                   className="model-row-avatar"
                                 />
-                                <div className="model-row-info">
+                                <div className="model-row-info" title={m.id}>
                                   {m.name ? (
                                     <>
                                       <div className="model-row-alias">{m.name}</div>
@@ -681,25 +719,25 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                               <div className="model-row-center">
                                 <div className="model-cap-pill-cluster">
                                   {caps.reasoning && (
-                                    <span className="cap-pill reasoning">
+                                    <span className="cap-pill reasoning" title={t("providers.capFilterReasoning")}>
                                       <Brain size={11} />
                                       <span>{t("providers.capFilterReasoning")}</span>
                                     </span>
                                   )}
                                   {caps.tools && (
-                                    <span className="cap-pill tools">
+                                    <span className="cap-pill tools" title={t("providers.capFilterTools")}>
                                       <Wrench size={11} />
                                       <span>{t("providers.capFilterTools")}</span>
                                     </span>
                                   )}
                                   {caps.vision && (
-                                    <span className="cap-pill vision">
+                                    <span className="cap-pill vision" title={t("providers.capFilterVision")}>
                                       <Eye size={11} />
                                       <span>{t("providers.capFilterVision")}</span>
                                     </span>
                                   )}
                                   {caps.code && (
-                                    <span className="cap-pill code">
+                                    <span className="cap-pill code" title={t("providers.capFilterCode")}>
                                       <Code size={11} />
                                       <span>{t("providers.capFilterCode")}</span>
                                     </span>
@@ -726,6 +764,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                                 >
                                   <input
                                     type="checkbox"
+                                    aria-label={`${m.name || m.id} · ${t("providers.modelEnabled")}`}
                                     checked={m.enabled !== false}
                                     onChange={() => handleToggleModelEnabled(m.id)}
                                   />
@@ -736,6 +775,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                                   className="model-action-btn"
                                   onClick={() => handleCopy(m.id)}
                                   title={t("providers.copyModelId")}
+                                  aria-label={`${t("providers.copyModelId")}: ${m.id}`}
                                 >
                                   {isCopied ? (
                                     <Check size={13} className="text-emerald-500" />
@@ -748,6 +788,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                                   className="model-action-btn"
                                   onClick={() => setConfigModel(m)}
                                   title={t("providers.configAdvanced")}
+                                  aria-label={`${t("providers.configAdvanced")}: ${m.name || m.id}`}
                                 >
                                   <Settings size={13} />
                                 </button>
@@ -756,6 +797,7 @@ export const ProviderModelManager: React.FC<ProviderModelManagerProps> = ({
                                   className="model-action-btn danger"
                                   onClick={() => handleRemoveModel(m.id)}
                                   title={t("providers.deleteModel")}
+                                  aria-label={`${t("providers.deleteModel")}: ${m.name || m.id}`}
                                 >
                                   <Trash2 size={13} />
                                 </button>

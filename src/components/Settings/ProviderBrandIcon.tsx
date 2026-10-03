@@ -1,17 +1,22 @@
-import React, { useState, useEffect } from "react";
+import type { CSSProperties } from "react";
+import { Cable } from "lucide-react";
 import { getModelBrand } from "../../services/providers/modelUtils";
+import { normalizeProviderIconId, getProviderBrandIcon } from "./providerBrandIcons";
+import freeBuddyLogo from "../../../assets/sidebar-logo.png";
+import agnesLogo from "../../../assets/provider-icons/agnesai.webp";
+import "./ProviderBrandIcon.css";
 
 export interface ProviderBrandIconProps {
   nameOrId: string;
   lobeIconId?: string;
   size?: number;
   className?: string;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
   shape?: "square" | "circle";
   alt?: string;
 }
 
-export const ProviderBrandIcon: React.FC<ProviderBrandIconProps> = ({
+export function ProviderBrandIcon({
   nameOrId,
   lobeIconId,
   size = 24,
@@ -19,97 +24,38 @@ export const ProviderBrandIcon: React.FC<ProviderBrandIconProps> = ({
   style,
   shape = "square",
   alt,
-}) => {
+}: ProviderBrandIconProps) {
   const brand = getModelBrand(nameOrId);
-  const iconId = lobeIconId || brand.lobeIconId;
+  const explicitId = normalizeProviderIconId(lobeIconId ?? "");
+  const inferredId = normalizeProviderIconId(brand.lobeIconId ?? nameOrId);
+  const Icon = getProviderBrandIcon(explicitId) ?? getProviderBrandIcon(inferredId);
+  const localImage = explicitId === "agnesai" || inferredId === "agnesai" ? agnesLogo
+    : /freebuddy/i.test(nameOrId) ? freeBuddyLogo : undefined;
+  const label = alt ?? ((brand.lobeIconId ? brand.name : nameOrId) || "Provider");
+  const glyphSize = Math.round(size * 0.68);
 
-  // Track error state for URL fallbacks: 0 = try jsdelivr, 1 = try npmmirror, 2 = fallback badge
-  const [loadStage, setLoadStage] = useState<number>(iconId ? 0 : 2);
-
-  useEffect(() => {
-    setLoadStage(iconId ? 0 : 2);
-  }, [iconId]);
-
-  const borderRadius = shape === "circle" ? "50%" : Math.max(4, Math.round(size * 0.22));
-
-  if (iconId && loadStage < 2) {
-    const src =
-      loadStage === 0
-        ? `https://fastly.jsdelivr.net/npm/@lobehub/icons-static-avatar@latest/avatars/${iconId}.webp`
-        : `https://registry.npmmirror.com/@lobehub/icons-static-avatar/latest/files/avatars/${iconId}.webp`;
-
-    return (
-      <div
-        className={`provider-brand-icon-wrapper ${className}`}
-        style={{
-          width: size,
-          height: size,
-          minWidth: size,
-          minHeight: size,
-          borderRadius,
-          overflow: "hidden",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          border: "none",
-          outline: "none",
-          boxShadow: "none",
-          ...style,
-        }}
-        title={brand.name}
-      >
-        <img
-          src={src}
-          alt={alt || brand.name}
-          width={size}
-          height={size}
-          loading="lazy"
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            borderRadius,
-            display: "block",
-            border: "none",
-            outline: "none",
-          }}
-          onError={() => {
-            setLoadStage((prev) => prev + 1);
-          }}
-        />
-      </div>
-    );
-  }
-
-  // Fallback styled badge
-  const fontSize = Math.max(9, Math.round(size * 0.4));
   return (
-    <div
-      className={`provider-brand-badge-fallback ${className}`}
+    <span
+      className={`provider-brand-icon provider-brand-icon-wrapper ${className}`}
+      role="img"
+      aria-label={label}
+      title={label}
       style={{
         width: size,
         height: size,
         minWidth: size,
         minHeight: size,
-        borderRadius,
-        backgroundColor: brand.bg,
-        color: brand.color,
-        border: "none",
-        outline: "none",
-        boxShadow: "none",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 700,
-        fontSize,
-        flexShrink: 0,
-        userSelect: "none",
+        borderRadius: shape === "circle" ? "50%" : Math.max(5, Math.round(size * 0.25)),
         ...style,
       }}
-      title={brand.name}
     >
-      {brand.badge}
-    </div>
+      {localImage ? (
+        <img src={localImage} width={glyphSize} height={glyphSize} alt="" aria-hidden="true" />
+      ) : Icon ? (
+        <Icon size={glyphSize} aria-hidden="true" />
+      ) : (
+        <Cable size={glyphSize} strokeWidth={1.7} aria-hidden="true" />
+      )}
+    </span>
   );
-};
+}

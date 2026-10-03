@@ -1,4 +1,5 @@
 import type { Conversation, Project } from "@/services/cli/types";
+import type { UnreadConversationMap } from "@/store/conversationUnread";
 
 export const PROJECT_PREVIEW_LIMIT = 5;
 /** Max project rows shown in the sidebar before "show more". */
@@ -15,6 +16,34 @@ export type ConversationProjectGroup = {
   items: Conversation[];
   latestAt: number;
 };
+
+/** Derive the complete unread view before applying any sidebar display limits. */
+export function unreadConversationView(
+  conversations: Conversation[],
+  projects: ConversationProjectGroup[],
+  unread: UnreadConversationMap
+): { projects: ConversationProjectGroup[]; recent: Conversation[]; count: number } {
+  const unreadItems = conversations.filter((conversation) => Boolean(unread[conversation.id]));
+  const unreadIds = new Set(unreadItems.map((conversation) => conversation.id));
+  const matchingProjects = projects
+    .map((project) => ({
+      ...project,
+      items: project.items.filter((conversation) => unreadIds.has(conversation.id))
+    }))
+    .filter((project) => project.items.length > 0);
+  const groupedIds = new Set(
+    matchingProjects.flatMap((project) => project.items.map((conversation) => conversation.id))
+  );
+
+  return {
+    projects: matchingProjects,
+    // Cwd-only conversations can belong to a project too; show each unread once.
+    recent: unreadItems
+      .filter((conversation) => !groupedIds.has(conversation.id))
+      .sort((a, b) => conversationActivityTime(b) - conversationActivityTime(a)),
+    count: unreadItems.length
+  };
+}
 
 function conversationTimeValue(conversation: Conversation) {
   return conversation.lastMessageAt ?? conversation.updatedAt ?? conversation.createdAt;
